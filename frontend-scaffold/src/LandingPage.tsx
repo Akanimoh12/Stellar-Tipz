@@ -339,10 +339,10 @@ const LandingPage = () => {
             <div>
               <h4 className="font-bold uppercase mb-4">Links</h4>
               <ul className="space-y-2">
-                <li><a href="#" className="hover:underline">About</a></li>
-                <li><a href="#" className="hover:underline">How It Works</a></li>
-                <li><a href="#" className="hover:underline">Whitepaper</a></li>
-                <li><a href="#" className="hover:underline">FAQ</a></li>
+                <li><a href="#about" className="hover:underline">About</a></li>
+                <li><a href="#how-it-works" className="hover:underline">How It Works</a></li>
+                <li><a href="https://github.com/Akanimoh12/Stellar-Tipz/blob/main/README.md" className="hover:underline">Documentation</a></li>
+                <li><a href="https://github.com/Akanimoh12/Stellar-Tipz/issues" className="hover:underline">Support</a></li>
               </ul>
             </div>
             <div>

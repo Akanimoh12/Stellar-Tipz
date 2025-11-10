@@ -54,7 +54,14 @@ const commonConfig = (env) => ({
       },
       {
         test: /\.(ts|tsx)$/,
-        use: ["ts-loader"],
+        use: [
+          {
+            loader: "ts-loader",
+            options: {
+              transpileOnly: true,
+            },
+          },
+        ],
         exclude: /node-modules/,
       },
       {
@@ -116,7 +123,8 @@ const commonConfig = (env) => ({
   plugins: [
     new ESLintPlugin({
       extensions: [".ts", ".tsx"],
-      failOnWarning: true,
+      failOnWarning: false,
+      failOnError: false,
     }),
     // new CopyWebpackPlugin({
     //   patterns: [

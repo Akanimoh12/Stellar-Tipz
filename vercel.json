@@ -1,0 +1,11 @@
+{
+  "buildCommand": "cd frontend-scaffold && npm install --legacy-peer-deps && npm run build",
+  "outputDirectory": "frontend-scaffold/build",
+  "framework": null,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
