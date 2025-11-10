@@ -88,6 +88,14 @@ const commonConfig = (env) => ({
               sourceMap: true,
             },
           },
+          {
+            loader: "postcss-loader",
+            options: {
+              postcssOptions: {
+                config: true,
+              },
+            },
+          },
           { loader: "sass-loader" },
         ],
       },

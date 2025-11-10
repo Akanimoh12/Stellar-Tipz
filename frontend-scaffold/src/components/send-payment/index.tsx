@@ -14,7 +14,7 @@ import {
   WalletNetwork,
   WalletType,
   ISupportedWallet,
-} from "stellar-wallets-kit";
+} from "@creit.tech/stellar-wallets-kit";
 
 import { stroopToXlm } from "../../helpers/format";
 import { TESTNET_DETAILS } from "../../helpers/network";
