@@ -15,6 +15,13 @@
 
 use soroban_sdk::{symbol_short, Address, Env};
 
+pub fn emit_profile_registered(env: &Env, address: &Address, username: &soroban_sdk::String) {
+    env.events().publish(
+        (symbol_short!("profile"), symbol_short!("reg")),
+        (address.clone(), username.clone()),
+    );
+}
+
 pub fn emit_tip_sent(env: &Env, from: &Address, to: &Address, amount: i128) {
     env.events().publish(
         (symbol_short!("tip"), symbol_short!("sent")),

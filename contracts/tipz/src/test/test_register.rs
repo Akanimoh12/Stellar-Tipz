@@ -18,7 +18,8 @@ fn setup() -> (Env, TipzContractClient<'static>) {
 
     let admin = Address::generate(&env);
     let fee_collector = Address::generate(&env);
-    client.initialize(&admin, &fee_collector, &200_u32);
+    let native_token = Address::generate(&env);
+    client.initialize(&admin, &fee_collector, &200_u32, &native_token);
 
     (env, client)
 }

@@ -59,13 +59,13 @@ impl TipzContract {
 
     /// Register a new creator profile.
     pub fn register_profile(
-        _env: Env,
-        _caller: Address,
-        _username: String,
-        _display_name: String,
-        _bio: String,
-        _image_url: String,
-        _x_handle: String,
+        env: Env,
+        caller: Address,
+        username: String,
+        display_name: String,
+        bio: String,
+        image_url: String,
+        x_handle: String,
     ) -> Result<Profile, ContractError> {
         profile::register_profile(
             &env,
@@ -122,11 +122,11 @@ impl TipzContract {
 
     /// Send an XLM tip to a registered creator.
     pub fn send_tip(
-        _env: Env,
-        _tipper: Address,
-        _creator: Address,
-        _amount: i128,
-        _message: String,
+        env: Env,
+        tipper: Address,
+        creator: Address,
+        amount: i128,
+        message: String,
     ) -> Result<(), ContractError> {
         tips::send_tip(&env, &tipper, &creator, amount, &message)
     }
