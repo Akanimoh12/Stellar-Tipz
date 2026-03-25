@@ -13,11 +13,6 @@ use crate::storage::{self, DataKey};
 use crate::token;
 use crate::types::Tip;
 
-/// Approximate TTL for tip records in ledgers.
-///
-/// 7 days × 86 400 s/day ÷ 5 s/ledger = 120 960 ledgers.
-pub const TIP_TTL_LEDGERS: u32 = 120_960;
-
 /// Create a new [`Tip`] record and store it in temporary storage.
 pub fn store_tip(
     env: &Env,
@@ -27,6 +22,7 @@ pub fn store_tip(
     message: String,
 ) -> u32 {
     let tip_id = storage::increment_tip_count(env);
+    let key = DataKey::Tip(tip_id);
     let tip = Tip {
         id: tip_id,
         tipper: tipper.clone(),
@@ -36,10 +32,8 @@ pub fn store_tip(
         timestamp: env.ledger().timestamp(),
     };
 
-    env.storage().temporary().set(&DataKey::Tip(tip_id), &tip);
-    env.storage()
-        .temporary()
-        .extend_ttl(&DataKey::Tip(tip_id), TIP_TTL_LEDGERS, TIP_TTL_LEDGERS);
+    env.storage().temporary().set(&key, &tip);
+    storage::set_tip_ttl(env, &key);
 
     tip_id
 }
@@ -81,6 +75,7 @@ pub fn send_tip(
     amount: i128,
     message: &String,
 ) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
     tipper.require_auth();
 
     if !storage::has_profile(env, creator) {

@@ -37,6 +37,8 @@ pub fn register_profile(
     image_url: String,
     x_handle: String,
 ) -> Result<Profile, ContractError> {
+    storage::extend_instance_ttl(env);
+
     // Require explicit authorisation from the caller.
     caller.require_auth();
 
@@ -117,6 +119,8 @@ pub fn update_profile(
     image_url: Option<String>,
     x_handle: Option<String>,
 ) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+
     caller.require_auth();
 
     if !storage::has_profile(env, &caller) {

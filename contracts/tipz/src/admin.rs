@@ -34,6 +34,8 @@ pub fn initialize(
     fee_bps: u32,
     native_token: &Address,
 ) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+
     if storage::is_initialized(env) {
         return Err(ContractError::AlreadyInitialized);
     }
@@ -99,6 +101,7 @@ pub fn update_x_metrics(
     x_followers: u32,
     x_engagement_avg: u32,
 ) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
 
     if !storage::has_profile(env, creator) {
@@ -120,6 +123,7 @@ pub fn batch_update_x_metrics(
     caller: &Address,
     updates: Vec<(Address, u32, u32)>,
 ) -> Result<u32, ContractError> {
+    storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
 
     let len = updates.len();
@@ -141,6 +145,13 @@ pub fn batch_update_x_metrics(
     }
 
     Ok(updated)
+}
+
+/// Extend the contract instance TTL manually. Admin only.
+pub fn bump_ttl(env: &Env, caller: &Address) -> Result<(), ContractError> {
+    require_admin(env, caller)?;
+    storage::extend_instance_ttl(env);
+    Ok(())
 }
 
 // TODO: Implement set_fee, set_fee_collector, set_admin in issues #20, #21, #22
