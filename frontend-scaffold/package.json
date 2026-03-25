@@ -9,7 +9,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "vite",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write src/",
+    "format:check": "prettier --check src/"
   },
   "repository": {
     "type": "git",
