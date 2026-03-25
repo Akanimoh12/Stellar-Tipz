@@ -19,12 +19,18 @@ use crate::TipzContract;
 use crate::TipzContractClient;
 
 /// Helper: create an env + client for the Tipz contract.
-fn setup_env() -> (Env, TipzContractClient<'static>) {
+fn setup_env() -> (Env, TipzContractClient<'static>, Address) {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register_contract(None, TipzContract);
     let client = TipzContractClient::new(&env, &contract_id);
-    (env, client)
+
+    let token_admin = Address::generate(&env);
+    let token_address = env
+        .register_stellar_asset_contract_v2(token_admin)
+        .address();
+
+    (env, client, token_address)
 }
 
 fn native_token_address(env: &Env) -> Address {
@@ -64,7 +70,7 @@ fn insert_profile_with_username(
 
 #[test]
 fn test_initialize_sets_state_correctly() {
-    let (env, client) = setup_env();
+    let (env, client, token_address) = setup_env();
     let admin = Address::generate(&env);
     let fee_collector = Address::generate(&env);
     let token_address = native_token_address(&env);
@@ -99,7 +105,7 @@ fn test_initialize_sets_state_correctly() {
 
 #[test]
 fn test_initialize_counters_are_zero() {
-    let (env, client) = setup_env();
+    let (env, client, token_address) = setup_env();
     let admin = Address::generate(&env);
     let fee_collector = Address::generate(&env);
     let token_address = native_token_address(&env);
@@ -138,7 +144,7 @@ fn test_initialize_counters_are_zero() {
 
 #[test]
 fn test_initialize_twice_returns_already_initialized() {
-    let (env, client) = setup_env();
+    let (env, client, token_address) = setup_env();
     let admin = Address::generate(&env);
     let fee_collector = Address::generate(&env);
     let token_address = native_token_address(&env);
@@ -151,7 +157,7 @@ fn test_initialize_twice_returns_already_initialized() {
 
 #[test]
 fn test_initialize_fee_too_high_returns_invalid_fee() {
-    let (env, client) = setup_env();
+    let (env, client, token_address) = setup_env();
     let admin = Address::generate(&env);
     let fee_collector = Address::generate(&env);
     let token_address = native_token_address(&env);
@@ -162,7 +168,7 @@ fn test_initialize_fee_too_high_returns_invalid_fee() {
 
 #[test]
 fn test_initialize_max_fee_succeeds() {
-    let (env, client) = setup_env();
+    let (env, client, token_address) = setup_env();
     let admin = Address::generate(&env);
     let fee_collector = Address::generate(&env);
     let token_address = native_token_address(&env);
@@ -178,7 +184,7 @@ fn test_initialize_max_fee_succeeds() {
 
 #[test]
 fn test_initialize_zero_fee_succeeds() {
-    let (env, client) = setup_env();
+    let (env, client, token_address) = setup_env();
     let admin = Address::generate(&env);
     let fee_collector = Address::generate(&env);
     let token_address = native_token_address(&env);
@@ -193,7 +199,7 @@ fn test_initialize_zero_fee_succeeds() {
 
 #[test]
 fn test_update_x_metrics_requires_admin() {
-    let (env, client) = setup_env();
+    let (env, client, _token_address) = setup_env();
     let admin = Address::generate(&env);
     let fee_collector = Address::generate(&env);
     let token_address = native_token_address(&env);
@@ -209,7 +215,7 @@ fn test_update_x_metrics_requires_admin() {
 
 #[test]
 fn test_update_x_metrics_updates_profile_and_score() {
-    let (env, client) = setup_env();
+    let (env, client, _token_address) = setup_env();
     let admin = Address::generate(&env);
     let fee_collector = Address::generate(&env);
     let token_address = native_token_address(&env);
@@ -235,7 +241,7 @@ fn test_update_x_metrics_updates_profile_and_score() {
 
 #[test]
 fn test_update_x_metrics_requires_registered_creator() {
-    let (env, client) = setup_env();
+    let (env, client, _token_address) = setup_env();
     let admin = Address::generate(&env);
     let fee_collector = Address::generate(&env);
     let token_address = native_token_address(&env);
@@ -249,7 +255,7 @@ fn test_update_x_metrics_requires_registered_creator() {
 
 #[test]
 fn test_batch_update_x_metrics_requires_admin() {
-    let (env, client) = setup_env();
+    let (env, client, _token_address) = setup_env();
     let admin = Address::generate(&env);
     let fee_collector = Address::generate(&env);
     let token_address = native_token_address(&env);
@@ -266,7 +272,7 @@ fn test_batch_update_x_metrics_requires_admin() {
 
 #[test]
 fn test_batch_update_x_metrics_batch_too_large() {
-    let (env, client) = setup_env();
+    let (env, client, _token_address) = setup_env();
     let admin = Address::generate(&env);
     let fee_collector = Address::generate(&env);
     let token_address = native_token_address(&env);
@@ -285,7 +291,7 @@ fn test_batch_update_x_metrics_batch_too_large() {
 
 #[test]
 fn test_batch_update_x_metrics_updates_multiple_and_counts() {
-    let (env, client) = setup_env();
+    let (env, client, _token_address) = setup_env();
     let admin = Address::generate(&env);
     let fee_collector = Address::generate(&env);
     let token_address = native_token_address(&env);
@@ -328,7 +334,7 @@ fn test_batch_update_x_metrics_updates_multiple_and_counts() {
 
 #[test]
 fn test_batch_update_x_metrics_skips_unregistered_returns_count() {
-    let (env, client) = setup_env();
+    let (env, client, _token_address) = setup_env();
     let admin = Address::generate(&env);
     let fee_collector = Address::generate(&env);
     let token_address = native_token_address(&env);

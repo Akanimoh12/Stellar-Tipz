@@ -9,8 +9,10 @@ use soroban_sdk::String;
 use crate::errors::ContractError;
 
 /// Minimum allowed username length (inclusive).
+#[allow(dead_code)]
 const USERNAME_MIN_LEN: u32 = 3;
 /// Maximum allowed username length (inclusive).
+#[allow(dead_code)]
 const USERNAME_MAX_LEN: u32 = 32;
 
 /// Validate that a username satisfies the Tipz naming rules.
@@ -25,6 +27,7 @@ const USERNAME_MAX_LEN: u32 = 32;
 ///
 /// # Errors
 /// Returns [`ContractError::InvalidUsername`] if any rule is violated.
+#[allow(dead_code)]
 pub fn validate_username(username: &String) -> Result<(), ContractError> {
     let len = username.len();
 
