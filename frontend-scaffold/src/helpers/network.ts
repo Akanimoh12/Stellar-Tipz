@@ -1,4 +1,5 @@
 import { StellarWalletsKit } from "@creit.tech/stellar-wallets-kit";
+import { env } from "./env";
 
 export interface NetworkDetails {
   network: string;
@@ -7,9 +8,9 @@ export interface NetworkDetails {
 }
 
 export const TESTNET_DETAILS = {
-  network: "TESTNET",
-  networkUrl: "https://horizon-testnet.stellar.org",
-  networkPassphrase: "Test SDF Network ; September 2015",
+  network: env.network,
+  networkUrl: env.horizonUrl,
+  networkPassphrase: env.networkPassphrase,
 };
 
 export const signTx = async (
