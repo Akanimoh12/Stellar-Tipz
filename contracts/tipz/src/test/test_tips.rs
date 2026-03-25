@@ -1,13 +1,15 @@
 //! Tests for tip record storage with temporary TTL (issue #10).
 //!
 //! Test cases covered:
-//! - Successful tip (balance updates, tip record created)
+//! - Successful tip (balance updates, XLM transfer, tip record created)
 //! - Tip to unregistered creator → NotRegistered
 //! - Tip amount = 0 → InvalidAmount
 //! - Tip to self → CannotTipSelf
 //! - Message length validation
 //! - Multiple tips accumulate correctly
 //! - Global stats update after tip
+//! - Credit score recalculated after tip
+//! - Leaderboard data updated after tip
 //! - SAC custody / insufficient XLM / contract can release XLM (issue #13)
 
 #![cfg(test)]
@@ -83,12 +85,19 @@ fn setup_env() -> (
 
 #[test]
 fn test_send_tip_success() {
-    let (env, client, contract_id, tipper, creator, _sac) = setup_env();
+    let (env, client, contract_id, tipper, creator, sac) = setup_env();
+
+    let token_client = token::TokenClient::new(&env, &sac);
+    let tipper_before = token_client.balance(&tipper);
 
     let message = String::from_str(&env, "Great work!");
     let amount: i128 = 10_000_000; // 1 XLM
 
     client.send_tip(&tipper, &creator, &amount, &message);
+
+    // Verify XLM was transferred from tipper to the contract
+    assert_eq!(token_client.balance(&tipper), tipper_before - amount);
+    assert_eq!(token_client.balance(&contract_id), amount);
 
     // Verify creator's profile was updated
     env.as_contract(&contract_id, || {
@@ -125,18 +134,36 @@ fn test_send_tip_success() {
 }
 
 #[test]
-fn test_send_tip_not_registered() {
-    let (env, client, _contract_id, tipper, _creator, _sac) = setup_env();
+fn test_send_tip_updates_credit_score() {
+    let (env, client, contract_id, tipper, creator, _sac) = setup_env();
 
-    let unregistered = Address::generate(&env);
-    let message = String::from_str(&env, "Hello");
+    // Tip 50 XLM (500_000_000 stroops):
+    //   tip_sub  = 500_000_000 / 10_000_000 = 50
+    //   tip_pts  = 50 * 20 / 100            = 10
+    //   score    = BASE_SCORE(40) + 10       = 50
+    let amount: i128 = 500_000_000;
+    let message = String::from_str(&env, "great content");
 
-    let result = client.try_send_tip(&tipper, &unregistered, &10_000_000, &message);
-    assert_eq!(result, Err(Ok(ContractError::NotRegistered)));
+    client.send_tip(&tipper, &creator, &amount, &message);
+
+    // calculate_credit_score recalculates and persists the score
+    let score = client.calculate_credit_score(&creator);
+    assert_eq!(score, 50);
+
+    // Verify the persisted profile reflects the updated credit score
+    env.as_contract(&contract_id, || {
+        let profile: Profile = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Profile(creator.clone()))
+            .unwrap();
+        assert_eq!(profile.credit_score, 50);
+        assert_eq!(profile.total_tips_received, amount);
+    });
 }
 
 #[test]
-fn test_send_tip_cannot_tip_self() {
+fn test_send_tip_self() {
     let (env, client, contract_id, _tipper, _creator, _sac) = setup_env();
 
     // Register a self-tipper as a creator
@@ -170,7 +197,18 @@ fn test_send_tip_cannot_tip_self() {
 }
 
 #[test]
-fn test_send_tip_invalid_amount_zero() {
+fn test_send_tip_unregistered_creator() {
+    let (env, client, _contract_id, tipper, _creator, _sac) = setup_env();
+
+    let unregistered = Address::generate(&env);
+    let message = String::from_str(&env, "Hello");
+
+    let result = client.try_send_tip(&tipper, &unregistered, &10_000_000, &message);
+    assert_eq!(result, Err(Ok(ContractError::NotRegistered)));
+}
+
+#[test]
+fn test_send_tip_zero_amount() {
     let (env, client, _contract_id, tipper, creator, _sac) = setup_env();
 
     let message = String::from_str(&env, "Zero tip");
@@ -191,7 +229,7 @@ fn test_send_tip_invalid_amount_negative() {
 fn test_send_tip_message_too_long() {
     let (env, client, _contract_id, tipper, creator, _sac) = setup_env();
 
-    // Create a message longer than 280 characters
+    // 281 characters — one over the 280-character limit
     let long_msg = String::from_str(
         &env,
         "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
@@ -201,7 +239,17 @@ fn test_send_tip_message_too_long() {
 }
 
 #[test]
-fn test_send_tip_multiple_tips_accumulate() {
+fn test_send_tip_insufficient_xlm() {
+    let (env, client, _contract_id, _tipper, creator, _sac) = setup_env();
+
+    let broke = Address::generate(&env);
+    let message = String::from_str(&env, "no funds");
+    let result = client.try_send_tip(&broke, &creator, &10_000_000, &message);
+    assert_eq!(result, Err(Ok(ContractError::InsufficientBalance)));
+}
+
+#[test]
+fn test_send_tip_multiple() {
     let (env, client, contract_id, tipper, creator, _sac) = setup_env();
 
     let message = String::from_str(&env, "Tip!");
@@ -224,7 +272,7 @@ fn test_send_tip_multiple_tips_accumulate() {
         assert_eq!(profile.total_tips_count, 3);
     });
 
-    // Verify global stats
+    // Verify global counters
     env.as_contract(&contract_id, || {
         let tip_count: u32 = env.storage().instance().get(&DataKey::TipCount).unwrap();
         assert_eq!(tip_count, 3);
@@ -236,12 +284,73 @@ fn test_send_tip_multiple_tips_accumulate() {
         assert_eq!(total_volume, amount * 3);
     });
 
-    // Verify each tip record exists
+    // Verify each individual tip record exists
     env.as_contract(&contract_id, || {
         for i in 0..3u32 {
             let tip: Tip = env.storage().temporary().get(&DataKey::Tip(i)).unwrap();
             assert_eq!(tip.amount, amount);
         }
+    });
+}
+
+#[test]
+fn test_send_tip_updates_leaderboard() {
+    let (env, client, contract_id, tipper, creator, _sac) = setup_env();
+
+    // Register a second creator
+    let creator2 = Address::generate(&env);
+    let now = env.ledger().timestamp();
+    let profile2 = Profile {
+        owner: creator2.clone(),
+        username: String::from_str(&env, "bob"),
+        display_name: String::from_str(&env, "Bob"),
+        bio: String::from_str(&env, ""),
+        image_url: String::from_str(&env, ""),
+        x_handle: String::from_str(&env, ""),
+        x_followers: 0,
+        x_engagement_avg: 0,
+        credit_score: 0,
+        total_tips_received: 0,
+        total_tips_count: 0,
+        balance: 0,
+        registered_at: now,
+        updated_at: now,
+    };
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Profile(creator2.clone()), &profile2);
+    });
+
+    let message = String::from_str(&env, "tip");
+
+    // creator1 receives 20 XLM, creator2 receives 10 XLM
+    client.send_tip(&tipper, &creator, &200_000_000, &message);
+    client.send_tip(&tipper, &creator2, &100_000_000, &message);
+
+    // Verify leaderboard data — total_tips_received correctly reflects
+    // each creator's rank. The full leaderboard sort/query is in issue #17.
+    env.as_contract(&contract_id, || {
+        let p1: Profile = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Profile(creator.clone()))
+            .unwrap();
+        let p2: Profile = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Profile(creator2.clone()))
+            .unwrap();
+        assert_eq!(p1.total_tips_received, 200_000_000);
+        assert_eq!(p2.total_tips_received, 100_000_000);
+        // creator1 has received more, so would rank higher on the leaderboard
+        assert!(p1.total_tips_received > p2.total_tips_received);
+    });
+
+    // Global tip count reflects all tips sent
+    env.as_contract(&contract_id, || {
+        let tip_count: u32 = env.storage().instance().get(&DataKey::TipCount).unwrap();
+        assert_eq!(tip_count, 2);
     });
 }
 
@@ -262,16 +371,6 @@ fn test_send_tip_empty_message_allowed() {
             .unwrap();
         assert_eq!(profile.balance, amount);
     });
-}
-
-#[test]
-fn test_send_tip_insufficient_xlm_balance() {
-    let (env, client, _contract_id, _tipper, creator, _sac) = setup_env();
-
-    let broke = Address::generate(&env);
-    let message = String::from_str(&env, "no funds");
-    let result = client.try_send_tip(&broke, &creator, &10_000_000, &message);
-    assert_eq!(result, Err(Ok(ContractError::InsufficientBalance)));
 }
 
 #[test]
