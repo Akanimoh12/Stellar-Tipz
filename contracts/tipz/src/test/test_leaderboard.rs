@@ -97,13 +97,18 @@ fn insert_profile(env: &Env, contract_id: &Address, address: &Address, username:
 /// Before any tips are sent the leaderboard must be empty.
 #[test]
 fn test_leaderboard_initial_empty() {
-    let (_, client, _, _, _) = setup();
+    let (env, client, contract_id, _, _) = setup();
     let board = client.get_leaderboard(&50);
     assert_eq!(
         board.len(),
         0,
         "leaderboard should be empty before any tips"
     );
+
+    let stranger = Address::generate(&env);
+    env.as_contract(&contract_id, || {
+        assert!(!crate::leaderboard::is_on_leaderboard(&env, &stranger));
+    });
 }
 
 /// A single creator who has received a tip must appear on the leaderboard with
@@ -126,6 +131,9 @@ fn test_leaderboard_single_creator() {
         board.get(0).unwrap().username,
         String::from_str(&env, "alice")
     );
+    env.as_contract(&contract_id, || {
+        assert!(crate::leaderboard::is_on_leaderboard(&env, &creator));
+    });
 }
 
 /// With three creators the leaderboard must be ordered descending by
@@ -238,6 +246,14 @@ fn test_leaderboard_max_size() {
         !found,
         "lowest-tipped creator must be pruned from the top-50"
     );
+
+    env.as_contract(&contract_id, || {
+        assert!(!crate::leaderboard::is_on_leaderboard(&env, &lowest));
+        assert!(crate::leaderboard::is_on_leaderboard(
+            &env,
+            &addresses.get(0).unwrap()
+        ));
+    });
 }
 
 /// A creator who overtakes another must appear at a higher rank after the
