@@ -82,15 +82,14 @@ impl TipzContract {
 
     /// Update an existing profile (owner only).
     pub fn update_profile(
-        _env: Env,
-        _caller: Address,
-        _display_name: Option<String>,
-        _bio: Option<String>,
-        _image_url: Option<String>,
-        _x_handle: Option<String>,
+        env: Env,
+        caller: Address,
+        display_name: Option<String>,
+        bio: Option<String>,
+        image_url: Option<String>,
+        x_handle: Option<String>,
     ) -> Result<(), ContractError> {
-        // TODO: Implement in issue #3 - Profile Update
-        Err(ContractError::NotInitialized)
+        profile::update_profile(&env, caller, display_name, bio, image_url, x_handle)
     }
 
     /// Update X (Twitter) metrics for a creator (admin only).

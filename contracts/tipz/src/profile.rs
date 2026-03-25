@@ -108,3 +108,67 @@ pub fn register_profile(
 
     Ok(profile)
 }
+
+/// Update an existing creator profile.
+///
+/// # Errors
+/// - `NotInitialized` if contract is not initialized
+/// - `NotRegistered` if caller has no profile
+/// - `InvalidDisplayName` if display_name is empty or > 64 when provided
+/// - `MessageTooLong` if bio is > 280 when provided
+/// - `InvalidImageUrl` if image_url is > 256 when provided
+pub fn update_profile(
+    env: &Env,
+    caller: Address,
+    display_name: Option<String>,
+    bio: Option<String>,
+    image_url: Option<String>,
+    x_handle: Option<String>,
+) -> Result<(), ContractError> {
+    caller.require_auth();
+
+    if !storage::is_initialized(env) {
+        return Err(ContractError::NotInitialized);
+    }
+
+    if !storage::has_profile(env, &caller) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    let mut profile = storage::get_profile(env, &caller);
+
+    if let Some(dn) = display_name {
+        let dn_len = dn.len();
+        if dn_len == 0 || dn_len > 64 {
+            return Err(ContractError::InvalidDisplayName);
+        }
+        profile.display_name = dn;
+    }
+
+    if let Some(b) = bio {
+        if b.len() > 280 {
+            return Err(ContractError::MessageTooLong);
+        }
+        profile.bio = b;
+    }
+
+    if let Some(img) = image_url {
+        if img.len() > 256 {
+            return Err(ContractError::InvalidImageUrl);
+        }
+        profile.image_url = img;
+    }
+
+    if let Some(xh) = x_handle {
+        if xh.len() > 32 {
+            return Err(ContractError::InvalidUsername);
+        }
+        profile.x_handle = xh;
+    }
+
+    profile.updated_at = env.ledger().timestamp();
+    storage::set_profile(env, &profile);
+    events::emit_profile_updated(env, &caller);
+
+    Ok(())
+}

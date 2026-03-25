@@ -2,7 +2,7 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env, String};
 
 use crate::errors::ContractError;
 use crate::{TipzContract, TipzContractClient};
@@ -311,4 +311,159 @@ fn test_register_increments_total_creators() {
         &String::from_str(&env, ""),
     );
     assert_eq!(dup, Err(Ok(ContractError::AlreadyRegistered)));
+}
+
+#[test]
+fn test_update_display_name() {
+    let (env, client) = setup();
+    let caller = Address::generate(&env);
+    let initial = register(&env, &client, &caller, "alice");
+
+    let before = initial.updated_at;
+    env.ledger().set_timestamp(before + 10);
+
+    client.update_profile(
+        &caller,
+        &Some(String::from_str(&env, "Alice Updated")),
+        &None,
+        &None,
+        &None,
+    );
+
+    let updated = client.get_profile(&caller);
+    assert_eq!(updated.display_name, String::from_str(&env, "Alice Updated"));
+    assert!(updated.updated_at > before);
+}
+
+#[test]
+fn test_update_bio() {
+    let (env, client) = setup();
+    let caller = Address::generate(&env);
+    register(&env, &client, &caller, "alice");
+
+    client.update_profile(
+        &caller,
+        &None,
+        &Some(String::from_str(&env, "New bio text.")),
+        &None,
+        &None,
+    );
+
+    let updated = client.get_profile(&caller);
+    assert_eq!(updated.bio, String::from_str(&env, "New bio text."));
+}
+
+#[test]
+fn test_update_partial() {
+    let (env, client) = setup();
+    let caller = Address::generate(&env);
+    client.register_profile(
+        &caller,
+        &String::from_str(&env, "alice"),
+        &String::from_str(&env, "Alice"),
+        &String::from_str(&env, "Original bio"),
+        &String::from_str(&env, "https://example.com/avatar.png"),
+        &String::from_str(&env, "alice_x"),
+    );
+
+    client.update_profile(
+        &caller,
+        &None,
+        &Some(String::from_str(&env, "updated bio only")),
+        &None,
+        &None,
+    );
+
+    let updated = client.get_profile(&caller);
+    assert_eq!(updated.display_name, String::from_str(&env, "Alice"));
+    assert_eq!(updated.bio, String::from_str(&env, "updated bio only"));
+}
+
+#[test]
+fn test_update_not_registered() {
+    let (env, client) = setup();
+    let unregistered = Address::generate(&env);
+
+    let result = client.try_update_profile(
+        &unregistered,
+        &Some(String::from_str(&env, "Alice")),
+        &None,
+        &None,
+        &None,
+    );
+
+    assert_eq!(result, Err(Ok(ContractError::NotRegistered)));
+}
+
+#[test]
+fn test_update_display_name_too_long() {
+    let (env, client) = setup();
+    let caller = Address::generate(&env);
+    register(&env, &client, &caller, "alice");
+
+    // 65 'a' characters to exceed the 64-char limit
+    let overlong = String::from_str(
+        &env,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\
+         aaaaaaaaaaaaaaa",
+    );
+
+    let result = client.try_update_profile(
+        &caller,
+        &Some(overlong),
+        &None,
+        &None,
+        &None,
+    );
+
+    assert_eq!(result, Err(Ok(ContractError::InvalidDisplayName)));
+}
+
+#[test]
+fn test_update_bio_too_long() {
+    let (env, client) = setup();
+    let caller = Address::generate(&env);
+    register(&env, &client, &caller, "alice");
+
+    let long_bio = String::from_str(
+        &env,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\
+         aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\
+         aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\
+         aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\
+         aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\
+         aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\
+         a", // 281 chars
+    );
+
+    let result = client.try_update_profile(
+        &caller,
+        &None,
+        &Some(long_bio),
+        &None,
+        &None,
+    );
+
+    assert_eq!(result, Err(Ok(ContractError::MessageTooLong)));
+}
+
+#[test]
+fn test_update_requires_auth() {
+    let (env, client) = setup();
+    let alice = Address::generate(&env);
+    register(&env, &client, &alice, "alice");
+
+    let bob = Address::generate(&env);
+
+    let result = client.try_update_profile(
+        &bob,
+        &Some(String::from_str(&env, "Bob Updated")),
+        &None,
+        &None,
+        &None,
+    );
+
+    assert_eq!(result, Err(Ok(ContractError::NotRegistered)));
+    let alice_profile = client.get_profile(&alice);
+    assert_eq!(alice_profile.display_name, String::from_str(&env, "Display Name"));
 }
