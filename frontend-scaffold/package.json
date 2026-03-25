@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Stellar Tipz - Decentralized tipping platform frontend",
+  "description": "Stellar Tipz- Decentralized tipping platform frontend",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
