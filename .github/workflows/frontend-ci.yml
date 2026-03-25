@@ -10,6 +10,9 @@ on:
     paths:
       - 'frontend-scaffold/**'
 
+permissions:
+  contents: read
+
 jobs:
   frontend-checks:
     name: Lint & Build Frontend

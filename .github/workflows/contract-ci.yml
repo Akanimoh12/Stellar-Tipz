@@ -10,6 +10,9 @@ on:
     paths:
       - 'contracts/**'
 
+permissions:
+  contents: read
+
 jobs:
   contract-checks:
     name: Build & Test Soroban Contract

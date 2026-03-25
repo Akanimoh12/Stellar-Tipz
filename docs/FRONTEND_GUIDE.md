@@ -10,10 +10,10 @@
 |-------|------------|
 | **Framework** | React 18 |
 | **Language** | TypeScript (strict) |
-| **Build** | Webpack 5 (Scaffold Stellar) |
+| **Build** | Vite 6 |
 | **Styling** | TailwindCSS 3 + brutalist design system |
-| **State** | Zustand (global) + React Query (server state) |
-| **Routing** | React Router v6 |
+| **State** | Zustand (global) |
+| **Routing** | React Router v7 |
 | **Animations** | Framer Motion |
 | **Icons** | Lucide React |
 | **Wallet** | Stellar Wallets Kit + Freighter |

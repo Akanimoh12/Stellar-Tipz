@@ -194,7 +194,7 @@ cd contracts
 cargo test
 ```
 
-### Webpack build fails with memory error
+### Vite build fails with memory error
 
 ```bash
 # Increase Node.js memory limit
