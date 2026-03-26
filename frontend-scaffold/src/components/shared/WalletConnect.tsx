@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import Button from '../ui/Button';
 import Toast from '../ui/Toast';
 import CreditBadge from './CreditBadge';
@@ -12,13 +12,6 @@ interface WalletConnectProps {
 const WalletConnect: React.FC<WalletConnectProps> = ({ className }) => {
   const { publicKey, connected, connecting, error, connect, disconnect } = useWallet();
   const { profile } = useProfile();
-  const [showError, setShowError] = useState(false);
-
-  useEffect(() => {
-    if (error) {
-      setShowError(true);
-    }
-  }, [error]);
 
   if (connected && publicKey) {
     return (
@@ -47,11 +40,11 @@ const WalletConnect: React.FC<WalletConnectProps> = ({ className }) => {
         {connecting ? 'Connecting...' : 'Connect Wallet'}
       </Button>
 
-      {showError && error && (
+      {error && (
         <Toast
           message={error}
           type="error"
-          onClose={() => setShowError(false)}
+          onClose={() => {}}
         />
       )}
     </>

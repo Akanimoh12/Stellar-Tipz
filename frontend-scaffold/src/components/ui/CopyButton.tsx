@@ -12,7 +12,7 @@ const CopyButton: React.FC<CopyButtonProps> = ({ text, label, className = '' }) 
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    let timeout: NodeJS.Timeout;
+    let timeout: ReturnType<typeof setTimeout>;
     if (copied) {
       timeout = setTimeout(() => {
         setCopied(false);

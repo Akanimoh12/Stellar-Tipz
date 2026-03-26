@@ -9,7 +9,7 @@ interface TooltipProps {
 const Tooltip: React.FC<TooltipProps> = ({ content, children, position = 'top' }) => {
   const [isVisible, setIsVisible] = useState(false);
   const triggerRef = useRef<HTMLDivElement>(null);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = () => {
     timeoutRef.current = setTimeout(() => {

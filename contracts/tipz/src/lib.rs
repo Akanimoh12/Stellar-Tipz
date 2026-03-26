@@ -25,6 +25,7 @@ mod tips;
 mod token;
 mod types;
 mod validation;
+mod withdraw;
 
 #[cfg(test)]
 mod test;

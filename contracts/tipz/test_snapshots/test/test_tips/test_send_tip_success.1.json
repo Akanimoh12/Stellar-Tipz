@@ -190,6 +190,85 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "Leaderboard"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "Leaderboard"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "map": [
+                        {
+                          "key": {
+                            "symbol": "address"
+                          },
+                          "val": {
+                            "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                          }
+                        },
+                        {
+                          "key": {
+                            "symbol": "credit_score"
+                          },
+                          "val": {
+                            "u32": 40
+                          }
+                        },
+                        {
+                          "key": {
+                            "symbol": "total_tips_received"
+                          },
+                          "val": {
+                            "i128": {
+                              "hi": 0,
+                              "lo": 10000000
+                            }
+                          }
+                        },
+                        {
+                          "key": {
+                            "symbol": "username"
+                          },
+                          "val": {
+                            "string": "alice"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
                   "symbol": "Profile"
                 },
                 {
@@ -244,7 +323,7 @@
                         "symbol": "credit_score"
                       },
                       "val": {
-                        "u32": 0
+                        "u32": 40
                       }
                     },
                     {
