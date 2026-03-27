@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ArrowRight, HeartHandshake, MessageSquare, Wallet } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
@@ -12,6 +12,7 @@ import Card from "../../components/ui/Card";
 import Textarea from "../../components/ui/Textarea";
 import { useWallet } from "../../hooks";
 import { mockProfile, mockTips } from "../mockData";
+import TipPageSkeleton from "./TipPageSkeleton";
 import TipAmountInput from "./TipAmountInput";
 import TipResult from "./TipResult";
 import { useTipFlow } from "./useTipFlow";
@@ -21,6 +22,15 @@ const TipPage: React.FC = () => {
   const { connected, connect } = useWallet();
   const [amount, setAmount] = useState("5");
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Simulate initial loading to demonstrate the skeleton
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
 
   const creator = {
     ...mockProfile,
@@ -32,6 +42,10 @@ const TipPage: React.FC = () => {
     event.preventDefault();
     goToConfirm(amount, message);
   };
+
+  if (loading) {
+    return <TipPageSkeleton />;
+  }
 
   return (
     <PageContainer maxWidth="xl" className="space-y-8 py-10">
