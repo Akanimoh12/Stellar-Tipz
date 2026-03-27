@@ -10,6 +10,12 @@
 //!
 //! ## Complexity
 //! Updates are O(n) for n ≤ 50 using insertion sort.
+//!
+//! ## Tie-breaking
+//! When two creators have equal `total_tips_received`, the one who reached
+//! that amount first keeps the higher rank. This is achieved by using a
+//! **stable** insertion sort that only moves an entry forward when its total
+//! is *strictly greater* than the entry ahead of it.
 
 use soroban_sdk::{Address, Env, Vec};
 
@@ -32,28 +38,26 @@ fn save_entries(env: &Env, entries: &Vec<LeaderboardEntry>) {
     env.storage().instance().set(&DataKey::Leaderboard, entries);
 }
 
-/// Insertion sort: sorts `list` in descending order by `total_tips_received`.
-/// For equal totals, sorts by ascending `address` (lexicographical) to ensure
-/// deterministic ordering.
-#[allow(dead_code)]
+/// Stable insertion sort: sorts `list` in descending order by
+/// `total_tips_received`.
+///
+/// Entries with equal totals are **not** reordered — the one that was inserted
+/// earlier (i.e. reached that total first) retains its higher position.  This
+/// implements the documented tie-breaking rule: equal totals → first-to-arrive
+/// wins.
 fn sort_leaderboard(list: &mut Vec<LeaderboardEntry>) {
     let mut i: u32 = 1;
     while i < list.len() {
         let key = list.get(i).unwrap().clone();
         let mut j = i - 1;
-        // Move elements greater than or equal to key forward.
-        // For equal totals, compare addresses to maintain deterministic order.
+        // Only move `key` forward when the entry ahead has a *strictly lower*
+        // total.  Equal totals are left in place (stable / first-in wins).
         while j < i {
             let current = list.get(j).unwrap();
-            let should_swap = if current.total_tips_received == key.total_tips_received {
-                current.address.clone() > key.address.clone()
-            } else {
-                current.total_tips_received < key.total_tips_received
-            };
-            if !should_swap {
+            if current.total_tips_received >= key.total_tips_received {
                 break;
             }
-            // Swap j and j+1
+            // Shift current down one position.
             let next = list.get(j + 1).unwrap().clone();
             list.set(j, next);
             list.set(j + 1, current.clone());
@@ -203,6 +207,29 @@ pub fn get_leaderboard_rank(env: &Env, address: &Address) -> Option<u32> {
     None
 }
 
+/// Remove `address` from the leaderboard (used during profile deregistration).
+///
+/// If the address is not present this is a no-op.  Entries above the removed
+/// slot shift down by one position, preserving relative order.
+pub fn remove_from_leaderboard(env: &Env, address: &Address) {
+    let entries = load_entries(env);
+    let mut new_entries: Vec<LeaderboardEntry> = Vec::new(env);
+    let mut i: u32 = 0;
+    while i < entries.len() {
+        let entry = entries.get(i).unwrap();
+        if entry.address != *address {
+            new_entries.push_back(entry);
+        }
+        i += 1;
+    }
+    save_entries(env, &new_entries);
+}
+
+/// Return the current number of entries on the leaderboard.
+pub fn get_leaderboard_size(env: &Env) -> u32 {
+    load_entries(env).len()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -312,7 +339,7 @@ mod tests {
         let mut list = Vec::new(&env);
         let addr_a = Address::generate(&env);
         let addr_b = Address::generate(&env);
-        // addr_b should sort before addr_a if addr_b < addr_a lexicographically
+        // Both have the same total; addr_a is inserted first.
         list.push_back(LeaderboardEntry {
             address: addr_a.clone(),
             username: String::from_str(&env, "a"),
@@ -326,13 +353,13 @@ mod tests {
             credit_score: 50,
         });
         sort_leaderboard(&mut list);
-        // After sorting, the address with smaller value should come first
-        let first_addr = list.get(0).unwrap().address.clone();
-        let second_addr = list.get(1).unwrap().address.clone();
-        assert!(
-            first_addr <= second_addr,
-            "tie-breaking should order by address"
+        // addr_a was inserted first and must keep the higher position.
+        assert_eq!(
+            list.get(0).unwrap().address,
+            addr_a,
+            "first-to-arrive should keep higher rank on tie"
         );
+        assert_eq!(list.get(1).unwrap().address, addr_b);
     }
 
     #[test]
@@ -584,6 +611,66 @@ mod tests {
             assert_eq!(get_leaderboard_rank(&env, &addr2), Some(2));
             let other = Address::generate(&env);
             assert_eq!(get_leaderboard_rank(&env, &other), None);
+        });
+    }
+
+    /// Two creators with the same tip total must maintain their insertion order
+    /// (first-to-arrive keeps the higher rank) after `update_leaderboard`.
+    #[test]
+    fn test_leaderboard_tiebreaking() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TipzContract);
+        env.as_contract(&contract_id, || {
+            let addr_first = Address::generate(&env);
+            let addr_second = Address::generate(&env);
+
+            // addr_first reaches 100 first.
+            let profile_first = make_profile(&env, addr_first.clone(), "first", 100);
+            update_leaderboard(&env, &profile_first);
+
+            // addr_second reaches the same total afterwards.
+            let profile_second = make_profile(&env, addr_second.clone(), "second", 100);
+            update_leaderboard(&env, &profile_second);
+
+            let entries = load_entries(&env);
+            assert_eq!(entries.len(), 2);
+            assert_eq!(
+                entries.get(0).unwrap().address,
+                addr_first,
+                "first-to-arrive must hold the higher rank on tie"
+            );
+            assert_eq!(entries.get(1).unwrap().address, addr_second);
+        });
+    }
+
+    /// Removing an entry shifts the remaining entries up and reduces the size.
+    #[test]
+    fn test_leaderboard_remove() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TipzContract);
+        env.as_contract(&contract_id, || {
+            let addr1 = Address::generate(&env);
+            let addr2 = Address::generate(&env);
+            let addr3 = Address::generate(&env);
+
+            update_leaderboard(&env, &make_profile(&env, addr1.clone(), "u1", 300));
+            update_leaderboard(&env, &make_profile(&env, addr2.clone(), "u2", 200));
+            update_leaderboard(&env, &make_profile(&env, addr3.clone(), "u3", 100));
+
+            assert_eq!(get_leaderboard_size(&env), 3);
+
+            // Remove the middle entry.
+            remove_from_leaderboard(&env, &addr2);
+
+            let entries = load_entries(&env);
+            assert_eq!(entries.len(), 2, "size must decrease by one");
+            assert_eq!(entries.get(0).unwrap().address, addr1, "rank 1 unchanged");
+            assert_eq!(
+                entries.get(1).unwrap().address,
+                addr3,
+                "addr3 shifts up to rank 2"
+            );
+            assert!(!is_on_leaderboard(&env, &addr2), "removed entry must be gone");
         });
     }
 }

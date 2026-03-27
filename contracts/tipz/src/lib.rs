@@ -217,6 +217,11 @@ impl TipzContract {
         leaderboard::get_leaderboard_rank(&env, &address)
     }
 
+    /// Return the current number of entries on the leaderboard (0–50).
+    pub fn get_leaderboard_size(env: Env) -> u32 {
+        leaderboard::get_leaderboard_size(&env)
+    }
+
     // ──────────────────────────────────────────────
     // Admin
     // ──────────────────────────────────────────────
