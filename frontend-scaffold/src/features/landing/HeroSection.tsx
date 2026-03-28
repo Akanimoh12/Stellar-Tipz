@@ -1,10 +1,17 @@
 import React from 'react';
 import { ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useWallet } from '@/hooks/useWallet';
 
 const HeroSection: React.FC = () => {
-  const navigate = useNavigate();
+  const { connect } = useWallet();
+
+  const handleLearnMore = () => {
+    const featuresSection = document.getElementById('features');
+    if (featuresSection) {
+      featuresSection.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
 
   return (
     <section id="hero" className="relative min-h-screen flex items-center justify-center px-4 py-20">
@@ -59,7 +66,7 @@ const HeroSection: React.FC = () => {
         >
           <button
             className="btn-brutalist text-lg group"
-            onClick={() => navigate('/register')}
+            onClick={() => connect()}
           >
             Get Started
             <ArrowRight
@@ -67,9 +74,12 @@ const HeroSection: React.FC = () => {
               size={20}
             />
           </button>
-          <a href="#how-it-works" className="btn-brutalist-outline text-lg">
+          <button 
+            className="btn-brutalist-outline text-lg"
+            onClick={handleLearnMore}
+          >
             Learn More
-          </a>
+          </button>
         </motion.div>
 
         <motion.div
