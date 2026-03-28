@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Crown, Medal, Trophy } from "lucide-react";
+import { Trophy } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import PageContainer from "../../components/layout/PageContainer";
@@ -10,6 +10,7 @@ import Card from "../../components/ui/Card";
 import Pagination from "../../components/ui/Pagination";
 import { mockLeaderboard } from "../mockData";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import Podium from "./Podium";
 
 const PAGE_SIZE = 5;
 
@@ -40,31 +41,7 @@ const LeaderboardPage: React.FC = () => {
           </p>
         </Card>
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          {mockLeaderboard.slice(0, 3).map((entry, index) => {
-            const icons = [<Crown key="crown" size={18} />, <Medal key="silver" size={18} />, <Medal key="bronze" size={18} />];
-            const labels = ["1st", "2nd", "3rd"];
-
-            return (
-              <Card key={entry.address} className="space-y-4" padding="lg">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="inline-flex items-center gap-2 text-sm font-black uppercase">
-                    {icons[index]}
-                    {labels[index]}
-                  </span>
-                  <CreditBadge score={entry.creditScore} showScore={false} />
-                </div>
-                <div className="flex items-center gap-3">
-                  <Avatar address={entry.address} alt={entry.username} fallback={entry.username} size="lg" />
-                  <div>
-                    <p className="text-lg font-black uppercase">{entry.username}</p>
-                    <AmountDisplay amount={entry.totalTipsReceived} className="text-sm" />
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+        <Podium creators={mockLeaderboard.slice(0, 3)} />
       </section>
 
       <section>

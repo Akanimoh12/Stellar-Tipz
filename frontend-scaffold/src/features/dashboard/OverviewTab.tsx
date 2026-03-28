@@ -1,20 +1,17 @@
 import React, { useState } from "react";
 import {
-  ArrowDownToLine,
-  Copy,
-  Pencil,
   TrendingUp,
   Coins,
 } from "lucide-react";
-import { Link } from "react-router-dom";
 
 import AmountDisplay from "../../components/shared/AmountDisplay";
 import CreditBadge from "../../components/shared/CreditBadge";
 import TipCard from "../../components/shared/TipCard";
-import Button from "../../components/ui/Button";
 import { StatCard } from "../../components/ui/StartCard";
 import EmptyState from "../../components/ui/EmptyState";
 import { mockProfile, mockTips } from "../mockData";
+import QuickActions from "./QuickActions";
+import WithdrawModal from "./WithdrawModal";
 
 // Build a simple 7-day bar chart dataset from mock tips
 function buildWeeklyChart(tips: typeof mockTips) {
@@ -52,20 +49,10 @@ function stroopsToDisplay(stroops: string): string {
 }
 
 const OverviewTab: React.FC = () => {
-  const [copied, setCopied] = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
   const weeklyData = buildWeeklyChart(mockTips);
   const maxBar = Math.max(...weeklyData.map((d) => d.total), 1);
-  const tipLink = `${window.location.origin}/tip/${mockProfile.username}`;
-
-  const handleCopyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(tipLink);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // fallback silently
-    }
-  };
+  const tipLink = `${window.location.origin}/@${mockProfile.username}`;
 
   return (
     <div className="space-y-8">
@@ -100,21 +87,11 @@ const OverviewTab: React.FC = () => {
       </section>
 
       {/* Quick actions */}
-      <section className="flex flex-wrap gap-3">
-        <Button icon={<ArrowDownToLine size={16} />}>Withdraw Tips</Button>
-        <Button
-          variant="outline"
-          icon={<Copy size={16} />}
-          onClick={() => void handleCopyLink()}
-        >
-          {copied ? "Copied!" : "Copy Tip Link"}
-        </Button>
-        <Link to="/profile/edit">
-          <Button variant="outline" icon={<Pencil size={16} />}>
-            Edit Profile
-          </Button>
-        </Link>
-      </section>
+      <QuickActions
+        balance={mockProfile.balance}
+        tipLink={tipLink}
+        onWithdraw={() => setWithdrawOpen(true)}
+      />
 
       {/* Mini 7-day bar chart */}
       <section className="border-2 border-black bg-white p-6">
@@ -167,6 +144,13 @@ const OverviewTab: React.FC = () => {
           </p>
         )}
       </section>
+
+      <WithdrawModal
+        isOpen={withdrawOpen}
+        balance={mockProfile.balance}
+        feeBps={150}
+        onClose={() => setWithdrawOpen(false)}
+      />
     </div>
   );
 };
