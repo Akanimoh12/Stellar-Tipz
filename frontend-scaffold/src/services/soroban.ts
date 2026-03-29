@@ -34,6 +34,7 @@ export const XLM_DECIMALS = 7;
 
 export const RPC_URLS: { [key: string]: string } = {
   TESTNET: "https://soroban-testnet.stellar.org/",
+  PUBLIC: "https://soroban-rpc.mainnet.stellar.gateway.fm/",
 };
 
 // Can be used whenever you need an Address argument for a contract method
@@ -44,11 +45,38 @@ export const accountToScVal = (account: string) =>
 export const numberToI128 = (value: number): xdr.ScVal =>
   nativeToScVal(value, { type: "i128" });
 
-// Get a server configfured for a specific network
-export const getServer = (networkDetails: NetworkDetails) =>
-  new SorobanRpc.Server(RPC_URLS[networkDetails.network], {
+// Get a server configured for a specific network
+export const getServer = (networkDetails: NetworkDetails) => {
+  // Check for environment variable override first
+  const envRpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL;
+  
+  let rpcUrl: string;
+  
+  if (envRpcUrl) {
+    rpcUrl = envRpcUrl;
+    console.log(`Using RPC URL from environment: ${rpcUrl}`);
+  } else {
+    rpcUrl = RPC_URLS[networkDetails.network];
+    
+    if (!rpcUrl) {
+      console.warn(
+        `No RPC URL configured for network: ${networkDetails.network}. ` +
+        `Available networks: ${Object.keys(RPC_URLS).join(", ")}. ` +
+        `Set VITE_SOROBAN_RPC_URL environment variable to override.`
+      );
+      throw new Error(
+        `RPC URL not found for network: ${networkDetails.network}. ` +
+        `Please configure VITE_SOROBAN_RPC_URL or use a supported network.`
+      );
+    }
+    
+    console.log(`Using default RPC URL for ${networkDetails.network}: ${rpcUrl}`);
+  }
+  
+  return new SorobanRpc.Server(rpcUrl, {
     allowHttp: networkDetails.networkUrl.startsWith("http://"),
   });
+};
 
 // Get a TransactionBuilder configured with our public key
 export const getTxBuilder = async (
