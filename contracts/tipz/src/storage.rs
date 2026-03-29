@@ -276,6 +276,13 @@ pub fn set_profile(env: &Env, profile: &Profile) {
         .set(&DataKey::Profile(profile.owner.clone()), profile);
 }
 
+/// Remove a profile from persistent storage.
+pub fn remove_profile(env: &Env, address: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Profile(address.clone()));
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Username reverse lookup
 // ──────────────────────────────────────────────────────────────────────────────
@@ -760,6 +767,38 @@ mod tests {
             env.storage().temporary().set(&key, &7_u32);
             set_tip_ttl(&env, &key);
             assert_eq!(env.storage().temporary().get_ttl(&key), TIP_TTL_LEDGERS);
+        });
+    }
+
+    #[test]
+    fn remove_profile_removes_entry() {
+        use soroban_sdk::testutils::Address as _;
+        let (env, id) = make_env();
+        let owner = Address::generate(&env);
+        let profile = Profile {
+            owner: owner.clone(),
+            username: String::from_str(&env, "testuser"),
+            display_name: String::from_str(&env, "Test User"),
+            bio: String::from_str(&env, ""),
+            image_url: String::from_str(&env, ""),
+            x_handle: String::from_str(&env, ""),
+            x_followers: 0,
+            x_engagement_avg: 0,
+            credit_score: 40,
+            total_tips_received: 0,
+            total_tips_count: 0,
+            balance: 0,
+            registered_at: 0,
+            updated_at: 0,
+        };
+        env.as_contract(&id, || {
+            // Set profile
+            set_profile(&env, &profile);
+            assert!(has_profile(&env, &owner));
+            
+            // Remove profile
+            remove_profile(&env, &owner);
+            assert!(!has_profile(&env, &owner));
         });
     }
 }

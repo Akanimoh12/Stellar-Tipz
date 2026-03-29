@@ -268,3 +268,17 @@ pub fn set_min_tip_amount(env: &Env, caller: &Address, amount: i128) -> Result<(
     events::emit_min_tip_amount_updated(env, old, amount);
     Ok(())
 }
+
+/// Upgrade the contract to a new WASM hash. Admin only.
+pub fn upgrade(
+    env: &Env,
+    caller: &Address,
+    new_wasm_hash: &soroban_sdk::BytesN<32>,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    require_admin(env, caller)?;
+    env.deployer().update_current_contract_wasm(new_wasm_hash.clone());
+    let new_version = storage::get_version(env) + 1;
+    storage::set_version(env, new_version);
+    Ok(())
+}
