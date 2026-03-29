@@ -1,9 +1,8 @@
 import React from 'react';
-import { useWallet } from "../../hooks/useWallet";
-import { WalletNetwork } from "@creit.tech/stellar-wallets-kit";
+import { useWalletStore } from '@/store/walletStore';
 
 const NetworkBadge: React.FC = () => {
-  const { connected, network } = useWallet();
+  const { connected, network } = useWalletStore();
 
   if (!connected) return null;
 

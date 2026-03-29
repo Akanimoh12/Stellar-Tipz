@@ -6,8 +6,10 @@ import PageContainer from "../../components/layout/PageContainer";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import Loader from "../../components/ui/Loader";
+import ErrorState from "../../components/shared/ErrorState";
 import { useProfile } from "../../hooks";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { categorizeError } from "@/helpers/error";
 
 import ProfileView from "./ProfileView";
 import ProfileStats from "./ProfileStats";
@@ -21,7 +23,7 @@ import WithdrawModal from "./WithdrawModal";
  * If registered, it shows their profile information, stats, activity, and actions.
  */
 const ProfilePage: React.FC = () => {
-  const { profile, loading, isRegistered } = useProfile();
+  const { profile, loading, error, isRegistered, refetch } = useProfile();
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
 
   usePageTitle(
@@ -35,7 +37,18 @@ const ProfilePage: React.FC = () => {
   if (loading) {
     return (
       <PageContainer maxWidth="xl" className="flex items-center justify-center py-20">
-        <Loader size="lg" />
+        <Loader size="lg" text="Loading profile..." />
+      </PageContainer>
+    );
+  }
+
+  if (error && !isRegistered) {
+    return (
+      <PageContainer maxWidth="xl" className="py-20">
+        <ErrorState 
+          category={categorizeError(error)} 
+          onRetry={refetch} 
+        />
       </PageContainer>
     );
   }

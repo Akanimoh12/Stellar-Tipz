@@ -105,17 +105,14 @@ export const submitTx = async (
       txResponse.status === SorobanRpc.Api.GetTransactionStatus.NOT_FOUND
     ) {
       // See if the transaction is complete
-      // eslint-disable-next-line no-await-in-loop
       txResponse = await server.getTransaction(sendResponse.hash);
       // Wait a second
-      // eslint-disable-next-line no-await-in-loop
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
     if (txResponse.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
       return txResponse.resultXdr.toXDR("base64");
     }
-    // eslint-disable-next-line no-else-return
   }
   throw new Error(
     `Unabled to submit transaction, status: ${sendResponse.status}`,

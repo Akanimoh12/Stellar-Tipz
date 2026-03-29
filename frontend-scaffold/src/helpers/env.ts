@@ -18,7 +18,7 @@ function getEnv(): EnvConfig {
     VITE_NETWORK_PASSPHRASE,
     VITE_CONTRACT_ID,
     VITE_NETWORK,
-  } = (import.meta as any).env
+  } = (import.meta as unknown as { env: Record<string, string | undefined> }).env
 
   return {
     sorobanRpcUrl:

@@ -4,7 +4,6 @@ import {
   Coins,
 } from "lucide-react";
 
-import AmountDisplay from "../../components/shared/AmountDisplay";
 import CreditBadge from "../../components/shared/CreditBadge";
 import TipCard from "../../components/shared/TipCard";
 import { StatCard } from "../../components/ui/StartCard";

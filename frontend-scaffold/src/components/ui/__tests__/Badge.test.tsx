@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import Badge, { getTierFromScore } from '../Badge';
+import Badge from '../Badge';
+import { getTierFromScore } from '@/helpers/badge';
 
 describe('Badge Component', () => {
   it('renders bronze tier correctly', () => {

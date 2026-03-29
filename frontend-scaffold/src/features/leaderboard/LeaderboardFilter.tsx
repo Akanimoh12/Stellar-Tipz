@@ -2,7 +2,6 @@ import React, { useState, useMemo, useCallback } from "react";
 import { Search } from "lucide-react";
 
 import EmptyState from "../../components/ui/EmptyState";
-import Input from "../../components/ui/Input";
 import Select from "../../components/ui/Select";
 import { LeaderboardEntry } from "../../types/contract";
 

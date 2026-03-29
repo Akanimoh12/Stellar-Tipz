@@ -31,9 +31,9 @@ describe('TopCreatorsSection', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        (hooks.useContract as any).mockReturnValue({
+        vi.mocked(hooks.useContract).mockReturnValue({
             getLeaderboard: mockGetLeaderboard,
-        });
+        } as unknown as ReturnType<typeof hooks.useContract>);
     });
 
     const renderComponent = () =>

@@ -8,6 +8,8 @@ import TopCreatorsSection from './TopCreatorsSection';
 import CTASection from './CTASection';
 import { usePageTitle } from '@/hooks/usePageTitle';
 
+import ErrorBoundary from '@/components/shared/ErrorBoundary';
+
 /**
  * Landing page assembled from individual section components.
  * Each section is separated by a Divider. The page renders gracefully
@@ -26,9 +28,13 @@ const LandingPage: React.FC = () => {
         <HowItWorksSection />
       </section>
       <Divider />
-      <StatsSection />
+      <ErrorBoundary>
+        <StatsSection />
+      </ErrorBoundary>
       <Divider />
-      <TopCreatorsSection />
+      <ErrorBoundary>
+        <TopCreatorsSection />
+      </ErrorBoundary>
       <Divider />
       <CTASection />
     </div>

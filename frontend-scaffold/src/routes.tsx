@@ -1,9 +1,8 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy } from 'react';
 import { RouteObject } from 'react-router-dom';
-import PageTransition from '@/components/shared/PageTransition';
-import ProtectedRoute from '@/components/shared/ProtectedRoute';
-import Loader from '@/components/ui/Loader';
+import { wrap, protect } from '@/helpers/routeHelpers';
 
+/* eslint-disable react-refresh/only-export-components */
 const LandingPage = lazy(() => import('@/features/landing/LandingPage'));
 const RegisterPage = lazy(() => import('@/features/profile/RegisterPage'));
 const ProfilePage = lazy(() => import('@/features/profile/ProfilePage'));
@@ -12,22 +11,11 @@ const DashboardPage = lazy(() => import('@/features/dashboard/DashboardPage'));
 const LeaderboardPage = lazy(() => import('@/features/leaderboard/LeaderboardPage'));
 const TipPage = lazy(() => import('@/features/tipping/TipPage'));
 
-const PageLoader: React.FC = () => (
-  <div className="flex-1 flex items-center justify-center py-20">
-    <Loader />
-  </div>
-);
-
-const wrap = (element: React.ReactElement) => (
-  <Suspense fallback={<PageLoader />}>
-    <PageTransition>{element}</PageTransition>
-  </Suspense>
-);
-
-const protect = (element: React.ReactElement) => (
-  <ProtectedRoute>{wrap(element)}</ProtectedRoute>
-);
-
+/**
+ * Route configuration for the Stellar-Tipz application.
+ * Fast Refresh is disabled for this file as it primarily exports configuration,
+ * not UI components.
+ */
 export const routes: RouteObject[] = [
   {
     path: '/',

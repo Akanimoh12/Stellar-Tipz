@@ -12,6 +12,7 @@ import {
 import { useContract, useUsernameCheck } from '@/hooks';
 import { useToastStore } from '@/store/toastStore';
 import { ProfileFormData } from '@/types/profile';
+import { categorizeError, ERRORS } from '@/helpers/error';
 
 type TxStatus = 'idle' | 'signing' | 'submitting' | 'confirming' | 'success' | 'error';
 
@@ -111,8 +112,9 @@ const RegisterForm: React.FC = () => {
 
       setTimeout(() => navigate('/profile'), 1500);
     } catch (err) {
+      const category = categorizeError(err);
       setTxStatus('error');
-      setTxError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
+      setTxError(category === 'network' ? ERRORS.NETWORK : ERRORS.CONTRACT);
     }
   };
 

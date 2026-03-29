@@ -80,6 +80,6 @@ export const useTipFlow = (creatorAddress: string): UseTipFlowReturn => {
       error,
       txHash,
     }),
-    [step, goToConfirm, confirmAndSign, reset, error, txHash, creatorAddress],
+    [step, goToConfirm, confirmAndSign, reset, error, txHash],
   );
 };

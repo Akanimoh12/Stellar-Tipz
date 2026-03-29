@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowRight, Trophy } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -7,6 +7,8 @@ import { LeaderboardEntry } from '@/types/contract';
 import ProfileCard from '@/components/shared/ProfileCard';
 import Skeleton from '@/components/ui/Skeleton';
 import EmptyState from '@/components/ui/EmptyState';
+import ErrorState from '@/components/shared/ErrorState';
+import { categorizeError } from '@/helpers/error';
 
 export default function TopCreatorsSection() {
   const [creators, setCreators] = useState<LeaderboardEntry[]>([]);
@@ -16,24 +18,40 @@ export default function TopCreatorsSection() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    let mounted = true;
+    let active = true;
     getLeaderboard(5)
       .then((data) => {
-        if (mounted) {
+        if (active) {
           setCreators(data);
           setLoading(false);
         }
       })
       .catch((err) => {
-        if (mounted) {
+        if (active) {
           console.error('Failed to fetch leaderboard:', err);
-          setError('Could not load top creators');
+          setError(String(err));
           setLoading(false);
         }
       });
-    return () => { mounted = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => {
+      active = false;
+    };
+  }, [getLeaderboard]);
+
+  const handleRetry = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    getLeaderboard(5)
+      .then((data) => {
+        setCreators(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error('Failed to fetch leaderboard:', err);
+        setError(String(err));
+        setLoading(false);
+      });
+  }, [getLeaderboard]);
 
   const handleViewFullLeaderboard = () => {
     navigate('/leaderboard');
@@ -74,9 +92,10 @@ export default function TopCreatorsSection() {
             ))}
           </div>
         ) : error ? (
-          <div className="border-3 border-black p-8 bg-red-50 text-center">
-            <p className="font-black uppercase text-red-600">Error: {error}</p>
-          </div>
+          <ErrorState 
+            category={categorizeError(error)} 
+            onRetry={handleRetry}
+          />
         ) : creators.length === 0 ? (
           <div className="border-3 border-black bg-white">
             <EmptyState

@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import Badge, { getTierFromScore } from "../ui/Badge";
+import Badge from "../ui/Badge";
+import { getTierFromScore } from "@/helpers/badge";
 import Tooltip from "../ui/Tooltip";
 
 interface CreditBadgeProps {

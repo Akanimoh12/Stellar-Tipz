@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React from "react";
 import { Download, QrCode } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 
@@ -10,8 +10,6 @@ interface QRCodeProps {
 }
 
 const QRCode: React.FC<QRCodeProps> = ({ url, size = 200 }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
   const downloadQRCode = () => {
     const canvas = document.getElementById("tipz-qr-canvas") as HTMLCanvasElement;
     if (!canvas) return;

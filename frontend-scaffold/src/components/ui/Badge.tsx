@@ -1,7 +1,8 @@
 import React from 'react';
+import { BadgeTier } from '@/helpers/badge';
 
 interface BadgeProps {
-  tier: 'bronze' | 'silver' | 'gold' | 'diamond';
+  tier: BadgeTier;
   score?: number;
   className?: string;
 }
@@ -11,13 +12,6 @@ const tierConfig: Record<string, { label: string; emoji: string; bg: string }> =
   silver: { label: 'Silver', emoji: '🥈', bg: 'bg-gray-100' },
   gold: { label: 'Gold', emoji: '🥇', bg: 'bg-yellow-100' },
   diamond: { label: 'Diamond', emoji: '💎', bg: 'bg-blue-100' },
-};
-
-export const getTierFromScore = (score: number): BadgeProps['tier'] => {
-  if (score >= 901) return 'diamond';
-  if (score >= 701) return 'gold';
-  if (score >= 401) return 'silver';
-  return 'bronze';
 };
 
 const Badge: React.FC<BadgeProps> = ({ tier, score, className = '' }) => {

@@ -9,6 +9,11 @@ import {
 } from "@creit.tech/stellar-wallets-kit";
 import { useWalletStore } from "../store/walletStore";
 
+interface Freighter {
+  getNetwork: () => Promise<string>;
+  getAddress: () => Promise<string>;
+}
+
 let kitInstance: StellarWalletsKit | null = null;
 let currentNetwork: WalletNetwork | null = null;
 
@@ -57,10 +62,9 @@ export const useWallet = () => {
                 // Automatic network detection for better UX
                 try {
                   // If it's Freighter, check its current network
-                  if (option.id === FREIGHTER_ID && (window as any).freighter) {
-                    const networkDetails = await (
-                      window as any
-                    ).freighter.getNetwork();
+                  const freighterWindow = window as unknown as { freighter?: Freighter };
+                  if (option.id === FREIGHTER_ID && freighterWindow.freighter) {
+                    const networkDetails = await freighterWindow.freighter.getNetwork();
                     const detectedNetwork =
                       networkDetails === "PUBLIC" ? "PUBLIC" : "TESTNET";
                     if (detectedNetwork !== network) {
@@ -82,7 +86,7 @@ export const useWallet = () => {
               }
             },
           });
-        } catch (err) {
+        } catch {
           setConnecting(false);
         }
       },
@@ -104,7 +108,6 @@ export const useWallet = () => {
     }),
     [
       publicKey,
-      connected,
       connect,
       disconnect,
       setConnecting,

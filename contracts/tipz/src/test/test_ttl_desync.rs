@@ -10,7 +10,9 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, testutils::storage::Persistent, token, Address, Env, String};
+use soroban_sdk::{
+    testutils::storage::Persistent, testutils::Address as _, token, Address, Env, String,
+};
 
 use crate::errors::ContractError;
 use crate::storage::{self, DataKey, PROFILE_TTL_MAX_LEDGERS};
