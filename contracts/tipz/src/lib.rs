@@ -38,7 +38,7 @@ use crate::types::{
 
 /// The current contract interface version, stored on-chain during initialization.
 /// Must be incremented manually in source when the contract interface changes.
-const CONTRACT_VERSION: u32 = 1;
+pub const CONTRACT_VERSION: u32 = 1;
 
 #[contract]
 pub struct TipzContract;
