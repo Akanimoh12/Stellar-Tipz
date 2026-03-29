@@ -1,6 +1,6 @@
 import React from 'react';
 import { ArrowUpRight, Coins, LayoutDashboard, Wallet, QrCode, Settings } from 'lucide-react';
-import { Navigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 import PageContainer from "../../components/layout/PageContainer";
 import WalletConnect from "../../components/shared/WalletConnect";
@@ -19,7 +19,6 @@ import OverviewTab from "./OverviewTab";
 import TipsTab from "./TipsTab";
 import { useWalletStore } from "../../store/walletStore";
 import { useDashboard, usePageTitle } from "../../hooks";
-import { AmountDisplay, CreditBadge, Tabs, TipCard } from '@/components';
 
 const EarningsTab: React.FC<{ profile: any; stats: any; loading: boolean }> = () => (
   <div className="pt-6">
@@ -188,7 +187,7 @@ const DashboardPage: React.FC = () => {
           <WalletConnect />
           <p>
             @{creator.username}
-          </div>
+          </p>
           <WalletConnect />
         </div>
       </section>

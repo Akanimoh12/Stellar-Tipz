@@ -1,4 +1,3 @@
-import React, { useMemo, useState } from "react";
 import { Trophy } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -9,9 +8,12 @@ import Avatar from "@/components/ui/Avatar";
 import Card from "@/components/ui/Card";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import type { LeaderboardEntry } from "@/types";
-import { mockLeaderboard } from "../mockData";
+import { useLeaderboard } from "@/hooks/useLeaderboard";
+import LeaderboardSkeleton from "./LeaderboardSkeleton";
+import EmptyState from "@/components/ui/EmptyState";
 import Podium from "./Podium";
 import LeaderboardTable from "./LeaderboardTable";
+import LeaderboardFilter from "./LeaderboardFilter";
 
 const PodiumCard: React.FC<{
   entry: LeaderboardEntry;
@@ -31,12 +33,19 @@ const PodiumCard: React.FC<{
   return (
     <Card
       padding="lg"
-      className={`flex flex-col justify-between ${heights[place]} ${place === 1 ? "relative z-10 ring-2 ring-black md:scale-[1.02]" : ""
-        }`}
+      className={`flex flex-col justify-between ${heights[place]} ${
+        place === 1 ? "relative z-10 ring-2 ring-black md:scale-[1.02]" : ""
+      }`}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="text-4xl font-black leading-none">{labels[place]}</span>
-        <CreditBadge score={entry.creditScore} showScore={false} className="shrink-0" />
+        <span className="text-4xl font-black leading-none">
+          {labels[place]}
+        </span>
+        <CreditBadge
+          score={entry.creditScore}
+          showScore={false}
+          className="shrink-0"
+        />
       </div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex items-center gap-3 min-w-0">
@@ -54,7 +63,10 @@ const PodiumCard: React.FC<{
               @{entry.username}
             </Link>
             <div className="mt-1">
-              <AmountDisplay amount={entry.totalTipsReceived} className="text-sm" />
+              <AmountDisplay
+                amount={entry.totalTipsReceived}
+                className="text-sm"
+              />
             </div>
           </div>
         </div>
@@ -66,11 +78,18 @@ const PodiumCard: React.FC<{
 const LeaderboardPage: React.FC = () => {
   usePageTitle("Leaderboard");
 
-  const top3 = mockLeaderboard.slice(0, 3);
+  const { entries, loading } = useLeaderboard();
+
+  // Show a full loading skeleton while fetching initial data
+  if (loading) {
+    return <LeaderboardSkeleton />;
+  }
+
+  const top3 = entries.slice(0, 3);
   const second = top3[1];
   const first = top3[0];
   const third = top3[2];
-  const rest = mockLeaderboard.slice(3);
+  const rest = entries.slice(3);
 
   return (
     <PageContainer maxWidth="lg" className="space-y-10 py-10">
@@ -82,7 +101,9 @@ const LeaderboardPage: React.FC = () => {
           <Trophy className="h-8 w-8" aria-hidden />
         </div>
         <div>
-          <h1 className="text-4xl font-black tracking-tight md:text-5xl">Leaderboard</h1>
+          <h1 className="text-4xl font-black tracking-tight md:text-5xl">
+            Leaderboard
+          </h1>
           <p className="mt-1 text-sm font-bold uppercase tracking-wide text-gray-600">
             Top creators by tips received
           </p>
@@ -108,17 +129,30 @@ const LeaderboardPage: React.FC = () => {
             </div>
           )}
         </div>
-        <Podium creators={mockLeaderboard.slice(0, 3)} />
+        <Podium creators={top3} />
       </section>
 
+      {entries.length === 0 ? (
+        <section>
+          <EmptyState
+            icon={<Trophy />}
+            title="No creators yet"
+            description="Be the first!"
+          />
+        </section>
+      ) : (
+        <>
+          <section aria-label="Additional leaderboard rankings">
+            <h2 className="mb-4 text-2xl font-black uppercase">
+              More creators
+            </h2>
 
-      <Podium creators={mockLeaderboard.slice(0, 3)} />
-
-      <section aria-label="Additional leaderboard rankings">
-        <h2 className="mb-4 text-2xl font-black uppercase">More creators</h2>
-
-        <LeaderboardTable entries={rest} />
-      </section>
+            <LeaderboardFilter entries={rest}>
+              {(filtered) => <LeaderboardTable entries={filtered} />}
+            </LeaderboardFilter>
+          </section>
+        </>
+      )}
     </PageContainer>
   );
 };
