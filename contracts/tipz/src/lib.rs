@@ -332,11 +332,35 @@ impl TipzContract {
         admin::set_fee_collector(&env, &caller, &new_collector)
     }
 
-    /// Transfer the admin role to a new address. Admin only.
+    /// Transfer the admin role directly to a new address. Admin only.
     ///
-    /// Emits an `AdminChanged` event with `(old_admin, new_admin)`.
+    /// For a safer two-step transfer use `propose_admin` + `accept_admin`.
     pub fn set_admin(env: Env, caller: Address, new_admin: Address) -> Result<(), ContractError> {
         admin::set_admin(&env, &caller, &new_admin)
+    }
+
+    /// Propose a new admin (current admin only). Step 1 of two-step admin transfer.
+    pub fn propose_admin(
+        env: Env,
+        caller: Address,
+        new_admin: Address,
+    ) -> Result<(), ContractError> {
+        admin::propose_admin(&env, &caller, &new_admin)
+    }
+
+    /// Accept the pending admin proposal (proposed admin only). Step 2 of two-step admin transfer.
+    pub fn accept_admin(env: Env, caller: Address) -> Result<(), ContractError> {
+        admin::accept_admin(&env, &caller)
+    }
+
+    /// Cancel a pending admin proposal (current admin only).
+    pub fn cancel_admin_proposal(env: Env, caller: Address) -> Result<(), ContractError> {
+        admin::cancel_admin_proposal(&env, &caller)
+    }
+
+    /// Return the pending admin address, or `None` if no proposal is active.
+    pub fn get_pending_admin(env: Env) -> Result<Option<Address>, ContractError> {
+        admin::get_pending_admin(&env)
     }
 
     /// Get global contract statistics.

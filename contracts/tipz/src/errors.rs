@@ -50,4 +50,6 @@ pub enum ContractError {
     InvalidXMetrics = 21,
     /// Profile storage exists but the username→address mapping has expired (orphaned state)
     ProfileNotActive = 22,
+    /// No pending admin proposal exists
+    NoPendingAdmin = 23,
 }

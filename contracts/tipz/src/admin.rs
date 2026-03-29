@@ -53,6 +53,7 @@ pub fn initialize(
     storage::set_native_token(env, native_token);
     storage::set_paused(env, false);
     storage::set_min_tip_amount(env, 1_000_000_i128);
+    storage::set_version(env, crate::CONTRACT_VERSION);
 
     // Initialise counters to zero so reads never return None.
     env.storage()
@@ -239,6 +240,57 @@ pub fn set_admin(env: &Env, caller: &Address, new_admin: &Address) -> Result<(),
     storage::set_admin(env, new_admin);
     events::emit_admin_changed(env, &old_admin, new_admin);
     Ok(())
+}
+
+/// Propose a new admin. Step 1 of the two-step admin transfer. Current admin only.
+pub fn propose_admin(
+    env: &Env,
+    caller: &Address,
+    new_admin: &Address,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    require_admin(env, caller)?;
+    storage::set_pending_admin(env, new_admin);
+    events::emit_admin_proposed(env, caller, new_admin);
+    Ok(())
+}
+
+/// Accept a pending admin proposal. Step 2 of the two-step admin transfer.
+/// Only the proposed admin can call this.
+pub fn accept_admin(env: &Env, caller: &Address) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    if !storage::is_initialized(env) {
+        return Err(ContractError::NotInitialized);
+    }
+    let pending = storage::get_pending_admin(env).ok_or(ContractError::NoPendingAdmin)?;
+    if caller != &pending {
+        return Err(ContractError::NotAuthorized);
+    }
+    caller.require_auth();
+    storage::set_admin(env, caller);
+    storage::remove_pending_admin(env);
+    events::emit_admin_accepted(env, caller);
+    Ok(())
+}
+
+/// Cancel a pending admin proposal. Current admin only.
+pub fn cancel_admin_proposal(env: &Env, caller: &Address) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    require_admin(env, caller)?;
+    if storage::get_pending_admin(env).is_none() {
+        return Err(ContractError::NoPendingAdmin);
+    }
+    storage::remove_pending_admin(env);
+    events::emit_admin_proposal_cancelled(env, caller);
+    Ok(())
+}
+
+/// Return the pending admin address, or `None` if no proposal is active.
+pub fn get_pending_admin(env: &Env) -> Result<Option<Address>, ContractError> {
+    if !storage::is_initialized(env) {
+        return Err(ContractError::NotInitialized);
+    }
+    Ok(storage::get_pending_admin(env))
 }
 
 pub fn pause(env: &Env, caller: &Address) -> Result<(), ContractError> {
