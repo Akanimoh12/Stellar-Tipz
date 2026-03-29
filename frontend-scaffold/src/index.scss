@@ -2,11 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
+/* CSS Custom Properties for theming */
+:root {
+  --color-bg: 255, 255, 255;
+  --color-text: 0, 0, 0;
+  --color-border: 0, 0, 0;
+  --color-shadow: 0, 0, 0;
+}
+
+.dark {
+  --color-bg: 0, 0, 0;
+  --color-text: 255, 255, 255;
+  --color-border: 255, 255, 255;
+  --color-shadow: 255, 255, 255;
+}
+
 @layer base {
   body {
     @apply font-sans antialiased;
-    color: #000000;
-    background-color: #FFFFFF;
+    background-color: rgb(var(--color-bg));
+    color: rgb(var(--color-text));
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
 
   #root {
@@ -38,5 +54,29 @@
   .card-brutalist {
     @apply bg-white border-3 border-black p-6;
     box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);
+  }
+
+  /* Dark mode variants */
+  .dark .btn-brutalist {
+    @apply bg-white text-black border-white;
+    box-shadow: 4px 4px 0px 0px rgba(255,255,255,1);
+  }
+  
+  .dark .btn-brutalist:hover {
+    box-shadow: 6px 6px 0px 0px rgba(255,255,255,1);
+  }
+
+  .dark .btn-brutalist-outline {
+    @apply bg-black text-white border-white;
+    box-shadow: 4px 4px 0px 0px rgba(255,255,255,1);
+  }
+  
+  .dark .btn-brutalist-outline:hover {
+    box-shadow: 6px 6px 0px 0px rgba(255,255,255,1);
+  }
+
+  .dark .card-brutalist {
+    @apply bg-black border-white;
+    box-shadow: 4px 4px 0px 0px rgba(255,255,255,1);
   }
 }

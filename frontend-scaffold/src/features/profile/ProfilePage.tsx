@@ -7,6 +7,7 @@ import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import Loader from "../../components/ui/Loader";
 import ErrorState from "../../components/shared/ErrorState";
+import { hasPositiveBalance } from "@/helpers/balance";
 import { useProfile } from "../../hooks";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { categorizeError } from "@/helpers/error";
@@ -31,12 +32,15 @@ const ProfilePage: React.FC = () => {
       ? "Loading Profile..."
       : isRegistered && profile
       ? `${profile.displayName} (@${profile.username})`
-      : "Register Profile"
+      : "Register Profile",
   );
 
   if (loading) {
     return (
-      <PageContainer maxWidth="xl" className="flex items-center justify-center py-20">
+      <PageContainer
+        maxWidth="xl"
+        className="flex items-center justify-center py-20"
+      >
         <Loader size="lg" text="Loading profile..." />
       </PageContainer>
     );
@@ -45,10 +49,7 @@ const ProfilePage: React.FC = () => {
   if (error && !isRegistered) {
     return (
       <PageContainer maxWidth="xl" className="py-20">
-        <ErrorState 
-          category={categorizeError(error)} 
-          onRetry={refetch} 
-        />
+        <ErrorState category={categorizeError(error)} onRetry={refetch} />
       </PageContainer>
     );
   }
@@ -59,9 +60,12 @@ const ProfilePage: React.FC = () => {
       <PageContainer maxWidth="xl" className="py-10">
         <div className="max-w-2xl mx-auto space-y-8">
           <div className="text-center space-y-4">
-            <h1 className="text-4xl font-black uppercase">Create Your Profile</h1>
+            <h1 className="text-4xl font-black uppercase">
+              Create Your Profile
+            </h1>
             <p className="text-gray-600 font-bold">
-              Join the Stellar-Tipz community and start receiving support from your followers on the Stellar network.
+              Join the Stellar-Tipz community and start receiving support from
+              your followers on the Stellar network.
             </p>
           </div>
           <Card padding="lg" className="border-4 shadow-brutalist">
@@ -86,7 +90,9 @@ const ProfilePage: React.FC = () => {
         <div className="space-y-10">
           {/* Stats Section */}
           <section className="space-y-4">
-            <h2 className="text-2xl font-black uppercase tracking-tight">Your Performance</h2>
+            <h2 className="text-2xl font-black uppercase tracking-tight">
+              Your Performance
+            </h2>
             <ProfileStats
               balance={profile.balance}
               totalTipsReceived={profile.totalTipsReceived}
@@ -98,9 +104,11 @@ const ProfilePage: React.FC = () => {
           {/* Activity Feed Section */}
           <section className="space-y-4">
             <div className="flex items-center justify-between gap-4">
-              <h2 className="text-2xl font-black uppercase tracking-tight">Recent Activity</h2>
-              <Link 
-                to="/leaderboard" 
+              <h2 className="text-2xl font-black uppercase tracking-tight">
+                Recent Activity
+              </h2>
+              <Link
+                to="/leaderboard"
                 className="text-sm font-black uppercase underline decoration-2 underline-offset-4 hover:opacity-70 transition-opacity"
               >
                 View Leaderboard
@@ -114,33 +122,38 @@ const ProfilePage: React.FC = () => {
 
         {/* Sidebar Actions */}
         <aside className="space-y-6">
-          <Card className="space-y-4 border-4 bg-gray-50 shadow-brutalist" padding="lg">
-            <h2 className="text-xl font-black uppercase tracking-tight">Quick Actions</h2>
-            
+          <Card
+            className="space-y-4 border-4 bg-gray-50 shadow-brutalist"
+            padding="lg"
+          >
+            <h2 className="text-xl font-black uppercase tracking-tight">
+              Quick Actions
+            </h2>
+
             <Link to="/profile/edit" className="block">
-              <Button 
+              <Button
                 variant="primary"
-                icon={<PenSquare size={18} />} 
+                icon={<PenSquare size={18} />}
                 className="w-full justify-start text-left h-14"
               >
                 Edit Profile
               </Button>
             </Link>
 
-            <Button 
-              variant="outline" 
-              icon={<Wallet2 size={18} />} 
+            <Button
+              variant="outline"
+              icon={<Wallet2 size={18} />}
               className="w-full justify-start text-left h-14 bg-white"
               onClick={() => setIsWithdrawModalOpen(true)}
-              disabled={parseFloat(profile.balance) <= 0}
+              disabled={!hasPositiveBalance(profile.balance)}
             >
               Withdraw Tips
             </Button>
 
             <Link to={`/@${profile.username}`} className="block">
-              <Button 
-                variant="outline" 
-                className="w-full justify-start text-left h-14 bg-white" 
+              <Button
+                variant="outline"
+                className="w-full justify-start text-left h-14 bg-white"
                 iconRight={<ExternalLink size={18} />}
               >
                 View Public Page
@@ -148,24 +161,29 @@ const ProfilePage: React.FC = () => {
             </Link>
           </Card>
 
-          <Card className="border-4 bg-yellow-100 shadow-brutalist" padding="md">
-            <h3 className="text-sm font-black uppercase mb-2">Visibility Tip</h3>
+          <Card
+            className="border-4 bg-yellow-100 shadow-brutalist"
+            padding="md"
+          >
+            <h3 className="text-sm font-black uppercase mb-2">
+              Visibility Tip
+            </h3>
             <p className="text-xs font-bold leading-relaxed text-gray-800">
-              Profiles with a complete bio and an X handle verification see 40% more tipping activity on average.
+              Profiles with a complete bio and an X handle verification see 40%
+              more tipping activity on average.
             </p>
           </Card>
         </aside>
       </div>
 
       {/* Withdraw Modal */}
-      <WithdrawModal 
-        isOpen={isWithdrawModalOpen} 
-        onClose={() => setIsWithdrawModalOpen(false)} 
-        balance={profile.balance} 
+      <WithdrawModal
+        isOpen={isWithdrawModalOpen}
+        onClose={() => setIsWithdrawModalOpen(false)}
+        balance={profile.balance}
       />
     </PageContainer>
   );
 };
 
 export default ProfilePage;
-

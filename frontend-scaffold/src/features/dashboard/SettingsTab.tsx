@@ -13,7 +13,7 @@ import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import type { Profile } from "@/types";
 
-const TIP_DOMAIN = "https://tipz.app";
+const TIP_DOMAIN = import.meta.env.VITE_APP_URL || window.location.origin;
 
 interface SettingsTabProps {
   profile: Profile;

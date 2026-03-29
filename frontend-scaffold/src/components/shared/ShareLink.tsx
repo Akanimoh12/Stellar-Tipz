@@ -8,7 +8,7 @@ interface ShareLinkProps {
 
 const ShareLink: React.FC<ShareLinkProps> = ({
   username,
-  domain = 'https://tipz.app',
+  domain = import.meta.env.VITE_APP_URL || window.location.origin,
 }) => {
   const [copied, setCopied] = useState(false);
 

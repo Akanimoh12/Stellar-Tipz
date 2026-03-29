@@ -1,38 +1,29 @@
-import React from 'react';
-import { ArrowUpRight, Coins, LayoutDashboard, Wallet, QrCode, Settings } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import React from "react";
+import { LayoutDashboard, Wallet } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import PageContainer from "@/components/layout/PageContainer";
+import ErrorState from "@/components/shared/ErrorState";
 import WalletConnect from "@/components/shared/WalletConnect";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 import Loader from "@/components/ui/Loader";
 import Tabs from "@/components/ui/Tabs";
+import { categorizeError } from "@/helpers/error";
 import { useDashboard } from "@/hooks/useDashboard";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useWalletStore } from "@/store/walletStore";
-import ErrorState from "@/components/shared/ErrorState";
-import { categorizeError } from "@/helpers/error";
 
-import EarningsChart from "./EarningsChart";
 import EarningsTab from "./EarningsTab";
 import OverviewTab from "./OverviewTab";
 import SettingsTab from "./SettingsTab";
 import TipsTab from "./TipsTab";
-import { useWalletStore } from "../../store/walletStore";
-import { useDashboard, usePageTitle } from "../../hooks";
 
 const DashboardPage: React.FC = () => {
   usePageTitle("Dashboard");
 
   const { connected } = useWalletStore();
   const { profile, tips, loading, error, refetch } = useDashboard();
-
-  const displayTips = tips;
-  const tipsPreviewPages = Math.max(
-    1,
-    Math.ceil(displayTips.length / TIPS_PREVIEW),
-  );
 
   if (!connected) {
     return (
@@ -72,10 +63,7 @@ const DashboardPage: React.FC = () => {
   if (error && !profile) {
     return (
       <PageContainer maxWidth="xl" className="py-20">
-        <ErrorState 
-          category={categorizeError(error)} 
-          onRetry={refetch} 
-        />
+        <ErrorState category={categorizeError(error)} onRetry={refetch} />
       </PageContainer>
     );
   }
@@ -101,7 +89,7 @@ const DashboardPage: React.FC = () => {
           description="Register a profile first to unlock your dashboard and withdrawal flow."
         />
         <div className="flex justify-center">
-          <Link to="/register">
+          <Link to="/profile">
             <Button variant="primary">Register now</Button>
           </Link>
         </div>
@@ -133,9 +121,7 @@ const DashboardPage: React.FC = () => {
     {
       id: "earnings",
       label: "Earnings",
-      content: (
-        <EarningsTab />
-      ),
+      content: <EarningsTab />,
     },
     {
       id: "settings",

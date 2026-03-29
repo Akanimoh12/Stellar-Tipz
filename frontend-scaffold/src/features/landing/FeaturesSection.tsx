@@ -31,7 +31,7 @@ const features = [
   {
     icon: <Sparkles size={40} />,
     title: 'Simple URLs',
-    description: 'Share your tipz.app/@username everywhere.',
+    description: 'Share your tip page with @username everywhere.',
   },
 ];
 

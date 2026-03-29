@@ -28,6 +28,20 @@ import {
 import { ProfileFormData } from '../types/profile';
 
 /**
+ * Safely converts a numeric string to a BigInt.
+ * Validates that the input is a non-empty string of digits.
+ * @param amount The string to convert.
+ * @returns The converted BigInt.
+ * @throws Error if the amount format is invalid.
+ */
+function safeStringToBigInt(amount: string): bigint {
+  if (!amount || !/^\d+$/.test(amount)) {
+    throw new Error("Invalid amount format");
+  }
+  return BigInt(amount);
+}
+
+/**
  * Hook providing typed methods for all Tipz contract operations.
  */
 export const useContract = () => {
@@ -275,7 +289,7 @@ export const useContract = () => {
           "send_tip",
           accountToScVal(wallet.publicKey),
           accountToScVal(creator),
-          numberToI128(parseInt(amount)),
+          numberToI128(safeStringToBigInt(amount)),
           nativeToScVal(message)
         )
       )
@@ -303,7 +317,7 @@ export const useContract = () => {
         contract.call(
           "withdraw_tips",
           accountToScVal(wallet.publicKey),
-          numberToI128(parseInt(amount))
+          numberToI128(safeStringToBigInt(amount))
         )
       )
       .setTimeout(TimeoutInfinite)

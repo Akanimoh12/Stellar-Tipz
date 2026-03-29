@@ -82,6 +82,8 @@ pub enum DataKey {
     CreatorTipCount(Address),
     /// Reverse index: (creator, local_index) → global tip ID
     CreatorTip(Address, u32),
+    /// Pending admin address (proposed but not yet accepted)
+    PendingAdmin,
 }
 
 /// Extend the contract instance TTL when a write transaction starts.
@@ -187,6 +189,21 @@ pub fn get_admin(env: &Env) -> Address {
 /// Overwrites the admin address.
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
+}
+
+/// Returns the pending (proposed) admin address, or `None` if no proposal is active.
+pub fn get_pending_admin(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::PendingAdmin)
+}
+
+/// Stores a pending admin proposal.
+pub fn set_pending_admin(env: &Env, admin: &Address) {
+    env.storage().instance().set(&DataKey::PendingAdmin, admin);
+}
+
+/// Removes any pending admin proposal.
+pub fn remove_pending_admin(env: &Env) {
+    env.storage().instance().remove(&DataKey::PendingAdmin);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

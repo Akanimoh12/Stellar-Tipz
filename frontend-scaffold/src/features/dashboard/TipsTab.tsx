@@ -7,15 +7,10 @@ import { useTips } from "../../hooks/useTips";
 import { useWalletStore } from "../../store/walletStore";
 import Loader from "../../components/ui/Loader";
 import Pagination from "../../components/ui/Pagination";
+import { stroopToXlm } from "../../helpers/format";
 
 const PAGE_SIZE = 20;
 
-function stroopsToXlm(stroops: string): string {
-  return (Number(stroops) / 1e7).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 7,
-  });
-}
 
 function formatTimestamp(ts: number): string {
   return new Date(ts * 1000).toLocaleDateString("en-US", {
@@ -68,7 +63,7 @@ const TipsTab: React.FC = () => {
   const tableData = paginated.map((tip) => ({
     date: formatTimestamp(tip.timestamp),
     from: truncateAddress(tip.from),
-    amount: `${stroopsToXlm(tip.amount)} XLM`,
+    amount: `${stroopToXlm(tip.amount, 7)} XLM`,
     message: tip.message || "—",
   }));
 

@@ -5,14 +5,15 @@ import {
 } from "lucide-react";
 
 import CreditBadge from "../../components/shared/CreditBadge";
-import TipCard from "../../components/shared/TipCard";
 import { StatCard } from "../../components/ui/StartCard";
 import EmptyState from "../../components/ui/EmptyState";
+import ActivityMini from "./ActivityMini";
 import QuickActions from "./QuickActions";
 import WithdrawModal from "./WithdrawModal";
 import { useDashboard } from "../../hooks/useDashboard";
 import Loader from "../../components/ui/Loader";
 import { Tip } from "../../types/contract";
+import { stroopToXlm } from "../../helpers/format";
 
 // Build a simple 7-day bar chart dataset from tips
 function buildWeeklyChart(tips: Tip[]) {
@@ -43,11 +44,6 @@ function countThisWeek(tips: Tip[]) {
   return tips.filter((t: Tip) => t.timestamp >= cutoff).length;
 }
 
-// Stroop → display XLM string
-function stroopsToDisplay(stroops: string): string {
-  const xlm = Number(stroops) / 1e7;
-  return xlm.toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
 
 const OverviewTab: React.FC = () => {
   const { profile, tips, stats, loading, error } = useDashboard();
@@ -95,7 +91,7 @@ const OverviewTab: React.FC = () => {
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Total Earned"
-          value={`${stroopsToDisplay(profile.totalTipsReceived)} XLM`}
+          value={`${stroopToXlm(profile.totalTipsReceived)} XLM`}
           icon={<TrendingUp size={22} />}
           change={{ value: 0, positive: true }} // In future, calculate from tip delta
         />
@@ -107,7 +103,7 @@ const OverviewTab: React.FC = () => {
         />
         <StatCard
           label="Current Balance"
-          value={`${stroopsToDisplay(profile.balance)} XLM`}
+          value={`${stroopToXlm(profile.balance)} XLM`}
           icon="💰"
         />
         <div className="flex flex-col gap-2 border-4 border-black bg-white p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
@@ -140,7 +136,7 @@ const OverviewTab: React.FC = () => {
                   <div
                     className="absolute bottom-0 w-full bg-black transition-all duration-500"
                     style={{ height: `${heightPct}%` }}
-                    title={`${day.label}: ${day.total > 0 ? stroopsToDisplay(String(day.total)) + " XLM" : "0"}`}
+                    title={`${day.label}: ${day.total > 0 ? stroopToXlm(String(day.total)) + " XLM" : "0"}`}
                   />
                 </div>
                 <span className="text-[10px] font-bold uppercase text-gray-500">
@@ -152,33 +148,8 @@ const OverviewTab: React.FC = () => {
         </div>
       </section>
 
-      {/* Recent 5 tips */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-black uppercase">Recent Tips</h2>
-        {tips.length === 0 ? (
-          <EmptyState
-            icon={<Coins />}
-            title="No tips yet"
-            description="Your recent tips will appear here once they start coming in."
-          />
-        ) : (
-          <div className="space-y-3">
-            {tips.slice(0, 5).map((tip) => (
-              <TipCard
-                key={`${tip.from}-${tip.timestamp}`}
-                tip={tip}
-                showReceiver={false}
-              />
-            ))}
-          </div>
-        )}
-        {tips.length > 5 && (
-          <p className="text-sm font-bold text-gray-500">
-            + {tips.length - 5} more tips — see the{" "}
-            <span className="underline cursor-pointer">Tips tab</span> for full history.
-          </p>
-        )}
-      </section>
+      {/* Mini activity feed */}
+      <ActivityMini tips={tips} />
 
       <WithdrawModal
         isOpen={withdrawOpen}

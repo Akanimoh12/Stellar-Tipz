@@ -159,7 +159,7 @@ const RegisterForm: React.FC = () => {
           )}
         </div>
         <p className="mt-1 text-xs text-gray-500">
-          Your profile will be at tipz.app/@{form.username || 'username'}
+          Your profile will be at {import.meta.env.VITE_APP_URL || window.location.origin}/@{form.username || 'username'}
         </p>
         {/* Availability status */}
         {form.username && !errors.username && (

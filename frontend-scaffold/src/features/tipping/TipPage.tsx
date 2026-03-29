@@ -188,11 +188,12 @@ const TipPage: React.FC = () => {
           )}
 
           <TipConfirm
-            open={step === "confirm"}
-            amount={amount}
-            username={creator.username}
+            isOpen={step === "confirm"}
+            onClose={reset}
             onConfirm={() => void confirmAndSign()}
-            onCancel={reset}
+            creator={creator}
+            amount={amount}
+            message={message}
             submitting={step === "signing" || step === "submitting"}
           />
 

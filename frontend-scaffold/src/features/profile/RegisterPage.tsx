@@ -9,7 +9,7 @@ const RegisterPage: React.FC = () => {
         <div className="max-w-lg mx-auto">
           <h1 className="text-4xl font-black mb-2">Create Your Profile</h1>
           <p className="text-gray-600 mb-10">
-            Register once on-chain. Supporters will find you at tipz.app/@you.
+            Register once on-chain. Supporters will find you at {import.meta.env.VITE_APP_URL || window.location.origin}/@you.
           </p>
           <RegisterForm />
         </div>
