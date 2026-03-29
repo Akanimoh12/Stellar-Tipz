@@ -107,6 +107,10 @@ pub fn register_profile(
     storage::set_username_address(env, &username, &caller);
     storage::increment_total_creators(env);
 
+    // Bump TTL for both Profile and UsernameToAddress together.
+    storage::bump_profile_ttl(env, &caller);
+    storage::bump_username_ttl(env, &username);
+
     // Emit ProfileRegistered event.
     events::emit_profile_registered(env, &caller, &username);
 
@@ -162,6 +166,10 @@ pub fn update_profile(
     profile.updated_at = env.ledger().timestamp();
 
     storage::set_profile(env, &profile);
+
+    // Bump TTL for both Profile and UsernameToAddress together.
+    storage::bump_profile_ttl(env, &caller);
+    storage::bump_username_ttl(env, &profile.username);
 
     events::emit_profile_updated(env, &caller);
 

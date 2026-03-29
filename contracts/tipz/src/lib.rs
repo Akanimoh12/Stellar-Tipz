@@ -148,6 +148,10 @@ impl TipzContract {
     pub fn get_profile_by_username(env: Env, username: String) -> Result<Profile, ContractError> {
         let address =
             storage::get_username_address(&env, &username).ok_or(ContractError::NotFound)?;
+        // Guard against orphaned state: Profile exists but UsernameToAddress expired (or vice versa).
+        if !storage::is_profile_active(&env, &address) {
+            return Err(ContractError::NotFound);
+        }
         Ok(storage::get_profile(&env, &address))
     }
 

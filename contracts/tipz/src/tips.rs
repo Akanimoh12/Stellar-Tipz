@@ -159,6 +159,10 @@ pub fn send_tip(
     storage::set_profile(env, &profile);
     leaderboard::update_leaderboard(env, &profile);
 
+    // Bump TTL for both Profile and UsernameToAddress together.
+    storage::bump_profile_ttl(env, creator);
+    storage::bump_username_ttl(env, &profile.username);
+
     let tip_id = store_tip(env, tipper, creator, amount, message.clone());
     storage::add_tipper_tip(env, tipper, tip_id);
     storage::add_creator_tip(env, creator, tip_id);
@@ -223,6 +227,10 @@ pub fn withdraw_tips(env: &Env, caller: &Address, amount: i128) -> Result<(), Co
     // Update profile balance
     profile.balance -= amount;
     storage::set_profile(env, &profile);
+
+    // Bump TTL for both Profile and UsernameToAddress together.
+    storage::bump_profile_ttl(env, caller);
+    storage::bump_username_ttl(env, &profile.username);
 
     // Update global fees counter
     if fee > 0 {

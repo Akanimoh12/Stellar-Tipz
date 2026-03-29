@@ -46,4 +46,6 @@ pub enum ContractError {
     TipBelowMinimum = 19,
     /// Invalid X metrics values (e.g. unreasonable follower/engagement counts)
     InvalidXMetrics = 21,
+    /// Profile storage exists but the username→address mapping has expired (orphaned state)
+    ProfileNotActive = 22,
 }

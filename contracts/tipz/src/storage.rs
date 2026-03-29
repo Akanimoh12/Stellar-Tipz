@@ -29,6 +29,12 @@ pub const INSTANCE_TTL_MAX_LEDGERS: u32 = 535_680;
 /// Approximate 7-day TTL in ledgers at ~5 seconds per ledger.
 pub const TIP_TTL_LEDGERS: u32 = 120_960;
 
+/// Minimum TTL threshold before a profile entry is extended (~7 days).
+pub const PROFILE_TTL_MIN_LEDGERS: u32 = 120_960;
+
+/// Target TTL for profile entries after a bump (~31 days).
+pub const PROFILE_TTL_MAX_LEDGERS: u32 = 535_680;
+
 // ──────────────────────────────────────────────────────────────────────────────
 // DataKey
 // ──────────────────────────────────────────────────────────────────────────────
@@ -286,6 +292,56 @@ pub fn set_username_address(env: &Env, username: &String, address: &Address) {
     env.storage()
         .persistent()
         .set(&DataKey::UsernameToAddress(username.clone()), address);
+}
+
+/// Bumps the TTL for both `Profile` and `UsernameToAddress` entries together,
+/// preventing TTL desync between the two persistent storage entries.
+///
+/// Must be called on every profile interaction (register, update, tip, withdraw).
+pub fn bump_profile_ttl(env: &Env, address: &Address) {
+    let profile_key = DataKey::Profile(address.clone());
+    if env.storage().persistent().has(&profile_key) {
+        env.storage().persistent().extend_ttl(
+            &profile_key,
+            PROFILE_TTL_MIN_LEDGERS,
+            PROFILE_TTL_MAX_LEDGERS,
+        );
+    }
+}
+
+/// Bumps the TTL for a `UsernameToAddress` entry.
+///
+/// Call this alongside [`bump_profile_ttl`] whenever the username is already
+/// known, to keep both entries in sync without an extra storage read.
+pub fn bump_username_ttl(env: &Env, username: &soroban_sdk::String) {
+    let username_key = DataKey::UsernameToAddress(username.clone());
+    if env.storage().persistent().has(&username_key) {
+        env.storage().persistent().extend_ttl(
+            &username_key,
+            PROFILE_TTL_MIN_LEDGERS,
+            PROFILE_TTL_MAX_LEDGERS,
+        );
+    }
+}
+
+/// Returns `true` only when both the `Profile` and its `UsernameToAddress`
+/// reverse-lookup entry exist in persistent storage.
+///
+/// A profile is considered active only when both entries are live; if either
+/// has expired the profile is in an orphaned state and should be treated as
+/// absent.
+pub fn is_profile_active(env: &Env, address: &Address) -> bool {
+    let profile_key = DataKey::Profile(address.clone());
+    if !env.storage().persistent().has(&profile_key) {
+        return false;
+    }
+    let profile: crate::types::Profile = match env.storage().persistent().get(&profile_key) {
+        Some(p) => p,
+        None => return false,
+    };
+    env.storage()
+        .persistent()
+        .has(&DataKey::UsernameToAddress(profile.username))
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
