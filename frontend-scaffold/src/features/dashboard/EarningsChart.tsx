@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Coins } from "lucide-react";
 
-import { stroopToXlm, formatTimestamp } from "../../helpers/format";
+import { stroopToXlm, stroopToXlmBigNumber, formatTimestamp } from "../../helpers/format";
 import { Tip } from "../../types/contract";
 
 type Period = "week" | "month" | "all";
@@ -29,7 +29,7 @@ const EarningsChart: React.FC<EarningsChartProps> = ({ tips }) => {
 
     const xlmTips = tips.map(t => ({
         ...t,
-        amountXlm: Number(stroopToXlm(t.amount).toFixed(7))
+        amountXlm: Number(stroopToXlmBigNumber(t.amount).toFixed(7))
     }));
 
     if (period === "week") {
