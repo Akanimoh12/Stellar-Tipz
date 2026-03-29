@@ -8,26 +8,30 @@ import CreditBadge from "../../components/shared/CreditBadge";
 import Avatar from "../../components/ui/Avatar";
 import Card from "../../components/ui/Card";
 import Pagination from "../../components/ui/Pagination";
-import { mockLeaderboard } from "../mockData";
+import Loader from "../../components/ui/Loader";
+import ErrorState from "../../components/shared/ErrorState";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { useLeaderboard } from "@/hooks/useLeaderboard";
+import { categorizeError } from "@/helpers/error";
 
 const PAGE_SIZE = 5;
 
 const LeaderboardPage: React.FC = () => {
   usePageTitle('Leaderboard');
 
+  const { entries, loading, error, refetch } = useLeaderboard();
   const [currentPage, setCurrentPage] = useState(1);
-  const totalPages = Math.ceil(mockLeaderboard.length / PAGE_SIZE);
+  const totalPages = Math.ceil(entries.length / PAGE_SIZE);
 
   const visibleEntries = useMemo(() => {
     const startIndex = (currentPage - 1) * PAGE_SIZE;
-    return mockLeaderboard.slice(startIndex, startIndex + PAGE_SIZE);
-  }, [currentPage]);
+    return entries.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [entries, currentPage]);
 
   return (
     <PageContainer maxWidth="xl" className="space-y-8 py-10">
       <section className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-        <Card className="space-y-5 bg-yellow-100" padding="lg">
+        <Card className="space-y-5 bg-yellow-100" padding="lg" hover>
           <p className="text-xs font-black uppercase tracking-[0.25em] text-gray-600">
             Leaderboard
           </p>
@@ -36,34 +40,44 @@ const LeaderboardPage: React.FC = () => {
             Top creators
           </h1>
           <p className="max-w-2xl text-base leading-7 text-gray-700">
-            A fast snapshot of creators earning the most support on Stellar Tipz. This scaffold view is fed by mock entries until leaderboard reads are connected to the contract.
+            A real-time snapshot of creators earning the most support on Stellar Tipz. These rankings are fetched directly from the Tipz Soroban contract.
           </p>
         </Card>
 
         <div className="grid gap-4 sm:grid-cols-3">
-          {mockLeaderboard.slice(0, 3).map((entry, index) => {
-            const icons = [<Crown key="crown" size={18} />, <Medal key="silver" size={18} />, <Medal key="bronze" size={18} />];
-            const labels = ["1st", "2nd", "3rd"];
+          {error ? (
+            <div className="sm:col-span-3">
+              <ErrorState category={categorizeError(error)} onRetry={refetch} />
+            </div>
+          ) : loading && entries.length === 0 ? (
+            <div className="sm:col-span-3 flex justify-center py-12">
+              <Loader size="lg" text="Loading leaderboard..." />
+            </div>
+          ) : (
+            entries.slice(0, 3).map((entry, index) => {
+              const icons = [<Crown key="crown" size={18} />, <Medal key="silver" size={18} />, <Medal key="bronze" size={18} />];
+              const labels = ["1st", "2nd", "3rd"];
 
-            return (
-              <Card key={entry.address} className="space-y-4" padding="lg">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="inline-flex items-center gap-2 text-sm font-black uppercase">
-                    {icons[index]}
-                    {labels[index]}
-                  </span>
-                  <CreditBadge score={entry.creditScore} showScore={false} />
-                </div>
-                <div className="flex items-center gap-3">
-                  <Avatar address={entry.address} alt={entry.username} fallback={entry.username} size="lg" />
-                  <div>
-                    <p className="text-lg font-black uppercase">{entry.username}</p>
-                    <AmountDisplay amount={entry.totalTipsReceived} className="text-sm" />
+              return (
+                <Card key={entry.address} className="space-y-4" padding="lg" hover>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="inline-flex items-center gap-2 text-sm font-black uppercase">
+                      {icons[index]}
+                      {labels[index]}
+                    </span>
+                    <CreditBadge score={entry.creditScore} showScore={false} />
                   </div>
-                </div>
-              </Card>
-            );
-          })}
+                  <div className="flex items-center gap-3">
+                    <Avatar address={entry.address} alt={entry.username} fallback={entry.username} size="lg" />
+                    <div>
+                      <p className="text-lg font-black uppercase truncate max-w-[120px]">{entry.username}</p>
+                      <AmountDisplay amount={entry.totalTipsReceived} className="text-sm" />
+                    </div>
+                  </div>
+                </Card>
+              );
+            })
+          )}
         </div>
       </section>
 
@@ -77,39 +91,49 @@ const LeaderboardPage: React.FC = () => {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-full border-collapse">
-              <thead>
-                <tr className="border-b-2 border-black text-left">
-                  <th scope="col" className="px-4 py-3 text-xs font-black uppercase tracking-[0.2em]">Rank</th>
-                  <th scope="col" className="px-4 py-3 text-xs font-black uppercase tracking-[0.2em]">Creator</th>
-                  <th scope="col" className="px-4 py-3 text-xs font-black uppercase tracking-[0.2em]">Volume</th>
-                  <th scope="col" className="px-4 py-3 text-xs font-black uppercase tracking-[0.2em]">Credit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleEntries.map((entry, index) => {
-                  const rank = (currentPage - 1) * PAGE_SIZE + index + 1;
+            {loading && entries.length === 0 ? (
+              <div className="flex justify-center py-20">
+                <Loader size="lg" text="Fetching rankings..." />
+              </div>
+            ) : entries.length === 0 ? (
+              <div className="text-center py-20 border-2 border-dashed border-black">
+                <p className="font-black uppercase text-gray-500">No creators found on the leaderboard yet.</p>
+              </div>
+            ) : (
+              <table className="min-w-full border-collapse">
+                <thead>
+                  <tr className="border-b-2 border-black text-left">
+                    <th scope="col" className="px-4 py-3 text-xs font-black uppercase tracking-[0.2em]">Rank</th>
+                    <th scope="col" className="px-4 py-3 text-xs font-black uppercase tracking-[0.2em]">Creator</th>
+                    <th scope="col" className="px-4 py-3 text-xs font-black uppercase tracking-[0.2em]">Volume</th>
+                    <th scope="col" className="px-4 py-3 text-xs font-black uppercase tracking-[0.2em]">Credit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleEntries.map((entry, index) => {
+                    const rank = (currentPage - 1) * PAGE_SIZE + index + 1;
 
-                  return (
-                    <tr key={entry.address} className="border-b border-gray-300">
-                      <td className="px-4 py-4 text-sm font-black">{rank}</td>
-                      <td className="px-4 py-4">
-                        <Link to={`/@${entry.username}`} className="flex items-center gap-3">
-                          <Avatar address={entry.address} alt={entry.username} fallback={entry.username} size="md" />
-                          <span className="font-black uppercase">{entry.username}</span>
-                        </Link>
-                      </td>
-                      <td className="px-4 py-4">
-                        <AmountDisplay amount={entry.totalTipsReceived} className="text-sm" />
-                      </td>
-                      <td className="px-4 py-4">
-                        <CreditBadge score={entry.creditScore} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                    return (
+                      <tr key={entry.address} className="border-b border-gray-300 hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-4 text-sm font-black">{rank}</td>
+                        <td className="px-4 py-4">
+                          <Link to={`/@${entry.username}`} className="flex items-center gap-3">
+                            <Avatar address={entry.address} alt={entry.username} fallback={entry.username} size="md" />
+                            <span className="font-black uppercase">{entry.username}</span>
+                          </Link>
+                        </td>
+                        <td className="px-4 py-4">
+                          <AmountDisplay amount={entry.totalTipsReceived} className="text-sm" />
+                        </td>
+                        <td className="px-4 py-4">
+                          <CreditBadge score={entry.creditScore} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
 
           <Pagination

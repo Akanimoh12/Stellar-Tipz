@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 
 import { useWalletStore } from '../store/walletStore';
 import { useContract } from './useContract';
+import { useToastStore } from '../store/toastStore';
 import { Profile, ContractStats, Tip } from '../types/contract';
+import { categorizeError, ERRORS } from '@/helpers/error';
 
 const REFETCH_INTERVAL_MS = 30_000;
 
@@ -69,26 +71,44 @@ export const useDashboard = (): DashboardData => {
     setError(null);
 
     try {
-      const [fetchedProfile, fetchedStats] = await Promise.all([
+      const { addToast } = useToastStore.getState();
+
+      const [profileResult, statsResult] = await Promise.allSettled([
         getProfile(publicKey),
         getStats(),
       ]);
 
-      setProfile(fetchedProfile);
-      setStats(fetchedStats);
-      hasDataRef.current = true;
-      isRegisteredRef.current = true;
-    } catch (err) {
-      if (isNotRegisteredError(err)) {
-        // User is not registered — stop polling and clear stale data.
-        isRegisteredRef.current = false;
-        setProfile(null);
-        setStats(null);
-        hasDataRef.current = false;
+      if (profileResult.status === 'fulfilled') {
+        setProfile(profileResult.value);
+        isRegisteredRef.current = true;
       } else {
-        // Network / contract failure — preserve stale data (optimistic UI).
-        setError(err instanceof Error ? err.message : 'Failed to fetch dashboard data');
+        const err = profileResult.reason;
+        if (isNotRegisteredError(err)) {
+          isRegisteredRef.current = false;
+          setProfile(null);
+          setStats(null);
+          hasDataRef.current = false;
+        } else {
+          setError(err instanceof Error ? err.message : 'Failed to fetch profile');
+        }
       }
+
+      if (statsResult.status === 'fulfilled') {
+        setStats(statsResult.value);
+      } else {
+        const err = statsResult.reason;
+        console.error('Failed to fetch stats:', err);
+        addToast({ 
+          message: categorizeError(err) === 'network' ? ERRORS.NETWORK : 'Could not fetch latest platform stats.', 
+          type: 'error' 
+        });
+      }
+
+      if (profileResult.status === 'fulfilled') {
+        hasDataRef.current = true;
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch dashboard data');
     } finally {
       setLoading(false);
       isFetchingRef.current = false;

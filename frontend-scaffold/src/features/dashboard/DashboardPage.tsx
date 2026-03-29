@@ -22,6 +22,8 @@ import Tabs from "@/components/ui/Tabs";
 import { useDashboard } from "@/hooks/useDashboard";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useWalletStore } from "@/store/walletStore";
+import ErrorState from "@/components/shared/ErrorState";
+import { categorizeError } from "@/helpers/error";
 
 import { mockTips } from "../mockData";
 import EarningsChart from "./EarningsChart";
@@ -37,7 +39,7 @@ const DashboardPage: React.FC = () => {
   usePageTitle("Dashboard");
 
   const { connected } = useWalletStore();
-  const { profile, tips, stats, loading } = useDashboard();
+  const { profile, tips, stats, loading, error, refetch } = useDashboard();
 
   const displayTips = tips.length > 0 ? tips : mockTips;
   const tipsPreviewPages = Math.max(
@@ -73,9 +75,20 @@ const DashboardPage: React.FC = () => {
     return (
       <PageContainer
         maxWidth="xl"
-        className="flex min-h-[40vh] flex-col items-center justify-center gap-4 py-10"
+        className="flex min-h-[60vh] flex-col items-center justify-center gap-4 py-10"
       >
-        <Loader size="lg" text="Loading dashboard" />
+        <Loader size="lg" text="Loading dashboard data..." />
+      </PageContainer>
+    );
+  }
+
+  if (error && !profile) {
+    return (
+      <PageContainer maxWidth="xl" className="py-20">
+        <ErrorState 
+          category={categorizeError(error)} 
+          onRetry={refetch} 
+        />
       </PageContainer>
     );
   }

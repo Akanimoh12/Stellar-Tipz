@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useContract } from '@/hooks';
+import { useToastStore } from '@/store/toastStore';
 import { ContractStats } from '@/types/contract';
+import { categorizeError, ERRORS } from '@/helpers/error';
 
 const FALLBACK_STATS = {
   feePct: 2,
@@ -25,8 +27,14 @@ const StatsSection: React.FC = () => {
   useEffect(() => {
     getStats()
       .then(setStats)
-      .catch(() => {
+      .catch((err) => {
         // Contract may not be deployed yet — render gracefully with fallback
+        console.error('Failed to fetch stats:', err);
+        const { addToast } = useToastStore.getState();
+        addToast({ 
+          message: categorizeError(err) === 'network' ? ERRORS.NETWORK : 'Could not fetch live platform stats.', 
+          type: 'error' 
+        });
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

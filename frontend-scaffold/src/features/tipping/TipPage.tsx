@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { ArrowRight, HeartHandshake, MessageSquare, Wallet } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
@@ -10,8 +10,11 @@ import Avatar from "../../components/ui/Avatar";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import Textarea from "../../components/ui/Textarea";
-import { useWallet } from "../../hooks";
-import { mockProfile } from "../mockData";
+import { useWallet, useContract } from "../../hooks";
+import ErrorState from "../../components/shared/ErrorState";
+import Loader from "../../components/ui/Loader";
+import { categorizeError, ERRORS } from "@/helpers/error";
+import { Profile } from "@/types/contract";
 import TipPageSkeleton from "./TipPageSkeleton";
 import TipAmountInput from "./TipAmountInput";
 import TipResult from "./TipResult";
@@ -25,24 +28,33 @@ const TipPage: React.FC = () => {
   const { connected, connect } = useWallet();
   const [amount, setAmount] = useState("5");
   const [message, setMessage] = useState("");
+  const { getProfileByUsername } = useContract();
   const [loading, setLoading] = useState(true);
+  const [creator, setCreator] = useState<Profile | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  const fetchCreator = useCallback(async () => {
+    if (!username) return;
+    setLoading(true);
+    setFetchError(null);
+    try {
+      const profile = await getProfileByUsername(username);
+      setCreator(profile);
+    } catch (err) {
+      console.error('Failed to fetch creator:', err);
+      setFetchError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [username, getProfileByUsername]);
 
   useEffect(() => {
-    // Simulate initial loading to demonstrate the skeleton
-    const timer = setTimeout(() => {
-      setLoading(false);
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, []);
+    fetchCreator();
+  }, [fetchCreator]);
 
-  const creator = {
-    ...mockProfile,
-    username: username || mockProfile.username,
-  };
-  
-  usePageTitle(`Tip @${creator.username}`);
+  usePageTitle(loading ? "Loading..." : creator ? `Tip @${creator.username}` : "Creator Not Found");
 
-  const { step, goToConfirm, confirmAndSign, reset, error, txHash } = useTipFlow(creator.owner);
+  const { step, goToConfirm, confirmAndSign, reset, error: flowError, txHash } = useTipFlow(creator?.owner || "");
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -51,6 +63,17 @@ const TipPage: React.FC = () => {
 
   if (loading) {
     return <TipPageSkeleton />;
+  }
+
+  if (fetchError || !creator) {
+    return (
+      <PageContainer maxWidth="xl" className="py-20">
+        <ErrorState 
+          category={categorizeError(fetchError || 'Not Found')} 
+          onRetry={fetchCreator} 
+        />
+      </PageContainer>
+    );
   }
 
   return (
@@ -121,7 +144,7 @@ const TipPage: React.FC = () => {
               txHash={txHash ?? undefined}
               amount={amount}
               creator={creator}
-              errorMessage={error ?? undefined}
+              errorMessage={flowError ? (categorizeError(flowError) === 'network' ? ERRORS.NETWORK : ERRORS.CONTRACT) : undefined}
               onPrimaryAction={reset}
             />
           ) : (
@@ -178,7 +201,7 @@ const TipPage: React.FC = () => {
             <TransactionStatus
               status={step === "signing" ? "signing" : "submitting"}
               txHash={txHash ?? undefined}
-              errorMessage={error ?? undefined}
+              errorMessage={flowError ? (categorizeError(flowError) === 'network' ? ERRORS.NETWORK : ERRORS.CONTRACT) : undefined}
             />
           ) : null}
         </Card>
