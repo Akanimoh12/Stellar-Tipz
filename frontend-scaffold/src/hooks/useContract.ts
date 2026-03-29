@@ -3,6 +3,7 @@ import {
   Contract,
   TimeoutInfinite,
   nativeToScVal,
+  xdr,
 } from "@stellar/stellar-sdk";
 
 import { useWallet } from './';
@@ -227,22 +228,31 @@ export const useContract = () => {
       TESTNET_DETAILS.networkPassphrase
     );
 
+    // Helper function to convert optional string to ScVal
+    // Returns ScVal.scvOption(Some(value)) if value is provided, else ScVal.scvVoid() for None
+    const optionalStringToScVal = (value?: string): xdr.ScVal => {
+      if (value !== undefined && value !== "") {
+        return xdr.ScVal.scvOption(nativeToScVal(value));
+      }
+      return xdr.ScVal.scvVoid();
+    };
+
     const tx = txBuilder
       .addOperation(
         contract.call(
           "update_profile",
           accountToScVal(wallet.publicKey),
-          nativeToScVal(data.displayName || ""),
-          nativeToScVal(data.bio || ""),
-          nativeToScVal(data.imageUrl || ""),
-          nativeToScVal(data.xHandle || "")
+          optionalStringToScVal(data.displayName),
+          optionalStringToScVal(data.bio),
+          optionalStringToScVal(data.imageUrl),
+          optionalStringToScVal(data.xHandle)
         )
       )
       .setTimeout(TimeoutInfinite)
       .build();
 
-    const xdr = tx.toXDR();
-    const signedXdr = await wallet.signTransaction(xdr);
+    const xdr_tx = tx.toXDR();
+    const signedXdr = await wallet.signTransaction(xdr_tx);
     return submitTx(signedXdr, TESTNET_DETAILS.networkPassphrase, server);
   }, [contractId, wallet, server]);
 
