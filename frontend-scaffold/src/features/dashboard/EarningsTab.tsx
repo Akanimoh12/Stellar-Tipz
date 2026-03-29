@@ -5,6 +5,7 @@ import AmountDisplay from "../../components/shared/AmountDisplay";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import EmptyState from "../../components/ui/EmptyState";
+import { formatTimestamp } from "../../helpers/format";
 import type { ContractStats, Profile } from "../../types";
 import { mockTips } from "../mockData";
 import BalanceCard from "./BalanceCard";
@@ -25,15 +26,13 @@ interface WithdrawalHistoryItem {
   net: string;
 }
 
-const DEFAULT_FEE_BPS = 150;
-
 const EarningsTab: React.FC<EarningsTabProps> = ({
   profile,
   stats,
   loading = false,
 }) => {
   const [withdrawOpen, setWithdrawOpen] = useState(false);
-  const feeBps = stats?.feeBps ?? DEFAULT_FEE_BPS;
+  const feeBps = stats?.feeBps ?? 200;
 
   const withdrawals = useMemo<WithdrawalHistoryItem[]>(() => {
     return mockTips.slice(0, 4).map((tip, index) => {
@@ -43,7 +42,7 @@ const EarningsTab: React.FC<EarningsTabProps> = ({
 
       return {
         id: `${tip.from}-${tip.timestamp}`,
-        createdAt: tip.timestamp - (index + 1) * 12 * 60 * 60 * 1000,
+        createdAt: tip.timestamp - (index + 1) * 12 * 60 * 60,
         gross: gross.toString(),
         fee: fee.toString(),
         net: net.toString(),
@@ -118,7 +117,7 @@ const EarningsTab: React.FC<EarningsTabProps> = ({
                     Requested
                   </p>
                   <p className="mt-2 text-lg font-black">
-                    {new Date(entry.createdAt).toLocaleDateString("en-US", {
+                    {formatTimestamp(entry.createdAt).toLocaleDateString("en-US", {
                       month: "short",
                       day: "numeric",
                       year: "numeric",

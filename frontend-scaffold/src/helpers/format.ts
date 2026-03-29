@@ -4,6 +4,12 @@ import BigNumber from "bignumber.js";
 export const truncateString = (str: string) =>
   str ? `${str.slice(0, 5)}…${str.slice(-5)}` : "";
 
+// Convert a Unix timestamp in seconds (Soroban contract format) to a Date object.
+// All Tip.timestamp values in this app are in seconds.
+export function formatTimestamp(seconds: number): Date {
+  return new Date(seconds * 1000);
+}
+
 // conversion used to display the base fee
 export const stroopToXlm = (
   stroops: BigNumber | string | number,

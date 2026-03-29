@@ -25,7 +25,7 @@ function buildWeeklyChart(tips: typeof mockTips) {
 
   const now = Date.now();
   tips.forEach((tip) => {
-    const daysAgo = Math.floor((now - tip.timestamp) / (1000 * 60 * 60 * 24));
+    const daysAgo = Math.floor((now - tip.timestamp * 1000) / (1000 * 60 * 60 * 24));
     const idx = 6 - daysAgo;
     if (idx >= 0 && idx < 7) {
       days[idx].total += Number(tip.amount);
@@ -37,7 +37,7 @@ function buildWeeklyChart(tips: typeof mockTips) {
 
 // Weekly tips count (tips received in the past 7 days)
 function countThisWeek(tips: typeof mockTips) {
-  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const cutoff = Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60;
   return tips.filter((t) => t.timestamp >= cutoff).length;
 }
 
@@ -147,7 +147,7 @@ const OverviewTab: React.FC = () => {
       <WithdrawModal
         isOpen={withdrawOpen}
         balance={mockProfile.balance}
-        feeBps={150}
+        feeBps={200}
         onClose={() => setWithdrawOpen(false)}
       />
     </div>

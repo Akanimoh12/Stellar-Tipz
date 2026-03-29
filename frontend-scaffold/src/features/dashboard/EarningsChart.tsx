@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Coins } from "lucide-react";
 
-import { stroopToXlm } from "../../helpers/format";
+import { stroopToXlm, formatTimestamp } from "../../helpers/format";
 import { Tip } from "../../types/contract";
 
 type Period = "week" | "month" | "all";
@@ -36,12 +36,12 @@ const EarningsChart: React.FC<EarningsChartProps> = ({ tips }) => {
       // Last 7 days
       for (let i = 6; i >= 0; i--) {
         const dayStart = now - (i * SECONDS_IN_DAY);
-        const date = new Date(dayStart * 1000);
+        const date = formatTimestamp(dayStart);
         const label = date.toLocaleDateString("en-US", { weekday: "short" });
-        
+
         const dayTotal = xlmTips
           .filter(t => {
-            const tDate = new Date(t.timestamp * 1000);
+            const tDate = formatTimestamp(t.timestamp);
             return tDate.toDateString() === date.toDateString();
           })
           .reduce((sum, t) => sum + t.amountXlm, 0);
@@ -53,7 +53,7 @@ const EarningsChart: React.FC<EarningsChartProps> = ({ tips }) => {
       for (let i = 5; i >= 0; i--) {
         const blockEnd = now - (i * 5 * SECONDS_IN_DAY);
         const blockStart = blockEnd - (5 * SECONDS_IN_DAY);
-        const date = new Date(blockEnd * 1000);
+        const date = formatTimestamp(blockEnd);
         const label = `${date.getMonth() + 1}/${date.getDate()}`;
         
         const blockTotal = xlmTips
@@ -73,7 +73,7 @@ const EarningsChart: React.FC<EarningsChartProps> = ({ tips }) => {
 
         const monthTotal = xlmTips
           .filter(t => {
-            const tDate = new Date(t.timestamp * 1000);
+            const tDate = formatTimestamp(t.timestamp);
             return tDate.getMonth() === month && tDate.getFullYear() === year;
           })
           .reduce((sum, t) => sum + t.amountXlm, 0);
