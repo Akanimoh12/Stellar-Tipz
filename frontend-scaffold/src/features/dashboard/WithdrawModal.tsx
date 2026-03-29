@@ -3,6 +3,7 @@ import React, { useMemo } from "react";
 import AmountDisplay from "../../components/shared/AmountDisplay";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
+import { useTipz } from "../../hooks";
 
 interface WithdrawModalProps {
   isOpen: boolean;
@@ -17,6 +18,20 @@ const WithdrawModal: React.FC<WithdrawModalProps> = ({
   feeBps,
   onClose,
 }) => {
+  const { withdrawTips, withdrawing, error, txHash, reset } = useTipz();
+
+  const handleWithdraw = async () => {
+    try {
+      await withdrawTips(balance);
+    } catch (err) {
+      console.error('Withdrawal failed:', err);
+    }
+  };
+
+  const handleClose = () => {
+    reset();
+    onClose();
+  };
   const { fee, net } = useMemo(() => {
     const rawBalance = BigInt(balance || "0");
     const feeAmount = (rawBalance * BigInt(feeBps)) / BigInt(10_000);
@@ -29,12 +44,24 @@ const WithdrawModal: React.FC<WithdrawModalProps> = ({
   }, [balance, feeBps]);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Withdraw balance">
+    <Modal isOpen={isOpen} onClose={handleClose} title="Withdraw balance">
       <div className="space-y-5">
         <p className="text-sm font-medium leading-6 text-gray-700">
           This scaffold modal previews the withdrawal breakdown and keeps the
           action flow visible until contract-backed withdrawal execution lands.
         </p>
+
+        {error && (
+          <div className="p-3 border-2 border-red-500 bg-red-50 text-red-700 text-sm">
+            {error}
+          </div>
+        )}
+        
+        {txHash && (
+          <div className="p-3 border-2 border-green-500 bg-green-50 text-green-700 text-sm">
+            Withdrawal successful! Transaction hash: {txHash}
+          </div>
+        )}
 
         <div className="grid gap-3">
           <div className="border-2 border-black bg-yellow-50 p-4">
@@ -58,10 +85,12 @@ const WithdrawModal: React.FC<WithdrawModalProps> = ({
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={handleClose}>
             Close
           </Button>
-          <Button onClick={onClose}>Confirm withdrawal</Button>
+          <Button onClick={handleWithdraw} disabled={withdrawing}>
+            {withdrawing ? 'Withdrawing...' : 'Confirm withdrawal'}
+          </Button>
         </div>
       </div>
     </Modal>
