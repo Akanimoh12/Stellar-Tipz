@@ -143,7 +143,7 @@ fn calculate_credit_score(env: Env, address: Address) -> u32
 
 **Auth**: None  
 **Errors**: `NotRegistered`  
-**Returns**: Score 0-1000
+**Returns**: Score 0-100
 
 ---
 
