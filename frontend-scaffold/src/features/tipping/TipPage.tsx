@@ -31,7 +31,7 @@ const TipPage: React.FC = () => {
     // Simulate initial loading to demonstrate the skeleton
     const timer = setTimeout(() => {
       setLoading(false);
-    }, 1500);
+    }, 800);
     return () => clearTimeout(timer);
   }, []);
 

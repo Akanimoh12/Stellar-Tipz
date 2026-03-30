@@ -12,10 +12,24 @@ import Card from "../../components/ui/Card";
 import { useProfile } from "../../hooks";
 import { mockProfile } from "../mockData";
 import ActivityFeed from "./ActivityFeed";
+import ProfileSkeleton from "./ProfileSkeleton";
 import XHandleLink from "./XHandleLink";
 
 const ProfilePage: React.FC = () => {
-  const { profile } = useProfile();
+  const { profile, loading } = useProfile();
+  const [minTimeElapsed, setMinTimeElapsed] = React.useState(false);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => setMinTimeElapsed(true), 300);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const showSkeleton = loading || !minTimeElapsed;
+
+  if (showSkeleton) {
+    return <ProfileSkeleton />;
+  }
+
   const activeProfile = profile ?? mockProfile;
   const usingMockProfile = !profile;
 

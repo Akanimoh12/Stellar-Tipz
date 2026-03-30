@@ -11,12 +11,27 @@ import Card from "../../components/ui/Card";
 import EmptyState from "../../components/ui/EmptyState";
 import Pagination from "../../components/ui/Pagination";
 import { mockProfile, mockTips } from "../mockData";
+import DashboardSkeleton from "./DashboardSkeleton";
 import EarningsChart from "./EarningsChart";
 import QRCode from "./QRCode";
+import TipHistory from "./TipHistory";
+import { useProfile, useWallet } from "../../hooks";
 
 const DashboardPage: React.FC = () => {
   const { connected } = useWallet();
   const { profile, loading, isRegistered } = useProfile();
+  const [minTimeElapsed, setMinTimeElapsed] = React.useState(false);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => setMinTimeElapsed(true), 300);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const showSkeleton = (loading || !minTimeElapsed) && connected;
+
+  if (showSkeleton) {
+    return <DashboardSkeleton />;
+  }
 
   if (!connected) {
     return <Navigate to="/" replace />;

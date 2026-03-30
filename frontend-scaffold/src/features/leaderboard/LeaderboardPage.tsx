@@ -9,11 +9,23 @@ import Avatar from "../../components/ui/Avatar";
 import Card from "../../components/ui/Card";
 import Pagination from "../../components/ui/Pagination";
 import { mockLeaderboard } from "../mockData";
+import LeaderboardSkeleton from "./LeaderboardSkeleton";
 
 const PAGE_SIZE = 5;
 
 const LeaderboardPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => setLoading(false), 800);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (loading) {
+    return <LeaderboardSkeleton />;
+  }
+
   const totalPages = Math.ceil(mockLeaderboard.length / PAGE_SIZE);
 
   const visibleEntries = useMemo(() => {
