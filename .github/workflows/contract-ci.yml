@@ -2,13 +2,8 @@ name: Contract CI
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "contracts/**"
-  pull_request:
-    branches: [main]
-    paths:
-      - "contracts/**"
+    branches: [] # Disabled
+  pull_request: false
 
 permissions:
   contents: read

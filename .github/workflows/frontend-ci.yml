@@ -2,13 +2,8 @@ name: Frontend CI
 
 on:
   push:
-    branches: [main]
-    paths:
-      - 'frontend-scaffold/**'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'frontend-scaffold/**'
+    branches: [] # Disabled
+  pull_request: false
 
 permissions:
   contents: read
