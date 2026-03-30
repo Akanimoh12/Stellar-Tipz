@@ -5,7 +5,9 @@
 use soroban_sdk::{Env, String};
 
 use crate::errors::ContractError;
-use crate::validation::{validate_bio, validate_display_name, validate_image_url, validate_username};
+use crate::validation::{
+    validate_bio, validate_display_name, validate_image_url, validate_username,
+};
 
 // ───────────────────────── helpers ──────────────────────────
 
@@ -384,7 +386,10 @@ fn bio_reject_too_long() {
     let env = Env::default();
     // 281 characters
     let bio = "a".repeat(281);
-    assert_eq!(validate_bio(&s(&env, &bio)), Err(ContractError::MessageTooLong));
+    assert_eq!(
+        validate_bio(&s(&env, &bio)),
+        Err(ContractError::MessageTooLong)
+    );
 }
 
 #[test]
@@ -399,10 +404,7 @@ fn bio_valid_with_special_chars() {
 #[test]
 fn bio_valid_with_newlines() {
     let env = Env::default();
-    assert_eq!(
-        validate_bio(&s(&env, "Line 1\nLine 2\nLine 3")),
-        Ok(())
-    );
+    assert_eq!(validate_bio(&s(&env, "Line 1\nLine 2\nLine 3")), Ok(()));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -428,7 +430,10 @@ fn image_url_valid_https() {
 fn image_url_valid_ipfs() {
     let env = Env::default();
     assert_eq!(
-        validate_image_url(&s(&env, "ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG")),
+        validate_image_url(&s(
+            &env,
+            "ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
+        )),
         Ok(())
     );
 }
