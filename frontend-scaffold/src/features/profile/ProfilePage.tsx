@@ -8,7 +8,7 @@ import Card from "../../components/ui/Card";
 import Loader from "../../components/ui/Loader";
 import ErrorState from "../../components/shared/ErrorState";
 import { hasPositiveBalance } from "@/helpers/balance";
-import { useProfile } from "../../hooks";
+import { useProfile, useContract } from "../../hooks";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { categorizeError } from "@/helpers/error";
 
@@ -25,7 +25,9 @@ import WithdrawModal from "./WithdrawModal";
  */
 const ProfilePage: React.FC = () => {
   const { profile, loading, error, isRegistered, refetch } = useProfile();
+  const { getStats } = useContract();
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
+  const [feeBps, setFeeBps] = useState(250); // Default to 250 (2.5%) as fallback
 
   usePageTitle(
     loading
@@ -34,6 +36,12 @@ const ProfilePage: React.FC = () => {
       ? `${profile.displayName} (@${profile.username})`
       : "Register Profile",
   );
+
+  React.useEffect(() => {
+    getStats()
+      .then(stats => setFeeBps(stats.feeBps))
+      .catch(err => console.error("Failed to fetch fee bps:", err));
+  }, [getStats]);
 
   if (loading) {
     return (
@@ -176,11 +184,11 @@ const ProfilePage: React.FC = () => {
         </aside>
       </div>
 
-      {/* Withdraw Modal */}
       <WithdrawModal
         isOpen={isWithdrawModalOpen}
         onClose={() => setIsWithdrawModalOpen(false)}
         balance={profile.balance}
+        feeBps={feeBps}
       />
     </PageContainer>
   );

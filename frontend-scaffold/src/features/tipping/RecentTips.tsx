@@ -8,20 +8,12 @@ import { useContract } from '@/hooks';
 import { useState, useEffect } from 'react';
 import Loader from '@/components/ui/Loader';
 
-const RecentTips: React.FC = () => {
-  const { username } = useParams<{ username: string }>();
-  const { getProfileByUsername } = useContract();
-  const [targetAddress, setTargetAddress] = useState<string | null>(null);
+interface RecentTipsProps {
+  address: string;
+}
 
-  useEffect(() => {
-    if (username) {
-      getProfileByUsername(username)
-        .then(p => setTargetAddress(p.owner))
-        .catch(() => setTargetAddress(null));
-    }
-  }, [username, getProfileByUsername]);
-
-  const { tips, loading } = useTips(targetAddress || "", "creator", 3);
+const RecentTips: React.FC<RecentTipsProps> = ({ address }) => {
+  const { tips, loading } = useTips(address, "creator", 3);
 
   if (loading && tips.length === 0) {
     return <div className="py-10 flex justify-center"><Loader size="sm" /></div>;

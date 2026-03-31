@@ -21,6 +21,7 @@ import RecentTips from "./RecentTips";
 import TipConfirm from "./TipConfirm";
 import { useTipFlow } from "./useTipFlow";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import CreatorNotFound from "./CreatorNotFound";
 
 const TipPage: React.FC = () => {
   const { username } = useParams<{ username: string }>();
@@ -65,6 +66,10 @@ const TipPage: React.FC = () => {
   }
 
   if (fetchError || !creator) {
+    if (!creator && !loading) {
+      return <CreatorNotFound username={username} />;
+    }
+    
     return (
       <PageContainer maxWidth="xl" className="py-20">
         <ErrorState 
@@ -230,7 +235,7 @@ const TipPage: React.FC = () => {
               View dashboard
             </Link>
           </div>
-          <RecentTips />
+          <RecentTips address={creator.owner} />
         </Card>
       </section>
     </PageContainer>
