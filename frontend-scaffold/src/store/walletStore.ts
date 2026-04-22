@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 type Network = 'TESTNET' | 'PUBLIC';
 
@@ -20,20 +21,37 @@ interface WalletActions {
 
 type WalletStore = WalletState & WalletActions;
 
-export const useWalletStore = create<WalletStore>((set) => ({
+const initialWalletState: WalletState = {
   publicKey: null,
   connected: false,
   connecting: false,
   error: null,
   network: 'TESTNET',
+};
 
-  connect: (publicKey: string) => set({ publicKey, connected: true, connecting: false, error: null }),
+export const useWalletStore = create<WalletStore>()(
+  persist(
+    (set) => ({
+      ...initialWalletState,
 
-  disconnect: () => set({ publicKey: null, connected: false, error: null }),
+      connect: (publicKey: string) =>
+        set({ publicKey, connected: true, connecting: false, error: null }),
 
-  setConnecting: (connecting: boolean) => set({ connecting }),
+      disconnect: () => set({ publicKey: null, connected: false, error: null }),
 
-  setError: (error: string | null) => set({ error, connecting: false }),
+      setConnecting: (connecting: boolean) => set({ connecting }),
 
-  setNetwork: (network: Network) => set({ network }),
-}));
+      setError: (error: string | null) => set({ error, connecting: false }),
+
+      setNetwork: (network: Network) => set({ network }),
+    }),
+    {
+      name: 'tipz-wallet',
+      partialize: (state) => ({
+        publicKey: state.publicKey,
+        connected: state.connected,
+        network: state.network,
+      }),
+    }
+  )
+);
