@@ -617,6 +617,165 @@ mod tests {
         });
     }
 
+    /// Three entries all with equal totals must retain insertion order (stable sort).
+    #[test]
+    fn test_sort_leaderboard_all_equal_totals() {
+        let env = Env::default();
+        let addr_a = Address::generate(&env);
+        let addr_b = Address::generate(&env);
+        let addr_c = Address::generate(&env);
+        let mut list = Vec::new(&env);
+        list.push_back(LeaderboardEntry {
+            address: addr_a.clone(),
+            username: String::from_str(&env, "a"),
+            total_tips_received: 100,
+            credit_score: 50,
+        });
+        list.push_back(LeaderboardEntry {
+            address: addr_b.clone(),
+            username: String::from_str(&env, "b"),
+            total_tips_received: 100,
+            credit_score: 50,
+        });
+        list.push_back(LeaderboardEntry {
+            address: addr_c.clone(),
+            username: String::from_str(&env, "c"),
+            total_tips_received: 100,
+            credit_score: 50,
+        });
+        sort_leaderboard(&mut list);
+        assert_eq!(list.len(), 3);
+        // All totals equal — insertion order must be preserved.
+        assert_eq!(list.get(0).unwrap().address, addr_a);
+        assert_eq!(list.get(1).unwrap().address, addr_b);
+        assert_eq!(list.get(2).unwrap().address, addr_c);
+    }
+
+    /// An entry with the highest total placed last must bubble all the way to
+    /// index 0, exercising every decrement of j down to 0.
+    #[test]
+    fn test_sort_leaderboard_entry_bubbles_to_position_zero() {
+        let env = Env::default();
+        let mut list = Vec::new(&env);
+        // Insert in ascending order so the last element is the largest.
+        let addrs: soroban_sdk::Vec<Address> = {
+            let mut v = soroban_sdk::Vec::new(&env);
+            let mut k: u32 = 0;
+            while k < 4 {
+                v.push_back(Address::generate(&env));
+                k += 1;
+            }
+            v
+        };
+        let totals: [i128; 4] = [10, 20, 30, 100];
+        let mut k: u32 = 0;
+        while k < 4 {
+            list.push_back(LeaderboardEntry {
+                address: addrs.get(k).unwrap(),
+                username: String::from_str(&env, "u"),
+                total_tips_received: totals[k as usize],
+                credit_score: 50,
+            });
+            k += 1;
+        }
+        sort_leaderboard(&mut list);
+        // Highest (100) must be at position 0.
+        assert_eq!(list.get(0).unwrap().total_tips_received, 100);
+        // Remaining entries must be in descending order.
+        let mut idx: u32 = 0;
+        while idx < list.len() - 1 {
+            assert!(
+                list.get(idx).unwrap().total_tips_received
+                    >= list.get(idx + 1).unwrap().total_tips_received
+            );
+            idx += 1;
+        }
+    }
+
+    /// update_leaderboard: two entries where the second has a higher total must
+    /// end with the higher-total entry at rank 1.
+    #[test]
+    fn test_update_leaderboard_two_entries_need_swap() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TipzContract);
+        env.as_contract(&contract_id, || {
+            let addr_low = Address::generate(&env);
+            let addr_high = Address::generate(&env);
+
+            // Insert lower total first, higher total second.
+            update_leaderboard(&env, &make_profile(&env, addr_low.clone(), "low", 50));
+            update_leaderboard(&env, &make_profile(&env, addr_high.clone(), "high", 200));
+
+            let entries = load_entries(&env);
+            assert_eq!(entries.len(), 2);
+            assert_eq!(
+                entries.get(0).unwrap().address,
+                addr_high,
+                "higher-total entry must be rank 1"
+            );
+            assert_eq!(entries.get(1).unwrap().address, addr_low);
+        });
+    }
+
+    /// update_leaderboard: all entries with the same total preserve insertion order.
+    #[test]
+    fn test_update_leaderboard_all_equal_totals() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TipzContract);
+        env.as_contract(&contract_id, || {
+            let addr_a = Address::generate(&env);
+            let addr_b = Address::generate(&env);
+            let addr_c = Address::generate(&env);
+
+            update_leaderboard(&env, &make_profile(&env, addr_a.clone(), "a", 100));
+            update_leaderboard(&env, &make_profile(&env, addr_b.clone(), "b", 100));
+            update_leaderboard(&env, &make_profile(&env, addr_c.clone(), "c", 100));
+
+            let entries = load_entries(&env);
+            assert_eq!(entries.len(), 3);
+            assert_eq!(entries.get(0).unwrap().address, addr_a, "first-in keeps rank 1");
+            assert_eq!(entries.get(1).unwrap().address, addr_b);
+            assert_eq!(entries.get(2).unwrap().address, addr_c);
+        });
+    }
+
+    /// update_leaderboard: a new entry with the highest total must reach rank 1
+    /// (position 0) even when the existing list has multiple entries.
+    #[test]
+    fn test_update_leaderboard_entry_sorts_to_position_zero() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TipzContract);
+        env.as_contract(&contract_id, || {
+            let addr_top = Address::generate(&env);
+            let addr_a = Address::generate(&env);
+            let addr_b = Address::generate(&env);
+            let addr_c = Address::generate(&env);
+
+            // Build a list of three mid-range entries, then add the top scorer.
+            update_leaderboard(&env, &make_profile(&env, addr_a.clone(), "a", 10));
+            update_leaderboard(&env, &make_profile(&env, addr_b.clone(), "b", 20));
+            update_leaderboard(&env, &make_profile(&env, addr_c.clone(), "c", 30));
+            update_leaderboard(&env, &make_profile(&env, addr_top.clone(), "top", 999));
+
+            let entries = load_entries(&env);
+            assert_eq!(entries.len(), 4);
+            assert_eq!(
+                entries.get(0).unwrap().address,
+                addr_top,
+                "new highest-total entry must be at position 0"
+            );
+            // Remaining entries in descending order.
+            let mut idx: u32 = 0;
+            while idx < entries.len() - 1 {
+                assert!(
+                    entries.get(idx).unwrap().total_tips_received
+                        >= entries.get(idx + 1).unwrap().total_tips_received
+                );
+                idx += 1;
+            }
+        });
+    }
+
     /// Two creators with the same tip total must maintain their insertion order
     /// (first-to-arrive keeps the higher rank) after `update_leaderboard`.
     #[test]
