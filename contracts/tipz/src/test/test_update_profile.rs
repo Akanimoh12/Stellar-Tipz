@@ -221,7 +221,7 @@ fn test_update_profile_image_url_too_long() {
 
     register(&env, &client, &caller, "alice");
 
-    let mut long_url_bytes = [b'a'; 257];
+    let long_url_bytes = [b'a'; 257];
     let long_url = String::from_str(&env, core::str::from_utf8(&long_url_bytes).unwrap());
     let result = client.try_update_profile(&caller, &None, &None, &Some(long_url), &None);
 

@@ -23,7 +23,7 @@ fn setup() -> (Env, TipzContractClient<'static>, Address, Address, Address) {
 
 #[test]
 fn test_get_config_returns_all_fields() {
-    let (env, client, admin, fee_collector, native_token) = setup();
+    let (_env, client, admin, fee_collector, native_token) = setup();
 
     client.initialize(&admin, &fee_collector, &200_u32, &native_token);
 

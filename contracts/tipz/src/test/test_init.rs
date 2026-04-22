@@ -34,7 +34,7 @@ fn setup() -> (Env, TipzContractClient<'static>, Address, Address, Address) {
 
 #[test]
 fn test_initialize_success() {
-    let (env, client, admin, fee_collector, native_token) = setup();
+    let (_env, client, admin, fee_collector, native_token) = setup();
     let fee_bps: u32 = 200;
 
     client.initialize(&admin, &fee_collector, &fee_bps, &native_token);
