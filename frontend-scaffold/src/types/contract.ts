@@ -1,3 +1,51 @@
+/**
+ * Raw profile shape returned by the Soroban contract before key mapping.
+ * Field names match the Rust struct fields (snake_case).
+ */
+export interface RawProfile {
+  owner: string;
+  username: string;
+  display_name: string;
+  bio: string;
+  image_url: string;
+  x_handle: string;
+  x_followers: number;
+  x_engagement_avg: number;
+  credit_score: number;
+  total_tips_received: string;
+  total_tips_count: number;
+  balance: string;
+  registered_at: number;
+  updated_at: number;
+}
+
+/** Raw tip record as returned by the contract before key mapping. */
+export interface RawTip {
+  id: number;
+  tipper: string;
+  creator: string;
+  amount: string;
+  message: string;
+  timestamp: number;
+}
+
+/** Raw leaderboard entry before key mapping. */
+export interface RawLeaderboardEntry {
+  address: string;
+  username: string;
+  total_tips_received: string;
+  credit_score: number;
+}
+
+/** Raw contract stats before key mapping. */
+export interface RawContractStats {
+  total_creators: number;
+  total_tips_count: number;
+  total_tips_volume: string;
+  total_fees_collected: string;
+  fee_bps: number;
+}
+
 /** Profile data from the Tipz contract */
 export interface Profile {
   owner: string;

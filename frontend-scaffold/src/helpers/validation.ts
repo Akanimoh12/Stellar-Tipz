@@ -3,6 +3,9 @@ export interface ValidationResult {
   error?: string;
 }
 
+/** Maximum tip message length — must stay in sync with the contract's validate_message (280 bytes). */
+export const MAX_MESSAGE_LENGTH = 280;
+
 const USERNAME_RE = /^[a-z][a-z0-9_]{2,31}$/;
 
 export const validateUsername = (username: string): ValidationResult => {
@@ -44,6 +47,14 @@ export const validateDisplayName = (name: string): ValidationResult => {
 export const validateBio = (bio: string): ValidationResult => {
   if (bio.length > 280) {
     return { valid: false, error: "Bio must be 280 characters or fewer." };
+  }
+
+  return { valid: true };
+};
+
+export const validateMessage = (message: string): ValidationResult => {
+  if (message.length > MAX_MESSAGE_LENGTH) {
+    return { valid: false, error: `Message must be ${MAX_MESSAGE_LENGTH} characters or fewer.` };
   }
 
   return { valid: true };

@@ -13,6 +13,7 @@ import Textarea from "../../components/ui/Textarea";
 import { useWallet, useContract } from "../../hooks";
 import ErrorState from "../../components/shared/ErrorState";
 import { categorizeError, ERRORS } from "@/helpers/error";
+import { MAX_MESSAGE_LENGTH } from "@/helpers/validation";
 import { Profile } from "@/types/contract";
 import TipPageSkeleton from "./TipPageSkeleton";
 import TipAmountInput from "./TipAmountInput";
@@ -162,7 +163,9 @@ const TipPage: React.FC = () => {
               <Textarea
                 label="Message"
                 placeholder="Say why you are supporting this creator."
-                maxLength={280}
+                maxLength={MAX_MESSAGE_LENGTH}
+                warnAt={250}
+                dangerAt={270}
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
               />

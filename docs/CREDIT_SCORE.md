@@ -6,142 +6,177 @@
 
 ## Overview
 
-The credit score provides transparent creator credibility, helping tippers discover quality creators. Scores range from **0 to 1000** and are stored on-chain.
+The credit score provides transparent creator credibility, helping tippers discover quality creators. Scores range from **0 to 100** and are stored on-chain in the creator's profile.
+
+Every newly registered creator starts at the **base score of 40**, placing them in the Silver tier by default.
 
 ---
 
 ## Formula
 
 ```
-credit_score = follower_component + activity_component + base_component
+score = BASE_SCORE (40)
+      + tip_sub  * 20 / 100   →  0–20 pts  (tip volume component)
+      + x_sub    * 30 / 100   →  0–30 pts  (X metrics component)
+      + age_sub  * 10 / 100   →  0–10 pts  (account age component)
 
-Where:
-  follower_component = min(followers / 10, 500) × 0.50
-  activity_component = min((posts + replies × 1.5) / 5, 300) × 0.30
-  base_component     = 200 × 0.20
-
-Maximum score: 1000
+Maximum score: 100
 ```
+
+Each sub-score is independently capped at 100 before weighting.
 
 ### Component Breakdown
 
-| Component | Weight | Max Contribution | Input Source |
-|-----------|--------|-----------------|-------------|
-| **Followers** | 50% | 500 points | X follower count |
-| **Activity** | 30% | 300 points | X posts + weighted replies |
-| **Base** | 20% | 200 points | Flat (every registered creator gets this) |
+| Component | Weight | Max Contribution | Input |
+|-----------|--------|-----------------|-------|
+| **Base** | — | 40 pts | Flat — every registered creator |
+| **Tip volume** | 20% | 20 pts | `total_tips_received` (stroops) |
+| **X metrics** | 30% | 30 pts | `x_followers` + `x_engagement_avg` |
+| **Account age** | 10% | 10 pts | Days since `registered_at` |
 
 ---
 
 ## Detailed Calculation
 
-### 1. Follower Component (50%, max 500)
+### 1. Tip Sub-score (max contribution: 20 pts)
 
 ```
-raw = followers / 10
-capped = min(raw, 500)
-follower_score = capped × 0.50 = capped / 2
+tip_sub  = clamp(total_tips_received, 0, 1_000_000_000) / 10_000_000
+tip_sub  = capped at 100
+
+tip_score = tip_sub * 20 / 100
 ```
 
-| Followers | Raw | Capped | Score |
-|-----------|-----|--------|-------|
-| 100 | 10 | 10 | 5 |
-| 1,000 | 100 | 100 | 50 |
-| 5,000 | 500 | 500 | 250 |
-| 50,000 | 5,000 | 500 | 250 |
+| Tips received (XLM) | Stroops | tip_sub | tip_score |
+|--------------------|---------|---------|-----------|
+| 0 XLM | 0 | 0 | 0 |
+| 1 XLM | 10,000,000 | 1 | 0 |
+| 10 XLM | 100,000,000 | 10 | 2 |
+| 100 XLM | 1,000,000,000 | 100 (max) | 20 (max) |
 
-Max at **5,000+ followers** → 250 points.
+Maximum reached at **100 XLM** in tips.
 
-### 2. Activity Component (30%, max 300)
-
-Replies are weighted 1.5× because they indicate engagement.
+### 2. X Metrics Sub-score (max contribution: 30 pts)
 
 ```
-activity = (posts + replies × 1.5) / 5
-capped = min(activity, 300)
-activity_score = capped × 0.30
+follower_part    = min(x_followers / 50, 50)
+engagement_part  = min(x_engagement_avg / 10, 50)
+x_sub            = follower_part + engagement_part   (max 100)
+
+x_score = x_sub * 30 / 100
 ```
 
-| Posts | Replies | Raw | Capped | Score |
-|-------|---------|-----|--------|-------|
-| 100 | 50 | 35 | 35 | 10.5 |
-| 500 | 200 | 160 | 160 | 48.0 |
-| 1,000 | 500 | 350 | 300 | 90.0 |
+`x_engagement_avg` is a pre-computed engagement metric stored by the admin. Both components contribute up to 50 points each.
 
-Max at very high activity → 90 points.
+| x_followers | x_engagement_avg | follower_part | engagement_part | x_sub | x_score |
+|-------------|-----------------|---------------|-----------------|-------|---------|
+| 0 | 0 | 0 | 0 | 0 | 0 |
+| 500 | 0 | 10 | 0 | 10 | 3 |
+| 2,500 | 100 | 50 (max) | 10 | 60 | 18 |
+| 2,500 | 500 | 50 (max) | 50 (max) | 100 (max) | 30 (max) |
 
-### 3. Base Component (20%, always 200)
+When both `x_followers` and `x_engagement_avg` are 0, the entire X component is 0 (not registered with X).
 
-Every registered creator receives:
+### 3. Account Age Sub-score (max contribution: 10 pts)
 
 ```
-base_score = 200 × 0.20 = 40 points
+age_in_days = (now - registered_at) / 86_400
+
+age_sub = age_in_days / 10   (min age: 1 day, capped at 100)
+age_score = age_sub * 10 / 100
 ```
 
-This ensures new creators start with a non-zero score.
+Accounts younger than 1 day contribute **0** to the age component.
+
+| Account age | age_sub | age_score |
+|-------------|---------|-----------|
+| < 1 day | 0 | 0 |
+| 10 days | 1 | 0 |
+| 100 days | 10 | 1 |
+| 1,000 days (~2.7 yr) | 100 (max) | 10 (max) |
+
+Maximum reached after ~1,000 days (~2.7 years).
+
+---
+
+## Score Examples
+
+| Creator type | Tips (XLM) | x_followers | x_engagement_avg | Age (days) | Score | Tier |
+|-------------|-----------|-------------|-----------------|-----------|-------|------|
+| Newly registered | 0 | 0 | 0 | 0 | 40 | Silver |
+| Active tipper, no X | 10 | 0 | 0 | 30 | 43 | Silver |
+| X presence, no tips | 0 | 2,500 | 100 | 60 | 53 | Silver |
+| Established creator | 50 | 2,500 | 200 | 365 | 67 | Gold |
+| Elite creator | 100+ | 2,500+ | 500+ | 1,000+ | 100 | Diamond |
 
 ---
 
 ## Tier System
 
-| Tier | Range | Badge | Description |
-|------|-------|-------|-------------|
-| 🥉 **Bronze** | 0–400 | Entry Level | New or small creators |
-| 🥈 **Silver** | 401–700 | Established | Growing presence |
-| 🥇 **Gold** | 701–900 | Proven | Strong community |
-| 💎 **Diamond** | 901–1000 | Elite | Top-tier creators |
+| Tier | Score Range | Starting condition |
+|------|-------------|-------------------|
+| **New** | 0–19 | No registered profile |
+| **Bronze** | 20–39 | Below base (not achievable via normal registration) |
+| **Silver** | 40–59 | Default for all newly registered creators |
+| **Gold** | 60–79 | Growing tips, X presence, or account age |
+| **Diamond** | 80–100 | Elite: strong across all components |
 
-### Score Examples
-
-| Creator Type | Followers | Posts | Replies | Score | Tier |
-|-------------|-----------|-------|---------|-------|------|
-| New creator | 50 | 20 | 10 | ~49 | Bronze |
-| Growing creator | 500 | 200 | 100 | ~115 | Bronze |
-| Established creator | 2,000 | 500 | 300 | ~199 | Bronze |
-| Popular creator | 5,000 | 1,000 | 500 | ~380 | Bronze |
-| Major creator | 10,000 | 2,000 | 1,000 | ~380 | Bronze |
-
-> Note: The scoring is designed to be conservative — reaching Diamond tier requires exceptional, sustained engagement.
+> All newly registered profiles start at 40 (bottom of Silver) because the base score is 40.
 
 ---
 
 ## Implementation (Rust)
 
+See [`contracts/tipz/src/credit.rs`](../contracts/tipz/src/credit.rs) for the canonical implementation.
+
+Key constants:
+
 ```rust
-/// Calculate credit score for a profile (0-1000)
-pub fn calculate_credit_score(
-    followers: u32,
-    posts: u32,
-    replies: u32,
-) -> u32 {
-    // Follower component: min(followers/10, 500) × 50%
-    let follower_raw = followers / 10;
-    let follower_capped = if follower_raw > 500 { 500 } else { follower_raw };
-    let follower_score = follower_capped * 50 / 100;
+pub const BASE_SCORE: u32     = 40;
+pub const MAX_SCORE: u32      = 100;
+pub const TIP_WEIGHT: u32     = 20;   // percent
+pub const X_WEIGHT: u32       = 30;   // percent
+pub const AGE_WEIGHT: u32     = 10;   // percent
+pub const TIP_DIVISOR: i128   = 10_000_000;
+pub const FOLLOWER_DIVISOR: u32  = 50;
+pub const ENGAGEMENT_DIVISOR: u32 = 10;
+pub const AGE_DIVISOR: u32    = 10;
+pub const X_SUB_CAP: u32      = 50;
+pub const AGE_CAP: u32        = 100;
+pub const TIP_CAP: u32        = 100;
+```
 
-    // Activity component: min((posts + replies*1.5)/5, 300) × 30%
-    // Use integer math: replies*15/10 instead of replies*1.5
-    let activity_raw = (posts + replies * 15 / 10) / 5;
-    let activity_capped = if activity_raw > 300 { 300 } else { activity_raw };
-    let activity_score = activity_capped * 30 / 100;
+Core calculation:
 
-    // Base component: 200 × 20%
-    let base_score = 200 * 20 / 100;
+```rust
+let tip_sub: u32 = (profile.total_tips_received.clamp(0, TIP_VOLUME_CAP) / TIP_DIVISOR) as u32;
 
-    // Total (max 1000)
-    let total = follower_score + activity_score + base_score;
-    if total > 1000 { 1000 } else { total }
-}
+let x_sub: u32 = {
+    let follower_part = (profile.x_followers / FOLLOWER_DIVISOR).min(X_SUB_CAP);
+    let engagement_part = (profile.x_engagement_avg / ENGAGEMENT_DIVISOR).min(X_SUB_CAP);
+    follower_part + engagement_part
+};
+
+let age_sub: u32 = {
+    let age_days = (now - profile.registered_at) / SECONDS_PER_DAY;
+    (age_days as u32 / AGE_DIVISOR).min(AGE_CAP)
+};
+
+let total = (BASE_SCORE
+    + tip_sub * TIP_WEIGHT / MAX_SCORE
+    + x_sub   * X_WEIGHT   / MAX_SCORE
+    + age_sub * AGE_WEIGHT / MAX_SCORE)
+    .min(MAX_SCORE);
 ```
 
 ---
 
 ## Update Mechanism
 
-1. **Off-chain fetch**: A trusted service queries the X (Twitter) API for follower/post/reply counts
-2. **Admin update**: The admin calls `update_x_metrics(target, followers, posts, replies)` on the contract
-3. **Recalculation**: The contract recalculates and stores the new credit score
-4. **Event**: `CreditScoreUpdated` event emitted with old and new scores
+1. **Off-chain fetch**: A trusted service queries the X (Twitter) API for follower count and engagement metrics
+2. **Admin update**: The admin calls `update_x_metrics(target, x_followers, x_engagement_avg)` or the batch variant `batch_update_x_metrics` (up to 50 creators per call)
+3. **Recalculation**: The contract recalculates and stores the new credit score on the profile
+4. **Event**: A `CreditScoreUpdated` event is emitted with the old and new scores
 
 ### Why Off-chain?
 
@@ -153,9 +188,10 @@ The X API cannot be called directly from a smart contract. The admin role acts a
 
 | Decision | Reasoning |
 |----------|-----------|
-| **50% weight on followers** | Social proof is the strongest credibility signal |
-| **1.5× reply weight** | Replies indicate genuine engagement, not just broadcasting |
-| **Base score of 40** | New creators aren't stuck at zero |
-| **Caps on components** | Prevents gaming by any single metric |
-| **On-chain storage** | Fully transparent and verifiable |
-| **Integer math** | Soroban doesn't support floating point |
+| **0–100 scale** | Intuitive percentage-like range; easier for users to interpret |
+| **Base score of 40 (Silver)** | New creators aren't penalized; they start with a meaningful reputation |
+| **Tip volume (20% weight)** | On-chain, fully verifiable signal of real supporter demand |
+| **X metrics (30% weight)** | Largest weight — social proof is the strongest off-chain credibility signal |
+| **Account age (10% weight)** | Rewards longevity; prevents hit-and-run accounts from scoring high |
+| **Integer math only** | Soroban does not support floating-point arithmetic |
+| **Per-component caps** | Prevents gaming by inflating a single metric |

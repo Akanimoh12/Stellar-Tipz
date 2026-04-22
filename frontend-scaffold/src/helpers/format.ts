@@ -1,5 +1,51 @@
 import BigNumber from "bignumber.js";
 
+const snakeToCamel = (key: string): string =>
+  key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+
+const camelToSnakeKey = (key: string): string =>
+  key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+
+/**
+ * Recursively converts all object keys from snake_case to camelCase.
+ * Handles nested objects and arrays of objects.
+ * Required because Soroban contracts serialize struct fields in snake_case
+ * while the frontend TypeScript types use camelCase.
+ */
+export const mapContractResponse = <T = unknown>(data: unknown): T => {
+  if (Array.isArray(data)) {
+    return data.map((item) => mapContractResponse(item)) as unknown as T;
+  }
+  if (data !== null && typeof data === "object") {
+    return Object.fromEntries(
+      Object.entries(data as Record<string, unknown>).map(([k, v]) => [
+        snakeToCamel(k),
+        mapContractResponse(v),
+      ]),
+    ) as T;
+  }
+  return data as T;
+};
+
+/**
+ * Recursively converts all object keys from camelCase to snake_case.
+ * Used when constructing arguments to send to the Soroban contract.
+ */
+export const camelToSnake = <T = unknown>(data: unknown): T => {
+  if (Array.isArray(data)) {
+    return data.map((item) => camelToSnake(item)) as unknown as T;
+  }
+  if (data !== null && typeof data === "object") {
+    return Object.fromEntries(
+      Object.entries(data as Record<string, unknown>).map(([k, v]) => [
+        camelToSnakeKey(k),
+        camelToSnake(v),
+      ]),
+    ) as T;
+  }
+  return data as T;
+};
+
 // used for display purposes
 export const truncateString = (str: string) =>
   str ? `${str.slice(0, 5)}…${str.slice(-5)}` : "";

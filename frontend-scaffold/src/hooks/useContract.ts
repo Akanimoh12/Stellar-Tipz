@@ -152,22 +152,33 @@ export const useContract = () => {
   }, [contractId, wallet.publicKey, server, networkDetails]);
 
   const getMinTipAmount = useCallback(async (): Promise<string> => {
-    const contract = new Contract(contractId);
-    const txBuilder = await getTxBuilder(
-      wallet.publicKey ||
-        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-      BASE_FEE,
-      server,
-      networkDetails.networkPassphrase,
-    );
-    const tx = txBuilder
-      .addOperation(contract.call("get_min_tip_amount"))
-      .setTimeout(TimeoutInfinite)
-      .build();
+    // Default of 1 XLM returned when contract is unavailable or not yet deployed
+    const DEFAULT_MIN_TIP_XLM = "1";
 
-    const minTipStroops = await simulateTx<number>(tx, server);
-    // Convert stroops to XLM string for display
-    return (minTipStroops / 1e7).toString();
+    if (!contractId) {
+      return DEFAULT_MIN_TIP_XLM;
+    }
+
+    try {
+      const contract = new Contract(contractId);
+      const txBuilder = await getTxBuilder(
+        wallet.publicKey ||
+          "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        BASE_FEE,
+        server,
+        networkDetails.networkPassphrase,
+      );
+      const tx = txBuilder
+        .addOperation(contract.call("get_min_tip_amount"))
+        .setTimeout(TimeoutInfinite)
+        .build();
+
+      const minTipStroops = await simulateTx<number>(tx, server);
+      // Convert stroops to XLM string for display
+      return (minTipStroops / 1e7).toString();
+    } catch {
+      return DEFAULT_MIN_TIP_XLM;
+    }
   }, [contractId, wallet.publicKey, server, networkDetails]);
 
   const getRecentTips = useCallback(

@@ -14,7 +14,7 @@ import {
 } from "@stellar/stellar-sdk";
 
 import { NetworkDetails } from "../helpers/network";
-import { stroopToXlm } from "../helpers/format";
+import { stroopToXlm, mapContractResponse } from "../helpers/format";
 import { ERRORS } from "../helpers/error";
 
 // TODO: once soroban supports estimated fees, we can fetch this
@@ -104,7 +104,8 @@ export const simulateTx = async <ArgType>(
     SorobanRpc.Api.isSimulationSuccess(response) &&
     response.result !== undefined
   ) {
-    return scValToNative(response.result.retval);
+    const raw = scValToNative(response.result.retval);
+    return mapContractResponse<ArgType>(raw);
   }
 
   throw new Error("cannot simulate transaction");

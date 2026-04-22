@@ -5,6 +5,10 @@ interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement
   error?: string;
   maxLength?: number;
   rows?: number;
+  /** Character count at which the counter turns yellow (warning). */
+  warnAt?: number;
+  /** Character count at which the counter turns red (danger). */
+  dangerAt?: number;
 }
 
 const Textarea: React.FC<TextareaProps> = ({
@@ -17,6 +21,8 @@ const Textarea: React.FC<TextareaProps> = ({
   onChange,
   value,
   defaultValue,
+  warnAt,
+  dangerAt,
   ...props
 }) => {
   const textareaId = id || label?.toLowerCase().replace(/\s+/g, '-');
@@ -28,6 +34,14 @@ const Textarea: React.FC<TextareaProps> = ({
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setCharCount(e.target.value.length);
     onChange?.(e);
+  };
+
+  const getCounterColor = () => {
+    if (!maxLength) return 'text-gray-500';
+    if (charCount >= maxLength) return 'text-red-600';
+    if (dangerAt !== undefined && charCount >= dangerAt) return 'text-red-600';
+    if (warnAt !== undefined && charCount >= warnAt) return 'text-yellow-500';
+    return 'text-gray-500';
   };
 
   return (
@@ -59,13 +73,13 @@ const Textarea: React.FC<TextareaProps> = ({
           <div />
         )}
         {maxLength && (
-          <p className={`text-sm font-medium ${charCount >= maxLength ? 'text-red-600' : 'text-gray-500'}`}>
+          <p data-testid="char-counter" className={`text-sm font-medium ${getCounterColor()}`}>
             {charCount} / {maxLength}
           </p>
         )}
       </div>
     </div>
-  );;
+  );
 };
 
 export default Textarea;
