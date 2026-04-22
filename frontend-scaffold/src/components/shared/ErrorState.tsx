@@ -1,8 +1,14 @@
-import React from 'react';
-import { AlertCircle, RefreshCcw, WifiOff, FileSearch } from 'lucide-react';
-import Card from '../ui/Card';
-import Button from '../ui/Button';
-import { ERRORS, ErrorCategory } from '@/helpers/error';
+import React from "react";
+import {
+  AlertCircle,
+  RefreshCcw,
+  WifiOff,
+  FileSearch,
+  WalletCards,
+} from "lucide-react";
+import Card from "../ui/Card";
+import Button from "../ui/Button";
+import { ERRORS, ErrorCategory } from "@/helpers/error";
 
 interface ErrorStateProps {
   message?: string;
@@ -14,29 +20,41 @@ interface ErrorStateProps {
 const ErrorState: React.FC<ErrorStateProps> = ({
   message,
   onRetry,
-  category = 'unknown',
-  className = '',
+  category = "unknown",
+  className = "",
 }) => {
   const getContent = () => {
     switch (category) {
-      case 'network':
+      case "network":
         return {
           icon: <WifiOff className="text-red-600" size={48} />,
-          title: 'Connection Issue',
+          title: "Connection Issue",
           defaultMessage: ERRORS.NETWORK,
         };
-      case 'not-found':
+      case "not-found":
         return {
           icon: <FileSearch className="text-blue-600" size={48} />,
-          title: 'Not Found',
+          title: "Not Found",
           defaultMessage: ERRORS.NOT_FOUND,
         };
-      case 'contract':
-      default:
+      case "wallet":
+        return {
+          icon: <WalletCards className="text-orange-600" size={48} />,
+          title: "Wallet Error",
+          defaultMessage: ERRORS.WALLET,
+        };
+      case "contract":
         return {
           icon: <AlertCircle className="text-red-600" size={48} />,
-          title: 'Something went wrong',
+          title: "Something went wrong",
           defaultMessage: ERRORS.CONTRACT,
+        };
+      case "unknown":
+      default:
+        return {
+          icon: <AlertCircle className="text-gray-600" size={48} />,
+          title: "Unexpected Error",
+          defaultMessage: "An unexpected error occurred. Please try again.",
         };
     }
   };
@@ -51,19 +69,19 @@ const ErrorState: React.FC<ErrorStateProps> = ({
             {content.icon}
           </div>
         </div>
-        
+
         <h3 className="text-2xl font-black uppercase mb-3 tracking-tight">
           {content.title}
         </h3>
-        
+
         <p className="font-bold text-gray-600 mb-8 leading-relaxed">
           {message || content.defaultMessage}
         </p>
 
         {onRetry && (
-          <Button 
-            onClick={onRetry} 
-            variant="primary" 
+          <Button
+            onClick={onRetry}
+            variant="primary"
             className="w-full flex items-center justify-center gap-2"
           >
             <RefreshCcw size={18} />
