@@ -18,6 +18,7 @@ import ActivityFeed from "./ActivityFeed";
 import RegisterForm from "./RegisterForm";
 import WithdrawModal from "./WithdrawModal";
 import TipQRCode from "./TipQRCode";
+import EmbedCodeGenerator from "./EmbedCodeGenerator";
 
 /**
  * ProfilePage is a protected route that displays the connected user's profile.
@@ -189,6 +190,16 @@ const ProfilePage: React.FC = () => {
             </div>
             <Card padding="lg" className="border-4 shadow-brutalist">
               <ActivityFeed address={profile.owner} limit={5} />
+            </Card>
+          </section>
+
+          {/* Embed Section */}
+          <section className="space-y-4">
+            <h2 className="text-2xl font-black uppercase tracking-tight">
+              Share & Embed
+            </h2>
+            <Card padding="lg" className="border-4 shadow-brutalist">
+              <EmbedCodeGenerator username={profile.username} />
             </Card>
           </section>
         </div>

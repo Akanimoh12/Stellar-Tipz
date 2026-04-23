@@ -24,14 +24,16 @@ import TipPageSkeleton from "./TipPageSkeleton";
 import TipAmountInput from "./TipAmountInput";
 import TipResult from "./TipResult";
 import RecentTips from "./RecentTips";
-import TipConfirm from "./TipConfirm";
+import { TipConfirmationModal } from "./TipConfirmationModal";
 import { useTipFlow } from "./useTipFlow";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import CreatorNotFound from "./CreatorNotFound";
 import TipAmountPresets from "./TipAmountPresets";
+import { useNavigate } from "react-router-dom";
 
 const TipPage: React.FC = () => {
   const { username } = useParams<{ username: string }>();
+  const navigate = useNavigate();
   const { connected, connect } = useWallet();
   const [amount, setAmount] = useState("5");
   const [message, setMessage] = useState("");
@@ -80,6 +82,21 @@ const TipPage: React.FC = () => {
     event.preventDefault();
     goToConfirm(amount, message);
   };
+
+  useEffect(() => {
+    if (step === "success" && txHash && creator) {
+      navigate("/receipt", { 
+        state: { 
+          tipData: { 
+            amount, 
+            message, 
+            txHash, 
+            recipient: creator 
+          } 
+        } 
+      });
+    }
+  }, [step, txHash, creator, amount, message, navigate]);
 
   if (loading) {
     return <TipPageSkeleton />;
@@ -242,7 +259,7 @@ const TipPage: React.FC = () => {
             </form>
           )}
 
-          <TipConfirm
+          <TipConfirmationModal
             isOpen={step === "confirm"}
             onClose={reset}
             onConfirm={() => void confirmAndSign()}

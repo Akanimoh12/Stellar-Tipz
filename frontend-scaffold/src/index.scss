@@ -39,6 +39,14 @@
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
+
+  .shadow-brutalist {
+    box-shadow: 4px 4px 0px 0px rgba(0, 0, 0, 1);
+  }
+
+  .dark .shadow-brutalist {
+    box-shadow: 4px 4px 0px 0px rgba(255, 255, 255, 1);
+  }
 }
 
 @layer components {
