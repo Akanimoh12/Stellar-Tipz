@@ -84,6 +84,7 @@ fn insert_profile(env: &Env, contract_id: &Address, address: &Address, username:
         balance: 0,
         registered_at: now,
         updated_at: now,
+        verification: crate::types::VerificationStatus::default(),
     };
     env.as_contract(contract_id, || {
         env.storage()
@@ -218,6 +219,7 @@ fn test_leaderboard_max_size() {
                 balance: tips,
                 registered_at: now,
                 updated_at: now,
+                verification: crate::types::VerificationStatus::default(),
             };
             crate::leaderboard::update_leaderboard(&env, &profile);
             i += 1;

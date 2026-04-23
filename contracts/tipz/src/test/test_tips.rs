@@ -69,6 +69,7 @@ fn setup_env() -> (
         balance: 0,
         registered_at: now,
         updated_at: now,
+        verification: crate::types::VerificationStatus::default(),
     };
     env.as_contract(&contract_id, || {
         env.storage()
@@ -184,6 +185,7 @@ fn test_send_tip_self() {
         balance: 0,
         registered_at: now,
         updated_at: now,
+        verification: crate::types::VerificationStatus::default(),
     };
     env.as_contract(&contract_id, || {
         env.storage()
@@ -315,6 +317,7 @@ fn test_send_tip_updates_leaderboard() {
         balance: 0,
         registered_at: now,
         updated_at: now,
+        verification: crate::types::VerificationStatus::default(),
     };
     env.as_contract(&contract_id, || {
         env.storage()

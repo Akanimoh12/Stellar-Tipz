@@ -67,6 +67,7 @@ fn insert_profile(ctx: &TestCtx, owner: &Address) {
         balance: 0,
         registered_at: now,
         updated_at: now,
+        verification: crate::types::VerificationStatus::default(),
     };
     ctx.env.as_contract(&ctx.contract_id, || {
         storage::set_profile(&ctx.env, &profile);

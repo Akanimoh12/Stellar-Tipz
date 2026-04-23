@@ -696,6 +696,7 @@ mod tests {
             balance: 0,
             registered_at: 0,
             updated_at: 0,
+            verification: crate::types::VerificationStatus::default(),
         };
         env.as_contract(&id, || {
             set_profile(&env, &profile);
@@ -722,6 +723,7 @@ mod tests {
             balance: 500,
             registered_at: 100,
             updated_at: 200,
+            verification: crate::types::VerificationStatus::default(),
         };
         env.as_contract(&id, || {
             set_profile(&env, &profile);
@@ -867,6 +869,7 @@ mod tests {
             balance: 0,
             registered_at: 0,
             updated_at: 0,
+            verification: crate::types::VerificationStatus::default(),
         };
         env.as_contract(&id, || {
             // Set profile

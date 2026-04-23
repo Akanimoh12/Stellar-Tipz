@@ -56,6 +56,7 @@ fn setup_env() -> (
         balance: 100_000_000, // 10 XLM
         registered_at: now,
         updated_at: now,
+        verification: crate::types::VerificationStatus::default(),
     };
     env.as_contract(&contract_id, || {
         storage::set_profile(&env, &profile);

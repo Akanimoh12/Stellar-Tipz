@@ -28,23 +28,28 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   }, [connected, isReconnecting, addToast]);
 
   useEffect(() => {
+    const resetTimeoutId = window.setTimeout(() => {
+      setReconnectTimedOut(false);
+    }, 0);
+
     if (timeoutIdRef.current) {
       window.clearTimeout(timeoutIdRef.current);
       timeoutIdRef.current = null;
     }
 
     if (!walletType || connected) {
-      setReconnectTimedOut(false);
-      return;
+      return () => {
+        window.clearTimeout(resetTimeoutId);
+      };
     }
 
-    // Start a 5s window to allow auto-reconnect before redirecting.
-    setReconnectTimedOut(false);
     timeoutIdRef.current = window.setTimeout(() => {
+      timeoutIdRef.current = null;
       setReconnectTimedOut(true);
     }, RECONNECT_TIMEOUT_MS);
 
     return () => {
+      window.clearTimeout(resetTimeoutId);
       if (timeoutIdRef.current) {
         window.clearTimeout(timeoutIdRef.current);
         timeoutIdRef.current = null;

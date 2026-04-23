@@ -262,6 +262,7 @@ mod tests {
             balance: 0,
             registered_at: now,
             updated_at: now,
+            verification: crate::types::VerificationStatus::default(),
         }
     }
 
