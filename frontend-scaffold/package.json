@@ -65,6 +65,7 @@
     "@stellar/stellar-sdk": "^11.3.0",
     "bignumber.js": "^9.1.1",
     "framer-motion": "^12.23.24",
+    "fuse.js": "^7.3.0",
     "lucide-react": "^0.553.0",
     "qrcode.react": "^4.2.0",
     "react": "^18.2.0",

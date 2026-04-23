@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import QuickSearchModal from "./QuickSearchModal";
+import GlobalSearch from "./GlobalSearch";
 import ShortcutsModal from "./ShortcutsModal";
 
 /**
@@ -108,10 +108,7 @@ const KeyboardShortcutsProvider: React.FC = () => {
 
   return (
     <>
-      <QuickSearchModal
-        isOpen={searchOpen}
-        onClose={() => setSearchOpen(false)}
-      />
+      <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
       <ShortcutsModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
     </>
   );

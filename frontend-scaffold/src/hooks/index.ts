@@ -6,3 +6,4 @@ export * from './useUsernameCheck';
 export * from './useDashboard';
 export * from './usePageTitle';
 export * from './useBalance';
+export * from './useSearch';
