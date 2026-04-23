@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useContract } from './useContract';
 import { validateUsername } from '../helpers/validation';
 
@@ -13,6 +13,7 @@ export const useUsernameCheck = (username: string): UseUsernameCheckResult => {
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [debouncedUsername, setDebouncedUsername] = useState('');
+  const cache = useRef<Map<string, boolean>>(new Map());
   const { getProfileByUsername } = useContract();
 
   // Debounce username input (500ms)
@@ -49,12 +50,18 @@ export const useUsernameCheck = (username: string): UseUsernameCheckResult => {
     }
 
     const checkAvailability = async () => {
+      if (cache.current.has(debouncedUsername)) {
+        setAvailable(cache.current.get(debouncedUsername)!);
+        return;
+      }
+
       setChecking(true);
       setError(null);
-      
+
       try {
         await getProfileByUsername(debouncedUsername);
         // Profile found - username is taken
+        cache.current.set(debouncedUsername, false);
         setAvailable(false);
       } catch (err) {
         // Profile not found or other error
@@ -70,6 +77,7 @@ export const useUsernameCheck = (username: string): UseUsernameCheckResult => {
             errorMessage.includes('No data')
           ) {
             // Username is available
+            cache.current.set(debouncedUsername, true);
             setAvailable(true);
           } else {
             // Network or other error - show warning
