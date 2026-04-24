@@ -156,6 +156,7 @@ fn test_rapid_tips_same_creator() {
     let message = String::from_str(&env, "Rapid tip!");
 
     for _ in 0..100 {
+        env.budget().reset_default();
         client.send_tip(&tipper, &creator, &tip_amount, &message);
     }
 

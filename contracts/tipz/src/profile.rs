@@ -56,24 +56,29 @@ pub fn register_profile(
     validation::validate_display_name(&display_name)?;
     validation::validate_bio(&bio)?;
     validation::validate_image_url(&image_url)?;
-    validation::validate_x_handle(&x_handle)?;
-
-    // Normalize x_handle: prepend @ if missing.
-    // Length is already validated (1-16 including optional @).
-    let mut normalized_x = x_handle.clone();
-    let mut handle_buf = [0u8; 16];
-    let n = x_handle.len() as usize;
-    x_handle.copy_into_slice(&mut handle_buf[..n]);
-    if handle_buf[0] != b'@' {
-        let mut full_buf = [0u8; 17];
-        full_buf[0] = b'@';
+    // x_handle is optional: only validate and normalize if non-empty.
+    let normalized_x = if x_handle.len() > 0 {
+        validation::validate_x_handle(&x_handle)?;
+        // Normalize: prepend @ if missing.
+        let mut handle_buf = [0u8; 16];
         let n = x_handle.len() as usize;
-        x_handle.copy_into_slice(&mut full_buf[1..1 + n]);
-        // SAFETY: x_handle is validated to be alphanumeric/underscore ASCII.
-        if let Ok(s) = core::str::from_utf8(&full_buf[..1 + n]) {
-            normalized_x = String::from_str(env, s);
+        x_handle.copy_into_slice(&mut handle_buf[..n]);
+        if handle_buf[0] != b'@' {
+            let mut full_buf = [0u8; 17];
+            full_buf[0] = b'@';
+            x_handle.copy_into_slice(&mut full_buf[1..1 + n]);
+            // SAFETY: x_handle is validated to be alphanumeric/underscore ASCII.
+            if let Ok(s) = core::str::from_utf8(&full_buf[..1 + n]) {
+                String::from_str(env, s)
+            } else {
+                x_handle.clone()
+            }
+        } else {
+            x_handle.clone()
         }
-    }
+    } else {
+        x_handle.clone()
+    };
 
     // --- Duplicate checks ---
 

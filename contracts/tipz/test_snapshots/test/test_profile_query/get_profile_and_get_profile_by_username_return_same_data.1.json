@@ -1028,4 +1028,634 @@
                 {
                   "key": {
                     "symbol": "balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 0
+                    }
                   }
+                },
+                {
+                  "key": {
+                    "symbol": "bio"
+                  },
+                  "val": {
+                    "string": "Test bio"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "credit_score"
+                  },
+                  "val": {
+                    "u32": 40
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "display_name"
+                  },
+                  "val": {
+                    "string": "Test User"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "image_url"
+                  },
+                  "val": {
+                    "string": "https://example.com/avatar.png"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "owner"
+                  },
+                  "val": {
+                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "registered_at"
+                  },
+                  "val": {
+                    "u64": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "social_links"
+                  },
+                  "val": {
+                    "map": []
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_tips_count"
+                  },
+                  "val": {
+                    "u32": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_tips_received"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 0
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "updated_at"
+                  },
+                  "val": {
+                    "u64": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "username"
+                  },
+                  "val": {
+                    "string": "eve"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "verification"
+                  },
+                  "val": {
+                    "map": [
+                      {
+                        "key": {
+                          "symbol": "is_verified"
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "revoked_at"
+                        },
+                        "val": "void"
+                      },
+                      {
+                        "key": {
+                          "symbol": "verification_type"
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Unverified"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "verified_at"
+                        },
+                        "val": "void"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "website"
+                  },
+                  "val": {
+                    "string": ""
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "x_engagement_avg"
+                  },
+                  "val": {
+                    "u32": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "x_followers"
+                  },
+                  "val": {
+                    "u32": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "x_handle"
+                  },
+                  "val": {
+                    "string": "@test_x"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_call"
+              },
+              {
+                "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
+              },
+              {
+                "symbol": "get_profile"
+              }
+            ],
+            "data": {
+              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_return"
+              },
+              {
+                "symbol": "get_profile"
+              }
+            ],
+            "data": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 0
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "bio"
+                  },
+                  "val": {
+                    "string": "Test bio"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "credit_score"
+                  },
+                  "val": {
+                    "u32": 40
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "display_name"
+                  },
+                  "val": {
+                    "string": "Test User"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "image_url"
+                  },
+                  "val": {
+                    "string": "https://example.com/avatar.png"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "owner"
+                  },
+                  "val": {
+                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "registered_at"
+                  },
+                  "val": {
+                    "u64": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "social_links"
+                  },
+                  "val": {
+                    "map": []
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_tips_count"
+                  },
+                  "val": {
+                    "u32": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_tips_received"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 0
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "updated_at"
+                  },
+                  "val": {
+                    "u64": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "username"
+                  },
+                  "val": {
+                    "string": "eve"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "verification"
+                  },
+                  "val": {
+                    "map": [
+                      {
+                        "key": {
+                          "symbol": "is_verified"
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "revoked_at"
+                        },
+                        "val": "void"
+                      },
+                      {
+                        "key": {
+                          "symbol": "verification_type"
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Unverified"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "verified_at"
+                        },
+                        "val": "void"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "website"
+                  },
+                  "val": {
+                    "string": ""
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "x_engagement_avg"
+                  },
+                  "val": {
+                    "u32": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "x_followers"
+                  },
+                  "val": {
+                    "u32": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "x_handle"
+                  },
+                  "val": {
+                    "string": "@test_x"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_call"
+              },
+              {
+                "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
+              },
+              {
+                "symbol": "get_profile_by_username"
+              }
+            ],
+            "data": {
+              "string": "eve"
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_return"
+              },
+              {
+                "symbol": "get_profile_by_username"
+              }
+            ],
+            "data": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 0
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "bio"
+                  },
+                  "val": {
+                    "string": "Test bio"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "credit_score"
+                  },
+                  "val": {
+                    "u32": 40
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "display_name"
+                  },
+                  "val": {
+                    "string": "Test User"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "image_url"
+                  },
+                  "val": {
+                    "string": "https://example.com/avatar.png"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "owner"
+                  },
+                  "val": {
+                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "registered_at"
+                  },
+                  "val": {
+                    "u64": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "social_links"
+                  },
+                  "val": {
+                    "map": []
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_tips_count"
+                  },
+                  "val": {
+                    "u32": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_tips_received"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 0
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "updated_at"
+                  },
+                  "val": {
+                    "u64": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "username"
+                  },
+                  "val": {
+                    "string": "eve"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "verification"
+                  },
+                  "val": {
+                    "map": [
+                      {
+                        "key": {
+                          "symbol": "is_verified"
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "revoked_at"
+                        },
+                        "val": "void"
+                      },
+                      {
+                        "key": {
+                          "symbol": "verification_type"
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Unverified"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "verified_at"
+                        },
+                        "val": "void"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "website"
+                  },
+                  "val": {
+                    "string": ""
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "x_engagement_avg"
+                  },
+                  "val": {
+                    "u32": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "x_followers"
+                  },
+                  "val": {
+                    "u32": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "x_handle"
+                  },
+                  "val": {
+                    "string": "@test_x"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    }
+  ]
+}
