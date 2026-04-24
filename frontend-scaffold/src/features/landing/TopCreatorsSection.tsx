@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useContract } from "@/hooks";
 import { LeaderboardEntry } from "@/types/contract";
 import ProfileCard from "@/components/shared/ProfileCard";
+import ProfileCardSkeleton from "@/components/shared/ProfileCardSkeleton";
 import Skeleton from "@/components/ui/Skeleton";
 import EmptyState from "@/components/ui/EmptyState";
 import ErrorState from "@/components/shared/ErrorState";
