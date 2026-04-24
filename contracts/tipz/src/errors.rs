@@ -60,4 +60,14 @@ pub enum ContractError {
     Unauthorized = 26,
     /// X handle is invalid (must be 1-16 chars, @?alphanumeric + underscore)
     InvalidXHandle = 27,
+    /// Creator profile is deactivated and cannot receive tips
+    ProfileDeactivated = 28,
+    /// Profile is already deactivated
+    AlreadyDeactivated = 29,
+    /// Profile is not deactivated
+    ProfileNotDeactivated = 30,
+    /// Admin change cannot be confirmed until the timelock elapses
+    AdminChangeTimelockNotMet = 31,
+    /// A different admin change is already pending (cancel or wait before proposing another)
+    AdminChangeAlreadyPending = 32,
 }

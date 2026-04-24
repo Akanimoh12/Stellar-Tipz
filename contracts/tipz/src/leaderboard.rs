@@ -19,7 +19,7 @@
 
 use soroban_sdk::{Address, Env, Vec};
 
-use crate::storage::DataKey;
+use crate::storage::{self, DataKey};
 use crate::types::{LeaderboardEntry, Profile};
 
 /// Maximum number of entries retained on the leaderboard.
@@ -85,6 +85,9 @@ fn sort_leaderboard(list: &mut Vec<LeaderboardEntry>) {
 /// The list is always kept in descending order by `total_tips_received` and
 /// trimmed to at most 50 entries.
 pub fn update_leaderboard(env: &Env, profile: &Profile) {
+    if storage::is_profile_deactivated(env, &profile.owner) {
+        return;
+    }
     let mut entries = load_entries(env);
 
     // Ensure the list is sorted before any operations (maintains invariant)

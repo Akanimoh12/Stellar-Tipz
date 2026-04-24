@@ -5,7 +5,7 @@ use soroban_sdk::{Address, Env, String};
 use crate::errors::ContractError;
 use crate::events;
 use crate::storage;
-use crate::types::Profile;
+use crate::types::{Profile, ProfileWithDeactivation};
 use crate::validation;
 
 /// Register a new creator profile.
@@ -211,6 +211,95 @@ pub fn update_profile(
     Ok(())
 }
 
+/// Load profile plus deactivation flags for read-only queries.
+pub fn get_profile_with_deactivation(
+    env: &Env,
+    address: &Address,
+) -> Result<ProfileWithDeactivation, ContractError> {
+    if !storage::has_profile(env, address) {
+        return Err(ContractError::NotRegistered);
+    }
+    let profile = storage::get_profile(env, address);
+    let deactivated_at = storage::get_profile_deactivated_at(env, address);
+    let is_deactivated = deactivated_at.is_some();
+    Ok(ProfileWithDeactivation {
+        profile,
+        is_deactivated,
+        deactivated_at,
+    })
+}
+
+/// Temporarily deactivate a creator profile (self or admin moderation).
+///
+/// Removes the creator from the leaderboard and blocks new tips. Data and balance stay on-chain.
+pub fn deactivate_profile(
+    env: &Env,
+    caller: Address,
+    creator: Address,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    crate::admin::require_not_paused(env)?;
+
+    if !storage::has_profile(env, &creator) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    if caller == creator {
+        caller.require_auth();
+    } else {
+        crate::admin::require_admin(env, &caller)?;
+    }
+
+    if storage::is_profile_deactivated(env, &creator) {
+        return Err(ContractError::AlreadyDeactivated);
+    }
+
+    let now = env.ledger().timestamp();
+    storage::set_profile_deactivated_at(env, &creator, now);
+    crate::leaderboard::remove_from_leaderboard(env, &creator);
+
+    let username = storage::get_profile(env, &creator).username.clone();
+    storage::bump_profile_ttl(env, &creator);
+    storage::bump_username_ttl(env, &username);
+
+    events::emit_profile_deactivated(env, &creator, &caller);
+    Ok(())
+}
+
+/// Restore a deactivated profile (owner or admin).
+pub fn reactivate_profile(
+    env: &Env,
+    caller: Address,
+    creator: Address,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    crate::admin::require_not_paused(env)?;
+
+    if !storage::has_profile(env, &creator) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    if caller == creator {
+        caller.require_auth();
+    } else {
+        crate::admin::require_admin(env, &caller)?;
+    }
+
+    if !storage::is_profile_deactivated(env, &creator) {
+        return Err(ContractError::ProfileNotDeactivated);
+    }
+
+    storage::clear_profile_deactivation(env, &creator);
+    let profile = storage::get_profile(env, &creator);
+    crate::leaderboard::update_leaderboard(env, &profile);
+
+    storage::bump_profile_ttl(env, &creator);
+    storage::bump_username_ttl(env, &profile.username);
+
+    events::emit_profile_reactivated(env, &creator, &caller);
+    Ok(())
+}
+
 /// Deregister the caller's profile, permanently removing it from the platform.
 ///
 /// # Requirements
@@ -247,6 +336,8 @@ pub fn deregister_profile(env: &Env, caller: Address) -> Result<(), ContractErro
     if profile.balance > 0 {
         return Err(ContractError::BalanceNotZero);
     }
+
+    storage::clear_profile_deactivation(env, &caller);
 
     // 4.4: Storage cleanup operations
     storage::remove_profile(env, &caller);

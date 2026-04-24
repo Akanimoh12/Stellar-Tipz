@@ -134,6 +134,10 @@ pub fn send_tip(
         return Err(ContractError::NotRegistered);
     }
 
+    if storage::is_profile_deactivated(env, creator) {
+        return Err(ContractError::ProfileDeactivated);
+    }
+
     if tipper == creator {
         return Err(ContractError::CannotTipSelf);
     }

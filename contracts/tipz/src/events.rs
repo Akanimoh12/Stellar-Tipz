@@ -41,6 +41,22 @@ pub fn emit_profile_deregistered(env: &Env, owner: &Address, username: &String) 
     );
 }
 
+/// Topics : `("profile", "deact")` — temporary deactivation (data retained).
+pub fn emit_profile_deactivated(env: &Env, creator: &Address, actor: &Address) {
+    env.events().publish(
+        (symbol_short!("profile"), symbol_short!("deact")),
+        (creator.clone(), actor.clone()),
+    );
+}
+
+/// Topics : `("profile", "react")` — profile reactivated.
+pub fn emit_profile_reactivated(env: &Env, creator: &Address, actor: &Address) {
+    env.events().publish(
+        (symbol_short!("profile"), symbol_short!("react")),
+        (creator.clone(), actor.clone()),
+    );
+}
+
 // ── Tip events ────────────────────────────────────────────────────────────────
 
 /// Topics : `("tip", "sent")`
@@ -131,6 +147,33 @@ pub fn emit_admin_proposal_cancelled(env: &Env, current_admin: &Address) {
     env.events().publish(
         (symbol_short!("admin"), symbol_short!("canceled")),
         current_admin.clone(),
+    );
+}
+
+/// Topics : `("admin", "chgprop")` — time-locked admin rotation proposed.
+/// Data : `(current_admin, new_admin, confirmable_after)`
+pub fn emit_admin_change_proposed(
+    env: &Env,
+    current_admin: &Address,
+    new_admin: &Address,
+    confirmable_after: u64,
+) {
+    env.events().publish(
+        (symbol_short!("admin"), symbol_short!("chgprop")),
+        (
+            current_admin.clone(),
+            new_admin.clone(),
+            confirmable_after,
+        ),
+    );
+}
+
+/// Topics : `("admin", "chgconf")` — time-locked admin rotation completed.
+/// Data : `(old_admin, new_admin)`
+pub fn emit_admin_change_confirmed(env: &Env, old_admin: &Address, new_admin: &Address) {
+    env.events().publish(
+        (symbol_short!("admin"), symbol_short!("chgconf")),
+        (old_admin.clone(), new_admin.clone()),
     );
 }
 

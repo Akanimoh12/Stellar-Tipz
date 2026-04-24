@@ -71,6 +71,34 @@ pub struct Profile {
     pub verification: VerificationStatus,
 }
 
+/// Profile plus deactivation state for queries (`get_profile`, `get_profile_by_username`).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProfileWithDeactivation {
+    pub profile: Profile,
+    pub is_deactivated: bool,
+    /// Set when the profile is deactivated (hidden from leaderboard, tips disabled).
+    pub deactivated_at: Option<u64>,
+}
+
+/// Pending time-locked admin rotation (see `ADMIN_CHANGE_TIMELOCK_SECS`).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdminChangeProposal {
+    pub new_admin: Address,
+    /// Unix timestamp after which `confirm_admin_change` may succeed.
+    pub confirmable_after: u64,
+}
+
+/// One recorded completed admin handoff (two-step confirm or direct `set_admin`).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdminChangeHistoryEntry {
+    pub old_admin: Address,
+    pub new_admin: Address,
+    pub confirmed_at: u64,
+}
+
 /// Recurring tip subscription record.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
