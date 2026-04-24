@@ -84,7 +84,7 @@ fn test_tip_at_minimum_succeeds() {
     let min = client.get_min_tip_amount();
     let message = String::from_str(&env, "tip");
 
-    client.send_tip(&tipper, &creator, &min, &message);
+    client.send_tip(&tipper, &creator, &min, &message, &false);
 }
 
 #[test]

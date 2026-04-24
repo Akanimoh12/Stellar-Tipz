@@ -109,8 +109,8 @@ pub struct PendingWithdrawal {
 pub struct Tip {
     /// Unique tip ID (monotonically increasing global counter)
     pub id: u32,
-    /// Address that sent the tip
-    pub tipper: Address,
+    /// Address that sent the tip (None if anonymous)
+    pub tipper: Option<Address>,
     /// Address of the creator who received the tip
     pub creator: Address,
     /// Tip amount in stroops
@@ -119,6 +119,8 @@ pub struct Tip {
     pub message: String,
     /// Ledger timestamp at the time the tip was sent
     pub timestamp: u64,
+    /// Whether this tip is anonymous
+    pub is_anonymous: bool,
 }
 
 /// Leaderboard entry for top creators.
@@ -226,4 +228,20 @@ pub struct ContractConfig {
     pub is_initialized: bool,
     /// On-chain contract version
     pub version: u32,
+}
+
+/// Donation page configuration for a creator
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct DonationPageConfig {
+    /// Custom welcome message (0-500 chars)
+    pub welcome_message: String,
+    /// Suggested tip amounts (up to 6 presets)
+    pub suggested_amounts: soroban_sdk::Vec<i128>,
+    /// Theme color (hex format, e.g., "#ff6b6b")
+    pub theme_color: String,
+    /// Header image URI (IPFS CID or URL, 0-256 chars)
+    pub header_image_uri: String,
+    /// Whether this is the default config
+    pub is_default: bool,
 }

@@ -162,9 +162,9 @@ fn test_leaderboard_ordering() {
 
     let msg = String::from_str(&env, "");
     // alice: 3 XLM, carol: 5 XLM, bob: 1 XLM  →  expected order: carol, alice, bob
-    client.send_tip(&tipper, &alice, &30_000_000, &msg);
-    client.send_tip(&tipper, &carol, &50_000_000, &msg);
-    client.send_tip(&tipper, &bob, &10_000_000, &msg);
+    client.send_tip(&tipper, &alice, &30_000_000, &msg, &false);
+    client.send_tip(&tipper, &carol, &50_000_000, &msg, &false);
+    client.send_tip(&tipper, &bob, &10_000_000, &msg, &false);
 
     let board = client.get_leaderboard(&50);
     assert_eq!(board.len(), 3);
@@ -289,8 +289,8 @@ fn test_leaderboard_rank_update() {
     let msg = String::from_str(&env, "");
 
     // Bob starts in the lead.
-    client.send_tip(&tipper, &bob, &50_000_000, &msg);
-    client.send_tip(&tipper, &alice, &10_000_000, &msg);
+    client.send_tip(&tipper, &bob, &50_000_000, &msg, &false);
+    client.send_tip(&tipper, &alice, &10_000_000, &msg, &false);
 
     let board_before = client.get_leaderboard(&50);
     assert_eq!(
@@ -300,7 +300,7 @@ fn test_leaderboard_rank_update() {
     );
 
     // Alice receives a larger tip and overtakes bob.
-    client.send_tip(&tipper, &alice, &100_000_000, &msg);
+    client.send_tip(&tipper, &alice, &100_000_000, &msg, &false);
 
     let board_after = client.get_leaderboard(&50);
     assert_eq!(
@@ -330,9 +330,9 @@ fn test_leaderboard_rank_lookup() {
 
     let msg = String::from_str(&env, "");
     // carol: 5 XLM → rank 1, alice: 3 XLM → rank 2, bob: 1 XLM → rank 3
-    client.send_tip(&tipper, &carol, &50_000_000, &msg);
-    client.send_tip(&tipper, &alice, &30_000_000, &msg);
-    client.send_tip(&tipper, &bob, &10_000_000, &msg);
+    client.send_tip(&tipper, &carol, &50_000_000, &msg, &false);
+    client.send_tip(&tipper, &alice, &30_000_000, &msg, &false);
+    client.send_tip(&tipper, &bob, &10_000_000, &msg, &false);
 
     assert_eq!(client.get_leaderboard_rank(&carol), Some(1));
     assert_eq!(client.get_leaderboard_rank(&alice), Some(2));
@@ -362,13 +362,13 @@ fn test_insert_at_position_zero() {
     insert_profile(&env, &contract_id, &bob, "bob");
 
     let msg = String::from_str(&env, "");
-    client.send_tip(&tipper, &alice, &20_000_000, &msg); // 2 XLM
-    client.send_tip(&tipper, &bob, &10_000_000, &msg); // 1 XLM
+    client.send_tip(&tipper, &alice, &20_000_000, &msg, &false); // 2 XLM
+    client.send_tip(&tipper, &bob, &10_000_000, &msg, &false); // 1 XLM
 
     // carol arrives with the highest tip — must claim rank 1 (index 0).
     let carol = Address::generate(&env);
     insert_profile(&env, &contract_id, &carol, "carol");
-    client.send_tip(&tipper, &carol, &50_000_000, &msg); // 5 XLM
+    client.send_tip(&tipper, &carol, &50_000_000, &msg, &false); // 5 XLM
 
     let board = client.get_leaderboard(&50);
     assert_eq!(board.len(), 3);
@@ -432,9 +432,9 @@ fn test_no_duplicates_after_update() {
     insert_profile(&env, &contract_id, &alice, "alice");
 
     let msg = String::from_str(&env, "");
-    client.send_tip(&tipper, &alice, &10_000_000, &msg); // tip 1 — 1 XLM
-    client.send_tip(&tipper, &alice, &20_000_000, &msg); // tip 2 — 2 XLM
-    client.send_tip(&tipper, &alice, &30_000_000, &msg); // tip 3 — 3 XLM
+    client.send_tip(&tipper, &alice, &10_000_000, &msg, &false); // tip 1 — 1 XLM
+    client.send_tip(&tipper, &alice, &20_000_000, &msg, &false); // tip 2 — 2 XLM
+    client.send_tip(&tipper, &alice, &30_000_000, &msg, &false); // tip 3 — 3 XLM
 
     let board = client.get_leaderboard(&50);
     assert_eq!(

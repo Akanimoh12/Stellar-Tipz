@@ -112,6 +112,24 @@ pub enum DataKey {
     PoolFeePct,
     /// Current pool balance
     PoolBalance,
+    /// Multi-signature configuration
+    MultisigConfig,
+    /// Multi-sig proposal by ID
+    Proposal(u32),
+    /// Next proposal ID counter
+    NextProposalId,
+    /// Donation page config by creator
+    DonationPage(Address),
+    /// 24-hour stats window start timestamp
+    StatsWindowStart,
+    /// Tips count in last 24 hours
+    TipsLast24h,
+    /// Volume in last 24 hours
+    VolumeLast24h,
+    /// Active creators in last 30 days
+    ActiveCreators30d,
+    /// Creator last active timestamp
+    CreatorLastActive(Address),
 }
 
 /// Extend the contract instance TTL when a write transaction starts.
@@ -990,4 +1008,95 @@ pub fn remove_verification_request(env: &Env, address: &Address) {
     env.storage()
         .persistent()
         .remove(&DataKey::VerificationRequest(address.clone()));
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Donation page storage functions
+// ──────────────────────────────────────────────────────────────────────────────
+
+pub fn get_donation_page(env: &Env, creator: &Address) -> Option<crate::types::DonationPageConfig> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::DonationPage(creator.clone()))
+}
+
+pub fn set_donation_page(
+    env: &Env,
+    creator: &Address,
+    config: &crate::types::DonationPageConfig,
+) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::DonationPage(creator.clone()), config);
+    bump_profile_ttl(env, creator);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Stats storage functions
+// ──────────────────────────────────────────────────────────────────────────────
+
+pub fn get_stats_window_start(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::StatsWindowStart)
+        .unwrap_or(0)
+}
+
+pub fn set_stats_window_start(env: &Env, timestamp: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::StatsWindowStart, &timestamp);
+}
+
+pub fn get_tips_last_24h(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::TipsLast24h)
+        .unwrap_or(0)
+}
+
+pub fn set_tips_last_24h(env: &Env, count: u32) {
+    env.storage()
+        .instance()
+        .set(&DataKey::TipsLast24h, &count);
+}
+
+pub fn get_volume_last_24h(env: &Env) -> i128 {
+    env.storage()
+        .instance()
+        .get(&DataKey::VolumeLast24h)
+        .unwrap_or(0)
+}
+
+pub fn set_volume_last_24h(env: &Env, volume: i128) {
+    env.storage()
+        .instance()
+        .set(&DataKey::VolumeLast24h, &volume);
+}
+
+pub fn get_active_creators_30d(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::ActiveCreators30d)
+        .unwrap_or(0)
+}
+
+pub fn set_active_creators_30d(env: &Env, count: u32) {
+    env.storage()
+        .instance()
+        .set(&DataKey::ActiveCreators30d, &count);
+}
+
+pub fn get_creator_last_active(env: &Env, creator: &Address) -> u64 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::CreatorLastActive(creator.clone()))
+        .unwrap_or(0)
+}
+
+pub fn set_creator_last_active(env: &Env, creator: &Address, timestamp: u64) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::CreatorLastActive(creator.clone()), &timestamp);
 }

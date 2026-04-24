@@ -21,16 +21,22 @@ pub fn store_tip(
     creator: &Address,
     amount: i128,
     message: String,
+    is_anonymous: bool,
 ) -> u32 {
     let tip_id = storage::increment_tip_count(env);
     let key = DataKey::Tip(tip_id);
     let tip = Tip {
         id: tip_id,
-        tipper: tipper.clone(),
+        tipper: if is_anonymous {
+            None
+        } else {
+            Some(tipper.clone())
+        },
         creator: creator.clone(),
         amount,
         message,
         timestamp: env.ledger().timestamp(),
+        is_anonymous,
     };
 
     env.storage().temporary().set(&key, &tip);
@@ -118,6 +124,7 @@ pub fn send_tip(
     creator: &Address,
     amount: i128,
     message: &String,
+    is_anonymous: bool,
 ) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     crate::admin::require_not_paused(env)?;
@@ -163,7 +170,7 @@ pub fn send_tip(
     storage::bump_profile_ttl(env, creator);
     storage::bump_username_ttl(env, &profile.username);
 
-    let tip_id = store_tip(env, tipper, creator, amount, message.clone());
+    let tip_id = store_tip(env, tipper, creator, amount, message.clone(), is_anonymous);
     storage::add_tipper_tip(env, tipper, tip_id);
     storage::add_creator_tip(env, creator, tip_id);
     let timestamp = env.ledger().timestamp();
@@ -171,7 +178,11 @@ pub fn send_tip(
     // Security: checked accumulation prevents silent i128 overflow.
     storage::add_to_tips_volume(env, amount)?;
 
-    emit_tip_sent(env, tip_id, tipper, creator, amount, message, timestamp);
+    // Update 24h stats
+    crate::stats::update_24h_stats(env, amount);
+    crate::stats::mark_creator_active(env, creator);
+
+    emit_tip_sent(env, tip_id, tipper, creator, amount, message, timestamp, is_anonymous);
 
     Ok(())
 }

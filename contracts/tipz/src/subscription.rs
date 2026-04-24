@@ -125,6 +125,7 @@ pub fn execute_due_subscription(
             &creator,
             sub.amount,
             &String::from_str(env, "Recurring Tip"),
+            false, // Subscriptions are not anonymous
         )?;
 
         // Update next_due

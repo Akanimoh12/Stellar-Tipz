@@ -93,7 +93,7 @@ fn test_send_tip_bumps_creator_profile_ttl() {
     let (env, client, contract_id, creator, tipper) = setup();
 
     let msg = String::from_str(&env, "great work");
-    client.send_tip(&tipper, &creator, &10_000_000, &msg);
+    client.send_tip(&tipper, &creator, &10_000_000, &msg, &false);
 
     env.as_contract(&contract_id, || {
         let profile_key = DataKey::Profile(creator.clone());
@@ -145,7 +145,7 @@ fn test_withdraw_bumps_profile_ttl() {
 
     // Give the creator a balance first
     let msg = String::from_str(&env, "tip");
-    client.send_tip(&tipper, &creator, &50_000_000, &msg);
+    client.send_tip(&tipper, &creator, &50_000_000, &msg, &false);
 
     client.withdraw_tips(&creator, &10_000_000);
 

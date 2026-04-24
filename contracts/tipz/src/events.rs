@@ -44,7 +44,7 @@ pub fn emit_profile_deregistered(env: &Env, owner: &Address, username: &String) 
 // ── Tip events ────────────────────────────────────────────────────────────────
 
 /// Topics : `("tip", "sent")`
-/// Data   : `(id: u32, tipper: Address, creator: Address, amount: i128, message: String, timestamp: u64)`
+/// Data   : `(id: u32, tipper: Address, creator: Address, amount: i128, message: String, timestamp: u64, is_anonymous: bool)`
 ///
 /// All tip fields are included so that off-chain indexers can reconstruct the
 /// complete tip history from events alone, without relying on temporary storage
@@ -57,6 +57,7 @@ pub fn emit_tip_sent(
     amount: i128,
     message: &String,
     timestamp: u64,
+    is_anonymous: bool,
 ) {
     env.events().publish(
         (symbol_short!("tip"), symbol_short!("sent")),
@@ -67,6 +68,7 @@ pub fn emit_tip_sent(
             amount,
             message.clone(),
             timestamp,
+            is_anonymous,
         ),
     );
 }
@@ -334,5 +336,47 @@ pub fn emit_pool_distribution(env: &Env, total_amount: i128, recipient_count: u3
     env.events().publish(
         (symbol_short!("pool"), symbol_short!("dist")),
         (total_amount, recipient_count),
+    );
+}
+
+
+// ── Multi-sig events ──────────────────────────────────────────────────────────
+
+/// Topics : `("proposal", "created")`
+pub fn emit_proposal_created(
+    env: &Env,
+    proposal_id: u32,
+    proposer: &Address,
+    action: &crate::multisig::Action,
+) {
+    env.events().publish(
+        (Symbol::new(env, "proposal"), symbol_short!("created")),
+        (proposal_id, proposer.clone(), action.clone()),
+    );
+}
+
+/// Topics : `("proposal", "approved")`
+pub fn emit_proposal_approved(env: &Env, proposal_id: u32, approver: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "proposal"), symbol_short!("approved")),
+        (proposal_id, approver.clone()),
+    );
+}
+
+/// Topics : `("proposal", "executed")`
+pub fn emit_proposal_executed(env: &Env, proposal_id: u32) {
+    env.events().publish(
+        (Symbol::new(env, "proposal"), symbol_short!("executed")),
+        proposal_id,
+    );
+}
+
+// ── Donation page events ──────────────────────────────────────────────────────
+
+/// Topics : `("donation", "config")`
+pub fn emit_donation_page_updated(env: &Env, creator: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "donation"), symbol_short!("config")),
+        creator.clone(),
     );
 }

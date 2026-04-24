@@ -261,3 +261,72 @@ pub fn deregister_profile(env: &Env, caller: Address) -> Result<(), ContractErro
 
     Ok(())
 }
+
+
+/// Set a custom donation page configuration for a creator
+pub fn set_donation_page(
+    env: &Env,
+    creator: &Address,
+    config: crate::types::DonationPageConfig,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    crate::admin::require_not_paused(env)?;
+    creator.require_auth();
+
+    if !storage::has_profile(env, creator) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    // Validate config
+    if config.welcome_message.len() > 500 {
+        return Err(ContractError::MessageTooLong);
+    }
+
+    if config.suggested_amounts.len() > 6 {
+        return Err(ContractError::InvalidAmount);
+    }
+
+    if config.header_image_uri.len() > 256 {
+        return Err(ContractError::InvalidImageUrl);
+    }
+
+    // Validate theme color format (basic check for hex color)
+    if config.theme_color.len() > 0 && config.theme_color.len() != 7 {
+        return Err(ContractError::InvalidAmount); // Reusing error for invalid format
+    }
+
+    storage::set_donation_page(env, creator, &config);
+    events::emit_donation_page_updated(env, creator);
+
+    Ok(())
+}
+
+/// Get donation page configuration for a creator
+pub fn get_donation_page(
+    env: &Env,
+    creator: &Address,
+) -> Result<crate::types::DonationPageConfig, ContractError> {
+    if !storage::has_profile(env, creator) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    // Return custom config if exists, otherwise return default
+    if let Some(config) = storage::get_donation_page(env, creator) {
+        Ok(config)
+    } else {
+        // Return default config
+        let mut default_amounts = soroban_sdk::Vec::new(env);
+        default_amounts.push_back(5_000_000); // 5 XLM
+        default_amounts.push_back(10_000_000); // 10 XLM
+        default_amounts.push_back(25_000_000); // 25 XLM
+        default_amounts.push_back(50_000_000); // 50 XLM
+
+        Ok(crate::types::DonationPageConfig {
+            welcome_message: String::from_str(env, "Support my work!"),
+            suggested_amounts: default_amounts,
+            theme_color: String::from_str(env, "#3b82f6"),
+            header_image_uri: String::from_str(env, ""),
+            is_default: true,
+        })
+    }
+}
