@@ -21,6 +21,7 @@ mod test_register;
 mod test_stats;
 mod test_subscriptions;
 mod test_tips;
+mod test_storage;
 mod test_ttl_desync;
 mod test_update_profile;
 mod test_validation;
