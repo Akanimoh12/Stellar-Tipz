@@ -64,6 +64,44 @@ const getKit = (network: WalletNetwork) => {
 
 const AUTO_RECONNECT_TIMEOUT_MS = 5000;
 
+export const SUPPORTED_WALLETS = [
+  {
+    id: "freighter",
+    name: "Freighter",
+    installUrl: "https://www.freighter.app/",
+    recommended: true,
+  },
+  {
+    id: "xbull",
+    name: "xBull",
+    installUrl: "https://xbull.app/",
+  },
+  {
+    id: "albedo",
+    name: "Albedo",
+    installUrl: "https://albedo.link/",
+  },
+];
+
+const isWalletInstalled = (id: string): boolean => {
+  if (typeof window === "undefined") return false;
+  const win = window as unknown as {
+    freighter?: unknown;
+    xBullWallet?: unknown;
+    albedo?: unknown;
+  };
+  switch (id) {
+    case "freighter":
+      return !!win.freighter;
+    case "xbull":
+      return !!win.xBullWallet;
+    case "albedo":
+      return !!win.albedo;
+    default:
+      return false;
+  }
+};
+
 export const useWallet = () => {
   const {
     publicKey,
@@ -191,6 +229,43 @@ export const useWallet = () => {
       setNetwork: (newNetwork: "TESTNET" | "PUBLIC") => {
         storeSetNetwork(newNetwork);
       },
+
+      connectWallet: async (walletId: string) => {
+        setConnecting(true);
+        setError(null);
+        try {
+          kit.setWallet(walletId);
+          const { address } = await kit.getAddress();
+
+          // Automatic network detection for Freighter
+          const win = window as unknown as {
+            freighter?: { getNetwork: () => Promise<string> };
+          };
+          if (walletId === "freighter" && win.freighter) {
+            try {
+              const networkDetails = await win.freighter.getNetwork();
+              const detectedNetwork =
+                networkDetails === "PUBLIC" ? "PUBLIC" : "TESTNET";
+              if (detectedNetwork !== network) {
+                storeSetNetwork(detectedNetwork);
+              }
+            } catch (e) {
+              console.warn("Network auto-detection failed:", e);
+            }
+          }
+
+          connect(address, walletId);
+        } catch (err) {
+          console.error("Wallet connection failed:", err);
+          setError(
+            err instanceof Error ? err.message : "Failed to connect wallet",
+          );
+        } finally {
+          setConnecting(false);
+        }
+      },
+
+      isWalletInstalled,
 
       signTransaction: async (xdr: string): Promise<string> => {
         if (!publicKey) {
