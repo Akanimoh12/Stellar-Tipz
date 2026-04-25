@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useTipz } from "../../hooks";
+import { queueOfflineTip } from "../../services/serviceWorker";
 
 export type TipFlowStep =
   | "form"
@@ -8,6 +9,7 @@ export type TipFlowStep =
   | "signing"
   | "submitting"
   | "success"
+  | "queued"
   | "error";
 
 interface UseTipFlowReturn {
@@ -59,6 +61,17 @@ export const useTipFlow = (creatorAddress: string): UseTipFlowReturn => {
   const confirmAndSign = useCallback(async () => {
     if (!draft) {
       setStep("form");
+      return;
+    }
+
+    // Queue the operation if the user is currently offline.
+    if (!navigator.onLine) {
+      await queueOfflineTip({
+        creator: creatorAddress,
+        amount: draft.amount,
+        message: draft.message,
+      }).catch(() => null);
+      setStep("queued");
       return;
     }
 

@@ -60,7 +60,7 @@ fn register_profile_success() {
     assert_eq!(profile.display_name, display_name);
     assert_eq!(profile.bio, bio);
     assert_eq!(profile.image_url, image_url);
-    assert_eq!(profile.x_handle, x_handle);
+    assert_eq!(profile.x_handle, String::from_str(&env, "@alice_x"));
     assert_eq!(profile.credit_score, 40);
     assert_eq!(profile.balance, 0);
     assert_eq!(profile.total_tips_received, 0);

@@ -1,12 +1,15 @@
-//! Tests for leaderboard functionality (issue #28).
+//! Tests for leaderboard functionality (issues #28, #397).
 //!
 //! ## Coverage
-//! - [`test_leaderboard_initial_empty`]   — no tips → empty board
-//! - [`test_leaderboard_single_creator`]  — one tipped creator appears
-//! - [`test_leaderboard_ordering`]        — multiple creators sorted descending
-//! - [`test_leaderboard_max_size`]        — 51 creators → only top 50 retained
-//! - [`test_leaderboard_rank_update`]     — creator moves up after more tips
-//! - [`test_leaderboard_rank_lookup`]     — `get_leaderboard_rank` returns correct 1-based position
+//! - [`test_leaderboard_initial_empty`]       — no tips → empty board
+//! - [`test_leaderboard_single_creator`]      — one tipped creator appears
+//! - [`test_leaderboard_ordering`]            — multiple creators sorted descending
+//! - [`test_leaderboard_max_size`]            — 51 creators → only top 50 retained
+//! - [`test_leaderboard_rank_update`]         — creator moves up after more tips
+//! - [`test_leaderboard_rank_lookup`]         — `get_leaderboard_rank` returns correct 1-based position
+//! - [`test_insert_at_position_zero`]         — new highest earner lands at index 0 (#397)
+//! - [`test_insert_when_board_has_one_entry`] — correct ordering when second creator is added (#397)
+//! - [`test_no_duplicates_after_update`]      — repeated tips to same creator yield one entry (#397)
 //!
 //! Tests that require XLM transfers use the full SAC setup (same pattern as
 //! `test_tips.rs`).  The `test_leaderboard_max_size` test bypasses `send_tip`
@@ -15,11 +18,11 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
+use soroban_sdk::{testutils::Address as _, token, Address, Env, Map, String, Symbol};
 
 use crate::leaderboard::MAX_LEADERBOARD_SIZE;
 use crate::storage::DataKey;
-use crate::types::Profile;
+use crate::types::{Profile, VerificationStatus, VerificationType};
 use crate::TipzContract;
 use crate::TipzContractClient;
 
@@ -74,7 +77,9 @@ fn insert_profile(env: &Env, contract_id: &Address, address: &Address, username:
         username: String::from_str(env, username),
         display_name: String::from_str(env, username),
         bio: String::from_str(env, ""),
+        website: String::from_str(env, ""),
         image_url: String::from_str(env, ""),
+        social_links: Map::<Symbol, String>::new(env),
         x_handle: String::from_str(env, ""),
         x_followers: 0,
         x_engagement_avg: 0,
@@ -122,7 +127,13 @@ fn test_leaderboard_single_creator() {
     insert_profile(&env, &contract_id, &creator, "alice");
 
     let amount: i128 = 10_000_000; // 1 XLM
-    client.send_tip(&tipper, &creator, &amount, &String::from_str(&env, ""));
+    client.send_tip(
+        &tipper,
+        &creator,
+        &amount,
+        &String::from_str(&env, ""),
+        &false,
+    );
 
     let board = client.get_leaderboard(&50);
     assert_eq!(board.len(), 1);
@@ -152,9 +163,9 @@ fn test_leaderboard_ordering() {
 
     let msg = String::from_str(&env, "");
     // alice: 3 XLM, carol: 5 XLM, bob: 1 XLM  →  expected order: carol, alice, bob
-    client.send_tip(&tipper, &alice, &30_000_000, &msg);
-    client.send_tip(&tipper, &carol, &50_000_000, &msg);
-    client.send_tip(&tipper, &bob, &10_000_000, &msg);
+    client.send_tip(&tipper, &alice, &30_000_000, &msg, &false);
+    client.send_tip(&tipper, &carol, &50_000_000, &msg, &false);
+    client.send_tip(&tipper, &bob, &10_000_000, &msg, &false);
 
     let board = client.get_leaderboard(&50);
     assert_eq!(board.len(), 3);
@@ -209,7 +220,9 @@ fn test_leaderboard_max_size() {
                 username: String::from_str(&env, CREATOR_NAMES[i as usize]),
                 display_name: String::from_str(&env, CREATOR_NAMES[i as usize]),
                 bio: String::from_str(&env, ""),
+                website: String::from_str(&env, ""),
                 image_url: String::from_str(&env, ""),
+                social_links: Map::<Symbol, String>::new(&env),
                 x_handle: String::from_str(&env, ""),
                 x_followers: 0,
                 x_engagement_avg: 0,
@@ -272,8 +285,8 @@ fn test_leaderboard_rank_update() {
     let msg = String::from_str(&env, "");
 
     // Bob starts in the lead.
-    client.send_tip(&tipper, &bob, &50_000_000, &msg);
-    client.send_tip(&tipper, &alice, &10_000_000, &msg);
+    client.send_tip(&tipper, &bob, &50_000_000, &msg, &false);
+    client.send_tip(&tipper, &alice, &10_000_000, &msg, &false);
 
     let board_before = client.get_leaderboard(&50);
     assert_eq!(
@@ -283,7 +296,7 @@ fn test_leaderboard_rank_update() {
     );
 
     // Alice receives a larger tip and overtakes bob.
-    client.send_tip(&tipper, &alice, &100_000_000, &msg);
+    client.send_tip(&tipper, &alice, &100_000_000, &msg, &false);
 
     let board_after = client.get_leaderboard(&50);
     assert_eq!(
@@ -313,9 +326,9 @@ fn test_leaderboard_rank_lookup() {
 
     let msg = String::from_str(&env, "");
     // carol: 5 XLM → rank 1, alice: 3 XLM → rank 2, bob: 1 XLM → rank 3
-    client.send_tip(&tipper, &carol, &50_000_000, &msg);
-    client.send_tip(&tipper, &alice, &30_000_000, &msg);
-    client.send_tip(&tipper, &bob, &10_000_000, &msg);
+    client.send_tip(&tipper, &carol, &50_000_000, &msg, &false);
+    client.send_tip(&tipper, &alice, &30_000_000, &msg, &false);
+    client.send_tip(&tipper, &bob, &10_000_000, &msg, &false);
 
     assert_eq!(client.get_leaderboard_rank(&carol), Some(1));
     assert_eq!(client.get_leaderboard_rank(&alice), Some(2));
@@ -327,5 +340,121 @@ fn test_leaderboard_rank_lookup() {
         client.get_leaderboard_rank(&stranger),
         None,
         "unranked address should return None"
+    );
+}
+
+// ── edge-case tests for issue #397 ───────────────────────────────────────────
+
+/// A creator who receives a larger tip than all existing entries must land at
+/// position 0 (rank 1) on the leaderboard.  This exercises the insertion-sort
+/// path where the new key must bubble all the way to index 0.
+#[test]
+fn test_insert_at_position_zero() {
+    let (env, client, contract_id, tipper, _) = setup();
+
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    insert_profile(&env, &contract_id, &alice, "alice");
+    insert_profile(&env, &contract_id, &bob, "bob");
+
+    let msg = String::from_str(&env, "");
+    client.send_tip(&tipper, &alice, &20_000_000, &msg, &false); // 2 XLM
+    client.send_tip(&tipper, &bob, &10_000_000, &msg, &false); // 1 XLM
+
+    // carol arrives with the highest tip — must claim rank 1 (index 0).
+    let carol = Address::generate(&env);
+    insert_profile(&env, &contract_id, &carol, "carol");
+    client.send_tip(&tipper, &carol, &50_000_000, &msg, &false); // 5 XLM
+
+    let board = client.get_leaderboard(&50);
+    assert_eq!(board.len(), 3);
+    assert_eq!(
+        board.get(0).unwrap().address,
+        carol,
+        "carol must be at position 0 after receiving the highest tip"
+    );
+    assert_eq!(
+        client.get_leaderboard_rank(&carol),
+        Some(1),
+        "carol must be rank 1"
+    );
+    // Invariant: board is in descending order.
+    assert!(board.get(0).unwrap().total_tips_received >= board.get(1).unwrap().total_tips_received);
+    assert!(board.get(1).unwrap().total_tips_received >= board.get(2).unwrap().total_tips_received);
+}
+
+/// When the leaderboard has exactly one entry and a second creator is added,
+/// both entries must be present and correctly ordered.  This guards the
+/// boundary where the inner j-loop runs for a list of length two.
+#[test]
+fn test_insert_when_board_has_one_entry() {
+    let (env, client, contract_id, tipper, _) = setup();
+
+    let alice = Address::generate(&env);
+    insert_profile(&env, &contract_id, &alice, "alice");
+    client.send_tip(
+        &tipper,
+        &alice,
+        &30_000_000,
+        &String::from_str(&env, ""),
+        &false,
+    ); // 3 XLM
+
+    let board_one = client.get_leaderboard(&50);
+    assert_eq!(board_one.len(), 1, "should have exactly one entry");
+    assert_eq!(board_one.get(0).unwrap().address, alice);
+
+    // bob joins with a smaller tip — alice should stay at rank 1.
+    let bob = Address::generate(&env);
+    insert_profile(&env, &contract_id, &bob, "bob");
+    client.send_tip(
+        &tipper,
+        &bob,
+        &10_000_000,
+        &String::from_str(&env, ""),
+        &false,
+    ); // 1 XLM
+
+    let board_two = client.get_leaderboard(&50);
+    assert_eq!(board_two.len(), 2, "should now have two entries");
+    assert_eq!(
+        board_two.get(0).unwrap().address,
+        alice,
+        "alice should remain rank 1"
+    );
+    assert_eq!(
+        board_two.get(1).unwrap().address,
+        bob,
+        "bob should be rank 2"
+    );
+}
+
+/// Tipping the same creator multiple times must result in exactly one
+/// leaderboard entry whose `total_tips_received` reflects the cumulative
+/// amount.  No duplicate entries must appear at any position.
+#[test]
+fn test_no_duplicates_after_update() {
+    let (env, client, contract_id, tipper, _) = setup();
+
+    let alice = Address::generate(&env);
+    insert_profile(&env, &contract_id, &alice, "alice");
+
+    let msg = String::from_str(&env, "");
+    client.send_tip(&tipper, &alice, &10_000_000, &msg, &false); // tip 1 — 1 XLM
+    client.send_tip(&tipper, &alice, &20_000_000, &msg, &false); // tip 2 — 2 XLM
+    client.send_tip(&tipper, &alice, &30_000_000, &msg, &false); // tip 3 — 3 XLM
+
+    let board = client.get_leaderboard(&50);
+    assert_eq!(
+        board.len(),
+        1,
+        "there must be exactly one leaderboard entry for alice"
+    );
+    assert_eq!(board.get(0).unwrap().address, alice);
+    // Cumulative total: 10 + 20 + 30 = 60 XLM in stroops.
+    assert_eq!(
+        board.get(0).unwrap().total_tips_received,
+        60_000_000,
+        "total must reflect all three tips"
     );
 }

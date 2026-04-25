@@ -8,6 +8,28 @@
       name="description"
       content="Stellar Tipz - Empowering creators through decentralized, instant, and fair tipping on Stellar Blockchain"
     />
+    
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Stellar Tipz" />
+    <meta property="og:title" content="Stellar Tipz - Decentralized Tipping on Stellar" />
+    <meta property="og:description" content="Empowering creators through decentralized, instant, and fair tipping on Stellar Blockchain" />
+    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:url" content="https://tipz.stellar.org" />
+    
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@StellarTipz" />
+    <meta name="twitter:title" content="Stellar Tipz - Decentralized Tipping on Stellar" />
+    <meta name="twitter:description" content="Empowering creators through decentralized, instant, and fair tipping on Stellar Blockchain" />
+    <meta name="twitter:image" content="/og-image.png" />
+    
+    <!-- Favicon and App Icons -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    
     <link
       rel="preconnect"
       href="https://fonts.googleapis.com"
@@ -20,12 +42,30 @@
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap"
       rel="stylesheet"
+      integrity="sha384-4WK6e-yI/UWb8C4T10cX5k0W1lVj3fTb1FXfIdJtNkFhVIlMhp8FhPTYq7QT7qLx"
+      crossorigin="anonymous"
     />
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Stellar Tipz 💫</title>
+    
+    <!-- Theme initialization script to prevent flash -->
+    <script>
+      (function() {
+        const STORAGE_KEY = 'tipz_theme';
+        const stored = localStorage.getItem(STORAGE_KEY);
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const theme = stored || (prefersDark ? 'dark' : 'light');
+        
+        if (theme === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

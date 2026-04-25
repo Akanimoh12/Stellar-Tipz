@@ -75,7 +75,7 @@ pub fn approve_verification(
     let now = env.ledger().timestamp();
     profile.verification = VerificationStatus {
         is_verified: true,
-        verification_type: Some(verification_type.clone()),
+        verification_type: verification_type.clone(),
         verified_at: Some(now),
         revoked_at: None,
     };
@@ -115,7 +115,7 @@ pub fn revoke_verification(env: &Env, creator: Address) -> Result<(), ContractEr
     let now = env.ledger().timestamp();
     profile.verification = VerificationStatus {
         is_verified: false,
-        verification_type: None,
+        verification_type: crate::types::VerificationType::Unverified,
         verified_at: None,
         revoked_at: Some(now),
     };

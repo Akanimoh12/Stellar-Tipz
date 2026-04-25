@@ -28,6 +28,9 @@ const IMAGE_URL_MAX_LEN: u32 = 256;
 /// Maximum allowed X (Twitter) handle length in bytes (including optional @).
 const X_HANDLE_MAX_LEN: u32 = 16;
 
+/// Maximum allowed tip message length in bytes.
+const TIP_MESSAGE_MAX_LEN: u32 = 280;
+
 /// Validates a username against Tipz naming rules.
 ///
 /// Usernames serve as unique identifiers for creator profiles. They appear
@@ -280,6 +283,28 @@ pub fn validate_x_handle(x_handle: &String) -> Result<(), ContractError> {
         if !(is_upper || is_lower || is_digit || is_underscore) {
             return Err(ContractError::InvalidXHandle);
         }
+    }
+
+    Ok(())
+}
+
+/// Validates a tip amount against positivity and the configured minimum.
+pub fn validate_tip_amount(amount: i128, min_tip: i128) -> Result<(), ContractError> {
+    if amount <= 0 {
+        return Err(ContractError::InvalidAmount);
+    }
+
+    if amount < min_tip {
+        return Err(ContractError::TipBelowMinimum);
+    }
+
+    Ok(())
+}
+
+/// Validates optional message content attached to a tip.
+pub fn validate_message(message: &String) -> Result<(), ContractError> {
+    if message.len() > TIP_MESSAGE_MAX_LEN {
+        return Err(ContractError::MessageTooLong);
     }
 
     Ok(())

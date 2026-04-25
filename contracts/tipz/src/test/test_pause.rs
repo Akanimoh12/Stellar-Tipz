@@ -71,7 +71,7 @@ fn test_pause_blocks_tips() {
     let message = String::from_str(&env, "tip");
     let amount: i128 = 100_000_000;
 
-    let res = client.try_send_tip(&tipper, &creator, &amount, &message);
+    let res = client.try_send_tip(&tipper, &creator, &amount, &message, &false);
     assert_eq!(res, Err(Ok(ContractError::ContractPaused)));
 }
 
@@ -86,7 +86,7 @@ fn test_unpause_allows_tips() {
     let message = String::from_str(&env, "tip");
     let amount: i128 = 100_000_000;
 
-    client.send_tip(&tipper, &creator, &amount, &message);
+    client.send_tip(&tipper, &creator, &amount, &message, &false);
 }
 
 #[test]

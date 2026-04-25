@@ -73,7 +73,7 @@ fn test_tip_below_minimum_fails() {
     let message = String::from_str(&env, "tip");
     let amount: i128 = min - 1;
 
-    let res = client.try_send_tip(&tipper, &creator, &amount, &message);
+    let res = client.try_send_tip(&tipper, &creator, &amount, &message, &false);
     assert_eq!(res, Err(Ok(ContractError::TipBelowMinimum)));
 }
 
@@ -84,7 +84,7 @@ fn test_tip_at_minimum_succeeds() {
     let min = client.get_min_tip_amount();
     let message = String::from_str(&env, "tip");
 
-    client.send_tip(&tipper, &creator, &min, &message);
+    client.send_tip(&tipper, &creator, &min, &message, &false);
 }
 
 #[test]

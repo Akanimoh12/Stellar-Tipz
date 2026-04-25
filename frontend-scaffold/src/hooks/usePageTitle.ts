@@ -1,7 +1,2 @@
-import { useEffect } from 'react';
-
-export function usePageTitle(title: string) {
-  useEffect(() => {
-    document.title = `${title} | Stellar Tipz`;
-  }, [title]);
-}
+// Re-export from usePageMeta for backward compatibility
+export { usePageTitle } from './usePageMeta';

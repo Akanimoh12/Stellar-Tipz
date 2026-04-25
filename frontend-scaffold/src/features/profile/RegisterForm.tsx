@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Input from '@/components/ui/Input';
 import Textarea from '@/components/ui/Textarea';
@@ -9,7 +9,7 @@ import {
   validateDisplayName,
   validateUsername,
 } from '@/helpers/validation';
-import { useContract, useUsernameCheck } from '@/hooks';
+import { useContract, useUsernameCheck, useTransactionGuard } from '@/hooks';
 import { useToastStore } from '@/store/toastStore';
 import { ProfileFormData } from '@/types/profile';
 import { categorizeError, ERRORS } from '@/helpers/error';
@@ -76,6 +76,9 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
   const { addToast } = useToastStore();
   const navigate = useNavigate();
   
+  // Transaction guard to prevent duplicate submissions
+  const { isPending: isTransactionPending, startTransaction, reset: resetTransactionGuard } = useTransactionGuard();
+  
   // Username availability check
   const { available, checking, error: availabilityError } = useUsernameCheck(form.username);
 
@@ -88,8 +91,13 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
       }
     };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Guard against submission during pending transaction
+    if (isTransactionPending) {
+      return;
+    }
 
     const validationErrors = validate(form, available, checking);
     if (Object.keys(validationErrors).length > 0) {
@@ -97,38 +105,41 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
       return;
     }
 
-    try {
-      setTxStatus('signing');
-      setTxError(undefined);
-      setTxHash(undefined);
+    await startTransaction(async () => {
+      try {
+        setTxStatus('signing');
+        setTxError(undefined);
+        setTxHash(undefined);
 
-      const formData: ProfileFormData = {
-        ...form,
-        username: form.username.trim().toLowerCase(),
-        displayName: form.displayName.trim(),
-        bio: form.bio.trim(),
-        imageUrl: form.imageUrl.trim(),
-        xHandle: form.xHandle.trim().replace(/^@/, ''),
-      };
+        const formData: ProfileFormData = {
+          ...form,
+          username: form.username.trim().toLowerCase(),
+          displayName: form.displayName.trim(),
+          bio: form.bio.trim(),
+          imageUrl: form.imageUrl.trim(),
+          xHandle: form.xHandle.trim().replace(/^@/, ''),
+        };
 
-      setTxStatus('submitting');
-      const hash = await registerProfile(formData);
+        setTxStatus('submitting');
+        const hash = await registerProfile(formData);
 
-      setTxStatus('confirming');
-      setTxHash(hash);
+        setTxStatus('confirming');
+        setTxHash(hash);
 
-      setTxStatus('success');
-      addToast({ message: 'Profile registered successfully!', type: 'success', duration: 5000 });
+        setTxStatus('success');
+        addToast({ message: 'Profile registered successfully!', type: 'success', duration: 5000 });
 
-      setTimeout(() => navigate('/profile'), 1500);
-    } catch (err) {
-      const { category } = categorizeError(err);
-      setTxStatus('error');
-      setTxError(category === 'network' ? ERRORS.NETWORK : ERRORS.CONTRACT);
-    }
-  };
+        setTimeout(() => navigate('/profile'), 1500);
+      } catch (err) {
+        const { category } = categorizeError(err);
+        setTxStatus('error');
+        setTxError(category === 'network' ? ERRORS.NETWORK : ERRORS.CONTRACT);
+        throw err; // Re-throw to let transaction guard handle it
+      }
+    });
+  }, [form, available, checking, isTransactionPending, startTransaction, registerProfile, addToast, navigate]);
 
-  const isSubmitting = ['signing', 'submitting', 'confirming'].includes(txStatus);
+  const isSubmitting = ['signing', 'submitting', 'confirming'].includes(txStatus) || isTransactionPending;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6 max-w-lg mx-auto">

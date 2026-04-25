@@ -3,7 +3,9 @@ import { AnimatePresence, motion } from "framer-motion";
 
 import type { Profile } from "../../types";
 import Button from "../../components/ui/Button";
+import { useWallet } from "../../hooks/useWallet";
 import { getExplorerTxUrl } from "../../helpers/network";
+import TipReceipt from "./TipReceipt";
 
 interface TipResultProps {
   status: "success" | "error";
@@ -22,6 +24,8 @@ const TipResult: React.FC<TipResultProps> = ({
   errorMessage,
   onPrimaryAction,
 }) => {
+  const { publicKey } = useWallet();
+
   return (
     <motion.section
       initial={{ opacity: 0, y: 16, scale: 0.98 }}
@@ -51,14 +55,12 @@ const TipResult: React.FC<TipResultProps> = ({
               {creator ? ` to ${creator.displayName}` : ""}.
             </p>
             {txHash && (
-              <a
-                href={getExplorerTxUrl(txHash)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex text-sm font-black uppercase underline"
-              >
-                View transaction hash
-              </a>
+              <TipReceipt 
+                txHash={txHash}
+                amount={amount}
+                sender={publicKey || undefined}
+                receiver={creator?.username || creator?.displayName}
+              />
             )}
             <Button type="button" onClick={onPrimaryAction}>
               Send Another

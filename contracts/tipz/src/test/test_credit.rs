@@ -17,12 +17,12 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use soroban_sdk::{testutils::Address as _, Address, Env, Map, String, Symbol};
 
 use crate::{
     credit::{calculate_credit_score, get_credit_tier, get_tier, BASE_SCORE},
     storage::DataKey,
-    types::{CreditTier, Profile},
+    types::{CreditTier, Profile, VerificationStatus, VerificationType},
     TipzContract,
 };
 
@@ -36,7 +36,9 @@ fn blank_profile(env: &Env, now: u64) -> Profile {
         username: String::from_str(env, "creator"),
         display_name: String::from_str(env, "Creator"),
         bio: String::from_str(env, ""),
+        website: String::from_str(env, ""),
         image_url: String::from_str(env, ""),
+        social_links: Map::<Symbol, String>::new(env),
         x_handle: String::from_str(env, ""),
         x_followers: 0,
         x_engagement_avg: 0,

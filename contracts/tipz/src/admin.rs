@@ -10,7 +10,7 @@ use crate::credit;
 use crate::errors::ContractError;
 use crate::events;
 use crate::storage::{self, DataKey};
-use crate::types::BatchSkip;
+use crate::types::{AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip};
 
 pub fn require_admin(env: &Env, caller: &Address) -> Result<(), ContractError> {
     if !storage::is_initialized(env) {
@@ -73,6 +73,12 @@ pub fn initialize(
 
 /// Maximum number of creators in a single [`batch_update_x_metrics`] call.
 pub const MAX_X_METRICS_BATCH_LEN: u32 = 50;
+
+/// Waiting period before a proposed new admin may call [`confirm_admin_change`].
+pub const ADMIN_CHANGE_TIMELOCK_SECS: u64 = 48 * 3600;
+
+/// Maximum entries returned by [`get_admin_change_history`] in one call.
+pub const MAX_ADMIN_HISTORY_RETURN: u32 = 50;
 
 /// Apply X metric fields and recalculate credit score for a profile that is
 /// already known to exist in storage.
@@ -254,60 +260,140 @@ pub fn set_admin(env: &Env, caller: &Address, new_admin: &Address) -> Result<(),
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
     let old_admin = storage::get_admin(env);
+    if new_admin == &old_admin {
+        return Err(ContractError::NotAuthorized);
+    }
+    storage::remove_pending_admin_change(env);
     storage::set_admin(env, new_admin);
     events::emit_admin_changed(env, &old_admin, new_admin);
+    let now = env.ledger().timestamp();
+    storage::append_admin_change_history(
+        env,
+        &AdminChangeHistoryEntry {
+            old_admin: old_admin.clone(),
+            new_admin: new_admin.clone(),
+            confirmed_at: now,
+        },
+    );
     Ok(())
 }
 
-/// Propose a new admin. Step 1 of the two-step admin transfer. Current admin only.
-pub fn propose_admin(
+/// Propose a new admin with a 48-hour time lock. Current admin only.
+///
+/// At most one pending proposal: cancel it before proposing a different successor.
+pub fn propose_admin_change(
     env: &Env,
     caller: &Address,
     new_admin: &Address,
 ) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
-    storage::set_pending_admin(env, new_admin);
-    events::emit_admin_proposed(env, caller, new_admin);
+    let current = storage::get_admin(env);
+    if new_admin == &current {
+        return Err(ContractError::NotAuthorized);
+    }
+    if storage::get_pending_admin_change(env).is_some() {
+        return Err(ContractError::AdminChangeAlreadyPending);
+    }
+    let now = env.ledger().timestamp();
+    let confirmable_after = now
+        .checked_add(ADMIN_CHANGE_TIMELOCK_SECS)
+        .ok_or(ContractError::OverflowError)?;
+    let proposal = AdminChangeProposal {
+        new_admin: new_admin.clone(),
+        confirmable_after,
+    };
+    storage::set_pending_admin_change(env, &proposal);
+    events::emit_admin_change_proposed(env, &current, new_admin, confirmable_after);
     Ok(())
 }
 
-/// Accept a pending admin proposal. Step 2 of the two-step admin transfer.
-/// Only the proposed admin can call this.
-pub fn accept_admin(env: &Env, caller: &Address) -> Result<(), ContractError> {
+/// Confirm a pending admin change after the time lock. Only the proposed `new_admin` may call this.
+pub fn confirm_admin_change(env: &Env, caller: &Address) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     if !storage::is_initialized(env) {
         return Err(ContractError::NotInitialized);
     }
-    let pending = storage::get_pending_admin(env).ok_or(ContractError::NoPendingAdmin)?;
-    if caller != &pending {
+    let proposal = storage::get_pending_admin_change(env).ok_or(ContractError::NoPendingAdmin)?;
+    if caller != &proposal.new_admin {
         return Err(ContractError::NotAuthorized);
     }
     caller.require_auth();
+    let now = env.ledger().timestamp();
+    if now < proposal.confirmable_after {
+        return Err(ContractError::AdminChangeTimelockNotMet);
+    }
+    let old_admin = storage::get_admin(env);
     storage::set_admin(env, caller);
-    storage::remove_pending_admin(env);
-    events::emit_admin_accepted(env, caller);
+    storage::remove_pending_admin_change(env);
+    events::emit_admin_change_confirmed(env, &old_admin, caller);
+    events::emit_admin_changed(env, &old_admin, caller);
+    storage::append_admin_change_history(
+        env,
+        &AdminChangeHistoryEntry {
+            old_admin: old_admin.clone(),
+            new_admin: caller.clone(),
+            confirmed_at: now,
+        },
+    );
     Ok(())
 }
 
-/// Cancel a pending admin proposal. Current admin only.
-pub fn cancel_admin_proposal(env: &Env, caller: &Address) -> Result<(), ContractError> {
+/// Cancel a pending time-locked admin change. Current admin only.
+pub fn cancel_admin_change(env: &Env, caller: &Address) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
-    if storage::get_pending_admin(env).is_none() {
+    if storage::get_pending_admin_change(env).is_none() {
         return Err(ContractError::NoPendingAdmin);
     }
-    storage::remove_pending_admin(env);
+    storage::remove_pending_admin_change(env);
     events::emit_admin_proposal_cancelled(env, caller);
     Ok(())
 }
 
-/// Return the pending admin address, or `None` if no proposal is active.
-pub fn get_pending_admin(env: &Env) -> Result<Option<Address>, ContractError> {
+/// Return the pending admin-change proposal, if any.
+pub fn get_admin_change_proposal(env: &Env) -> Result<Option<AdminChangeProposal>, ContractError> {
     if !storage::is_initialized(env) {
         return Err(ContractError::NotInitialized);
     }
-    Ok(storage::get_pending_admin(env))
+    Ok(storage::get_pending_admin_change(env))
+}
+
+/// Return recent admin change history entries, newest first.
+pub fn get_admin_change_history(
+    env: &Env,
+    limit: u32,
+    offset: u32,
+) -> Result<soroban_sdk::Vec<AdminChangeHistoryEntry>, ContractError> {
+    if !storage::is_initialized(env) {
+        return Err(ContractError::NotInitialized);
+    }
+    let n = storage::get_admin_change_history_next_id(env);
+    let mut out: soroban_sdk::Vec<AdminChangeHistoryEntry> = soroban_sdk::Vec::new(env);
+    if n == 0 {
+        return Ok(out);
+    }
+    let cap = if limit == 0 || limit > MAX_ADMIN_HISTORY_RETURN {
+        MAX_ADMIN_HISTORY_RETURN
+    } else {
+        limit
+    };
+    if offset >= n {
+        return Ok(out);
+    }
+    let mut cur = n - 1 - offset;
+    let mut taken: u32 = 0;
+    while taken < cap {
+        if let Some(entry) = storage::get_admin_change_history_entry(env, cur) {
+            out.push_back(entry);
+        }
+        if cur == 0 {
+            break;
+        }
+        cur -= 1;
+        taken += 1;
+    }
+    Ok(out)
 }
 
 pub fn pause(env: &Env, caller: &Address) -> Result<(), ContractError> {

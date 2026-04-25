@@ -4,20 +4,41 @@ import { persist } from "zustand/middleware";
 type Network = "TESTNET" | "PUBLIC";
 type SigningStatus = "idle" | "signing" | "signed" | "error";
 
+/** A single connected wallet entry. */
+export interface ConnectedWallet {
+  publicKey: string;
+  walletType: string;
+}
+
 interface WalletState {
+  /** All currently connected wallets. */
+  wallets: ConnectedWallet[];
+  /** Public key of the wallet used for transactions. */
+  activeWalletKey: string | null;
+
+  // ── Derived / single-wallet compat fields ──────────────────────────────
+  /** Mirrors activeWalletKey for backward-compat with components that read publicKey. */
   publicKey: string | null;
+  /** True when at least one wallet is connected. */
   connected: boolean;
   connecting: boolean;
   isReconnecting: boolean;
   error: string | null;
   network: Network;
+  /** walletType of the active wallet (backward-compat). */
   walletType: string | null;
   signingStatus: SigningStatus;
 }
 
 interface WalletActions {
+  /** Add (or activate) a wallet. If already in the list it becomes active. */
   connect: (publicKey: string, walletType?: string) => void;
+  /** Disconnect all wallets and clear persisted state. */
   disconnect: () => void;
+  /** Remove a specific wallet from the list. */
+  removeWallet: (publicKey: string) => void;
+  /** Switch the active wallet used for signing. */
+  setActiveWallet: (publicKey: string) => void;
   setConnecting: (connecting: boolean) => void;
   setReconnecting: (isReconnecting: boolean) => void;
   setError: (error: string | null) => void;

@@ -19,7 +19,7 @@
 
 use soroban_sdk::{Address, Env, Vec};
 
-use crate::storage::DataKey;
+use crate::storage::{self, DataKey};
 use crate::types::{LeaderboardEntry, Profile};
 
 /// Maximum number of entries retained on the leaderboard.
@@ -85,6 +85,9 @@ fn sort_leaderboard(list: &mut Vec<LeaderboardEntry>) {
 /// The list is always kept in descending order by `total_tips_received` and
 /// trimmed to at most 50 entries.
 pub fn update_leaderboard(env: &Env, profile: &Profile) {
+    if storage::is_profile_deactivated(env, &profile.owner) {
+        return;
+    }
     let mut entries = load_entries(env);
 
     // Ensure the list is sorted before any operations (maintains invariant)
@@ -236,8 +239,9 @@ pub fn get_leaderboard_size(env: &Env) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{VerificationStatus, VerificationType};
     use crate::TipzContract;
-    use soroban_sdk::{testutils::Address as _, Address, Env, String};
+    use soroban_sdk::{testutils::Address as _, Address, Env, Map, String, Symbol};
 
     // Helper to create a Profile with minimal required fields
     fn make_profile(
@@ -252,7 +256,9 @@ mod tests {
             username: String::from_str(env, username),
             display_name: String::from_str(env, username),
             bio: String::from_str(env, ""),
+            website: String::from_str(env, ""),
             image_url: String::from_str(env, ""),
+            social_links: Map::<Symbol, String>::new(env),
             x_handle: String::from_str(env, ""),
             x_followers: 0,
             x_engagement_avg: 0,

@@ -32,6 +32,19 @@ fn setup() -> (Env, TipzContractClient<'static>, Address, Address, Address) {
     (env, client, admin, fee_collector, native_token)
 }
 
+pub fn setup_test_contract(env: &Env, admin: &Address) -> TipzContractClient<'static> {
+    let contract_id = env.register_contract(None, TipzContract);
+    let client = TipzContractClient::new(env, &contract_id);
+    let fee_collector = Address::generate(env);
+    let native_token = env
+        .register_stellar_asset_contract_v2(Address::generate(env))
+        .address();
+
+    client.initialize(admin, &fee_collector, &200_u32, &native_token);
+
+    client
+}
+
 #[test]
 fn test_initialize_success() {
     let (env, client, admin, fee_collector, native_token) = setup();

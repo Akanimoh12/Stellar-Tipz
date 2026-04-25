@@ -430,6 +430,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "social_links"
+                      },
+                      "val": {
+                        "map": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "total_tips_count"
                       },
                       "val": {
@@ -461,6 +469,55 @@
                       },
                       "val": {
                         "string": "alice"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "verification"
+                      },
+                      "val": {
+                        "map": [
+                          {
+                            "key": {
+                              "symbol": "is_verified"
+                            },
+                            "val": {
+                              "bool": false
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "revoked_at"
+                            },
+                            "val": "void"
+                          },
+                          {
+                            "key": {
+                              "symbol": "verification_type"
+                            },
+                            "val": {
+                              "vec": [
+                                {
+                                  "symbol": "Unverified"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "verified_at"
+                            },
+                            "val": "void"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "website"
+                      },
+                      "val": {
+                        "string": ""
                       }
                     },
                     {
@@ -1719,6 +1776,14 @@
                 },
                 {
                   "key": {
+                    "symbol": "social_links"
+                  },
+                  "val": {
+                    "map": []
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "total_tips_count"
                   },
                   "val": {
@@ -1750,6 +1815,55 @@
                   },
                   "val": {
                     "string": "alice"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "verification"
+                  },
+                  "val": {
+                    "map": [
+                      {
+                        "key": {
+                          "symbol": "is_verified"
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "revoked_at"
+                        },
+                        "val": "void"
+                      },
+                      {
+                        "key": {
+                          "symbol": "verification_type"
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Unverified"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "verified_at"
+                        },
+                        "val": "void"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "website"
+                  },
+                  "val": {
+                    "string": ""
                   }
                 },
                 {

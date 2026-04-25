@@ -105,27 +105,11 @@ function Root() {
   );
 }
 
-async function registerServiceWorker() {
-  if (!("serviceWorker" in navigator)) return;
+import { register as registerSW } from "./services/serviceWorker";
 
-  try {
-    const swUrl = new URL("./sw.ts", import.meta.url);
-    const reg = await navigator.serviceWorker.register(swUrl, { type: "module" });
-
-    // Trigger immediate update checks on load (helps “update on deployment”)
-    reg.update().catch(() => null);
-
-    // If there's already a waiting worker, ask it to activate by reloading once controlled.
-    if (reg.waiting && navigator.serviceWorker.controller) {
-      // Next navigation will be controlled by the updated SW.
-    }
-  } catch (err) {
-    // SW registration should never break app boot
-    console.warn("[PWA] Service worker registration failed:", err);
-  }
-}
-
-registerServiceWorker();
+// Register the service worker (public/sw.js). Update detection and
+// "update available" UI are handled inside App via onUpdateAvailable().
+registerSW();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

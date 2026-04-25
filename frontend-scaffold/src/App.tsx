@@ -9,16 +9,50 @@ import ToastContainer from "@/components/shared/ToastContainer";
 import KeyboardShortcutsProvider from "@/components/shared/KeyboardShortcutsProvider";
 import { routes } from "@/routes";
 import { useI18n } from "@/i18n";
+import { useOfflineStatus } from "@/hooks/useOfflineStatus";
+import { onUpdateAvailable, skipWaiting } from "@/services/serviceWorker";
 
 const AppRoutes: React.FC = () => {
   const routeElements = useRoutes(routes);
   const { t } = useI18n();
+  const { isOffline } = useOfflineStatus();
+  const [updateReady, setUpdateReady] = React.useState(false);
+
+  React.useEffect(() => {
+    const unsub = onUpdateAvailable(() => setUpdateReady(true));
+    return unsub;
+  }, []);
 
   return (
     <>
       <ScrollToTop />
       <KeyboardShortcutsProvider />
       <ErrorBoundary>
+        {isOffline && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="sticky top-0 z-50 flex items-center justify-center gap-2 border-b-4 border-black bg-yellow-300 px-4 py-2 text-sm font-black uppercase tracking-wide"
+          >
+            <span>Offline – you are browsing cached content</span>
+          </div>
+        )}
+        {updateReady && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="sticky top-0 z-50 flex items-center justify-between gap-2 border-b-4 border-black bg-blue-200 px-4 py-2 text-sm font-black uppercase tracking-wide"
+          >
+            <span>Update available</span>
+            <button
+              type="button"
+              className="border-2 border-black bg-black px-3 py-1 text-xs font-black uppercase text-white"
+              onClick={() => void skipWaiting()}
+            >
+              Reload now
+            </button>
+          </div>
+        )}
         <div className="min-h-screen flex flex-col bg-white dark:bg-black">
           <a
             href="#main-content"

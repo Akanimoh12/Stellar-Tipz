@@ -8,6 +8,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { useI18n } from "@/i18n";
 
 import NetworkBadge from "../shared/NetworkBadge";
+import WalletSwitcher from "../shared/WalletSwitcher";
 import Button from "../ui/Button";
 import { getModifierKey } from "../../hooks/useKeyboardShortcuts";
 
@@ -173,13 +174,17 @@ const Header: React.FC = () => {
           <div className="hidden md:block">
             <NetworkBadge />
           </div>
-          <Button
-            size="sm"
-            className="hidden md:inline-flex"
-            onClick={connected ? disconnect : connect}
-          >
-            {walletLabel}
-          </Button>
+          {connected ? (
+            <WalletSwitcher onAddWallet={connect} />
+          ) : (
+            <Button
+              size="sm"
+              className="hidden md:inline-flex"
+              onClick={connect}
+            >
+              {walletLabel}
+            </Button>
+          )}
         </div>
 
         <button
@@ -280,11 +285,15 @@ const Header: React.FC = () => {
                   Keyboard shortcuts
                   <Keyboard size={16} />
                 </button>
-                <Button className="w-full" onClick={handleWalletAction}>
-                  {connected
-                    ? `Disconnect ${walletLabel}`
-                    : t("wallet.connect")}
-                </Button>
+                {connected ? (
+                  <div onClick={closeMobileMenu}>
+                    <WalletSwitcher onAddWallet={connect} />
+                  </div>
+                ) : (
+                  <Button className="w-full" onClick={handleWalletAction}>
+                    {t("wallet.connect")}
+                  </Button>
+                )}
               </div>
             </div>
           </motion.div>

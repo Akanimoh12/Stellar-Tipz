@@ -13,7 +13,7 @@
     "preview": "cd frontend-scaffold && npm run preview",
     "typecheck": "cd frontend-scaffold && npm run typecheck",
     "lint": "cd frontend-scaffold && npm run lint",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "cd frontend-scaffold && npm run test"
   },
   "repository": {
     "type": "git",

@@ -2,11 +2,11 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
+use soroban_sdk::{testutils::Address as _, token, Address, Env, Map, String, Symbol};
 
 use crate::errors::ContractError;
 use crate::storage::{self};
-use crate::types::Profile;
+use crate::types::{Profile, VerificationStatus, VerificationType};
 use crate::TipzContract;
 use crate::TipzContractClient;
 
@@ -46,7 +46,9 @@ fn setup_env() -> (
         username: String::from_str(&env, "alice"),
         display_name: String::from_str(&env, "Alice"),
         bio: String::from_str(&env, "Creator bio"),
+        website: String::from_str(&env, ""),
         image_url: String::from_str(&env, ""),
+        social_links: Map::<Symbol, String>::new(&env),
         x_handle: String::from_str(&env, "alice_x"),
         x_followers: 1000,
         x_engagement_avg: 50,

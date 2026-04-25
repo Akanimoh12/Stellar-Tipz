@@ -64,8 +64,48 @@ const getKit = (network: WalletNetwork) => {
 
 const AUTO_RECONNECT_TIMEOUT_MS = 5000;
 
+export const SUPPORTED_WALLETS = [
+  {
+    id: "freighter",
+    name: "Freighter",
+    installUrl: "https://www.freighter.app/",
+    recommended: true,
+  },
+  {
+    id: "xbull",
+    name: "xBull",
+    installUrl: "https://xbull.app/",
+  },
+  {
+    id: "albedo",
+    name: "Albedo",
+    installUrl: "https://albedo.link/",
+  },
+];
+
+const isWalletInstalled = (id: string): boolean => {
+  if (typeof window === "undefined") return false;
+  const win = window as unknown as {
+    freighter?: unknown;
+    xBullWallet?: unknown;
+    albedo?: unknown;
+  };
+  switch (id) {
+    case "freighter":
+      return !!win.freighter;
+    case "xbull":
+      return !!win.xBullWallet;
+    case "albedo":
+      return !!win.albedo;
+    default:
+      return false;
+  }
+};
+
 export const useWallet = () => {
   const {
+    wallets,
+    activeWalletKey,
     publicKey,
     connected,
     connecting,
@@ -76,6 +116,8 @@ export const useWallet = () => {
     signingStatus,
     connect,
     disconnect,
+    removeWallet,
+    setActiveWallet,
     setConnecting,
     setReconnecting,
     setError,
@@ -87,7 +129,8 @@ export const useWallet = () => {
     network === "PUBLIC" ? WalletNetwork.PUBLIC : WalletNetwork.TESTNET;
   const kit = useMemo(() => getKit(kitNetwork), [kitNetwork]);
 
-  // Auto-reconnect on mount if a previous session exists
+  // Auto-reconnect on mount: try to re-establish the active wallet session.
+  // If unavailable, remove it from the list but keep the rest.
   const hasAttemptedReconnect = useRef(false);
   useEffect(() => {
     if (hasAttemptedReconnect.current) return;
@@ -140,6 +183,7 @@ export const useWallet = () => {
 
   const actions = useMemo(
     () => ({
+      /** Open the wallet selection modal and add / activate the chosen wallet. */
       connect: async () => {
         setConnecting(true);
         setError(null);
@@ -168,6 +212,7 @@ export const useWallet = () => {
                   console.warn("Network auto-detection failed:", e);
                 }
 
+                // connect() adds to the list and makes it active
                 connect(address, option.id);
               } catch (err) {
                 console.error("Wallet connection failed:", err);
@@ -184,13 +229,61 @@ export const useWallet = () => {
         }
       },
 
+      /** Disconnect all wallets. */
       disconnect: () => {
         disconnect();
+      },
+
+      /** Remove a specific wallet from the list by public key. */
+      removeWallet: (key: string) => {
+        removeWallet(key);
+      },
+
+      /** Switch the active (default) wallet for signing transactions. */
+      setActiveWallet: (key: string) => {
+        setActiveWallet(key);
       },
 
       setNetwork: (newNetwork: "TESTNET" | "PUBLIC") => {
         storeSetNetwork(newNetwork);
       },
+
+      connectWallet: async (walletId: string) => {
+        setConnecting(true);
+        setError(null);
+        try {
+          kit.setWallet(walletId);
+          const { address } = await kit.getAddress();
+
+          // Automatic network detection for Freighter
+          const win = window as unknown as {
+            freighter?: { getNetwork: () => Promise<string> };
+          };
+          if (walletId === "freighter" && win.freighter) {
+            try {
+              const networkDetails = await win.freighter.getNetwork();
+              const detectedNetwork =
+                networkDetails === "PUBLIC" ? "PUBLIC" : "TESTNET";
+              if (detectedNetwork !== network) {
+                storeSetNetwork(detectedNetwork);
+              }
+            } catch (e) {
+              console.warn("Network auto-detection failed:", e);
+            }
+          }
+
+          connect(address, walletId);
+        } catch (err) {
+          console.error("Wallet connection failed:", err);
+          setError(
+            err instanceof Error ? err.message : "Failed to connect wallet",
+          );
+        } finally {
+          setConnecting(false);
+        }
+      },
+
+      isWalletInstalled,
 
       signTransaction: async (xdr: string): Promise<string> => {
         if (!publicKey) {
@@ -222,6 +315,8 @@ export const useWallet = () => {
       publicKey,
       connect,
       disconnect,
+      removeWallet,
+      setActiveWallet,
       setConnecting,
       setError,
       storeSetNetwork,
@@ -233,6 +328,10 @@ export const useWallet = () => {
 
   return useMemo(
     () => ({
+      /** All currently connected wallets. */
+      wallets,
+      /** Public key of the active wallet. */
+      activeWalletKey,
       publicKey,
       connected,
       connecting,
@@ -244,6 +343,8 @@ export const useWallet = () => {
       ...actions,
     }),
     [
+      wallets,
+      activeWalletKey,
       publicKey,
       connected,
       connecting,

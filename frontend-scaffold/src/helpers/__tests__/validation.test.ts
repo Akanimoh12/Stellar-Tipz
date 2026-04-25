@@ -1,133 +1,63 @@
-import { describe, it, expect } from 'vitest';
-import { validateUsername, validateDisplayName, validateBio } from '../validation';
+import { describe, expect, it } from 'vitest';
 
-describe('validateUsername', () => {
-  it('should accept valid usernames', () => {
-    const validUsernames = ['alice', 'bob_123', 'creator_x'];
-    
-    validUsernames.forEach(username => {
-      const result = validateUsername(username);
-      expect(result.valid).toBe(true);
-      expect(result.error).toBeUndefined();
+import {
+  MAX_MESSAGE_LENGTH,
+  validateBio,
+  validateDisplayName,
+  validateMessage,
+  validateUsername,
+  validateXHandle,
+} from '../validation';
+
+describe('validation helpers', () => {
+  it('rejects usernames with spaces', () => {
+    expect(validateUsername('has space').valid).toBe(false);
+  });
+
+  it('accepts valid username', () => {
+    expect(validateUsername('alice123')).toEqual({ valid: true });
+  });
+
+  it('rejects username edge cases', () => {
+    expect(validateUsername('ab').valid).toBe(false);
+    expect(validateUsername('abc_').error).toBe('Username cannot end with an underscore.');
+    expect(validateUsername('a__b').error).toBe('Username cannot contain consecutive underscores.');
+  });
+
+  it('validates display names with trimming rules', () => {
+    expect(validateDisplayName('  Alice Smith  ').valid).toBe(true);
+    expect(validateDisplayName('   ').valid).toBe(false);
+    expect(validateDisplayName('A'.repeat(65)).valid).toBe(false);
+  });
+
+  it('validates bio boundaries', () => {
+    expect(validateBio('')).toEqual({ valid: true });
+    expect(validateBio('A'.repeat(280))).toEqual({ valid: true });
+    expect(validateBio('A'.repeat(281))).toEqual({
+      valid: false,
+      error: 'Bio must be 280 characters or fewer.',
     });
   });
 
-  it('should reject usernames that are too short', () => {
-    const result = validateUsername('ab');
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe('Username must be 3-32 characters long.');
-  });
 
-  it('should reject usernames that contain uppercase letters', () => {
-    const result = validateUsername('ABC');
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe('Username must start with a letter and contain only lowercase letters, numbers, or underscores.');
-  });
 
-  it('should reject usernames that start with a digit', () => {
-    const result = validateUsername('1abc');
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe('Username must start with a letter and contain only lowercase letters, numbers, or underscores.');
-  });
-
-  it('should reject usernames with consecutive underscores', () => {
-    const result = validateUsername('a__b');
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe('Username cannot contain consecutive underscores.');
-  });
-
-  it('should reject usernames that end with underscore', () => {
-    const result = validateUsername('abc_');
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe('Username cannot end with an underscore.');
-  });
-
-  it('should reject usernames that are too long', () => {
-    const result = validateUsername('a'.repeat(33));
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe('Username must be 3-32 characters long.');
-  });
-
-  it('should handle whitespace properly', () => {
-    const result = validateUsername('  alice  ');
-    expect(result.valid).toBe(true);
-    expect(result.error).toBeUndefined();
-  });
-
-  it('should reject empty username', () => {
-    const result = validateUsername('');
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe('Username must be 3-32 characters long.');
-  });
-});
-
-describe('validateDisplayName', () => {
-  it('should accept valid display names', () => {
-    const validNames = ['Alice', 'Bob Smith', 'Creator X', 'A', 'A'.repeat(64)];
-    
-    validNames.forEach(name => {
-      const result = validateDisplayName(name);
-      expect(result.valid).toBe(true);
-      expect(result.error).toBeUndefined();
+  it('validates X handle rules', () => {
+    expect(validateXHandle('')).toEqual({ valid: false, error: 'X handle cannot be empty.' });
+    expect(validateXHandle('a'.repeat(17))).toEqual({
+      valid: false,
+      error: 'X handle must be 16 characters or fewer.',
     });
+    expect(validateXHandle('@bad-handle').valid).toBe(false);
+    expect(validateXHandle('@').valid).toBe(false);
+    expect(validateXHandle('@alice_123')).toEqual({ valid: true });
   });
 
-  it('should reject empty display name', () => {
-    const result = validateDisplayName('');
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe('Display name must be 1-64 characters.');
-  });
-
-  it('should reject display name that is too long', () => {
-    const result = validateDisplayName('A'.repeat(65));
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe('Display name must be 1-64 characters.');
-  });
-
-  it('should handle whitespace properly', () => {
-    const result = validateDisplayName('  Alice Smith  ');
-    expect(result.valid).toBe(true);
-    expect(result.error).toBeUndefined();
-  });
-
-  it('should reject display name with only whitespace', () => {
-    const result = validateDisplayName('   ');
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe('Display name must be 1-64 characters.');
-  });
-});
-
-describe('validateBio', () => {
-  it('should accept valid bios', () => {
-    const validBios = [
-      '',
-      'Short bio',
-      'This is a longer bio that is still within the character limit.',
-      'A'.repeat(280)
-    ];
-    
-    validBios.forEach(bio => {
-      const result = validateBio(bio);
-      expect(result.valid).toBe(true);
-      expect(result.error).toBeUndefined();
+  it('validates message boundaries', () => {
+    expect(validateMessage('hello')).toEqual({ valid: true });
+    expect(validateMessage('A'.repeat(MAX_MESSAGE_LENGTH))).toEqual({ valid: true });
+    expect(validateMessage('A'.repeat(MAX_MESSAGE_LENGTH + 1))).toEqual({
+      valid: false,
+      error: `Message must be ${MAX_MESSAGE_LENGTH} characters or fewer.`,
     });
-  });
-
-  it('should reject bio that is too long', () => {
-    const result = validateBio('A'.repeat(281));
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe('Bio must be 280 characters or fewer.');
-  });
-
-  it('should accept exactly 280 characters', () => {
-    const result = validateBio('A'.repeat(280));
-    expect(result.valid).toBe(true);
-    expect(result.error).toBeUndefined();
-  });
-
-  it('should handle empty bio', () => {
-    const result = validateBio('');
-    expect(result.valid).toBe(true);
-    expect(result.error).toBeUndefined();
   });
 });

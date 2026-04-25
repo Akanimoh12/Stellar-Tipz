@@ -19,8 +19,11 @@ mod errors;
 mod events;
 mod fees;
 mod leaderboard;
+mod multisig;
 mod profile;
+mod stats;
 mod storage;
+mod subscription;
 mod tips;
 mod token;
 mod types;
@@ -34,13 +37,13 @@ use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
 
 use crate::errors::ContractError;
 use crate::types::{
-    BatchSkip, ContractConfig, ContractStats, CreditBreakdown, CreditTier, LeaderboardEntry,
-    Profile, Tip,
+    AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip, ContractConfig, ContractStats,
+    CreditBreakdown, CreditTier, LeaderboardEntry, Profile, ProfileWithDeactivation, Tip,
 };
 
 /// The current contract interface version, stored on-chain during initialization.
 /// Must be incremented manually in source when the contract interface changes.
-pub const CONTRACT_VERSION: u32 = 1;
+pub const CONTRACT_VERSION: u32 = 2;
 
 #[contract]
 pub struct TipzContract;
@@ -124,6 +127,26 @@ impl TipzContract {
         profile::deregister_profile(&env, caller)
     }
 
+    /// Deactivate a creator profile (owner deactivates self, or admin moderates `creator`).
+    ///
+    /// Hides the creator from the leaderboard and blocks tips; profile data and balance remain.
+    pub fn deactivate_profile(
+        env: Env,
+        caller: Address,
+        creator: Address,
+    ) -> Result<(), ContractError> {
+        profile::deactivate_profile(&env, caller, creator)
+    }
+
+    /// Reactivate a previously deactivated profile (owner or admin).
+    pub fn reactivate_profile(
+        env: Env,
+        caller: Address,
+        creator: Address,
+    ) -> Result<(), ContractError> {
+        profile::reactivate_profile(&env, caller, creator)
+    }
+
     /// Update X (Twitter) metrics for a creator (admin only).
     pub fn update_x_metrics(
         env: Env,
@@ -164,24 +187,23 @@ impl TipzContract {
         admin::batch_update_x_metrics_preview(&env, &caller, updates)
     }
 
-    /// Get a profile by address.
-    pub fn get_profile(env: Env, address: Address) -> Result<Profile, ContractError> {
-        if !storage::has_profile(&env, &address) {
-            return Err(ContractError::NotRegistered);
-        }
-
-        Ok(storage::get_profile(&env, &address))
+    /// Get a profile by address, including deactivation status.
+    pub fn get_profile(env: Env, address: Address) -> Result<ProfileWithDeactivation, ContractError> {
+        profile::get_profile_with_deactivation(&env, &address)
     }
 
-    /// Get a profile by username.
-    pub fn get_profile_by_username(env: Env, username: String) -> Result<Profile, ContractError> {
+    /// Get a profile by username, including deactivation status.
+    pub fn get_profile_by_username(
+        env: Env,
+        username: String,
+    ) -> Result<ProfileWithDeactivation, ContractError> {
         let address =
             storage::get_username_address(&env, &username).ok_or(ContractError::NotFound)?;
         // Guard against orphaned state: Profile exists but UsernameToAddress expired (or vice versa).
         if !storage::is_profile_active(&env, &address) {
             return Err(ContractError::NotFound);
         }
-        Ok(storage::get_profile(&env, &address))
+        profile::get_profile_with_deactivation(&env, &address)
     }
 
     // ──────────────────────────────────────────────
@@ -195,8 +217,9 @@ impl TipzContract {
         creator: Address,
         amount: i128,
         message: String,
+        is_anonymous: bool,
     ) -> Result<(), ContractError> {
-        tips::send_tip(&env, &tipper, &creator, amount, &message)
+        tips::send_tip(&env, &tipper, &creator, amount, &message, is_anonymous)
     }
 
     /// Withdraw accumulated tips (fee deducted).
@@ -341,33 +364,44 @@ impl TipzContract {
 
     /// Transfer the admin role directly to a new address. Admin only.
     ///
-    /// For a safer two-step transfer use `propose_admin` + `accept_admin`.
+    /// Clears any pending time-locked admin proposal. Records the handoff in admin change history.
     pub fn set_admin(env: Env, caller: Address, new_admin: Address) -> Result<(), ContractError> {
         admin::set_admin(&env, &caller, &new_admin)
     }
 
-    /// Propose a new admin (current admin only). Step 1 of two-step admin transfer.
-    pub fn propose_admin(
+    /// Propose a new admin with a 48-hour time lock (current admin only).
+    pub fn propose_admin_change(
         env: Env,
         caller: Address,
         new_admin: Address,
     ) -> Result<(), ContractError> {
-        admin::propose_admin(&env, &caller, &new_admin)
+        admin::propose_admin_change(&env, &caller, &new_admin)
     }
 
-    /// Accept the pending admin proposal (proposed admin only). Step 2 of two-step admin transfer.
-    pub fn accept_admin(env: Env, caller: Address) -> Result<(), ContractError> {
-        admin::accept_admin(&env, &caller)
+    /// Confirm the pending admin change after the time lock (proposed new admin only).
+    pub fn confirm_admin_change(env: Env, caller: Address) -> Result<(), ContractError> {
+        admin::confirm_admin_change(&env, &caller)
     }
 
-    /// Cancel a pending admin proposal (current admin only).
-    pub fn cancel_admin_proposal(env: Env, caller: Address) -> Result<(), ContractError> {
-        admin::cancel_admin_proposal(&env, &caller)
+    /// Cancel the pending time-locked admin change (current admin only).
+    pub fn cancel_admin_change(env: Env, caller: Address) -> Result<(), ContractError> {
+        admin::cancel_admin_change(&env, &caller)
     }
 
-    /// Return the pending admin address, or `None` if no proposal is active.
-    pub fn get_pending_admin(env: Env) -> Result<Option<Address>, ContractError> {
-        admin::get_pending_admin(&env)
+    /// Return the pending admin-change proposal, if any.
+    pub fn get_admin_change_proposal(
+        env: Env,
+    ) -> Result<Option<AdminChangeProposal>, ContractError> {
+        admin::get_admin_change_proposal(&env)
+    }
+
+    /// Return admin change history entries, newest first (`offset` skips from the newest).
+    pub fn get_admin_change_history(
+        env: Env,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<AdminChangeHistoryEntry>, ContractError> {
+        admin::get_admin_change_history(&env, limit, offset)
     }
 
     /// Get global contract statistics.
@@ -499,5 +533,127 @@ impl TipzContract {
         creator: Address,
     ) -> Result<crate::types::VerificationStatus, ContractError> {
         verification::get_verification_status(&env, creator)
+    }
+
+    // ──────────────────────────────────────────────
+    // Subscriptions
+
+    pub fn create_subscription(
+        env: Env,
+        subscriber: Address,
+        creator: Address,
+        amount: i128,
+        interval_days: u32,
+    ) -> Result<crate::types::Subscription, ContractError> {
+        subscription::create_subscription(&env, subscriber, creator, amount, interval_days)
+    }
+
+    pub fn cancel_subscription(
+        env: Env,
+        subscriber: Address,
+        creator: Address,
+    ) -> Result<(), ContractError> {
+        subscription::cancel_subscription(&env, subscriber, creator)
+    }
+
+    pub fn execute_due_subscription(
+        env: Env,
+        subscriber: Address,
+        creator: Address,
+    ) -> Result<(), ContractError> {
+        subscription::execute_due_subscription(&env, subscriber, creator)
+    }
+
+    pub fn get_subscriptions(env: Env, subscriber: Address) -> Vec<crate::types::Subscription> {
+        subscription::get_subscriptions(&env, subscriber)
+    }
+
+    pub fn get_subscribers(env: Env, creator: Address) -> Vec<crate::types::Subscription> {
+        subscription::get_subscribers(&env, creator)
+    }
+
+    // ──────────────────────────────────────────────
+    // Multi-signature Operations
+    // ──────────────────────────────────────────────
+
+    /// Set multi-signature configuration (admin only)
+    pub fn set_multisig_config(
+        env: Env,
+        admin: Address,
+        required_signatures: u32,
+        signers: Vec<Address>,
+    ) -> Result<(), ContractError> {
+        multisig::set_multisig_config(&env, &admin, required_signatures, signers)
+    }
+
+    /// Get current multi-signature configuration
+    pub fn get_multisig_config(env: Env) -> Option<multisig::MultisigConfig> {
+        multisig::get_multisig_config(&env)
+    }
+
+    /// Propose a new action for multi-sig approval
+    pub fn propose_action(
+        env: Env,
+        signer: Address,
+        action: multisig::Action,
+    ) -> Result<u32, ContractError> {
+        multisig::propose_action(&env, &signer, action)
+    }
+
+    /// Approve an existing proposal
+    pub fn approve_action(
+        env: Env,
+        signer: Address,
+        proposal_id: u32,
+    ) -> Result<(), ContractError> {
+        multisig::approve_action(&env, &signer, proposal_id)
+    }
+
+    /// Get all pending proposals
+    pub fn get_pending_proposals(env: Env) -> Vec<multisig::Proposal> {
+        multisig::get_pending_proposals(&env)
+    }
+
+    /// Get a specific proposal by ID
+    pub fn get_proposal(env: Env, proposal_id: u32) -> Option<multisig::Proposal> {
+        multisig::get_proposal(&env, proposal_id)
+    }
+
+    // ──────────────────────────────────────────────
+    // Donation Pages
+    // ──────────────────────────────────────────────
+
+    /// Set custom donation page configuration
+    pub fn set_donation_page(
+        env: Env,
+        creator: Address,
+        config: types::DonationPageConfig,
+    ) -> Result<(), ContractError> {
+        profile::set_donation_page(&env, &creator, config)
+    }
+
+    /// Get donation page configuration for a creator
+    pub fn get_donation_page(
+        env: Env,
+        creator: Address,
+    ) -> Result<types::DonationPageConfig, ContractError> {
+        profile::get_donation_page(&env, &creator)
+    }
+
+    // ──────────────────────────────────────────────
+    // Platform Statistics
+    // ──────────────────────────────────────────────
+
+    /// Get comprehensive platform statistics
+    pub fn get_platform_stats(env: Env) -> Result<stats::PlatformStats, ContractError> {
+        stats::get_platform_stats(&env)
+    }
+
+    /// Get statistics for a specific creator
+    pub fn get_creator_stats(
+        env: Env,
+        creator: Address,
+    ) -> Result<stats::CreatorStats, ContractError> {
+        stats::get_creator_stats(&env, &creator)
     }
 }

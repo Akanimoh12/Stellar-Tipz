@@ -56,6 +56,10 @@ soroban contract deploy \
 CONTRACT_ID="<your-contract-id>"
 DEPLOYER_ADDR="$(soroban keys address tipz-deployer)"
 
+# Resolve the native XLM SAC address for testnet:
+NATIVE_TOKEN=$(stellar contract id asset --asset native --network testnet)
+# Testnet default: CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
+
 soroban contract invoke \
   --id $CONTRACT_ID \
   --source tipz-deployer \
@@ -65,10 +69,8 @@ soroban contract invoke \
   --admin $DEPLOYER_ADDR \
   --fee_collector $DEPLOYER_ADDR \
   --fee_bps 200 \
-  --native_token <XLM_SAC_ADDRESS>
+  --native_token $NATIVE_TOKEN
 ```
-
-> **Note:** Replace `<XLM_SAC_ADDRESS>` with the Stellar Asset Contract address for native XLM on your target network. For testnet, you can obtain this from the Stellar laboratory or by wrapping native XLM.
 
 ### Verify Deployment
 
@@ -162,11 +164,33 @@ Located in `scripts/`:
 
 ### `deploy-testnet.sh`
 
-Full automated testnet deployment:
+Fully automated testnet deployment — builds, deploys, and initializes the
+contract in one step.
 
 ```bash
+# Deploy with the pre-built wasm (default):
 ./scripts/deploy-testnet.sh
+
+# Build the contract first, then deploy:
+./scripts/deploy-testnet.sh --build
+
+# Use an optimized wasm (run `soroban contract optimize` first):
+./scripts/deploy-testnet.sh --optimized
+
+# Validate inputs and wasm path without actually deploying:
+./scripts/deploy-testnet.sh --dry-run
+
+# Use a custom key name (defaults to "tipz-deployer"):
+./scripts/deploy-testnet.sh my-key-name
+
+# Override the native XLM SAC address via env var:
+NATIVE_TOKEN_ID=<SAC_ADDRESS> ./scripts/deploy-testnet.sh
 ```
+
+The script automatically funds the deployer account via Friendbot and calls
+`initialize` with `--native_token` set to the testnet XLM SAC address
+(`CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` by default,
+overrideable via the `NATIVE_TOKEN_ID` environment variable).
 
 ### `fund-account.sh`
 

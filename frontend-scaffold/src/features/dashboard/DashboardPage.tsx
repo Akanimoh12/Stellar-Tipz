@@ -10,7 +10,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import Tabs from "@/components/ui/Tabs";
 import { categorizeError } from "@/helpers/error";
 import { useDashboard } from "@/hooks/useDashboard";
-import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePageMeta } from "@/hooks/usePageMeta";
 import { useTipNotifications } from "@/hooks/useTipNotifications";
 import { useWalletStore } from "@/store/walletStore";
 import { stroopToXlm } from "@/helpers/format";
@@ -27,7 +27,10 @@ import { DashboardProvider } from "./DashboardContext";
 import TipQRCode from "@/features/profile/TipQRCode";
 
 const DashboardPage: React.FC = () => {
-  usePageTitle("Dashboard");
+  usePageMeta({
+    title: "Dashboard",
+    description: "View your creator dashboard, tips, and earnings on Stellar Tipz",
+  });
 
   const { connected } = useWalletStore();
   const dashboard = useDashboard();

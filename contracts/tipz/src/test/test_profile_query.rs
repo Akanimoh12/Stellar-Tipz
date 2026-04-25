@@ -58,7 +58,7 @@ fn get_profile_success() {
         profile.image_url,
         String::from_str(&env, "https://example.com/avatar.png")
     );
-    assert_eq!(profile.x_handle, String::from_str(&env, "test_x"));
+    assert_eq!(profile.x_handle, String::from_str(&env, "@test_x"));
     assert_eq!(profile.credit_score, 40);
     assert_eq!(profile.balance, 0);
     assert_eq!(profile.total_tips_received, 0);

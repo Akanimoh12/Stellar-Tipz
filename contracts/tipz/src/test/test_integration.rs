@@ -96,9 +96,9 @@ fn test_full_happy_path() {
 
     let message = String::from_str(&env, "Great work!");
 
-    client.send_tip(&tipper, &alice, &amount_alice, &message);
-    client.send_tip(&tipper, &bob, &amount_bob, &message);
-    client.send_tip(&tipper, &charlie, &amount_charlie, &message);
+    client.send_tip(&tipper, &alice, &amount_alice, &message, &false);
+    client.send_tip(&tipper, &bob, &amount_bob, &message, &false);
+    client.send_tip(&tipper, &charlie, &amount_charlie, &message, &false);
 
     // ──────────────────────────────────────────────────────────────────────────
     // Step 3: Verify balances match tip amounts

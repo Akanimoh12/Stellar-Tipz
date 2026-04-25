@@ -4,17 +4,18 @@
 
 use soroban_sdk::{
     testutils::{Address as _, Events},
-    vec, Address, Env, String,
+    vec, Address, Env, Map, String, Symbol,
 };
 
 use crate::errors::ContractError;
 use crate::storage::{self, DataKey};
-use crate::types::{BatchSkip, Profile};
+use crate::types::{BatchSkip, Profile, VerificationStatus, VerificationType};
 use crate::TipzContract;
 use crate::TipzContractClient;
 
 // ── shared setup ─────────────────────────────────────────────────────────────
 
+#[allow(dead_code)]
 struct TestCtx<'a> {
     env: Env,
     client: TipzContractClient<'a>,
@@ -57,7 +58,9 @@ fn insert_profile(ctx: &TestCtx, owner: &Address) {
         username: String::from_str(&ctx.env, "user"),
         display_name: String::from_str(&ctx.env, "User"),
         bio: String::from_str(&ctx.env, ""),
+        website: String::from_str(&ctx.env, ""),
         image_url: String::from_str(&ctx.env, ""),
+        social_links: Map::<Symbol, String>::new(&ctx.env),
         x_handle: String::from_str(&ctx.env, ""),
         x_followers: 0,
         x_engagement_avg: 0,
@@ -706,4 +709,84 @@ fn test_propose_overwrites_existing_proposal() {
 
     // Latest proposal wins
     assert_eq!(client.get_pending_admin(), Some(candidate_b));
+}
+
+// ── pause/unpause authorization ──────────────────────────────────────────────
+
+#[test]
+fn test_pause_rejects_non_admin() {
+    let ctx = setup();
+    let non_admin = Address::generate(&ctx.env);
+    let result = ctx.client.try_pause(&non_admin);
+    assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
+}
+
+#[test]
+fn test_unpause_rejects_non_admin() {
+    let ctx = setup();
+    let non_admin = Address::generate(&ctx.env);
+    ctx.client.pause(&ctx.admin);
+    let result = ctx.client.try_unpause(&non_admin);
+    assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
+}
+
+#[test]
+fn test_pause_unpause_after_admin_transfer() {
+    let ctx = setup();
+    let new_admin = Address::generate(&ctx.env);
+
+    ctx.client.set_admin(&ctx.admin, &new_admin);
+
+    ctx.client.pause(&new_admin);
+    assert!(ctx.client.is_paused());
+
+    ctx.client.unpause(&new_admin);
+    assert!(!ctx.client.is_paused());
+}
+
+#[test]
+fn test_old_admin_cannot_pause_after_transfer() {
+    let ctx = setup();
+    let new_admin = Address::generate(&ctx.env);
+
+    ctx.client.set_admin(&ctx.admin, &new_admin);
+
+    let result = ctx.client.try_pause(&ctx.admin);
+    assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
+}
+
+// ── min_tip authorization ────────────────────────────────────────────────────
+
+#[test]
+fn test_set_min_tip_rejects_non_admin() {
+    let ctx = setup();
+    let non_admin = Address::generate(&ctx.env);
+    let result = ctx
+        .client
+        .try_set_min_tip_amount(&non_admin, &2_000_000_i128);
+    assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
+}
+
+#[test]
+fn test_set_min_tip_after_admin_transfer() {
+    let ctx = setup();
+    let new_admin = Address::generate(&ctx.env);
+
+    ctx.client.set_admin(&ctx.admin, &new_admin);
+
+    ctx.client.set_min_tip_amount(&new_admin, &3_000_000_i128);
+    assert_eq!(ctx.client.get_min_tip_amount(), 3_000_000_i128);
+}
+
+#[test]
+fn test_old_admin_cannot_set_min_tip_after_transfer() {
+    let ctx = setup();
+    let new_admin = Address::generate(&ctx.env);
+
+    ctx.client.set_admin(&ctx.admin, &new_admin);
+
+    let result = ctx
+        .client
+        .try_set_min_tip_amount(&ctx.admin, &5_000_000_i128);
+    assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
 }

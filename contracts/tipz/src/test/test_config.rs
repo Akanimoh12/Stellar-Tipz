@@ -3,6 +3,7 @@
 use crate::errors::ContractError;
 use crate::TipzContract;
 use crate::TipzContractClient;
+use crate::CONTRACT_VERSION;
 use soroban_sdk::{testutils::Address as _, Address, Env};
 
 fn setup() -> (Env, TipzContractClient<'static>, Address, Address, Address) {
@@ -38,7 +39,7 @@ fn test_get_config_returns_all_fields() {
     assert_eq!(config.total_tips_volume, 0);
     assert_eq!(config.total_fees_collected, 0);
     assert_eq!(config.is_initialized, true);
-    assert_eq!(config.version, 1);
+    assert_eq!(config.version, CONTRACT_VERSION);
 }
 
 #[test]
@@ -74,5 +75,5 @@ fn test_get_config_superset_of_get_stats() {
     assert_eq!(config.fee_collector, fee_collector);
     assert_eq!(config.native_token, native_token);
     assert_eq!(config.is_initialized, true);
-    assert_eq!(config.version, 1);
+    assert_eq!(config.version, CONTRACT_VERSION);
 }

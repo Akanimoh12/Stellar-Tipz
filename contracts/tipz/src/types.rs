@@ -3,9 +3,15 @@
 use soroban_sdk::{contracttype, Address, String};
 
 /// Verification type for creator profiles.
+///
+/// `Unverified` is the default state — it replaces `Option::None` so that
+/// `VerificationType` can be embedded directly in a `#[contracttype]` struct
+/// without wrapping it in `Option` (which soroban-sdk does not support for
+/// custom contracttype enums).
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub enum VerificationType {
+    Unverified,
     Identity,
     SocialMedia,
     Community,
@@ -17,11 +23,11 @@ pub enum VerificationType {
 pub struct VerificationStatus {
     /// Whether the creator is verified
     pub is_verified: bool,
-    /// Verification type (if verified)
-    pub verification_type: Option<VerificationType>,
-    /// Timestamp when verification was granted
+    /// Verification type (Unverified when not yet verified)
+    pub verification_type: VerificationType,
+    /// Timestamp when verification was granted (0 = not set)
     pub verified_at: Option<u64>,
-    /// Timestamp when verification was revoked (if applicable)
+    /// Timestamp when verification was revoked (0 = not revoked)
     pub revoked_at: Option<u64>,
 }
 
@@ -35,10 +41,14 @@ pub struct Profile {
     pub username: String,
     /// Display name (1-64 chars)
     pub display_name: String,
-    /// Short bio (0-280 chars)
+    /// Short bio (0-500 chars)
     pub bio: String,
+    /// Website URL (0-200 chars)
+    pub website: String,
     /// Profile image URL or IPFS CID (0-256 chars)
     pub image_url: String,
+    /// Map of social platforms to handles (max 5 links)
+    pub social_links: soroban_sdk::Map<soroban_sdk::Symbol, String>,
     /// X (Twitter) handle (0-32 chars)
     pub x_handle: String,
     /// X follower count (set by admin)
@@ -61,14 +71,74 @@ pub struct Profile {
     pub verification: VerificationStatus,
 }
 
+/// Profile plus deactivation state for queries (`get_profile`, `get_profile_by_username`).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProfileWithDeactivation {
+    pub profile: Profile,
+    pub is_deactivated: bool,
+    /// Set when the profile is deactivated (hidden from leaderboard, tips disabled).
+    pub deactivated_at: Option<u64>,
+}
+
+/// Pending time-locked admin rotation (see `ADMIN_CHANGE_TIMELOCK_SECS`).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdminChangeProposal {
+    pub new_admin: Address,
+    /// Unix timestamp after which `confirm_admin_change` may succeed.
+    pub confirmable_after: u64,
+}
+
+/// One recorded completed admin handoff (two-step confirm or direct `set_admin`).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdminChangeHistoryEntry {
+    pub old_admin: Address,
+    pub new_admin: Address,
+    pub confirmed_at: u64,
+}
+
+/// Recurring tip subscription record.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Subscription {
+    /// Address of the supporter
+    pub subscriber: Address,
+    /// Address of the creator
+    pub creator: Address,
+    /// Amount to tip per interval
+    pub amount: i128,
+    /// Interval in days
+    pub interval_days: u32,
+    /// Timestamp of next execution
+    pub next_due: u64,
+    /// Whether the subscription is currently active
+    pub active: bool,
+}
+
+/// Pending withdrawal for security cooldown.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PendingWithdrawal {
+    /// Unique withdrawal ID
+    pub id: u32,
+    /// Creator address
+    pub creator: Address,
+    /// Amount to withdraw
+    pub amount: i128,
+    /// Execution timestamp (after cooldown)
+    pub unlock_at: u64,
+}
+
 /// Individual tip record stored in temporary storage with a TTL of ~7 days.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct Tip {
     /// Unique tip ID (monotonically increasing global counter)
     pub id: u32,
-    /// Address that sent the tip
-    pub tipper: Address,
+    /// Address that sent the tip (None if anonymous)
+    pub tipper: Option<Address>,
     /// Address of the creator who received the tip
     pub creator: Address,
     /// Tip amount in stroops
@@ -77,6 +147,8 @@ pub struct Tip {
     pub message: String,
     /// Ledger timestamp at the time the tip was sent
     pub timestamp: u64,
+    /// Whether this tip is anonymous
+    pub is_anonymous: bool,
 }
 
 /// Leaderboard entry for top creators.
@@ -184,4 +256,20 @@ pub struct ContractConfig {
     pub is_initialized: bool,
     /// On-chain contract version
     pub version: u32,
+}
+
+/// Donation page configuration for a creator
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct DonationPageConfig {
+    /// Custom welcome message (0-500 chars)
+    pub welcome_message: String,
+    /// Suggested tip amounts (up to 6 presets)
+    pub suggested_amounts: soroban_sdk::Vec<i128>,
+    /// Theme color (hex format, e.g., "#ff6b6b")
+    pub theme_color: String,
+    /// Header image URI (IPFS CID or URL, 0-256 chars)
+    pub header_image_uri: String,
+    /// Whether this is the default config
+    pub is_default: bool,
 }

@@ -722,6 +722,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "social_links"
+                      },
+                      "val": {
+                        "map": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "total_tips_count"
                       },
                       "val": {
@@ -757,6 +765,55 @@
                     },
                     {
                       "key": {
+                        "symbol": "verification"
+                      },
+                      "val": {
+                        "map": [
+                          {
+                            "key": {
+                              "symbol": "is_verified"
+                            },
+                            "val": {
+                              "bool": false
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "revoked_at"
+                            },
+                            "val": "void"
+                          },
+                          {
+                            "key": {
+                              "symbol": "verification_type"
+                            },
+                            "val": {
+                              "vec": [
+                                {
+                                  "symbol": "Unverified"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "verified_at"
+                            },
+                            "val": "void"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "website"
+                      },
+                      "val": {
+                        "string": ""
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "x_engagement_avg"
                       },
                       "val": {
@@ -776,7 +833,7 @@
                         "symbol": "x_handle"
                       },
                       "val": {
-                        "string": "x_handle"
+                        "string": "@x_handle"
                       }
                     }
                   ]
@@ -886,6 +943,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "social_links"
+                      },
+                      "val": {
+                        "map": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "total_tips_count"
                       },
                       "val": {
@@ -921,6 +986,55 @@
                     },
                     {
                       "key": {
+                        "symbol": "verification"
+                      },
+                      "val": {
+                        "map": [
+                          {
+                            "key": {
+                              "symbol": "is_verified"
+                            },
+                            "val": {
+                              "bool": false
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "revoked_at"
+                            },
+                            "val": "void"
+                          },
+                          {
+                            "key": {
+                              "symbol": "verification_type"
+                            },
+                            "val": {
+                              "vec": [
+                                {
+                                  "symbol": "Unverified"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "verified_at"
+                            },
+                            "val": "void"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "website"
+                      },
+                      "val": {
+                        "string": ""
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "x_engagement_avg"
                       },
                       "val": {
@@ -940,7 +1054,7 @@
                         "symbol": "x_handle"
                       },
                       "val": {
-                        "string": "x_handle"
+                        "string": "@x_handle"
                       }
                     }
                   ]
@@ -2816,6 +2930,14 @@
                 },
                 {
                   "key": {
+                    "symbol": "social_links"
+                  },
+                  "val": {
+                    "map": []
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "total_tips_count"
                   },
                   "val": {
@@ -2851,6 +2973,55 @@
                 },
                 {
                   "key": {
+                    "symbol": "verification"
+                  },
+                  "val": {
+                    "map": [
+                      {
+                        "key": {
+                          "symbol": "is_verified"
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "revoked_at"
+                        },
+                        "val": "void"
+                      },
+                      {
+                        "key": {
+                          "symbol": "verification_type"
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Unverified"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "verified_at"
+                        },
+                        "val": "void"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "website"
+                  },
+                  "val": {
+                    "string": ""
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "x_engagement_avg"
                   },
                   "val": {
@@ -2870,7 +3041,7 @@
                     "symbol": "x_handle"
                   },
                   "val": {
-                    "string": "x_handle"
+                    "string": "@x_handle"
                   }
                 }
               ]
@@ -3033,6 +3204,14 @@
                 },
                 {
                   "key": {
+                    "symbol": "social_links"
+                  },
+                  "val": {
+                    "map": []
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "total_tips_count"
                   },
                   "val": {
@@ -3068,6 +3247,55 @@
                 },
                 {
                   "key": {
+                    "symbol": "verification"
+                  },
+                  "val": {
+                    "map": [
+                      {
+                        "key": {
+                          "symbol": "is_verified"
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "revoked_at"
+                        },
+                        "val": "void"
+                      },
+                      {
+                        "key": {
+                          "symbol": "verification_type"
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Unverified"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "verified_at"
+                        },
+                        "val": "void"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "website"
+                  },
+                  "val": {
+                    "string": ""
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "x_engagement_avg"
                   },
                   "val": {
@@ -3087,7 +3315,7 @@
                     "symbol": "x_handle"
                   },
                   "val": {
-                    "string": "x_handle"
+                    "string": "@x_handle"
                   }
                 }
               ]

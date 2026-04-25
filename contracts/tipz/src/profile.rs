@@ -5,7 +5,7 @@ use soroban_sdk::{Address, Env, String};
 use crate::errors::ContractError;
 use crate::events;
 use crate::storage;
-use crate::types::Profile;
+use crate::types::{Profile, ProfileWithDeactivation};
 use crate::validation;
 
 /// Register a new creator profile.
@@ -56,24 +56,29 @@ pub fn register_profile(
     validation::validate_display_name(&display_name)?;
     validation::validate_bio(&bio)?;
     validation::validate_image_url(&image_url)?;
-    validation::validate_x_handle(&x_handle)?;
-
-    // Normalize x_handle: prepend @ if missing.
-    // Length is already validated (1-16 including optional @).
-    let mut normalized_x = x_handle.clone();
-    let mut handle_buf = [0u8; 16];
-    let n = x_handle.len() as usize;
-    x_handle.copy_into_slice(&mut handle_buf[..n]);
-    if handle_buf[0] != b'@' {
-        let mut full_buf = [0u8; 17];
-        full_buf[0] = b'@';
+    // x_handle is optional: only validate and normalize if non-empty.
+    let normalized_x = if !x_handle.is_empty() {
+        validation::validate_x_handle(&x_handle)?;
+        // Normalize: prepend @ if missing.
+        let mut handle_buf = [0u8; 16];
         let n = x_handle.len() as usize;
-        x_handle.copy_into_slice(&mut full_buf[1..1 + n]);
-        // SAFETY: x_handle is validated to be alphanumeric/underscore ASCII.
-        if let Ok(s) = core::str::from_utf8(&full_buf[..1 + n]) {
-            normalized_x = String::from_str(env, s);
+        x_handle.copy_into_slice(&mut handle_buf[..n]);
+        if handle_buf[0] != b'@' {
+            let mut full_buf = [0u8; 17];
+            full_buf[0] = b'@';
+            x_handle.copy_into_slice(&mut full_buf[1..1 + n]);
+            // SAFETY: x_handle is validated to be alphanumeric/underscore ASCII.
+            if let Ok(s) = core::str::from_utf8(&full_buf[..1 + n]) {
+                String::from_str(env, s)
+            } else {
+                x_handle.clone()
+            }
+        } else {
+            x_handle.clone()
         }
-    }
+    } else {
+        x_handle.clone()
+    };
 
     // --- Duplicate checks ---
 
@@ -95,7 +100,9 @@ pub fn register_profile(
         username: username.clone(),
         display_name,
         bio,
+        website: String::from_str(env, ""),
         image_url,
+        social_links: soroban_sdk::Map::new(env),
         x_handle: normalized_x,
         x_followers: 0,
         x_engagement_avg: 0,
@@ -108,7 +115,7 @@ pub fn register_profile(
         updated_at: now,
         verification: crate::types::VerificationStatus {
             is_verified: false,
-            verification_type: None,
+            verification_type: crate::types::VerificationType::Unverified,
             verified_at: None,
             revoked_at: None,
         },
@@ -204,6 +211,97 @@ pub fn update_profile(
     Ok(())
 }
 
+/// Load profile plus deactivation flags for read-only queries.
+pub fn get_profile_with_deactivation(
+    env: &Env,
+    address: &Address,
+) -> Result<ProfileWithDeactivation, ContractError> {
+    if !storage::has_profile(env, address) {
+        return Err(ContractError::NotRegistered);
+    }
+    let profile = storage::get_profile(env, address);
+    storage::bump_profile_ttl(env, address);
+    storage::bump_username_ttl(env, &profile.username);
+    let deactivated_at = storage::get_profile_deactivated_at(env, address);
+    let is_deactivated = deactivated_at.is_some();
+    Ok(ProfileWithDeactivation {
+        profile,
+        is_deactivated,
+        deactivated_at,
+    })
+}
+
+/// Temporarily deactivate a creator profile (self or admin moderation).
+///
+/// Removes the creator from the leaderboard and blocks new tips. Data and balance stay on-chain.
+pub fn deactivate_profile(
+    env: &Env,
+    caller: Address,
+    creator: Address,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    crate::admin::require_not_paused(env)?;
+
+    if !storage::has_profile(env, &creator) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    if caller == creator {
+        caller.require_auth();
+    } else {
+        crate::admin::require_admin(env, &caller)?;
+    }
+
+    if storage::is_profile_deactivated(env, &creator) {
+        return Err(ContractError::AlreadyDeactivated);
+    }
+
+    let now = env.ledger().timestamp();
+    storage::set_profile_deactivated_at(env, &creator, now);
+    crate::leaderboard::remove_from_leaderboard(env, &creator);
+
+    let username = storage::get_profile(env, &creator).username.clone();
+    storage::bump_profile_ttl(env, &creator);
+    storage::bump_username_ttl(env, &username);
+
+    events::emit_profile_deactivated(env, &creator, &caller);
+    Ok(())
+}
+
+/// Restore a deactivated profile (owner or admin).
+pub fn reactivate_profile(
+    env: &Env,
+    caller: Address,
+    creator: Address,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    crate::admin::require_not_paused(env)?;
+
+    if !storage::has_profile(env, &creator) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    if caller == creator {
+        caller.require_auth();
+    } else {
+        crate::admin::require_admin(env, &caller)?;
+    }
+
+    if !storage::is_profile_deactivated(env, &creator) {
+        return Err(ContractError::ProfileNotDeactivated);
+    }
+
+    storage::clear_profile_deactivation(env, &creator);
+    let profile = storage::get_profile(env, &creator);
+    crate::leaderboard::update_leaderboard(env, &profile);
+
+    storage::bump_profile_ttl(env, &creator);
+    storage::bump_username_ttl(env, &profile.username);
+
+    events::emit_profile_reactivated(env, &creator, &caller);
+    Ok(())
+}
+
 /// Deregister the caller's profile, permanently removing it from the platform.
 ///
 /// # Requirements
@@ -241,6 +339,8 @@ pub fn deregister_profile(env: &Env, caller: Address) -> Result<(), ContractErro
         return Err(ContractError::BalanceNotZero);
     }
 
+    storage::clear_profile_deactivation(env, &caller);
+
     // 4.4: Storage cleanup operations
     storage::remove_profile(env, &caller);
     storage::remove_username_address(env, &profile.username);
@@ -258,4 +358,72 @@ pub fn deregister_profile(env: &Env, caller: Address) -> Result<(), ContractErro
     events::emit_profile_deregistered(env, &caller, &profile.username);
 
     Ok(())
+}
+
+/// Set a custom donation page configuration for a creator
+pub fn set_donation_page(
+    env: &Env,
+    creator: &Address,
+    config: crate::types::DonationPageConfig,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    crate::admin::require_not_paused(env)?;
+    creator.require_auth();
+
+    if !storage::has_profile(env, creator) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    // Validate config
+    if config.welcome_message.len() > 500 {
+        return Err(ContractError::MessageTooLong);
+    }
+
+    if config.suggested_amounts.len() > 6 {
+        return Err(ContractError::InvalidAmount);
+    }
+
+    if config.header_image_uri.len() > 256 {
+        return Err(ContractError::InvalidImageUrl);
+    }
+
+    // Validate theme color format (basic check for hex color)
+    if !config.theme_color.is_empty() && config.theme_color.len() != 7 {
+        return Err(ContractError::InvalidAmount); // Reusing error for invalid format
+    }
+
+    storage::set_donation_page(env, creator, &config);
+    events::emit_donation_page_updated(env, creator);
+
+    Ok(())
+}
+
+/// Get donation page configuration for a creator
+pub fn get_donation_page(
+    env: &Env,
+    creator: &Address,
+) -> Result<crate::types::DonationPageConfig, ContractError> {
+    if !storage::has_profile(env, creator) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    // Return custom config if exists, otherwise return default
+    if let Some(config) = storage::get_donation_page(env, creator) {
+        Ok(config)
+    } else {
+        // Return default config
+        let mut default_amounts = soroban_sdk::Vec::new(env);
+        default_amounts.push_back(5_000_000); // 5 XLM
+        default_amounts.push_back(10_000_000); // 10 XLM
+        default_amounts.push_back(25_000_000); // 25 XLM
+        default_amounts.push_back(50_000_000); // 50 XLM
+
+        Ok(crate::types::DonationPageConfig {
+            welcome_message: String::from_str(env, "Support my work!"),
+            suggested_amounts: default_amounts,
+            theme_color: String::from_str(env, "#3b82f6"),
+            header_image_uri: String::from_str(env, ""),
+            is_default: true,
+        })
+    }
 }

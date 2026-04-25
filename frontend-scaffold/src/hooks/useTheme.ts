@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 type Theme = 'light' | 'dark';
 
@@ -8,7 +8,7 @@ interface UseThemeReturn {
   setTheme: (theme: Theme) => void;
 }
 
-const STORAGE_KEY = 'stellar-tipz-theme';
+const STORAGE_KEY = 'tipz_theme';
 
 export const useTheme = (): UseThemeReturn => {
   const [theme, setThemeState] = useState<Theme>(() => {
@@ -26,7 +26,7 @@ export const useTheme = (): UseThemeReturn => {
     return 'light';
   });
 
-  const setTheme = (newTheme: Theme) => {
+  const setTheme = useCallback((newTheme: Theme) => {
     setThemeState(newTheme);
     localStorage.setItem(STORAGE_KEY, newTheme);
     
@@ -38,11 +38,11 @@ export const useTheme = (): UseThemeReturn => {
         document.documentElement.classList.remove('dark');
       }
     }
-  };
+  }, []);
 
-  const toggleTheme = () => {
+  const toggleTheme = useCallback(() => {
     setTheme(theme === 'light' ? 'dark' : 'light');
-  };
+  }, [theme, setTheme]);
 
   // Apply theme on mount and when it changes
   useEffect(() => {
