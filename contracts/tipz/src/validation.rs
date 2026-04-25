@@ -96,6 +96,18 @@ pub fn validate_message(message: &String) -> Result<(), ContractError> {
     if message.len() > 280 {
         return Err(ContractError::MessageTooLong);
     }
+
+    if message.len() > 0 {
+        let mut buf = [0u8; 280];
+        let n = message.len() as usize;
+        message.copy_into_slice(&mut buf[..n]);
+        for &b in &buf[..n] {
+            if b < 0x20 && b != b'\n' && b != b'\t' && b != b'\r' {
+                return Err(ContractError::InvalidMessage);
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -152,6 +164,7 @@ pub fn check_rate_limit(env: &Env, address: &Address) -> Result<(), ContractErro
         return Ok(());
     }
 
+<<<<<<< HEAD
     let config = storage::get_rate_limit_config(env);
     let mut status = storage::get_rate_limit_status(env, address).unwrap_or(crate::types::RateLimitStatus {
         count: 0,
@@ -171,5 +184,18 @@ pub fn check_rate_limit(env: &Env, address: &Address) -> Result<(), ContractErro
     }
 
     storage::set_rate_limit_status(env, address, &status);
+=======
+    if message.len() > 0 {
+        let mut buf = [0u8; 280];
+        let n = message.len() as usize;
+        message.copy_into_slice(&mut buf[..n]);
+        for &b in &buf[..n] {
+            if b < 0x20 && b != b'\n' && b != b'\t' && b != b'\r' {
+                return Err(ContractError::InvalidMessage);
+            }
+        }
+    }
+
+>>>>>>> 61698cb (fix: address security issues - CSP headers, message sanitization, self-tipping prevention)
     Ok(())
 }

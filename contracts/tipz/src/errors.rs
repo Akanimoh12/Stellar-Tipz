@@ -35,4 +35,9 @@ pub enum ContractError {
     AlreadyVerified = 27,
     Unauthorized = 28,
     RateLimitExceeded = 29,
+    InvalidXHandle = 30,
+    TipBelowMinimum = 31,
+    ProfileNotActive = 32,
+    /// Tip message contains invalid control characters
+    InvalidMessage = 33,
 }

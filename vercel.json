@@ -7,5 +7,16 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://horizon.stellar.org https://mainnet-horizon.stellar.org https://futurenet-horizon.stellar.org https://testnet-horizon.stellar.org https://soroban-rpc.stellar.services https://rpc-futurenet.stellar.org; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        }
+      ]
+    }
   ]
 }

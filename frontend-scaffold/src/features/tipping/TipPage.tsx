@@ -34,7 +34,7 @@ import { useNavigate } from "react-router-dom";
 const TipPage: React.FC = () => {
   const { username } = useParams<{ username: string }>();
   const navigate = useNavigate();
-  const { connected, connect } = useWallet();
+  const { connected, connect, publicKey } = useWallet();
   const [amount, setAmount] = useState("5");
   const [message, setMessage] = useState("");
   const [isAnonymous, setIsAnonymous] = useState(false);
@@ -42,6 +42,8 @@ const TipPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [creator, setCreator] = useState<Profile | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  const isSelfTipping = connected && creator && publicKey === creator.owner;
 
   const fetchCreator = useCallback(async () => {
     if (!username) return;
@@ -276,7 +278,20 @@ const TipPage: React.FC = () => {
               </label>
 
               <div className="flex flex-col gap-3 sm:flex-row">
-                {connected ? (
+                {isSelfTipping ? (
+                  <>
+                    <Button
+                      type="button"
+                      disabled
+                      className="sm:flex-1"
+                    >
+                      Can't tip yourself
+                    </Button>
+                    <p className="text-sm font-medium text-gray-600">
+                      You cannot send a tip to your own profile.
+                    </p>
+                  </>
+                ) : connected ? (
                   <Button
                     type="submit"
                     loading={step === "signing" || step === "submitting"}
@@ -297,9 +312,11 @@ const TipPage: React.FC = () => {
                   </Button>
                 )}
 
-                <Button type="button" variant="outline" onClick={reset}>
-                  Clear
-                </Button>
+                {!isSelfTipping && (
+                  <Button type="button" variant="outline" onClick={reset}>
+                    Clear
+                  </Button>
+                )}
               </div>
             </form>
           )}
