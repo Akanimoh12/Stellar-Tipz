@@ -1,5 +1,6 @@
 //! Test module for the Tipz contract.
 
+mod test_budget;
 mod test_admin;
 mod test_anonymous_tips;
 mod test_config;
