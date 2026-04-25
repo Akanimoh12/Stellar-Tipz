@@ -34,7 +34,7 @@ export const useTips = (address: string, role: 'creator' | 'tipper' = 'creator',
     // Mock fallback
     if (env.useMockData) {
       const filteredMocks = mockTips.filter(t => 
-        role === 'creator' ? t.creator === address : t.tipper === address
+        role === 'creator' ? t.creator === address : (t.sender === address || t.benefactor === address)
       );
       const currentOffset = isLoadMore ? offsetRef.current : 0;
       const nextOffset = currentOffset + limit;

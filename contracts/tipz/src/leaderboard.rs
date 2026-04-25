@@ -20,22 +20,19 @@
 use soroban_sdk::{Address, Env, Vec};
 
 use crate::storage::{self, DataKey};
-use crate::types::{LeaderboardEntry, Profile};
+use crate::types::{LeaderboardEntry, LeaderboardPeriod, Profile};
 
 /// Maximum number of entries retained on the leaderboard.
 pub const MAX_LEADERBOARD_SIZE: u32 = 50;
 
 // ── internal helpers ──────────────────────────────────────────────────────────
 
-fn load_entries(env: &Env) -> Vec<LeaderboardEntry> {
-    env.storage()
-        .instance()
-        .get(&DataKey::Leaderboard)
-        .unwrap_or_else(|| Vec::new(env))
+fn load_entries(env: &Env, period: LeaderboardPeriod) -> Vec<LeaderboardEntry> {
+    storage::get_leaderboard(env, period)
 }
 
-fn save_entries(env: &Env, entries: &Vec<LeaderboardEntry>) {
-    env.storage().instance().set(&DataKey::Leaderboard, entries);
+fn save_entries(env: &Env, period: LeaderboardPeriod, entries: &Vec<LeaderboardEntry>) {
+    storage::set_leaderboard(env, period, entries);
 }
 
 /// Stable insertion sort: sorts `list` in descending order by
@@ -50,11 +47,9 @@ fn sort_leaderboard(list: &mut Vec<LeaderboardEntry>) {
     while i < list.len() {
         let key = list.get(i).unwrap().clone();
         let mut j = i - 1;
-        // Only move `key` forward when the entry ahead has a *strictly lower*
-        // total.  Equal totals are left in place (stable / first-in wins).
         while j < i {
             let current = list.get(j).unwrap();
-            if current.total_tips_received >= key.total_tips_received {
+            if current.amount >= key.amount {
                 break;
             }
             // Shift current down one position.
@@ -84,16 +79,24 @@ fn sort_leaderboard(list: &mut Vec<LeaderboardEntry>) {
 ///
 /// The list is always kept in descending order by `total_tips_received` and
 /// trimmed to at most 50 entries.
-pub fn update_leaderboard(env: &Env, profile: &Profile) {
+pub fn update_all_leaderboards(env: &Env, profile: &Profile, amount: i128) {
+    update_leaderboard(env, profile, LeaderboardPeriod::AllTime, amount);
+    update_leaderboard(env, profile, LeaderboardPeriod::Monthly, amount);
+    update_leaderboard(env, profile, LeaderboardPeriod::Weekly, amount);
+}
+
+pub fn update_leaderboard(env: &Env, profile: &Profile, period: LeaderboardPeriod, tip_amount: i128) {
     if storage::is_profile_deactivated(env, &profile.owner) {
         return;
     }
-    let mut entries = load_entries(env);
 
-    // Ensure the list is sorted before any operations (maintains invariant)
-    if !entries.is_empty() {
-        sort_leaderboard(&mut entries);
-    }
+    let period_total = if period == LeaderboardPeriod::AllTime {
+        profile.total_tips_received
+    } else {
+        storage::add_creator_period_volume(env, &profile.owner, period, tip_amount)
+    };
+
+    let mut entries = load_entries(env, period);
 
     // Find existing entry if present
     let mut existing_index: Option<u32> = None;
@@ -107,57 +110,54 @@ pub fn update_leaderboard(env: &Env, profile: &Profile) {
         i += 1;
     }
 
+    let new_entry = LeaderboardEntry {
+        address: profile.owner.clone(),
+        username: profile.username.clone(),
+        amount: period_total,
+        credit_score: profile.credit_score,
+    };
+
     if let Some(idx) = existing_index {
-        // Update existing entry in place
-        entries.set(
-            idx,
-            LeaderboardEntry {
-                address: profile.owner.clone(),
-                username: profile.username.clone(),
-                total_tips_received: profile.total_tips_received,
-                credit_score: profile.credit_score,
-            },
-        );
+        entries.set(idx, new_entry);
     } else {
-        // New creator: check capacity
         if entries.len() >= MAX_LEADERBOARD_SIZE {
-            // List is full; after sorting, the last entry is the lowest
             let last_idx = entries.len() - 1;
             let last_entry = entries.get(last_idx).unwrap();
-            if profile.total_tips_received <= last_entry.total_tips_received {
-                // Not enough to enter the top 50; do nothing
+            if period_total <= last_entry.amount {
                 return;
             }
-            // Replace the lowest entry
-            entries.set(
-                last_idx,
-                LeaderboardEntry {
-                    address: profile.owner.clone(),
-                    username: profile.username.clone(),
-                    total_tips_received: profile.total_tips_received,
-                    credit_score: profile.credit_score,
-                },
-            );
+            entries.set(last_idx, new_entry);
         } else {
-            // Room available: append
-            entries.push_back(LeaderboardEntry {
-                address: profile.owner.clone(),
-                username: profile.username.clone(),
-                total_tips_received: profile.total_tips_received,
-                credit_score: profile.credit_score,
-            });
+            entries.push_back(new_entry);
         }
     }
 
-    // Sort the list after modification
     sort_leaderboard(&mut entries);
 
-    // Trim to max size (should already be ≤50, but ensure invariant)
     while entries.len() > MAX_LEADERBOARD_SIZE {
         entries.pop_back();
     }
 
-    save_entries(env, &entries);
+    save_entries(env, period, &entries);
+}
+
+pub fn reset_leaderboard(env: &Env, period: LeaderboardPeriod) {
+    if period == LeaderboardPeriod::AllTime {
+        return; // All-time never resets
+    }
+    
+    // Archive current leaderboard
+    let current = load_entries(env, period);
+    let timestamp = env.ledger().timestamp();
+    // We don't have a specific requirement on archive format, 
+    // but we can store it as a historical event or specific storage key.
+    // For now, we'll just clear the board as per "Reset leaderboard storage"
+    
+    save_entries(env, period, &Vec::new(env));
+    storage::set_last_leaderboard_reset(env, period, timestamp);
+    
+    // Note: Period volumes for creators are effectively reset because the 
+    // DataKey::CreatorPeriodVolume now includes the new timestamp.
 }
 
 /// Return up to `limit` leaderboard entries sorted descending by total tips.
@@ -165,8 +165,8 @@ pub fn update_leaderboard(env: &Env, profile: &Profile) {
 /// Passing `limit = 0` returns the full list. If `limit` exceeds the number of
 /// stored entries, all entries are returned. The returned vector is in descending
 /// order by `total_tips_received`.
-pub fn get_leaderboard(env: &Env, limit: u32) -> Vec<LeaderboardEntry> {
-    let entries = load_entries(env);
+pub fn get_leaderboard(env: &Env, period: LeaderboardPeriod, limit: u32) -> Vec<LeaderboardEntry> {
+    let entries = load_entries(env, period);
     if limit == 0 || limit >= entries.len() {
         return entries;
     }
@@ -180,9 +180,9 @@ pub fn get_leaderboard(env: &Env, limit: u32) -> Vec<LeaderboardEntry> {
 }
 
 #[allow(dead_code)]
-/// Return `true` if `address` is currently on the leaderboard.
-pub fn is_on_leaderboard(env: &Env, address: &Address) -> bool {
-    let entries = load_entries(env);
+/// Return `true` if `address` is currently on the leaderboard for a specific period.
+pub fn is_on_leaderboard(env: &Env, period: LeaderboardPeriod, address: &Address) -> bool {
+    let entries = load_entries(env, period);
     let mut i: u32 = 0;
     let len_u32 = entries.len();
     while i < len_u32 {
@@ -195,10 +195,10 @@ pub fn is_on_leaderboard(env: &Env, address: &Address) -> bool {
 }
 
 #[allow(dead_code)]
-/// Return the 1-based rank of `address` on the leaderboard, or `None` when
-/// the address is not present.
-pub fn get_leaderboard_rank(env: &Env, address: &Address) -> Option<u32> {
-    let entries = load_entries(env);
+/// Return the 1-based rank of `address` on the leaderboard for a specific period, 
+/// or `None` when the address is not present.
+pub fn get_leaderboard_rank(env: &Env, period: LeaderboardPeriod, address: &Address) -> Option<u32> {
+    let entries = load_entries(env, period);
     let mut i: u32 = 0;
     let len_u32 = entries.len();
     while i < len_u32 {
@@ -210,15 +210,10 @@ pub fn get_leaderboard_rank(env: &Env, address: &Address) -> Option<u32> {
     None
 }
 
-/// Remove `address` from the leaderboard (used during profile deregistration).
-///
-/// If the address is not present this is a no-op.  Entries above the removed
-/// slot shift down by one position, preserving relative order.
-///
-/// Public API for the upcoming deregister flow; currently exercised only in tests.
+/// Remove `address` from the leaderboard for a specific period.
 #[allow(dead_code)]
-pub fn remove_from_leaderboard(env: &Env, address: &Address) {
-    let entries = load_entries(env);
+pub fn remove_from_leaderboard(env: &Env, period: LeaderboardPeriod, address: &Address) {
+    let entries = load_entries(env, period);
     let mut new_entries: Vec<LeaderboardEntry> = Vec::new(env);
     let mut i: u32 = 0;
     while i < entries.len() {
@@ -228,12 +223,12 @@ pub fn remove_from_leaderboard(env: &Env, address: &Address) {
         }
         i += 1;
     }
-    save_entries(env, &new_entries);
+    save_entries(env, period, &new_entries);
 }
 
-/// Return the current number of entries on the leaderboard.
-pub fn get_leaderboard_size(env: &Env) -> u32 {
-    load_entries(env).len()
+/// Return the current number of entries on the leaderboard for a specific period.
+pub fn get_leaderboard_size(env: &Env, period: LeaderboardPeriod) -> u32 {
+    load_entries(env, period).len()
 }
 
 #[cfg(test)]

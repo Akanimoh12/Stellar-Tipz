@@ -14,7 +14,7 @@
 use soroban_sdk::{contracttype, Address, Env, String};
 
 use crate::errors::ContractError;
-use crate::types::Profile;
+use crate::types::{Profile, LeaderboardPeriod, LeaderboardEntry, RateLimitConfig, RateLimitStatus};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // TTL constants
@@ -60,8 +60,10 @@ pub enum DataKey {
     TipCount,
     /// Individual tip record by index
     Tip(u32),
-    /// Leaderboard (top creators)
-    Leaderboard,
+    /// Leaderboard (top creators) per period
+    Leaderboard(crate::types::LeaderboardPeriod),
+    /// Timestamp of last leaderboard reset per period
+    LastLeaderboardReset(crate::types::LeaderboardPeriod),
     /// Total registered creators
     TotalCreators,
     /// Lifetime tip volume
@@ -130,6 +132,12 @@ pub enum DataKey {
     CreatorLastActive(Address),
     /// When set, profile is deactivated (unix timestamp); absent means active
     ProfileDeactivatedAt(Address),
+    /// Rate limit status by address
+    RateLimit(Address),
+    /// Global rate limit configuration
+    RateLimitConfig,
+    /// Tips received by a creator during a specific period (Address, Period, StartTimestamp)
+    CreatorPeriodVolume(Address, crate::types::LeaderboardPeriod, u64),
 }
 
 /// Extend the contract instance TTL when a write transaction starts.
@@ -587,6 +595,11 @@ pub fn reset_creator_tip_index(env: &Env, creator: &Address) {
     }
 }
 
+    if env.storage().temporary().has(&count_key) {
+        env.storage().temporary().remove(&count_key);
+    }
+}
+
 /// Remove all per-tipper tip index entries from temporary storage.
 ///
 /// Called during `deregister_profile` to prevent stale `TipperTipCount` from
@@ -605,6 +618,125 @@ pub fn reset_tipper_tip_index(env: &Env, tipper: &Address) {
     if env.storage().temporary().has(&count_key) {
         env.storage().temporary().remove(&count_key);
     }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Leaderboard (Multi-period)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the leaderboard for a specific period.
+pub fn get_leaderboard(
+    env: &Env,
+    period: LeaderboardPeriod,
+) -> soroban_sdk::Vec<LeaderboardEntry> {
+    env.storage()
+        .instance()
+        .get(&DataKey::Leaderboard(period))
+        .unwrap_or(soroban_sdk::Vec::new(env))
+}
+
+/// Sets the leaderboard for a specific period.
+pub fn set_leaderboard(
+    env: &Env,
+    period: LeaderboardPeriod,
+    leaderboard: &soroban_sdk::Vec<LeaderboardEntry>,
+) {
+    env.storage()
+        .instance()
+        .set(&DataKey::Leaderboard(period), leaderboard);
+}
+
+/// Returns the timestamp of the last reset for a specific period.
+pub fn get_last_leaderboard_reset(env: &Env, period: LeaderboardPeriod) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::LastLeaderboardReset(period))
+        .unwrap_or(0)
+}
+
+/// Sets the timestamp of the last reset for a specific period.
+pub fn set_last_leaderboard_reset(env: &Env, period: LeaderboardPeriod, at: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::LastLeaderboardReset(period), &at);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Rate Limiting
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the current rate limit configuration.
+pub fn get_rate_limit_config(env: &Env) -> RateLimitConfig {
+    env.storage()
+        .instance()
+        .get(&DataKey::RateLimitConfig)
+        .unwrap_or(RateLimitConfig {
+            max_ops: 50,
+            window_secs: 3600, // 1 hour default
+        })
+}
+
+/// Sets the rate limit configuration.
+pub fn set_rate_limit_config(env: &Env, config: &RateLimitConfig) {
+    env.storage()
+        .instance()
+        .set(&DataKey::RateLimitConfig, config);
+}
+
+/// Returns the current rate limit status for an address.
+pub fn get_rate_limit_status(env: &Env, address: &Address) -> Option<RateLimitStatus> {
+    env.storage()
+        .instance()
+        .get(&DataKey::RateLimit(address.clone()))
+}
+
+/// Sets the rate limit status for an address.
+pub fn set_rate_limit_status(env: &Env, address: &Address, status: &RateLimitStatus) {
+    env.storage()
+        .instance()
+        .set(&DataKey::RateLimit(address.clone()), status);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Period Volume Tracking
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the tip volume received by a creator during a specific period.
+pub fn get_creator_period_volume(
+    env: &Env,
+    creator: &Address,
+    period: LeaderboardPeriod,
+) -> i128 {
+    let start_at = get_last_leaderboard_reset(env, period);
+    env.storage()
+        .instance()
+        .get(&DataKey::CreatorPeriodVolume(creator.clone(), period, start_at))
+        .unwrap_or(0)
+}
+
+/// Adds `amount` to a creator's tip volume for a specific period.
+pub fn add_creator_period_volume(
+    env: &Env,
+    creator: &Address,
+    period: LeaderboardPeriod,
+    amount: i128,
+) -> i128 {
+    let start_at = get_last_leaderboard_reset(env, period);
+    let current = get_creator_period_volume(env, creator, period);
+    let next = current.saturating_add(amount);
+    env.storage()
+        .instance()
+        .set(&DataKey::CreatorPeriodVolume(creator.clone(), period, start_at), &next);
+    next
+}
+
+/// Resets a creator's period volume (e.g. after a leaderboard reset).
+/// Note: With timestamp-based keys, we don't strictly need this, but it can be used for cleanup.
+pub fn reset_creator_period_volume(env: &Env, creator: &Address, period: LeaderboardPeriod) {
+    let start_at = get_last_leaderboard_reset(env, period);
+    env.storage()
+        .instance()
+        .remove(&DataKey::CreatorPeriodVolume(creator.clone(), period, start_at));
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

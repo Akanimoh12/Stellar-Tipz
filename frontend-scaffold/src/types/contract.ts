@@ -22,7 +22,8 @@ export interface RawProfile {
 /** Raw tip record as returned by the contract before key mapping. */
 export interface RawTip {
   id: number;
-  tipper: string;
+  sender: string;
+  benefactor: string | null;
   creator: string;
   amount: string;
   message: string;
@@ -67,7 +68,8 @@ export interface Profile {
 /** Tip record from the contract */
 export interface Tip {
   id: number;
-  tipper: string;
+  sender: string;
+  benefactor: string | null;
   creator: string;
   amount: string; // i128 as string
   message: string;
@@ -101,3 +103,12 @@ export const getCreditTier = (score: number): CreditTier => {
   if (score >= 20) return 'bronze';
   return 'new';
 };
+
+/** Leaderboard time periods */
+export type LeaderboardPeriod = 'AllTime' | 'Monthly' | 'Weekly';
+
+/** Rate limit configuration */
+export interface RateLimitConfig {
+  maxOps: number;
+  windowSecs: string; // u64 as string
+}

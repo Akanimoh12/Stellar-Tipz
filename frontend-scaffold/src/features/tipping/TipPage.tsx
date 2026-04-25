@@ -37,6 +37,7 @@ const TipPage: React.FC = () => {
   const { connected, connect } = useWallet();
   const [amount, setAmount] = useState("5");
   const [message, setMessage] = useState("");
+  const [isAnonymous, setIsAnonymous] = useState(false);
   const { getProfileByUsername } = useContract();
   const [loading, setLoading] = useState(true);
   const [creator, setCreator] = useState<Profile | null>(null);
@@ -89,7 +90,7 @@ const TipPage: React.FC = () => {
     if (isTransactionPending || step === "signing" || step === "submitting") {
       return;
     }
-    goToConfirm(amount, message);
+    goToConfirm(amount, message, isAnonymous);
   };
   
   // Wrapped confirm handler with transaction guard
@@ -264,6 +265,16 @@ const TipPage: React.FC = () => {
                 onChange={(event) => setMessage(event.target.value)}
               />
 
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={isAnonymous}
+                  onChange={(e) => setIsAnonymous(e.target.checked)}
+                  className="w-5 h-5 border-2 border-black rounded-none appearance-none checked:bg-black relative after:content-['✓'] after:hidden checked:after:block after:text-white after:absolute after:inset-0 after:flex after:items-center after:justify-center font-bold"
+                />
+                <span className="text-sm font-bold group-hover:underline">Send tip anonymously</span>
+              </label>
+
               <div className="flex flex-col gap-3 sm:flex-row">
                 {connected ? (
                   <Button
@@ -300,6 +311,7 @@ const TipPage: React.FC = () => {
             creator={creator}
             amount={amount}
             message={message}
+            isAnonymous={isAnonymous}
             submitting={step === "signing" || step === "submitting" || isTransactionPending}
           />
 

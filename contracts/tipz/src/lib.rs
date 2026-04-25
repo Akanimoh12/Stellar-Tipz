@@ -222,6 +222,18 @@ impl TipzContract {
         tips::send_tip(&env, &tipper, &creator, amount, &message, is_anonymous)
     }
 
+    /// Send a tip on behalf of someone else.
+    pub fn send_tip_on_behalf(
+        env: Env,
+        sender: Address,
+        on_behalf_of: Address,
+        creator: Address,
+        amount: i128,
+        message: String,
+    ) -> Result<(), ContractError> {
+        tips::send_tip_on_behalf(&env, &sender, &on_behalf_of, &creator, amount, &message)
+    }
+
     /// Withdraw accumulated tips (fee deducted).
     pub fn withdraw_tips(env: Env, caller: Address, amount: i128) -> Result<(), ContractError> {
         tips::withdraw_tips(&env, &caller, amount)
@@ -323,10 +335,25 @@ impl TipzContract {
 
     /// Get the top creators by total tips received, sorted descending.
     ///
-    /// Returns at most `limit` entries.  Passing `limit = 0` returns all
+    /// Returns at most `limit` entries. Passing `limit = 0` returns all
     /// stored entries (up to 50).
-    pub fn get_leaderboard(env: Env, limit: u32) -> Result<Vec<LeaderboardEntry>, ContractError> {
-        Ok(leaderboard::get_leaderboard(&env, limit))
+    pub fn get_leaderboard(
+        env: Env,
+        period: crate::types::LeaderboardPeriod,
+        limit: u32,
+    ) -> Result<Vec<crate::types::LeaderboardEntry>, ContractError> {
+        Ok(leaderboard::get_leaderboard(&env, period, limit))
+    }
+
+    /// Reset a specific leaderboard period (admin only).
+    pub fn reset_leaderboard(
+        env: Env,
+        caller: Address,
+        period: crate::types::LeaderboardPeriod,
+    ) -> Result<(), ContractError> {
+        admin::require_admin(&env, &caller)?;
+        leaderboard::reset_leaderboard(&env, period);
+        Ok(())
     }
 
     /// Return the 1-based rank of `address` on the leaderboard, or `None`
@@ -496,6 +523,29 @@ impl TipzContract {
 
     pub fn get_min_tip_amount(env: Env) -> i128 {
         storage::get_min_tip_amount(&env)
+    }
+
+    /// Update rate limit configuration. Admin only.
+    pub fn set_rate_limit_config(
+        env: Env,
+        caller: Address,
+        max_ops: u32,
+        window_secs: u64,
+    ) -> Result<(), ContractError> {
+        admin::require_admin(&env, &caller)?;
+        storage::set_rate_limit_config(
+            &env,
+            &crate::types::RateLimitConfig {
+                max_ops,
+                window_secs,
+            },
+        );
+        Ok(())
+    }
+
+    /// Get current rate limit configuration.
+    pub fn get_rate_limit_config(env: Env) -> crate::types::RateLimitConfig {
+        storage::get_rate_limit_config(&env)
     }
 
     // ──────────────────────────────────────────────

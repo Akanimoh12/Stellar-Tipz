@@ -18,7 +18,8 @@ use crate::validation::{validate_message, validate_tip_amount};
 /// Create a new [`Tip`] record and store it in temporary storage.
 pub fn store_tip(
     env: &Env,
-    tipper: &Address,
+    sender: &Address,
+    benefactor: Option<Address>,
     creator: &Address,
     amount: i128,
     message: String,
@@ -28,10 +29,11 @@ pub fn store_tip(
     let key = DataKey::Tip(tip_id);
     let tip = Tip {
         id: tip_id,
-        tipper: if is_anonymous {
+        sender: sender.clone(),
+        benefactor: if is_anonymous {
             None
         } else {
-            Some(tipper.clone())
+            benefactor.or(Some(sender.clone()))
         },
         creator: creator.clone(),
         amount,
@@ -130,6 +132,7 @@ pub fn send_tip(
     storage::extend_instance_ttl(env);
     crate::admin::require_not_paused(env)?;
     tipper.require_auth();
+    crate::validation::check_rate_limit(env, tipper)?;
 
     if !storage::has_profile(env, creator) {
         return Err(ContractError::NotRegistered);
@@ -160,13 +163,13 @@ pub fn send_tip(
     profile.credit_score = credit::calculate_credit_score(&profile, env.ledger().timestamp());
 
     storage::set_profile(env, &profile);
-    leaderboard::update_leaderboard(env, &profile);
+    leaderboard::update_all_leaderboards(env, &profile, amount);
 
     // Bump TTL for both Profile and UsernameToAddress together.
     storage::bump_profile_ttl(env, creator);
     storage::bump_username_ttl(env, &profile.username);
 
-    let tip_id = store_tip(env, tipper, creator, amount, message.clone(), is_anonymous);
+    let tip_id = store_tip(env, tipper, None, creator, amount, message.clone(), is_anonymous);
     storage::add_tipper_tip(env, tipper, tip_id);
     storage::add_creator_tip(env, creator, tip_id);
     let timestamp = env.ledger().timestamp();
@@ -187,6 +190,77 @@ pub fn send_tip(
         message,
         timestamp,
         is_anonymous,
+    );
+
+    Ok(())
+}
+
+/// Send a tip on behalf of someone else.
+pub fn send_tip_on_behalf(
+    env: &Env,
+    sender: &Address,
+    on_behalf_of: &Address,
+    creator: &Address,
+    amount: i128,
+    message: &String,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    crate::admin::require_not_paused(env)?;
+    sender.require_auth();
+    on_behalf_of.require_auth();
+    crate::validation::check_rate_limit(env, sender)?;
+
+    if !storage::has_profile(env, creator) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    if storage::is_profile_deactivated(env, creator) {
+        return Err(ContractError::ProfileDeactivated);
+    }
+
+    if sender == creator || on_behalf_of == creator {
+        return Err(ContractError::CannotTipSelf);
+    }
+
+    let min_tip = storage::get_min_tip_amount(env);
+    validate_tip_amount(amount, min_tip)?;
+    validate_message(message)?;
+
+    let contract_address = env.current_contract_address();
+    token::transfer_xlm(env, sender, &contract_address, amount)?;
+
+    let mut profile = storage::get_profile(env, creator);
+    profile.balance += amount;
+    profile.total_tips_received += amount;
+    profile.total_tips_count += 1;
+
+    profile.credit_score = credit::calculate_credit_score(&profile, env.ledger().timestamp());
+
+    storage::set_profile(env, &profile);
+    leaderboard::update_all_leaderboards(env, &profile, amount);
+
+    storage::bump_profile_ttl(env, creator);
+    storage::bump_username_ttl(env, &profile.username);
+
+    let tip_id = store_tip(env, sender, Some(on_behalf_of.clone()), creator, amount, message.clone(), false);
+    storage::add_tipper_tip(env, sender, tip_id);
+    storage::add_tipper_tip(env, on_behalf_of, tip_id); // Also show in benefactor's history
+    storage::add_creator_tip(env, creator, tip_id);
+    let timestamp = env.ledger().timestamp();
+
+    storage::add_to_tips_volume(env, amount)?;
+    crate::stats::update_24h_stats(env, amount);
+    crate::stats::mark_creator_active(env, creator);
+
+    emit_tip_sent(
+        env,
+        tip_id,
+        sender,
+        creator,
+        amount,
+        message,
+        timestamp,
+        false,
     );
 
     Ok(())
