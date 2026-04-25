@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { secureStorage } from '../services/secureStorage';
 
 export interface Settings {
     tipNotifications: boolean;
@@ -30,24 +31,26 @@ export const useSettings = () => {
 
     // Load settings from localStorage on mount
     useEffect(() => {
-        try {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                setSettings({ ...DEFAULT_SETTINGS, ...parsed });
+        const loadSettings = async () => {
+            try {
+                const saved = await secureStorage.get(STORAGE_KEY);
+                if (saved) {
+                    setSettings({ ...DEFAULT_SETTINGS, ...saved });
+                }
+            } catch (error) {
+                console.error('Failed to load settings:', error);
+            } finally {
+                setIsLoading(false);
             }
-        } catch (error) {
-            console.error('Failed to load settings:', error);
-        } finally {
-            setIsLoading(false);
-        }
+        };
+        loadSettings();
     }, []);
 
-    const updateSettings = (updates: Partial<Settings>) => {
+    const updateSettings = async (updates: Partial<Settings>) => {
         const newSettings = { ...settings, ...updates };
         setSettings(newSettings);
         try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(newSettings));
+            await secureStorage.set(STORAGE_KEY, newSettings);
         } catch (error) {
             console.error('Failed to save settings:', error);
         }
@@ -56,7 +59,7 @@ export const useSettings = () => {
     const resetSettings = () => {
         setSettings(DEFAULT_SETTINGS);
         try {
-            localStorage.removeItem(STORAGE_KEY);
+            secureStorage.remove(STORAGE_KEY);
         } catch (error) {
             console.error('Failed to reset settings:', error);
         }

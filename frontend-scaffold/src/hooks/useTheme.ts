@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { secureStorage } from '../services/secureStorage';
 
 type Theme = 'light' | 'dark';
 
@@ -10,25 +11,34 @@ interface UseThemeReturn {
 
 const STORAGE_KEY = 'tipz_theme';
 
-export const useTheme = (): UseThemeReturn => {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    // Check localStorage first
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === 'light' || stored === 'dark') {
-      return stored;
-    }
-    
-    // Fall back to system preference
-    if (typeof window !== 'undefined' && window.matchMedia) {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }
-    
-    return 'light';
-  });
+export const useTheme = (): UseThemeReturn & { isLoading: boolean } => {
+  const [theme, setThemeState] = useState<Theme>('light');
+  const [isLoading, setIsLoading] = useState(true);
 
-  const setTheme = useCallback((newTheme: Theme) => {
+  // Load theme from secureStorage on mount
+  useEffect(() => {
+    const loadTheme = async () => {
+      try {
+        const stored = await secureStorage.get(STORAGE_KEY);
+        if (stored === 'light' || stored === 'dark') {
+          setThemeState(stored);
+        } else if (typeof window !== 'undefined' && window.matchMedia) {
+          // Fall back to system preference
+          const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          setThemeState(systemTheme);
+        }
+      } catch (error) {
+        console.error('Failed to load theme:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadTheme();
+  }, []);
+
+  const setTheme = useCallback(async (newTheme: Theme) => {
     setThemeState(newTheme);
-    localStorage.setItem(STORAGE_KEY, newTheme);
+    await secureStorage.set(STORAGE_KEY, newTheme);
     
     // Update document class for Tailwind
     if (typeof document !== 'undefined') {
@@ -61,9 +71,10 @@ export const useTheme = (): UseThemeReturn => {
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     
-    const handleChange = (e: MediaQueryListEvent) => {
+    const handleChange = async (e: MediaQueryListEvent) => {
       // Only change if user hasn't explicitly set a preference
-      if (!localStorage.getItem(STORAGE_KEY)) {
+      const stored = await secureStorage.get(STORAGE_KEY);
+      if (!stored) {
         setThemeState(e.matches ? 'dark' : 'light');
       }
     };
@@ -72,5 +83,5 @@ export const useTheme = (): UseThemeReturn => {
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
 
-  return { theme, toggleTheme, setTheme };
+  return { theme, toggleTheme, setTheme, isLoading };
 };

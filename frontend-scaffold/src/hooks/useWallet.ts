@@ -114,6 +114,7 @@ export const useWallet = () => {
     network,
     walletType,
     signingStatus,
+    _hasHydrated,
     connect,
     disconnect,
     removeWallet,
@@ -133,7 +134,7 @@ export const useWallet = () => {
   // If unavailable, remove it from the list but keep the rest.
   const hasAttemptedReconnect = useRef(false);
   useEffect(() => {
-    if (hasAttemptedReconnect.current) return;
+    if (hasAttemptedReconnect.current || !_hasHydrated) return;
     hasAttemptedReconnect.current = true;
 
     if (!walletType || connected) return;
@@ -177,9 +178,9 @@ export const useWallet = () => {
       cancelled = true;
       clearTimeout(timeoutId);
     };
-    // Only run on mount
+    // Only run when hydrated
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [_hasHydrated]);
 
   const actions = useMemo(
     () => ({
