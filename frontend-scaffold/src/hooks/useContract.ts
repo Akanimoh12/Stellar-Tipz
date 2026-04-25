@@ -24,6 +24,7 @@ import {
   Profile,
   Tip,
   LeaderboardEntry,
+  LeaderboardPeriod,
   ContractStats,
   getCreditTier as calculateCreditTier,
 } from "../types/contract";
@@ -146,11 +147,15 @@ export const useContract = () => {
   );
 
   const getLeaderboard = useCallback(
-    async (limit: number): Promise<LeaderboardEntry[]> => {
+    async (
+      period: LeaderboardPeriod,
+      limit: number,
+    ): Promise<LeaderboardEntry[]> => {
       const key = buildContractCacheKey(
         "get_leaderboard",
         networkDetails.network,
         contractId,
+        period,
         limit,
       );
 
@@ -175,6 +180,7 @@ export const useContract = () => {
             .addOperation(
               contract.call(
                 "get_leaderboard",
+                nativeToScVal(period, { type: "enum" }),
                 nativeToScVal(limit, { type: "u32" }),
               ),
             )
@@ -481,6 +487,7 @@ export const useContract = () => {
       creator: string,
       amount: string,
       message: string,
+      isAnonymous: boolean = false,
     ): Promise<string> => {
       if (!wallet.publicKey) throw new Error("Wallet not connected");
 
@@ -503,6 +510,7 @@ export const useContract = () => {
             accountToScVal(creator),
             numberToI128(safeStringToBigInt(stroopAmount)),
             nativeToScVal(message),
+            nativeToScVal(isAnonymous),
           ),
         )
         .setTimeout(TimeoutInfinite)

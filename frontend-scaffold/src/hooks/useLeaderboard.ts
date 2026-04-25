@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
 import { useContract } from "./useContract";
-import { LeaderboardEntry } from "../types/contract";
+import { LeaderboardEntry, LeaderboardPeriod } from "../types/contract";
 import { env } from "../helpers/env";
 import { mockLeaderboard } from "../features/mockData";
 
@@ -24,7 +24,7 @@ export interface LeaderboardData {
 /**
  * Fetches leaderboard data from the contract and keeps it fresh.
  */
-export const useLeaderboard = (): LeaderboardData => {
+export const useLeaderboard = (period: LeaderboardPeriod = 'AllTime'): LeaderboardData => {
   const { getLeaderboard } = useContract();
 
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -34,6 +34,8 @@ export const useLeaderboard = (): LeaderboardData => {
   const hasDataRef = useRef(false);
   const isFetchingRef = useRef(false);
 
+  const cacheKey = `${CACHE_KEY}_${period}`;
+
   /**
    * Load cached data from sessionStorage if available and not expired.
    */
@@ -41,7 +43,7 @@ export const useLeaderboard = (): LeaderboardData => {
     try {
       if (env.useMockData) return mockLeaderboard;
 
-      const cached = sessionStorage.getItem(CACHE_KEY);
+      const cached = sessionStorage.getItem(cacheKey);
       if (!cached) return null;
 
       const parsed = JSON.parse(cached);
@@ -52,35 +54,23 @@ export const useLeaderboard = (): LeaderboardData => {
         !Array.isArray(parsed.entries) ||
         typeof parsed.timestamp !== 'number'
       ) {
-        sessionStorage.removeItem(CACHE_KEY);
-        return null;
-      }
-
-      // Validate entries have required fields
-      if (!parsed.entries.every((entry: Record<string, unknown>) =>
-        entry &&
-        typeof entry.address === 'string' &&
-        typeof entry.username === 'string' &&
-        typeof entry.totalTipsReceived === 'string' &&
-        typeof entry.creditScore === 'number'
-      )) {
-        sessionStorage.removeItem(CACHE_KEY);
+        sessionStorage.removeItem(cacheKey);
         return null;
       }
 
       const isExpired = Date.now() - parsed.timestamp > CACHE_DURATION_MS;
 
       if (isExpired) {
-        sessionStorage.removeItem(CACHE_KEY);
+        sessionStorage.removeItem(cacheKey);
         return null;
       }
 
       return parsed.entries;
     } catch {
-      sessionStorage.removeItem(CACHE_KEY);
+      sessionStorage.removeItem(cacheKey);
       return null;
     }
-  }, []);
+  }, [cacheKey]);
 
   /**
    * Save data to sessionStorage with current timestamp.
@@ -92,11 +82,11 @@ export const useLeaderboard = (): LeaderboardData => {
         entries: data,
         timestamp: Date.now(),
       };
-      sessionStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+      sessionStorage.setItem(cacheKey, JSON.stringify(cacheData));
     } catch {
       // Silently fail
     }
-  }, []);
+  }, [cacheKey]);
 
   const fetchLeaderboard = useCallback(async () => {
     if (isFetchingRef.current) return;
@@ -116,7 +106,7 @@ export const useLeaderboard = (): LeaderboardData => {
     setError(null);
 
     try {
-      const fetchedEntries = await getLeaderboard(50);
+      const fetchedEntries = await getLeaderboard(period, 50);
 
       setEntries(fetchedEntries);
       hasDataRef.current = true;
@@ -129,7 +119,7 @@ export const useLeaderboard = (): LeaderboardData => {
       setLoading(false);
       isFetchingRef.current = false;
     }
-  }, [getLeaderboard, saveToCache]);
+  }, [getLeaderboard, period, saveToCache]);
 
   useEffect(() => {
     const cachedEntries = loadFromCache();
@@ -141,9 +131,11 @@ export const useLeaderboard = (): LeaderboardData => {
         fetchLeaderboard();
       }
     } else {
+      setEntries([]);
+      hasDataRef.current = false;
       fetchLeaderboard();
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (env.useMockData) return;
@@ -156,10 +148,10 @@ export const useLeaderboard = (): LeaderboardData => {
   }, [fetchLeaderboard]);
 
   const refetch = useCallback(() => {
-    sessionStorage.removeItem(CACHE_KEY);
+    sessionStorage.removeItem(cacheKey);
     hasDataRef.current = false;
     fetchLeaderboard();
-  }, [fetchLeaderboard]);
+  }, [fetchLeaderboard, cacheKey]);
 
   return { entries, loading, error, refetch };
 };

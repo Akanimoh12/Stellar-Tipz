@@ -189,7 +189,7 @@ const ProfilePage: React.FC = () => {
               </Link>
             </div>
             <Card padding="lg" className="border-4 shadow-brutalist">
-              <ActivityFeed address={profile.owner} limit={5} />
+              <ActivityFeed address={profile.owner} limit={10} />
             </Card>
           </section>
 

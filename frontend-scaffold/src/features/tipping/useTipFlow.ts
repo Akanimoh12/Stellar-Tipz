@@ -27,6 +27,7 @@ export const useTipFlow = (creatorAddress: string): UseTipFlowReturn => {
   const [draft, setDraft] = useState<{
     amount: string;
     message: string;
+    isAnonymous: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -53,8 +54,8 @@ export const useTipFlow = (creatorAddress: string): UseTipFlowReturn => {
     return () => clearTimeout(timeoutId);
   }, [txStatus]);
 
-  const goToConfirm = useCallback((amount: string, message: string) => {
-    setDraft({ amount, message });
+  const goToConfirm = useCallback((amount: string, message: string, isAnonymous: boolean = false) => {
+    setDraft({ amount, message, isAnonymous });
     setStep("confirm");
   }, []);
 
@@ -70,12 +71,13 @@ export const useTipFlow = (creatorAddress: string): UseTipFlowReturn => {
         creator: creatorAddress,
         amount: draft.amount,
         message: draft.message,
+        isAnonymous: draft.isAnonymous,
       }).catch(() => null);
       setStep("queued");
       return;
     }
 
-    await sendTip(creatorAddress, draft.amount, draft.message);
+    await sendTip(creatorAddress, draft.amount, draft.message, draft.isAnonymous);
   }, [creatorAddress, draft, sendTip]);
 
   const reset = useCallback(() => {

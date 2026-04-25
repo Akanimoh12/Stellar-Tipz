@@ -17,6 +17,15 @@ pub enum VerificationType {
     Community,
 }
 
+/// Period for leaderboard tracking.
+#[contracttype]
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+pub enum LeaderboardPeriod {
+    AllTime,
+    Monthly,
+    Weekly,
+}
+
 /// Verification status for a creator profile.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -137,8 +146,10 @@ pub struct PendingWithdrawal {
 pub struct Tip {
     /// Unique tip ID (monotonically increasing global counter)
     pub id: u32,
-    /// Address that sent the tip (None if anonymous)
-    pub tipper: Option<Address>,
+    /// Address that actually sent the funds
+    pub sender: Address,
+    /// Address that gets the credit (on behalf of). Same as sender for normal tips.
+    pub benefactor: Option<Address>,
     /// Address of the creator who received the tip
     pub creator: Address,
     /// Tip amount in stroops
@@ -159,8 +170,8 @@ pub struct LeaderboardEntry {
     pub address: Address,
     /// Creator's username
     pub username: String,
-    /// Lifetime tips received
-    pub total_tips_received: i128,
+    /// Tips received during the period
+    pub amount: i128,
     /// Current credit score
     pub credit_score: u32,
 }
@@ -272,4 +283,24 @@ pub struct DonationPageConfig {
     pub header_image_uri: String,
     /// Whether this is the default config
     pub is_default: bool,
+}
+
+/// Rate limit configuration for the contract.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RateLimitConfig {
+    /// Max operations per window
+    pub max_ops: u32,
+    /// Window duration in seconds (e.g., 3600 for 1 hour)
+    pub window_secs: u64,
+}
+
+/// Rate limit tracking for an address.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RateLimitStatus {
+    /// Number of operations performed in the current window
+    pub count: u32,
+    /// Timestamp when the current window started
+    pub last_op_time: u64,
 }

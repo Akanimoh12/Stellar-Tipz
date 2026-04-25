@@ -13,6 +13,7 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import { useLeaderboard } from "@/hooks/useLeaderboard";
 import { categorizeError } from "@/helpers/error";
 import LeaderboardSkeleton from "./LeaderboardSkeleton";
+import { LeaderboardEntry, LeaderboardPeriod } from "@/types/contract";
 
 
 const PAGE_SIZE = 5;
@@ -20,7 +21,8 @@ const PAGE_SIZE = 5;
 const LeaderboardPage: React.FC = () => {
   usePageTitle('Leaderboard');
 
-  const { entries, loading, error, refetch } = useLeaderboard();
+  const [period, setPeriod] = useState<LeaderboardPeriod>('AllTime');
+  const { entries, loading, error, refetch } = useLeaderboard(period);
   const [currentPage, setCurrentPage] = useState(1);
   const totalPages = Math.ceil(entries.length / PAGE_SIZE);
 
@@ -40,12 +42,30 @@ const LeaderboardPage: React.FC = () => {
           <p className="text-xs font-black uppercase tracking-[0.25em] text-gray-600">
             Leaderboard
           </p>
-          <h1 className="flex items-center gap-3 text-4xl font-black uppercase">
-            <Trophy size={34} />
-            Top creators
-          </h1>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <h1 className="flex items-center gap-3 text-4xl font-black uppercase">
+              <Trophy size={34} />
+              Top creators
+            </h1>
+            <div className="flex bg-white border-2 border-black p-1 shadow-brutalist-sm">
+              {(['AllTime', 'Monthly', 'Weekly'] as LeaderboardPeriod[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => {
+                    setPeriod(p);
+                    setCurrentPage(1);
+                  }}
+                  className={`px-3 py-1 text-xs font-black uppercase transition-colors ${
+                    period === p ? 'bg-black text-white' : 'hover:bg-gray-100'
+                  }`}
+                >
+                  {p.replace(/([A-Z])/g, ' $1').trim()}
+                </button>
+              ))}
+            </div>
+          </div>
           <p className="max-w-2xl text-base leading-7 text-gray-700">
-            A real-time snapshot of creators earning the most support on Stellar Tipz. These rankings are fetched directly from the Tipz Soroban contract.
+            A real-time snapshot of creators earning the most support on Stellar Tipz {period !== 'AllTime' && `for this ${period.replace('ly', '').toLowerCase()}`}. These rankings are fetched directly from the Tipz Soroban contract.
           </p>
         </Card>
 
@@ -55,7 +75,7 @@ const LeaderboardPage: React.FC = () => {
               <ErrorState category={categorizeError(error).category} onRetry={refetch} />
             </div>
           ) : (
-            entries.slice(0, 3).map((entry, index) => {
+            entries.slice(0, 3).map((entry: LeaderboardEntry, index: number) => {
               const icons = [<Crown key="crown" size={18} />, <Medal key="silver" size={18} />, <Medal key="bronze" size={18} />];
               const labels = ["1st", "2nd", "3rd"];
 
@@ -107,7 +127,7 @@ const LeaderboardPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleEntries.map((entry, index) => {
+                  {visibleEntries.map((entry: LeaderboardEntry, index: number) => {
                     const rank = (currentPage - 1) * PAGE_SIZE + index + 1;
 
                     return (
