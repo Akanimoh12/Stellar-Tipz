@@ -17,7 +17,6 @@ interface TipConfirmationModalProps {
   creator: Profile;
   amount: string;
   message: string;
-  isAnonymous?: boolean;
   submitting?: boolean;
 }
 
@@ -28,7 +27,6 @@ export const TipConfirmationModal: React.FC<TipConfirmationModalProps> = ({
   creator,
   amount,
   message,
-  isAnonymous = false,
   submitting = false,
 }) => {
   const [dontShowAgain, setDontShowAgain] = useState(false);
@@ -66,11 +64,6 @@ export const TipConfirmationModal: React.FC<TipConfirmationModalProps> = ({
             <h3 className="text-xl font-black uppercase">{creator.displayName}</h3>
             <p className="text-sm font-bold text-gray-600">@{creator.username}</p>
           </div>
-          {isAnonymous && (
-            <div className="ml-auto bg-gray-200 border-2 border-black px-2 py-1 text-[10px] font-black uppercase">
-              Anonymous
-            </div>
-          )}
         </div>
 
         <div className="space-y-3 bg-gray-50 dark:bg-gray-900 border-2 border-black p-4">

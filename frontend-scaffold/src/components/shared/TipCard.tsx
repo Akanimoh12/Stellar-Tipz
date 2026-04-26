@@ -38,16 +38,12 @@ const TipCard: React.FC<TipCardProps> = ({
   showSender = true,
   showReceiver = true,
 }) => {
-  const primaryAddress = showSender ? (tip.benefactor || tip.sender) : tip.creator;
+  const primaryAddress = showSender ? tip.tipper : tip.creator;
   const primaryLabel = showSender ? "From" : "To";
   const secondaryAddress =
-    showSender && showReceiver ? tip.creator : showReceiver ? (tip.benefactor || tip.sender) : null;
+    showSender && showReceiver ? tip.creator : showReceiver ? tip.tipper : null;
   const secondaryLabel =
     showSender && showReceiver ? "To" : showReceiver ? "From" : null;
-
-  const isDelegated = tip.benefactor && tip.benefactor !== tip.sender;
-
-  const explorerUrl = (address: string) => `https://stellar.expert/explorer/testnet/account/${address}`;
 
   return (
     <button
@@ -67,22 +63,12 @@ const TipCard: React.FC<TipCardProps> = ({
               <p className="text-[11px] font-black uppercase tracking-[0.2em] text-gray-500">
                 {primaryLabel}
               </p>
-              <a
-                href={explorerUrl(primaryAddress)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="truncate text-sm font-black hover:underline cursor-pointer"
-              >
+              <p className="truncate text-sm font-black">
                 {truncateString(primaryAddress)}
-              </a>
-              {isDelegated && showSender && (
-                <p className="text-[10px] font-bold text-gray-500 mt-0.5">
-                  via {truncateString(tip.sender)}
-                </p>
-              )}
+              </p>
               {secondaryAddress && secondaryLabel && (
                 <p className="mt-1 truncate text-xs font-bold text-gray-600">
-                  {secondaryLabel}: <a href={explorerUrl(secondaryAddress)} target="_blank" rel="noopener noreferrer" className="hover:underline">{truncateString(secondaryAddress)}</a>
+                  {secondaryLabel}: {truncateString(secondaryAddress)}
                 </p>
               )}
             </div>

@@ -29,11 +29,11 @@ export const useTipz = (): UseTipzReturn => {
   const [state, setState] = useState<TipState>(initialState);
   const { sendTip: contractSendTip, withdrawTips: contractWithdrawTips } = useContract();
 
-  const sendTip = useCallback(async (creator: string, amount: string, message: string, isAnonymous: boolean = false): Promise<void> => {
+  const sendTip = useCallback(async (creator: string, amount: string, message: string): Promise<void> => {
     setState({ ...initialState, sending: true, txStatus: 'signing' });
     try {
       // The useContract.sendTip method handles signing and submission
-      const result = await contractSendTip(creator, amount, message, isAnonymous);
+      const result = await contractSendTip(creator, amount, message);
       
       setState((prev) => ({ 
         ...prev, 

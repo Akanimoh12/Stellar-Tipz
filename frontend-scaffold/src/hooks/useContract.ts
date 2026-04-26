@@ -24,14 +24,12 @@ import {
   Profile,
   Tip,
   LeaderboardEntry,
-  LeaderboardPeriod,
   ContractStats,
   getCreditTier as calculateCreditTier,
 } from "../types/contract";
 import { ProfileFormData } from "../types/profile";
 import { xlmToStroop } from "../helpers/format";
 import { contractQueryCache, buildContractCacheKey } from "../services/cache";
-import { validateTransaction } from "../services/transactionValidator";
 
 /**
  * Valid Stellar placeholder address used as the source account for
@@ -84,9 +82,7 @@ export const useContract = () => {
 
   // Warn once in development when contract ID is not configured
   if (!contractId) {
-    console.warn(
-      "[useContract] VITE_CONTRACT_ID is not set — contract calls will be skipped.",
-    );
+    console.warn("[useContract] VITE_CONTRACT_ID is not set — contract calls will be skipped.");
   }
 
   // --- Read-only Methods ---
@@ -150,15 +146,11 @@ export const useContract = () => {
   );
 
   const getLeaderboard = useCallback(
-    async (
-      period: LeaderboardPeriod,
-      limit: number,
-    ): Promise<LeaderboardEntry[]> => {
+    async (limit: number): Promise<LeaderboardEntry[]> => {
       const key = buildContractCacheKey(
         "get_leaderboard",
         networkDetails.network,
         contractId,
-        period,
         limit,
       );
 
@@ -183,7 +175,6 @@ export const useContract = () => {
             .addOperation(
               contract.call(
                 "get_leaderboard",
-                nativeToScVal(period, { type: "enum" }),
                 nativeToScVal(limit, { type: "u32" }),
               ),
             )
@@ -201,29 +192,41 @@ export const useContract = () => {
     if (!contractId) {
       throw new Error("Contract ID is not configured");
     }
+    const key = buildContractCacheKey(
+      "get_stats",
+      networkDetails.network,
+      contractId,
+    );
 
-    const contract = new Contract(contractId);
-    const txBuilder = wallet.publicKey
-      ? await getTxBuilder(
-          wallet.publicKey,
-          BASE_FEE,
-          server,
-          networkDetails.networkPassphrase,
-        )
-      : getSimulationTxBuilder(
-          READ_ONLY_SOURCE,
-          BASE_FEE,
-          networkDetails.networkPassphrase,
-        );
-    const tx = txBuilder
-      .addOperation(contract.call("get_stats"))
-      .setTimeout(TimeoutInfinite)
-      .build();
+    return contractQueryCache.getOrFetch<ContractStats>(
+      key,
+      PLATFORM_STATS_TTL_MS,
+      async () => {
+        const contract = new Contract(contractId);
+        const txBuilder = wallet.publicKey
+          ? await getTxBuilder(
+              wallet.publicKey,
+              BASE_FEE,
+              server,
+              networkDetails.networkPassphrase,
+            )
+          : getSimulationTxBuilder(
+              READ_ONLY_SOURCE,
+              BASE_FEE,
+              networkDetails.networkPassphrase,
+            );
+        const tx = txBuilder
+          .addOperation(contract.call("get_stats"))
+          .setTimeout(TimeoutInfinite)
+          .build();
 
-    return simulateTx<ContractStats>(tx, server);
+        return simulateTx<ContractStats>(tx, server);
+      },
+    );
   }, [contractId, wallet.publicKey, server, networkDetails]);
 
   const getMinTipAmount = useCallback(async (): Promise<string> => {
+    // Default of 1 XLM returned when contract is unavailable or not yet deployed
     const DEFAULT_MIN_TIP_XLM = "1";
 
     if (!contractId) {
@@ -250,6 +253,7 @@ export const useContract = () => {
         .build();
 
       const minTipStroops = await simulateTx<number>(tx, server);
+      // Convert stroops to XLM string for display
       return (minTipStroops / 1e7).toString();
     } catch {
       return DEFAULT_MIN_TIP_XLM;
@@ -412,27 +416,7 @@ export const useContract = () => {
         .build();
 
       const xdr = tx.toXDR();
-      
-      // Validate before signing (sanity check)
-      const preValidation = validateTransaction(xdr, {
-        expectedContractId: contractId,
-        expectedFunction: "register_profile",
-        expectedArgs: { username: data.username, displayName: data.displayName, bio: data.bio, imageUrl: data.imageUrl, xHandle: data.xHandle },
-        networkPassphrase: networkDetails.networkPassphrase
-      });
-      if (!preValidation.isValid) throw new Error(`Invalid transaction built: ${preValidation.errors.join(", ")}`);
-
       const signedXdr = await wallet.signTransaction(xdr);
-      
-      // Validate after signing (security check)
-      const postValidation = validateTransaction(signedXdr, {
-        expectedContractId: contractId,
-        expectedFunction: "register_profile",
-        expectedArgs: { username: data.username, displayName: data.displayName, bio: data.bio, imageUrl: data.imageUrl, xHandle: data.xHandle },
-        networkPassphrase: networkDetails.networkPassphrase
-      });
-      if (!postValidation.isValid) throw new Error(`Transaction modification detected: ${postValidation.errors.join(", ")}`);
-
       const txHash = await submitTx(
         signedXdr,
         networkDetails.networkPassphrase,
@@ -456,11 +440,12 @@ export const useContract = () => {
         networkDetails.networkPassphrase,
       );
 
+      // Helper function to convert optional string to ScVal
+      // Returns an Option with Some(value) if value is provided, else None
       const optionalStringToScVal = (value?: string): xdr.ScVal => {
         if (value !== undefined && value !== "") {
-          return nativeToScVal({ type: "some", value });
+          return nativeToScVal({ type: "some", value: value });
         }
-
         return nativeToScVal({ type: "none" });
       };
 
@@ -479,25 +464,7 @@ export const useContract = () => {
         .build();
 
       const xdr_tx = tx.toXDR();
-      
-      // Validate before signing (sanity check)
-      const preValidation = validateTransaction(xdr_tx, {
-        expectedContractId: contractId,
-        expectedFunction: "update_profile",
-        networkPassphrase: networkDetails.networkPassphrase
-      });
-      if (!preValidation.isValid) throw new Error(`Invalid transaction built: ${preValidation.errors.join(", ")}`);
-
       const signedXdr = await wallet.signTransaction(xdr_tx);
-      
-      // Validate after signing (security check)
-      const postValidation = validateTransaction(signedXdr, {
-        expectedContractId: contractId,
-        expectedFunction: "update_profile",
-        networkPassphrase: networkDetails.networkPassphrase
-      });
-      if (!postValidation.isValid) throw new Error(`Transaction modification detected: ${postValidation.errors.join(", ")}`);
-
       const txHash = await submitTx(
         signedXdr,
         networkDetails.networkPassphrase,
@@ -514,7 +481,6 @@ export const useContract = () => {
       creator: string,
       amount: string,
       message: string,
-      isAnonymous: boolean = false,
     ): Promise<string> => {
       if (!wallet.publicKey) throw new Error("Wallet not connected");
 
@@ -526,6 +492,7 @@ export const useContract = () => {
         networkDetails.networkPassphrase,
       );
 
+      // Convert XLM amount to stroops before sending to contract
       const stroopAmount = xlmToStroop(amount).toString();
 
       const tx = txBuilder
@@ -536,36 +503,13 @@ export const useContract = () => {
             accountToScVal(creator),
             numberToI128(safeStringToBigInt(stroopAmount)),
             nativeToScVal(message),
-            nativeToScVal(isAnonymous),
           ),
         )
         .setTimeout(TimeoutInfinite)
         .build();
 
       const xdr = tx.toXDR();
-      
-      const expectedArgs = { creator, amount: safeStringToBigInt(stroopAmount), message };
-      
-      // Validate before signing (sanity check)
-      const preValidation = validateTransaction(xdr, {
-        expectedContractId: contractId,
-        expectedFunction: "send_tip",
-        expectedArgs,
-        networkPassphrase: networkDetails.networkPassphrase
-      });
-      if (!preValidation.isValid) throw new Error(`Invalid transaction built: ${preValidation.errors.join(", ")}`);
-
       const signedXdr = await wallet.signTransaction(xdr);
-      
-      // Validate after signing (security check)
-      const postValidation = validateTransaction(signedXdr, {
-        expectedContractId: contractId,
-        expectedFunction: "send_tip",
-        expectedArgs,
-        networkPassphrase: networkDetails.networkPassphrase
-      });
-      if (!postValidation.isValid) throw new Error(`Transaction modification detected: ${postValidation.errors.join(", ")}`);
-
       const txHash = await submitTx(
         signedXdr,
         networkDetails.networkPassphrase,
@@ -589,6 +533,7 @@ export const useContract = () => {
         networkDetails.networkPassphrase,
       );
 
+      // Convert XLM amount to stroops before sending to contract
       const stroopAmount = xlmToStroop(amount).toString();
 
       const tx = txBuilder
@@ -603,29 +548,7 @@ export const useContract = () => {
         .build();
 
       const xdr = tx.toXDR();
-      
-      const expectedArgs = { amount: safeStringToBigInt(stroopAmount) };
-      
-      // Validate before signing (sanity check)
-      const preValidation = validateTransaction(xdr, {
-        expectedContractId: contractId,
-        expectedFunction: "withdraw_tips",
-        expectedArgs,
-        networkPassphrase: networkDetails.networkPassphrase
-      });
-      if (!preValidation.isValid) throw new Error(`Invalid transaction built: ${preValidation.errors.join(", ")}`);
-
       const signedXdr = await wallet.signTransaction(xdr);
-      
-      // Validate after signing (security check)
-      const postValidation = validateTransaction(signedXdr, {
-        expectedContractId: contractId,
-        expectedFunction: "withdraw_tips",
-        expectedArgs,
-        networkPassphrase: networkDetails.networkPassphrase
-      });
-      if (!postValidation.isValid) throw new Error(`Transaction modification detected: ${postValidation.errors.join(", ")}`);
-
       const txHash = await submitTx(
         signedXdr,
         networkDetails.networkPassphrase,

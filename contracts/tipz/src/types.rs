@@ -9,8 +9,9 @@ use soroban_sdk::{contracttype, Address, String};
 /// without wrapping it in `Option` (which soroban-sdk does not support for
 /// custom contracttype enums).
 #[contracttype]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub enum VerificationType {
+    #[default]
     Unverified,
     Identity,
     SocialMedia,

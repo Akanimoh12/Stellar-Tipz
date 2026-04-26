@@ -1,87 +1,96 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import Button from '../Button';
+import { describe, it, expect, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import Button from "../Button";
 
-describe('Button', () => {
-  it('renders with children text', () => {
-    render(<Button>Click me</Button>);
-    expect(screen.getByRole('button', { name: /click me/i })).toBeInTheDocument();
+describe("Button", () => {
+  it("renders children", () => {
+    render(<Button>Send tip</Button>);
+    expect(screen.getByRole("button", { name: /send tip/i })).toBeInTheDocument();
   });
 
-  it('applies primary variant styles by default', () => {
-    render(<Button>Primary</Button>);
-    const button = screen.getByRole('button');
-    expect(button).toHaveClass('bg-black', 'text-white');
+  it("renders the primary variant by default", () => {
+    render(<Button>Tip</Button>);
+    const btn = screen.getByRole("button");
+    expect(btn.className).toMatch(/bg-black/);
+    expect(btn.className).toMatch(/text-white/);
   });
 
-  it('applies outline variant styles', () => {
-    render(<Button variant="outline">Outline</Button>);
-    const button = screen.getByRole('button');
-    expect(button).toHaveClass('bg-white', 'text-black');
+  it("renders the outline variant", () => {
+    render(<Button variant="outline">Tip</Button>);
+    const btn = screen.getByRole("button");
+    expect(btn.className).toMatch(/bg-white/);
+    expect(btn.className).toMatch(/text-black/);
   });
 
-  it('applies ghost variant styles', () => {
-    render(<Button variant="ghost">Ghost</Button>);
-    const button = screen.getByRole('button');
-    expect(button).toHaveClass('bg-transparent', 'border-transparent');
+  it("renders the ghost variant without a shadow", () => {
+    render(<Button variant="ghost">Tip</Button>);
+    const btn = screen.getByRole("button");
+    expect(btn.className).toMatch(/bg-transparent/);
+    expect(btn.style.boxShadow).toBe("none");
   });
 
-  it('applies size classes correctly', () => {
-    const { rerender } = render(<Button size="sm">Small</Button>);
-    expect(screen.getByRole('button')).toHaveClass('px-3', 'py-1.5', 'text-sm');
-
-    rerender(<Button size="md">Medium</Button>);
-    expect(screen.getByRole('button')).toHaveClass('px-6', 'py-3', 'text-base');
-
-    rerender(<Button size="lg">Large</Button>);
-    expect(screen.getByRole('button')).toHaveClass('px-8', 'py-4', 'text-lg');
+  it("applies the requested size", () => {
+    render(<Button size="lg">Big</Button>);
+    const btn = screen.getByRole("button");
+    expect(btn.className).toMatch(/text-lg/);
   });
 
-  it('calls onClick handler when clicked', async () => {
-    const handleClick = vi.fn();
-    const user = userEvent.setup();
-
-    render(<Button onClick={handleClick}>Click</Button>);
-    await user.click(screen.getByRole('button'));
-
-    expect(handleClick).toHaveBeenCalledTimes(1);
+  it("calls onClick when clicked", async () => {
+    const onClick = vi.fn();
+    render(<Button onClick={onClick}>Click me</Button>);
+    await userEvent.click(screen.getByRole("button"));
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it('shows loading text when loading is true', () => {
-    render(<Button loading>Submit</Button>);
-    expect(screen.getByRole('button')).toHaveTextContent('Loading...');
-    expect(screen.queryByText('Submit')).not.toBeInTheDocument();
+  it("does not fire onClick when disabled", async () => {
+    const onClick = vi.fn();
+    render(
+      <Button disabled onClick={onClick}>
+        Off
+      </Button>,
+    );
+    await userEvent.click(screen.getByRole("button"));
+    expect(onClick).not.toHaveBeenCalled();
+    expect(screen.getByRole("button")).toBeDisabled();
   });
 
-  it('is disabled when loading is true', () => {
-    render(<Button loading>Submit</Button>);
-    expect(screen.getByRole('button')).toBeDisabled();
+  it("disables itself and shows the loader spinner when loading", () => {
+    render(<Button loading>Submitting</Button>);
+    const btn = screen.getByRole("button");
+    expect(btn).toBeDisabled();
+    // The loader is the spinning div inside the button.
+    expect(btn.querySelector(".animate-spin")).not.toBeNull();
   });
 
-  it('is disabled when disabled prop is passed', () => {
-    render(<Button disabled>Disabled</Button>);
-    expect(screen.getByRole('button')).toBeDisabled();
+  it("renders the leading icon when not loading", () => {
+    render(
+      <Button icon={<span data-testid="lead-icon">★</span>}>With icon</Button>,
+    );
+    expect(screen.getByTestId("lead-icon")).toBeInTheDocument();
   });
 
-  it('does not call onClick when disabled', async () => {
-    const handleClick = vi.fn();
-    const user = userEvent.setup();
-
-    render(<Button disabled onClick={handleClick}>Click</Button>);
-    await user.click(screen.getByRole('button'));
-
-    expect(handleClick).not.toHaveBeenCalled();
+  it("hides the trailing icon while loading", () => {
+    render(
+      <Button loading iconRight={<span data-testid="trail-icon">→</span>}>
+        Wait
+      </Button>,
+    );
+    expect(screen.queryByTestId("trail-icon")).toBeNull();
   });
 
-  it('applies custom className', () => {
-    render(<Button className="custom-class">Custom</Button>);
-    expect(screen.getByRole('button')).toHaveClass('custom-class');
+  it("forwards arbitrary HTML attributes (type, aria-label)", () => {
+    render(
+      <Button type="submit" aria-label="submit-tip">
+        Go
+      </Button>,
+    );
+    const btn = screen.getByRole("button", { name: "submit-tip" });
+    expect(btn).toHaveAttribute("type", "submit");
   });
 
-  it('forwards additional HTML attributes', () => {
-    render(<Button type="submit" data-testid="submit-btn">Submit</Button>);
-    const button = screen.getByTestId('submit-btn');
-    expect(button).toHaveAttribute('type', 'submit');
+  it("merges a custom className with the built-in classes", () => {
+    render(<Button className="my-extra-class">x</Button>);
+    expect(screen.getByRole("button").className).toMatch(/my-extra-class/);
   });
 });

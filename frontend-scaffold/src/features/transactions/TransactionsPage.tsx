@@ -19,7 +19,6 @@ import {
 import TransactionRow from "./TransactionRow";
 import TransactionFilters from "./TransactionFilters";
 import { exportTransactionsCsv } from "./exportCsv";
-import VirtualList from "@/components/shared/VirtualList";
 
 const TABS: { id: TabFilter; label: string }[] = [
   { id: "all", label: "All" },
@@ -38,9 +37,30 @@ const TransactionsPage: React.FC = () => {
   const { filtered, loading, error, hasMore, loadMore, refetch } =
     useTransactionHistory(publicKey, activeTab, dateRange);
 
+  // ── Infinite scroll sentinel ───────────────────────────────────────────
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
   const handleLoadMore = useCallback(() => {
     if (hasMore && !loading) loadMore();
   }, [hasMore, loading, loadMore]);
+
+  useEffect(() => {
+    if (observerRef.current) observerRef.current.disconnect();
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) handleLoadMore();
+      },
+      { threshold: 0.1 },
+    );
+
+    if (sentinelRef.current) {
+      observerRef.current.observe(sentinelRef.current);
+    }
+
+    return () => observerRef.current?.disconnect();
+  }, [handleLoadMore]);
 
   // ── Tab change resets date filter ──────────────────────────────────────
   const handleTabChange = (tab: TabFilter) => {
@@ -192,17 +212,14 @@ const TransactionsPage: React.FC = () => {
           />
         ) : (
           <div className="space-y-3">
-            <VirtualList
-              items={filtered}
-              estimateSize={80}
-              height="60vh"
-              className="w-full pr-2"
-              itemClassName="pb-3"
-              onLoadMore={handleLoadMore}
-              renderItem={(tx) => <TransactionRow key={tx.id} tx={tx} />}
-            />
+            {filtered.map((tx) => (
+              <TransactionRow key={tx.id} tx={tx} />
+            ))}
           </div>
         )}
+
+        {/* Infinite scroll sentinel */}
+        <div ref={sentinelRef} aria-hidden="true" />
 
         {/* Load more indicator */}
         {loading && filtered.length > 0 && (

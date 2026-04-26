@@ -60,6 +60,12 @@ pub fn update_all_leaderboards(env: &Env, profile: &Profile, amount: i128) {
     update_leaderboard(env, profile, LeaderboardPeriod::Weekly, amount);
 }
 
+pub fn remove_from_all_leaderboards(env: &Env, address: &Address) {
+    remove_from_leaderboard(env, LeaderboardPeriod::AllTime, address);
+    remove_from_leaderboard(env, LeaderboardPeriod::Monthly, address);
+    remove_from_leaderboard(env, LeaderboardPeriod::Weekly, address);
+}
+
 pub fn update_leaderboard(env: &Env, profile: &Profile, period: LeaderboardPeriod, tip_amount: i128) {
     if storage::is_profile_deactivated(env, &profile.owner) {
         return;

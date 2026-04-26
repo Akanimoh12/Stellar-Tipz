@@ -258,7 +258,7 @@ pub fn deactivate_profile(
 
     let now = env.ledger().timestamp();
     storage::set_profile_deactivated_at(env, &creator, now);
-    crate::leaderboard::remove_from_leaderboard(env, &creator);
+    crate::leaderboard::remove_from_all_leaderboards(env, &creator);
 
     let username = storage::get_profile(env, &creator).username.clone();
     storage::bump_profile_ttl(env, &creator);
@@ -293,7 +293,7 @@ pub fn reactivate_profile(
 
     storage::clear_profile_deactivation(env, &creator);
     let profile = storage::get_profile(env, &creator);
-    crate::leaderboard::update_leaderboard(env, &profile);
+    crate::leaderboard::update_all_leaderboards(env, &profile, 0);
 
     storage::bump_profile_ttl(env, &creator);
     storage::bump_username_ttl(env, &profile.username);
@@ -347,7 +347,7 @@ pub fn deregister_profile(env: &Env, caller: Address) -> Result<(), ContractErro
     storage::decrement_total_creators(env);
 
     // 4.5: Leaderboard removal
-    crate::leaderboard::remove_from_leaderboard(env, &caller);
+    crate::leaderboard::remove_from_all_leaderboards(env, &caller);
 
     // 4.6: Tip index cleanup — reset temporary storage indices so that
     // stale counts cannot cause index collisions on re-registration.

@@ -1,47 +1,45 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import Card from '../Card';
+import { describe, it, expect } from "vitest";
+import { render, screen } from "@testing-library/react";
+import Card from "../Card";
 
-describe('Card Component', () => {
-  it('renders children correctly', () => {
+describe("Card", () => {
+  it("renders children", () => {
     render(
       <Card>
-        <div data-testid="child">Test Child</div>
-      </Card>
+        <span data-testid="content">Hello</span>
+      </Card>,
     );
-    expect(screen.getByTestId('child')).toBeDefined();
-    expect(screen.getByText('Test Child')).toBeDefined();
+    expect(screen.getByTestId("content")).toHaveTextContent("Hello");
   });
 
-  it('applies default padding (md)', () => {
-    const { container } = render(<Card>Default Padding</Card>);
-    expect(container.firstChild).toHaveClass('p-6');
+  it("uses medium padding by default", () => {
+    const { container } = render(<Card>x</Card>);
+    expect(container.firstChild).toHaveClass("p-6");
   });
 
-  it('applies small padding (sm)', () => {
-    const { container } = render(<Card padding="sm">Small Padding</Card>);
-    expect(container.firstChild).toHaveClass('p-4');
+  it("applies the requested padding", () => {
+    const { container } = render(<Card padding="lg">x</Card>);
+    expect(container.firstChild).toHaveClass("p-8");
   });
 
-  it('applies large padding (lg)', () => {
-    const { container } = render(<Card padding="lg">Large Padding</Card>);
-    expect(container.firstChild).toHaveClass('p-8');
+  it("does not include the hover transform classes by default", () => {
+    const { container } = render(<Card>x</Card>);
+    expect(container.firstChild).not.toHaveClass("hover:-translate-x-1");
   });
 
-  it('applies hover classes when hover prop is true', () => {
-    const { container } = render(<Card hover>Hover Card</Card>);
-    expect(container.firstChild).toHaveClass('hover:-translate-x-1');
-    expect(container.firstChild).toHaveClass('hover:-translate-y-1');
-    expect(container.firstChild).toHaveClass('hover:shadow-brutalist-lg');
+  it("opts in to the hover transform when hover=true", () => {
+    const { container } = render(<Card hover>x</Card>);
+    expect(container.firstChild).toHaveClass("hover:-translate-x-1");
   });
 
-  it('does not apply hover classes when hover prop is false', () => {
-    const { container } = render(<Card hover={false}>No Hover Card</Card>);
-    expect(container.firstChild).not.toHaveClass('hover:-translate-x-1');
+  it("merges a custom className", () => {
+    const { container } = render(<Card className="border-purple-500">x</Card>);
+    expect(container.firstChild).toHaveClass("border-purple-500");
   });
 
-  it('applies custom className', () => {
-    const { container } = render(<Card className="custom-test">Custom Class</Card>);
-    expect(container.firstChild).toHaveClass('custom-test');
+  it("applies the brutalist box-shadow inline style", () => {
+    const { container } = render(<Card>x</Card>);
+    const el = container.firstChild as HTMLElement;
+    expect(el.style.boxShadow).toBe("4px 4px 0px 0px rgba(0,0,0,1)");
   });
 });

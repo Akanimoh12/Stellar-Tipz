@@ -3,13 +3,13 @@ import { AlertCircle, BarChart3, Settings, Users, Lock, Loader } from 'lucide-re
 import StatsPanel from './StatsPanel';
 
 interface AdminDashboardProps {
-  isAdmin?: boolean;
+  isAdmin: boolean;
   adminWallet?: string;
   currentWallet?: string;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
-  isAdmin = false,
+  isAdmin,
   adminWallet,
   currentWallet,
 }) => {

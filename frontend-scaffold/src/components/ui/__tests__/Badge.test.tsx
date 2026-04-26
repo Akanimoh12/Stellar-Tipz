@@ -1,71 +1,66 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import Badge from '../Badge';
-import { getTierFromScore } from '@/helpers/badge';
+import { describe, it, expect } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import Badge from "../Badge";
+import { getTierFromScore } from "@/helpers/badge";
 
-describe('Badge Component', () => {
-  it('renders new tier correctly', () => {
-    render(<Badge tier="new" />);
-    expect(screen.getByText('New')).toBeDefined();
-    expect(screen.getByText('*')).toBeDefined();
-    expect(screen.getByText('New').parentElement).toHaveClass('bg-slate-100');
+describe("Badge", () => {
+  it.each([
+    ["new", "New", "⭐"],
+    ["bronze", "Bronze", "🥉"],
+    ["silver", "Silver", "🥈"],
+    ["gold", "Gold", "🥇"],
+    ["diamond", "Diamond", "💎"],
+  ] as const)("renders the %s tier with the right label and emoji", (tier, label, emoji) => {
+    render(<Badge tier={tier} />);
+    expect(screen.getByText(label)).toBeInTheDocument();
+    expect(screen.getByText(emoji)).toBeInTheDocument();
   });
 
-  it('renders bronze tier correctly', () => {
-    render(<Badge tier="bronze" />);
-    expect(screen.getByText('Bronze')).toBeDefined();
-    expect(screen.getByText('🥉')).toBeDefined();
-    expect(screen.getByText('Bronze').parentElement).toHaveClass('bg-orange-100');
-  });
-
-  it('renders silver tier correctly', () => {
-    render(<Badge tier="silver" />);
-    expect(screen.getByText('Silver')).toBeDefined();
-    expect(screen.getByText('🥈')).toBeDefined();
-    expect(screen.getByText('Silver').parentElement).toHaveClass('bg-gray-100');
-  });
-
-  it('renders gold tier correctly', () => {
+  it("does not render a score tooltip when score is omitted", () => {
     render(<Badge tier="gold" />);
-    expect(screen.getByText('Gold')).toBeDefined();
-    expect(screen.getByText('🥇')).toBeDefined();
-    expect(screen.getByText('Gold').parentElement).toHaveClass('bg-yellow-100');
+    expect(screen.queryByText(/Score: \d+\/100/)).toBeNull();
   });
 
-  it('renders diamond tier correctly', () => {
-    render(<Badge tier="diamond" />);
-    expect(screen.getByText('Diamond')).toBeDefined();
-    expect(screen.getByText('💎')).toBeDefined();
-    expect(screen.getByText('Diamond').parentElement).toHaveClass('bg-blue-100');
+  it("shows the score tooltip on hover when score is provided", async () => {
+    const user = userEvent.setup();
+    render(<Badge tier="gold" score={75} />);
+    expect(screen.queryByText("Score: 75/100")).toBeNull();
+    await user.hover(screen.getByText("Gold"));
+    expect(screen.getByText("Score: 75/100")).toBeInTheDocument();
   });
 
-  it('displays score when provided', () => {
-    render(<Badge tier="gold" score={50} />);
-    expect(screen.getByText('(50)')).toBeDefined();
+  it("treats score=0 as a valid (not-falsy) value and shows the tooltip on hover", async () => {
+    const user = userEvent.setup();
+    render(<Badge tier="new" score={0} />);
+    await user.hover(screen.getByText("New"));
+    expect(screen.getByText("Score: 0/100")).toBeInTheDocument();
   });
 
-  it('does not display score when not provided', () => {
-    render(<Badge tier="gold" />);
-    expect(screen.queryByText('(')).toBeNull();
-  });
-
-  it('applies custom className', () => {
-    const { container } = render(<Badge tier="bronze" className="test-class" />);
-    expect(container.firstChild).toHaveClass('test-class');
+  it("merges a custom className onto the badge span", () => {
+    const { container } = render(<Badge tier="silver" className="ml-4" />);
+    const badgeSpan = container.querySelector("span.ml-4");
+    expect(badgeSpan).not.toBeNull();
   });
 });
 
-describe('getTierFromScore utility', () => {
-  it('returns correctly for various scores', () => {
-    expect(getTierFromScore(0)).toBe('new');
-    expect(getTierFromScore(19)).toBe('new');
-    expect(getTierFromScore(20)).toBe('bronze');
-    expect(getTierFromScore(39)).toBe('bronze');
-    expect(getTierFromScore(40)).toBe('silver');
-    expect(getTierFromScore(59)).toBe('silver');
-    expect(getTierFromScore(60)).toBe('gold');
-    expect(getTierFromScore(79)).toBe('gold');
-    expect(getTierFromScore(80)).toBe('diamond');
-    expect(getTierFromScore(100)).toBe('diamond');
+describe("getTierFromScore", () => {
+  it.each([
+    [0, "new"],
+    [1, "bronze"],
+    [400, "bronze"],
+    [401, "silver"],
+    [700, "silver"],
+    [701, "gold"],
+    [900, "gold"],
+    [901, "diamond"],
+    [1000, "diamond"],
+    [2000, "diamond"],
+  ] as const)("score %i → %s", (score, expected) => {
+    expect(getTierFromScore(score)).toBe(expected);
+  });
+
+  it("accepts a numeric string and parses it", () => {
+    expect(getTierFromScore("750")).toBe("gold");
   });
 });

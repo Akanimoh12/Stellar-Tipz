@@ -14,6 +14,7 @@ import { usePageMeta } from "@/hooks/usePageMeta";
 import { useTipNotifications } from "@/hooks/useTipNotifications";
 import { useWalletStore } from "@/store/walletStore";
 import { stroopToXlm } from "@/helpers/format";
+import TipQRCode from "@/features/profile/TipQRCode";
 import Skeleton from "@/components/ui/Skeleton";
 import DashboardStatsSkeleton from "./DashboardStatsSkeleton";
 import EarningsChart from "./EarningsChart";
@@ -24,7 +25,6 @@ import SettingsTab from "./SettingsTab";
 import TipsTab from "./TipsTab";
 import FavoritesList from "./FavoritesList";
 import { DashboardProvider } from "./DashboardContext";
-import TipQRCode from "@/features/profile/TipQRCode";
 
 const DashboardPage: React.FC = () => {
   usePageMeta({

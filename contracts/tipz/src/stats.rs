@@ -81,7 +81,7 @@ pub fn get_creator_stats(env: &Env, creator: &Address) -> Result<CreatorStats, C
     storage::extend_instance_ttl(env);
 
     let profile = storage::get_profile(env, creator);
-    let rank = crate::leaderboard::get_leaderboard_rank(env, creator);
+    let rank = crate::leaderboard::get_leaderboard_rank(env, crate::types::LeaderboardPeriod::AllTime, creator);
 
     Ok(CreatorStats {
         creator: creator.clone(),

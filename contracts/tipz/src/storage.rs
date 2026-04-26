@@ -86,6 +86,10 @@ pub enum DataKey {
     CreatorTip(Address, u32),
     /// Pending admin address (proposed but not yet accepted)
     PendingAdmin,
+    /// Pending two-step admin change proposal (full transition record).
+    PendingAdminChange,
+    /// Admin change history list (newest entries appended last).
+    AdminChangeHistory,
     /// Pending verification request by creator address
     VerificationRequest(Address),
     /// Subscription by (subscriber, creator)
@@ -297,35 +301,31 @@ pub fn clear_profile_deactivation(env: &Env, address: &Address) {
 // Admin change history
 // ──────────────────────────────────────────────────────────────────────────────
 
-pub fn get_admin_change_history_next_id(env: &Env) -> u32 {
+fn load_admin_change_history(env: &Env) -> soroban_sdk::Vec<crate::types::AdminChangeHistoryEntry> {
     env.storage()
         .instance()
-        .get(&DataKey::AdminChangeHistoryNextId)
-        .unwrap_or(0)
+        .get(&DataKey::AdminChangeHistory)
+        .unwrap_or(soroban_sdk::Vec::new(env))
 }
 
-fn set_admin_change_history_next_id(env: &Env, id: u32) {
-    env.storage()
-        .instance()
-        .set(&DataKey::AdminChangeHistoryNextId, &id);
+pub fn get_admin_change_history_next_id(env: &Env) -> u32 {
+    load_admin_change_history(env).len()
 }
 
 /// Append a completed admin change to history (sequential ids, newest has highest id).
 pub fn append_admin_change_history(env: &Env, entry: &crate::types::AdminChangeHistoryEntry) {
-    let id = get_admin_change_history_next_id(env);
+    let mut history = load_admin_change_history(env);
+    history.push_back(entry.clone());
     env.storage()
         .instance()
-        .set(&DataKey::AdminChangeHistoryItem(id), entry);
-    set_admin_change_history_next_id(env, id.saturating_add(1));
+        .set(&DataKey::AdminChangeHistory, &history);
 }
 
 pub fn get_admin_change_history_entry(
     env: &Env,
     id: u32,
 ) -> Option<crate::types::AdminChangeHistoryEntry> {
-    env.storage()
-        .instance()
-        .get(&DataKey::AdminChangeHistoryItem(id))
+    load_admin_change_history(env).get(id)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
