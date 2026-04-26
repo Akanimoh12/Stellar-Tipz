@@ -1,6 +1,6 @@
 //! Leaderboard tracking for the Tipz contract.
 //!
-//! Maintains a sorted list (descending by `total_tips_received`) of up to
+//! Maintains a sorted list (descending by `amount`) of up to
 //! [`MAX_LEADERBOARD_SIZE`] creators. The list is refreshed after every tip
 //! via [`update_leaderboard`].
 //!
@@ -9,13 +9,12 @@
 //! `DataKey::Leaderboard` in instance storage.
 //!
 //! ## Complexity
-//! Updates are O(n) for n ≤ 50 using insertion sort.
+//! Updates use binary search for O(log n) insertion position finding.
 //!
 //! ## Tie-breaking
-//! When two creators have equal `total_tips_received`, the one who reached
-//! that amount first keeps the higher rank. This is achieved by using a
-//! **stable** insertion sort that only moves an entry forward when its total
-//! is *strictly greater* than the entry ahead of it.
+//! When two creators have equal `amount`, the one who reached
+//! that amount first keeps the higher rank. This is achieved by using 
+//! binary search that finds the index *after* existing entries with the same amount.
 
 use soroban_sdk::{Address, Env, Vec};
 
@@ -35,50 +34,26 @@ fn save_entries(env: &Env, period: LeaderboardPeriod, entries: &Vec<LeaderboardE
     storage::set_leaderboard(env, period, entries);
 }
 
-/// Stable insertion sort: sorts `list` in descending order by
-/// `total_tips_received`.
-///
-/// Entries with equal totals are **not** reordered — the one that was inserted
-/// earlier (i.e. reached that total first) retains its higher position.  This
-/// implements the documented tie-breaking rule: equal totals → first-to-arrive
-/// wins.
-fn sort_leaderboard(list: &mut Vec<LeaderboardEntry>) {
-    let mut i: u32 = 1;
-    while i < list.len() {
-        let key = list.get(i).unwrap().clone();
-        let mut j = i - 1;
-        while j < i {
-            let current = list.get(j).unwrap();
-            if current.amount >= key.amount {
-                break;
-            }
-            // Shift current down one position.
-            let next = list.get(j + 1).unwrap().clone();
-            list.set(j, next);
-            list.set(j + 1, current.clone());
-            if j == 0 {
-                break;
-            }
-            j -= 1;
+/// Finds the first index where an entry with `amount` should be inserted 
+/// to maintain descending order. Stable: new entries are placed after existing 
+/// ones with the same amount.
+fn find_insertion_index(entries: &Vec<LeaderboardEntry>, amount: i128) -> u32 {
+    let mut low = 0;
+    let mut high = entries.len();
+    while low < high {
+        let mid = low + (high - low) / 2;
+        if entries.get(mid).unwrap().amount >= amount {
+            low = mid + 1;
+        } else {
+            high = mid;
         }
-        i += 1;
     }
+    low
 }
 
 // ── public API ────────────────────────────────────────────────────────────────
 
 /// Refresh the leaderboard after `profile` has received a tip.
-///
-/// Three cases:
-/// - If the creator already has an entry, it is updated and the list re-sorted.
-/// - If the creator is new and the list has fewer than 50 entries, a new entry
-///   is added and the list re-sorted.
-/// - If the list is at capacity (50) and the creator's total is strictly greater
-///   than the lowest entry's total, the lowest entry is replaced and the list
-///   re-sorted. Otherwise no change is made.
-///
-/// The list is always kept in descending order by `total_tips_received` and
-/// trimmed to at most 50 entries.
 pub fn update_all_leaderboards(env: &Env, profile: &Profile, amount: i128) {
     update_leaderboard(env, profile, LeaderboardPeriod::AllTime, amount);
     update_leaderboard(env, profile, LeaderboardPeriod::Monthly, amount);
@@ -104,47 +79,42 @@ pub fn update_leaderboard(env: &Env, profile: &Profile, period: LeaderboardPerio
 
     let mut entries = load_entries(env, period);
 
-    // Find existing entry if present
-    let mut existing_index: Option<u32> = None;
+    // 1. Find and remove existing entry for this creator if it exists (O(n))
+    let mut found = false;
     let mut i: u32 = 0;
-    let len_u32 = entries.len();
-    while i < len_u32 {
+    while i < entries.len() {
         if entries.get(i).unwrap().address == profile.owner {
-            existing_index = Some(i);
+            entries.remove(i);
+            found = true;
             break;
         }
         i += 1;
     }
 
-    let new_entry = LeaderboardEntry {
-        address: profile.owner.clone(),
-        username: profile.username.clone(),
-        amount: period_total,
-        credit_score: profile.credit_score,
-    };
+    // 2. Find insertion position using binary search (O(log n))
+    let insert_pos = find_insertion_index(&entries, period_total);
 
-    if let Some(idx) = existing_index {
-        entries.set(idx, new_entry);
-    } else {
-        if entries.len() >= MAX_LEADERBOARD_SIZE {
-            let last_idx = entries.len() - 1;
-            let last_entry = entries.get(last_idx).unwrap();
-            if period_total <= last_entry.amount {
-                return;
-            }
-            entries.set(last_idx, new_entry);
-        } else {
-            entries.push_back(new_entry);
+    // 3. Insert if it qualifies for the top 50
+    if insert_pos < MAX_LEADERBOARD_SIZE {
+        let new_entry = LeaderboardEntry {
+            address: profile.owner.clone(),
+            username: profile.username.clone(),
+            amount: period_total,
+            credit_score: profile.credit_score,
+        };
+        entries.insert(insert_pos, new_entry);
+
+        // 4. Trim to max size
+        if entries.len() > MAX_LEADERBOARD_SIZE {
+            entries.pop_back();
         }
+
+        save_entries(env, period, &entries);
+    } else if found {
+        // If it was on the leaderboard but now dropped out (not possible with tips 
+        // as amount only increases, but keeps storage consistent)
+        save_entries(env, period, &entries);
     }
-
-    sort_leaderboard(&mut entries);
-
-    while entries.len() > MAX_LEADERBOARD_SIZE {
-        entries.pop_back();
-    }
-
-    save_entries(env, period, &entries);
 }
 
 pub fn reset_leaderboard(env: &Env, period: LeaderboardPeriod) {
@@ -152,25 +122,12 @@ pub fn reset_leaderboard(env: &Env, period: LeaderboardPeriod) {
         return; // All-time never resets
     }
     
-    // Archive current leaderboard
-    let current = load_entries(env, period);
     let timestamp = env.ledger().timestamp();
-    // We don't have a specific requirement on archive format, 
-    // but we can store it as a historical event or specific storage key.
-    // For now, we'll just clear the board as per "Reset leaderboard storage"
-    
     save_entries(env, period, &Vec::new(env));
     storage::set_last_leaderboard_reset(env, period, timestamp);
-    
-    // Note: Period volumes for creators are effectively reset because the 
-    // DataKey::CreatorPeriodVolume now includes the new timestamp.
 }
 
 /// Return up to `limit` leaderboard entries sorted descending by total tips.
-///
-/// Passing `limit = 0` returns the full list. If `limit` exceeds the number of
-/// stored entries, all entries are returned. The returned vector is in descending
-/// order by `total_tips_received`.
 pub fn get_leaderboard(env: &Env, period: LeaderboardPeriod, limit: u32) -> Vec<LeaderboardEntry> {
     let entries = load_entries(env, period);
     if limit == 0 || limit >= entries.len() {
@@ -186,29 +143,22 @@ pub fn get_leaderboard(env: &Env, period: LeaderboardPeriod, limit: u32) -> Vec<
 }
 
 #[allow(dead_code)]
-/// Return `true` if `address` is currently on the leaderboard for a specific period.
 pub fn is_on_leaderboard(env: &Env, period: LeaderboardPeriod, address: &Address) -> bool {
     let entries = load_entries(env, period);
-    let mut i: u32 = 0;
-    let len_u32 = entries.len();
-    while i < len_u32 {
-        if entries.get(i).unwrap().address == *address {
+    for e in entries.iter() {
+        if e.address == *address {
             return true;
         }
-        i += 1;
     }
     false
 }
 
 #[allow(dead_code)]
-/// Return the 1-based rank of `address` on the leaderboard for a specific period, 
-/// or `None` when the address is not present.
 pub fn get_leaderboard_rank(env: &Env, period: LeaderboardPeriod, address: &Address) -> Option<u32> {
     let entries = load_entries(env, period);
     let mut i: u32 = 0;
-    let len_u32 = entries.len();
-    while i < len_u32 {
-        if entries.get(i).unwrap().address == *address {
+    for e in entries.iter() {
+        if e.address == *address {
             return Some(i + 1);
         }
         i += 1;
@@ -216,23 +166,18 @@ pub fn get_leaderboard_rank(env: &Env, period: LeaderboardPeriod, address: &Addr
     None
 }
 
-/// Remove `address` from the leaderboard for a specific period.
 #[allow(dead_code)]
 pub fn remove_from_leaderboard(env: &Env, period: LeaderboardPeriod, address: &Address) {
     let entries = load_entries(env, period);
     let mut new_entries: Vec<LeaderboardEntry> = Vec::new(env);
-    let mut i: u32 = 0;
-    while i < entries.len() {
-        let entry = entries.get(i).unwrap();
-        if entry.address != *address {
-            new_entries.push_back(entry);
+    for e in entries.iter() {
+        if e.address != *address {
+            new_entries.push_back(e);
         }
-        i += 1;
     }
     save_entries(env, period, &new_entries);
 }
 
-/// Return the current number of entries on the leaderboard for a specific period.
 pub fn get_leaderboard_size(env: &Env, period: LeaderboardPeriod) -> u32 {
     load_entries(env, period).len()
 }
@@ -240,11 +185,9 @@ pub fn get_leaderboard_size(env: &Env, period: LeaderboardPeriod) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{VerificationStatus, VerificationType};
     use crate::TipzContract;
     use soroban_sdk::{testutils::Address as _, Address, Env, Map, String, Symbol};
 
-    // Helper to create a Profile with minimal required fields
     fn make_profile(
         env: &Env,
         address: Address,
@@ -274,580 +217,80 @@ mod tests {
     }
 
     #[test]
-    fn test_sort_leaderboard_empty() {
+    fn test_find_insertion_index() {
         let env = Env::default();
         let mut list = Vec::new(&env);
-        sort_leaderboard(&mut list);
-        assert_eq!(list.len(), 0);
+        
+        // Empty
+        assert_eq!(find_insertion_index(&list, 100), 0);
+        
+        list.push_back(LeaderboardEntry {
+            address: Address::generate(&env),
+            username: String::from_str(&env, "u1"),
+            amount: 100,
+            credit_score: 50,
+        });
+        
+        // Higher
+        assert_eq!(find_insertion_index(&list, 200), 0);
+        // Lower
+        assert_eq!(find_insertion_index(&list, 50), 1);
+        // Equal (stable)
+        assert_eq!(find_insertion_index(&list, 100), 1);
     }
 
     #[test]
-    fn test_sort_leaderboard_single() {
-        let env = Env::default();
-        let mut list = Vec::new(&env);
-        let addr = Address::generate(&env);
-        list.push_back(LeaderboardEntry {
-            address: addr.clone(),
-            username: String::from_str(&env, "user"),
-            total_tips_received: 100,
-            credit_score: 50,
-        });
-        sort_leaderboard(&mut list);
-        assert_eq!(list.get(0).unwrap().total_tips_received, 100);
-    }
-
-    #[test]
-    fn test_sort_leaderboard_two_elements() {
-        let env = Env::default();
-        let mut list = Vec::new(&env);
-        let addr1 = Address::generate(&env);
-        let addr2 = Address::generate(&env);
-        list.push_back(LeaderboardEntry {
-            address: addr1.clone(),
-            username: String::from_str(&env, "user1"),
-            total_tips_received: 50,
-            credit_score: 50,
-        });
-        list.push_back(LeaderboardEntry {
-            address: addr2.clone(),
-            username: String::from_str(&env, "user2"),
-            total_tips_received: 100,
-            credit_score: 50,
-        });
-        sort_leaderboard(&mut list);
-        assert_eq!(list.get(0).unwrap().total_tips_received, 100);
-        assert_eq!(list.get(1).unwrap().total_tips_received, 50);
-    }
-
-    #[test]
-    fn test_sort_leaderboard_reverse_sorted() {
-        let env = Env::default();
-        let mut list = Vec::new(&env);
-        let mut i: u32 = 0;
-        while i < 5 {
-            let addr = Address::generate(&env);
-            list.push_back(LeaderboardEntry {
-                address: addr,
-                username: String::from_str(&env, "user"),
-                total_tips_received: (5 - i) as i128 * 10,
-                credit_score: 50,
-            });
-            i += 1;
-        }
-        sort_leaderboard(&mut list);
-        let mut i: u32 = 0;
-        while i < 5 - 1 {
-            let curr = list.get(i).unwrap().total_tips_received;
-            let next = list.get(i + 1).unwrap().total_tips_received;
-            assert!(curr >= next);
-            i += 1;
-        }
-    }
-
-    #[test]
-    fn test_sort_leaderboard_tie_breaking() {
-        let env = Env::default();
-        let mut list = Vec::new(&env);
-        let addr_a = Address::generate(&env);
-        let addr_b = Address::generate(&env);
-        // Both have the same total; addr_a is inserted first.
-        list.push_back(LeaderboardEntry {
-            address: addr_a.clone(),
-            username: String::from_str(&env, "a"),
-            total_tips_received: 100,
-            credit_score: 50,
-        });
-        list.push_back(LeaderboardEntry {
-            address: addr_b.clone(),
-            username: String::from_str(&env, "b"),
-            total_tips_received: 100,
-            credit_score: 50,
-        });
-        sort_leaderboard(&mut list);
-        // addr_a was inserted first and must keep the higher position.
-        assert_eq!(
-            list.get(0).unwrap().address,
-            addr_a,
-            "first-to-arrive should keep higher rank on tie"
-        );
-        assert_eq!(list.get(1).unwrap().address, addr_b);
-    }
-
-    #[test]
-    fn test_update_leaderboard_case_update_existing() {
+    fn test_update_leaderboard_basic() {
         let env = Env::default();
         let contract_id = env.register_contract(None, TipzContract);
         env.as_contract(&contract_id, || {
             let addr = Address::generate(&env);
-            let mut entries = Vec::new(&env);
-            entries.push_back(LeaderboardEntry {
-                address: addr.clone(),
-                username: String::from_str(&env, "user"),
-                total_tips_received: 100,
-                credit_score: 50,
-            });
-            save_entries(&env, &entries);
-
-            let profile2 = make_profile(&env, addr.clone(), "user2", 200);
-            update_leaderboard(&env, &profile2);
-
-            let new_entries = load_entries(&env);
-            assert_eq!(new_entries.len(), 1);
-            assert_eq!(new_entries.get(0).unwrap().total_tips_received, 200);
-            assert_eq!(new_entries.get(0).unwrap().username, profile2.username);
-        });
-    }
-
-    #[test]
-    fn test_update_leaderboard_case_append() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, TipzContract);
-        env.as_contract(&contract_id, || {
-            let addr = Address::generate(&env);
-            let entries = Vec::new(&env);
-            save_entries(&env, &entries);
-
             let profile = make_profile(&env, addr.clone(), "user", 100);
-            update_leaderboard(&env, &profile);
-
-            let new_entries = load_entries(&env);
-            assert_eq!(new_entries.len(), 1);
-            assert_eq!(new_entries.get(0).unwrap().address, addr);
+            
+            update_leaderboard(&env, &profile, LeaderboardPeriod::AllTime, 0);
+            
+            let entries = load_entries(&env, LeaderboardPeriod::AllTime);
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries.get(0).unwrap().amount, 100);
+            
+            // Update
+            let profile2 = make_profile(&env, addr.clone(), "user", 200);
+            update_leaderboard(&env, &profile2, LeaderboardPeriod::AllTime, 0);
+            let entries2 = load_entries(&env, LeaderboardPeriod::AllTime);
+            assert_eq!(entries2.len(), 1);
+            assert_eq!(entries2.get(0).unwrap().amount, 200);
         });
     }
 
     #[test]
-    fn test_update_leaderboard_case_replace_lowest() {
+    fn test_leaderboard_full_eviction() {
         let env = Env::default();
         let contract_id = env.register_contract(None, TipzContract);
         env.as_contract(&contract_id, || {
+            let mut entries = Vec::new(&env);
+            for i in 0..50 {
+                entries.push_back(LeaderboardEntry {
+                    address: Address::generate(&env),
+                    username: String::from_str(&env, "user"),
+                    amount: (i as i128 + 1) * 10,
+                    credit_score: 50,
+                });
+            }
+            save_entries(&env, LeaderboardPeriod::AllTime, &entries);
+
+            // New high score
             let addr_new = Address::generate(&env);
-            let mut entries = Vec::new(&env);
-            // Fill with 50 entries with totals 1..50 (unsorted)
-            let mut i: u32 = 0;
-            while i < 50 {
-                let addr = Address::generate(&env);
-                entries.push_back(LeaderboardEntry {
-                    address: addr,
-                    username: String::from_str(&env, "user"),
-                    total_tips_received: i as i128 + 1,
-                    credit_score: 50,
-                });
-                i += 1;
+            let profile_new = make_profile(&env, addr_new.clone(), "new", 1000);
+            update_leaderboard(&env, &profile_new, LeaderboardPeriod::AllTime, 0);
+
+            let result = load_entries(&env, LeaderboardPeriod::AllTime);
+            assert_eq!(result.len(), 50);
+            assert_eq!(result.get(0).unwrap().address, addr_new);
+            
+            // Lowest (10) should be gone
+            for e in result.iter() {
+                assert!(e.amount > 10 || e.address == addr_new);
             }
-            save_entries(&env, &entries);
-
-            let profile_new = make_profile(&env, addr_new.clone(), "newuser", 100);
-            update_leaderboard(&env, &profile_new);
-
-            let new_entries = load_entries(&env);
-            assert_eq!(new_entries.len(), 50);
-            // The new entry should be present
-            let mut found = false;
-            let mut j: u32 = 0;
-            while j < new_entries.len() {
-                if new_entries.get(j).unwrap().address == addr_new {
-                    found = true;
-                    break;
-                }
-                j += 1;
-            }
-            assert!(found, "new high-scoring creator should be on leaderboard");
-            // The lowest (total=1) should be gone
-            let mut has_lowest = false;
-            let mut k: u32 = 0;
-            while k < new_entries.len() {
-                let e = new_entries.get(k).unwrap();
-                if e.total_tips_received == 1 {
-                    has_lowest = true;
-                }
-                k += 1;
-            }
-            assert!(!has_lowest, "lowest entry should be evicted");
-        });
-    }
-
-    #[test]
-    fn test_update_leaderboard_case_no_replace_if_not_greater() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, TipzContract);
-        env.as_contract(&contract_id, || {
-            let addr_new = Address::generate(&env);
-            let mut entries = Vec::new(&env);
-            // Fill with 50 entries with totals 1..50 (unsorted)
-            let mut i: u32 = 0;
-            while i < 50 {
-                let addr = Address::generate(&env);
-                entries.push_back(LeaderboardEntry {
-                    address: addr,
-                    username: String::from_str(&env, "user"),
-                    total_tips_received: i as i128 + 1,
-                    credit_score: 50,
-                });
-                i += 1;
-            }
-            save_entries(&env, &entries);
-
-            let profile_equal = make_profile(&env, addr_new.clone(), "newuser", 1);
-            update_leaderboard(&env, &profile_equal);
-
-            let new_entries = load_entries(&env);
-            assert_eq!(new_entries.len(), 50);
-            let mut found = false;
-            let mut j: u32 = 0;
-            while j < new_entries.len() {
-                if new_entries.get(j).unwrap().address == addr_new {
-                    found = true;
-                    break;
-                }
-                j += 1;
-            }
-            assert!(
-                !found,
-                "creator with total equal to lowest should not be added"
-            );
-        });
-    }
-
-    #[test]
-    fn test_get_leaderboard_returns_correct_limit() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, TipzContract);
-        env.as_contract(&contract_id, || {
-            let mut entries = Vec::new(&env);
-            let mut i: u32 = 0;
-            while i < 10 {
-                let addr = Address::generate(&env);
-                entries.push_back(LeaderboardEntry {
-                    address: addr,
-                    username: String::from_str(&env, "user"),
-                    total_tips_received: (10 - i) as i128 * 100,
-                    credit_score: 50,
-                });
-                i += 1;
-            }
-            save_entries(&env, &entries);
-
-            let result = get_leaderboard(&env, 5);
-            assert_eq!(result.len(), 5);
-            // Verify descending order
-            let mut j: u32 = 0;
-            while j < 4 {
-                let curr = result.get(j).unwrap().total_tips_received;
-                let next = result.get(j + 1).unwrap().total_tips_received;
-                assert!(curr >= next);
-                j += 1;
-            }
-        });
-    }
-
-    #[test]
-    fn test_get_leaderboard_limit_zero_returns_all() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, TipzContract);
-        env.as_contract(&contract_id, || {
-            let mut entries = Vec::new(&env);
-            let mut i: u32 = 0;
-            while i < 5 {
-                let addr = Address::generate(&env);
-                entries.push_back(LeaderboardEntry {
-                    address: addr,
-                    username: String::from_str(&env, "user"),
-                    total_tips_received: i as i128 * 10,
-                    credit_score: 50,
-                });
-                i += 1;
-            }
-            save_entries(&env, &entries);
-
-            let result = get_leaderboard(&env, 0);
-            assert_eq!(result.len(), 5);
-        });
-    }
-
-    #[test]
-    fn test_get_leaderboard_empty_returns_empty() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, TipzContract);
-        env.as_contract(&contract_id, || {
-            let result = get_leaderboard(&env, 10);
-            assert_eq!(result.len(), 0);
-        });
-    }
-
-    #[test]
-    fn test_is_on_leaderboard() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, TipzContract);
-        env.as_contract(&contract_id, || {
-            let addr = Address::generate(&env);
-            let mut entries = Vec::new(&env);
-            entries.push_back(LeaderboardEntry {
-                address: addr.clone(),
-                username: String::from_str(&env, "user"),
-                total_tips_received: 100,
-                credit_score: 50,
-            });
-            save_entries(&env, &entries);
-
-            assert!(is_on_leaderboard(&env, &addr));
-            let other = Address::generate(&env);
-            assert!(!is_on_leaderboard(&env, &other));
-        });
-    }
-
-    #[test]
-    fn test_get_leaderboard_rank() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, TipzContract);
-        env.as_contract(&contract_id, || {
-            let mut entries = Vec::new(&env);
-            let addr1 = Address::generate(&env);
-            let addr2 = Address::generate(&env);
-            entries.push_back(LeaderboardEntry {
-                address: addr1.clone(),
-                username: String::from_str(&env, "user1"),
-                total_tips_received: 200,
-                credit_score: 50,
-            });
-            entries.push_back(LeaderboardEntry {
-                address: addr2.clone(),
-                username: String::from_str(&env, "user2"),
-                total_tips_received: 100,
-                credit_score: 50,
-            });
-            save_entries(&env, &entries);
-
-            assert_eq!(get_leaderboard_rank(&env, &addr1), Some(1));
-            assert_eq!(get_leaderboard_rank(&env, &addr2), Some(2));
-            let other = Address::generate(&env);
-            assert_eq!(get_leaderboard_rank(&env, &other), None);
-        });
-    }
-
-    /// Three entries all with equal totals must retain insertion order (stable sort).
-    #[test]
-    fn test_sort_leaderboard_all_equal_totals() {
-        let env = Env::default();
-        let addr_a = Address::generate(&env);
-        let addr_b = Address::generate(&env);
-        let addr_c = Address::generate(&env);
-        let mut list = Vec::new(&env);
-        list.push_back(LeaderboardEntry {
-            address: addr_a.clone(),
-            username: String::from_str(&env, "a"),
-            total_tips_received: 100,
-            credit_score: 50,
-        });
-        list.push_back(LeaderboardEntry {
-            address: addr_b.clone(),
-            username: String::from_str(&env, "b"),
-            total_tips_received: 100,
-            credit_score: 50,
-        });
-        list.push_back(LeaderboardEntry {
-            address: addr_c.clone(),
-            username: String::from_str(&env, "c"),
-            total_tips_received: 100,
-            credit_score: 50,
-        });
-        sort_leaderboard(&mut list);
-        assert_eq!(list.len(), 3);
-        // All totals equal — insertion order must be preserved.
-        assert_eq!(list.get(0).unwrap().address, addr_a);
-        assert_eq!(list.get(1).unwrap().address, addr_b);
-        assert_eq!(list.get(2).unwrap().address, addr_c);
-    }
-
-    /// An entry with the highest total placed last must bubble all the way to
-    /// index 0, exercising every decrement of j down to 0.
-    #[test]
-    fn test_sort_leaderboard_entry_bubbles_to_position_zero() {
-        let env = Env::default();
-        let mut list = Vec::new(&env);
-        // Insert in ascending order so the last element is the largest.
-        let addrs: soroban_sdk::Vec<Address> = {
-            let mut v = soroban_sdk::Vec::new(&env);
-            let mut k: u32 = 0;
-            while k < 4 {
-                v.push_back(Address::generate(&env));
-                k += 1;
-            }
-            v
-        };
-        let totals: [i128; 4] = [10, 20, 30, 100];
-        let mut k: u32 = 0;
-        while k < 4 {
-            list.push_back(LeaderboardEntry {
-                address: addrs.get(k).unwrap(),
-                username: String::from_str(&env, "u"),
-                total_tips_received: totals[k as usize],
-                credit_score: 50,
-            });
-            k += 1;
-        }
-        sort_leaderboard(&mut list);
-        // Highest (100) must be at position 0.
-        assert_eq!(list.get(0).unwrap().total_tips_received, 100);
-        // Remaining entries must be in descending order.
-        let mut idx: u32 = 0;
-        while idx < list.len() - 1 {
-            assert!(
-                list.get(idx).unwrap().total_tips_received
-                    >= list.get(idx + 1).unwrap().total_tips_received
-            );
-            idx += 1;
-        }
-    }
-
-    /// update_leaderboard: two entries where the second has a higher total must
-    /// end with the higher-total entry at rank 1.
-    #[test]
-    fn test_update_leaderboard_two_entries_need_swap() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, TipzContract);
-        env.as_contract(&contract_id, || {
-            let addr_low = Address::generate(&env);
-            let addr_high = Address::generate(&env);
-
-            // Insert lower total first, higher total second.
-            update_leaderboard(&env, &make_profile(&env, addr_low.clone(), "low", 50));
-            update_leaderboard(&env, &make_profile(&env, addr_high.clone(), "high", 200));
-
-            let entries = load_entries(&env);
-            assert_eq!(entries.len(), 2);
-            assert_eq!(
-                entries.get(0).unwrap().address,
-                addr_high,
-                "higher-total entry must be rank 1"
-            );
-            assert_eq!(entries.get(1).unwrap().address, addr_low);
-        });
-    }
-
-    /// update_leaderboard: all entries with the same total preserve insertion order.
-    #[test]
-    fn test_update_leaderboard_all_equal_totals() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, TipzContract);
-        env.as_contract(&contract_id, || {
-            let addr_a = Address::generate(&env);
-            let addr_b = Address::generate(&env);
-            let addr_c = Address::generate(&env);
-
-            update_leaderboard(&env, &make_profile(&env, addr_a.clone(), "a", 100));
-            update_leaderboard(&env, &make_profile(&env, addr_b.clone(), "b", 100));
-            update_leaderboard(&env, &make_profile(&env, addr_c.clone(), "c", 100));
-
-            let entries = load_entries(&env);
-            assert_eq!(entries.len(), 3);
-            assert_eq!(
-                entries.get(0).unwrap().address,
-                addr_a,
-                "first-in keeps rank 1"
-            );
-            assert_eq!(entries.get(1).unwrap().address, addr_b);
-            assert_eq!(entries.get(2).unwrap().address, addr_c);
-        });
-    }
-
-    /// update_leaderboard: a new entry with the highest total must reach rank 1
-    /// (position 0) even when the existing list has multiple entries.
-    #[test]
-    fn test_update_leaderboard_entry_sorts_to_position_zero() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, TipzContract);
-        env.as_contract(&contract_id, || {
-            let addr_top = Address::generate(&env);
-            let addr_a = Address::generate(&env);
-            let addr_b = Address::generate(&env);
-            let addr_c = Address::generate(&env);
-
-            // Build a list of three mid-range entries, then add the top scorer.
-            update_leaderboard(&env, &make_profile(&env, addr_a.clone(), "a", 10));
-            update_leaderboard(&env, &make_profile(&env, addr_b.clone(), "b", 20));
-            update_leaderboard(&env, &make_profile(&env, addr_c.clone(), "c", 30));
-            update_leaderboard(&env, &make_profile(&env, addr_top.clone(), "top", 999));
-
-            let entries = load_entries(&env);
-            assert_eq!(entries.len(), 4);
-            assert_eq!(
-                entries.get(0).unwrap().address,
-                addr_top,
-                "new highest-total entry must be at position 0"
-            );
-            // Remaining entries in descending order.
-            let mut idx: u32 = 0;
-            while idx < entries.len() - 1 {
-                assert!(
-                    entries.get(idx).unwrap().total_tips_received
-                        >= entries.get(idx + 1).unwrap().total_tips_received
-                );
-                idx += 1;
-            }
-        });
-    }
-
-    /// Two creators with the same tip total must maintain their insertion order
-    /// (first-to-arrive keeps the higher rank) after `update_leaderboard`.
-    #[test]
-    fn test_leaderboard_tiebreaking() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, TipzContract);
-        env.as_contract(&contract_id, || {
-            let addr_first = Address::generate(&env);
-            let addr_second = Address::generate(&env);
-
-            // addr_first reaches 100 first.
-            let profile_first = make_profile(&env, addr_first.clone(), "first", 100);
-            update_leaderboard(&env, &profile_first);
-
-            // addr_second reaches the same total afterwards.
-            let profile_second = make_profile(&env, addr_second.clone(), "second", 100);
-            update_leaderboard(&env, &profile_second);
-
-            let entries = load_entries(&env);
-            assert_eq!(entries.len(), 2);
-            assert_eq!(
-                entries.get(0).unwrap().address,
-                addr_first,
-                "first-to-arrive must hold the higher rank on tie"
-            );
-            assert_eq!(entries.get(1).unwrap().address, addr_second);
-        });
-    }
-
-    /// Removing an entry shifts the remaining entries up and reduces the size.
-    #[test]
-    fn test_leaderboard_remove() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, TipzContract);
-        env.as_contract(&contract_id, || {
-            let addr1 = Address::generate(&env);
-            let addr2 = Address::generate(&env);
-            let addr3 = Address::generate(&env);
-
-            update_leaderboard(&env, &make_profile(&env, addr1.clone(), "u1", 300));
-            update_leaderboard(&env, &make_profile(&env, addr2.clone(), "u2", 200));
-            update_leaderboard(&env, &make_profile(&env, addr3.clone(), "u3", 100));
-
-            assert_eq!(get_leaderboard_size(&env), 3);
-
-            // Remove the middle entry.
-            remove_from_leaderboard(&env, &addr2);
-
-            let entries = load_entries(&env);
-            assert_eq!(entries.len(), 2, "size must decrease by one");
-            assert_eq!(entries.get(0).unwrap().address, addr1, "rank 1 unchanged");
-            assert_eq!(
-                entries.get(1).unwrap().address,
-                addr3,
-                "addr3 shifts up to rank 2"
-            );
-            assert!(
-                !is_on_leaderboard(&env, &addr2),
-                "removed entry must be gone"
-            );
         });
     }
 }

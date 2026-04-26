@@ -138,7 +138,7 @@ fn test_leaderboard_single_creator() {
     let board = client.get_leaderboard(&50);
     assert_eq!(board.len(), 1);
     assert_eq!(board.get(0).unwrap().address, creator);
-    assert_eq!(board.get(0).unwrap().total_tips_received, amount);
+    assert_eq!(board.get(0).unwrap().amount, amount);
     assert_eq!(
         board.get(0).unwrap().username,
         String::from_str(&env, "alice")
@@ -182,8 +182,8 @@ fn test_leaderboard_ordering() {
     assert_eq!(board.get(2).unwrap().address, bob, "bob should be rank 3");
 
     // Verify the descending order invariant holds across the full list.
-    assert!(board.get(0).unwrap().total_tips_received >= board.get(1).unwrap().total_tips_received);
-    assert!(board.get(1).unwrap().total_tips_received >= board.get(2).unwrap().total_tips_received);
+    assert!(board.get(0).unwrap().amount >= board.get(1).unwrap().amount);
+    assert!(board.get(1).unwrap().amount >= board.get(2).unwrap().amount);
 }
 
 /// When 51 creators have received tips only the top 50 must be retained; the
@@ -379,8 +379,8 @@ fn test_insert_at_position_zero() {
         "carol must be rank 1"
     );
     // Invariant: board is in descending order.
-    assert!(board.get(0).unwrap().total_tips_received >= board.get(1).unwrap().total_tips_received);
-    assert!(board.get(1).unwrap().total_tips_received >= board.get(2).unwrap().total_tips_received);
+    assert!(board.get(0).unwrap().amount >= board.get(1).unwrap().amount);
+    assert!(board.get(1).unwrap().amount >= board.get(2).unwrap().amount);
 }
 
 /// When the leaderboard has exactly one entry and a second creator is added,
@@ -453,8 +453,76 @@ fn test_no_duplicates_after_update() {
     assert_eq!(board.get(0).unwrap().address, alice);
     // Cumulative total: 10 + 20 + 30 = 60 XLM in stroops.
     assert_eq!(
-        board.get(0).unwrap().total_tips_received,
+        board.get(0).unwrap().amount,
         60_000_000,
         "total must reflect all three tips"
     );
+}
+
+#[test]
+fn test_leaderboard_insert_performance() {
+    let (env, client, contract_id, tipper, _) = setup();
+    let msg = String::from_str(&env, "");
+
+    // Fill leaderboard to 50 entries
+    let mut addresses = soroban_sdk::Vec::new(&env);
+    for i in 0..MAX_LEADERBOARD_SIZE {
+        let addr = Address::generate(&env);
+        addresses.push_back(addr.clone());
+        insert_profile(&env, &contract_id, &addr, &format!("user{}", i));
+        // Amounts: 100, 99, 98, ..., 51
+        let amount = (100 - i) as i128 * 1_000_000;
+        client.send_tip(&tipper, &addr, &amount, &msg, &false);
+    }
+
+    // Measure gas for 51st insertion (should displace last)
+    let new_creator = Address::generate(&env);
+    insert_profile(&env, &contract_id, &new_creator, "new_king");
+    
+    env.budget().reset_unlimited();
+    // Huge amount to become #1 and displace the last
+    client.send_tip(&tipper, &new_creator, &(200 * 1_000_000), &msg, &false);
+    
+    let cpu = env.budget().cpu_instruction_cost();
+    let mem = env.budget().memory_bytes_cost();
+    
+    println!("Full leaderboard insert (displace): {} CPU, {} MEM", cpu, mem);
+    
+    // O(log n) search and efficient insertion should stay well within limits
+    assert!(cpu < 5_000_000, "CPU cost too high: {}", cpu);
+    
+    let board = client.get_leaderboard(&50);
+    assert_eq!(board.get(0).unwrap().address, new_creator);
+    assert_eq!(board.len(), 50);
+}
+
+#[test]
+fn test_leaderboard_worst_case() {
+    let (env, client, contract_id, tipper, _) = setup();
+    let msg = String::from_str(&env, "");
+
+    // Fill leaderboard to 50 entries
+    for i in 0..MAX_LEADERBOARD_SIZE {
+        let addr = Address::generate(&env);
+        insert_profile(&env, &contract_id, &addr, &format!("user{}", i));
+        // Decreasing amounts: 500, 490, ..., 10
+        let amount = (500 - (i as i128 * 10)) * 1_000_000;
+        client.send_tip(&tipper, &addr, &amount, &msg, &false);
+    }
+
+    // Insert at position 0 (new #1) with full board
+    // This requires shifting all 50 entries
+    let new_king = Address::generate(&env);
+    insert_profile(&env, &contract_id, &new_king, "the_king");
+    
+    env.budget().reset_unlimited();
+    client.send_tip(&tipper, &new_king, &(1000 * 1_000_000), &msg, &false);
+    
+    let cpu = env.budget().cpu_instruction_cost();
+    println!("Worst-case leaderboard insert (new #1): {} CPU", cpu);
+    
+    assert!(cpu < 6_000_000); // Shifting 50 entries is O(n) but binary search is O(log n)
+    
+    let board = client.get_leaderboard(&50);
+    assert_eq!(board.get(0).unwrap().address, new_king);
 }
