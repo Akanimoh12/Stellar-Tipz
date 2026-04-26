@@ -595,11 +595,6 @@ pub fn reset_creator_tip_index(env: &Env, creator: &Address) {
     }
 }
 
-    if env.storage().temporary().has(&count_key) {
-        env.storage().temporary().remove(&count_key);
-    }
-}
-
 /// Remove all per-tipper tip index entries from temporary storage.
 ///
 /// Called during `deregister_profile` to prevent stale `TipperTipCount` from
