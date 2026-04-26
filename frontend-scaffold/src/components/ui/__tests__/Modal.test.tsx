@@ -1,7 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import Modal from "../Modal";
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import Modal from '../Modal';
 
 describe("Modal", () => {
   it("renders nothing when isOpen is false", () => {
@@ -19,7 +19,9 @@ describe("Modal", () => {
         <p data-testid="modal-body">Content</p>
       </Modal>,
     );
-    expect(screen.getByTestId("modal-body")).toBeInTheDocument();
+    expect(screen.getByText('Test Modal')).toBeInTheDocument();
+    expect(screen.getByTestId('modal-content')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
   it("renders the title and a close button when title is provided", () => {
@@ -64,14 +66,104 @@ describe("Modal", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("uses dialog ARIA semantics with aria-modal=true", () => {
+  it('traps focus within modal', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <Modal isOpen={true} onClose={() => {}} title="Focus Test">
+        <input aria-label="Name" />
+        <button>OK</button>
+      </Modal>
+    );
+
+    const textbox = screen.getByRole('textbox', { name: 'Name' });
+    const button = screen.getByRole('button', { name: 'OK' });
+
+    expect(textbox).toHaveFocus();
+
+    await user.tab();
+    expect(button).toHaveFocus();
+
+    await user.tab();
+    expect(textbox).toHaveFocus();
+
+    await user.tab({ shift: true });
+    expect(button).toHaveFocus();
+  });
+
+  it('prevents body scroll when open', () => {
+    render(
+      <Modal isOpen={true} onClose={() => {}} title="Body lock test">
+        <div>Modal Content</div>
+      </Modal>
+    );
+
+    expect(document.body).toHaveStyle('overflow: hidden');
+  });
+
+  it('restores focus to trigger element on close', () => {
+    const TriggerHarness = ({ isOpen }: { isOpen: boolean }) => (
+      <>
+        <button>Open modal</button>
+        <Modal isOpen={isOpen} onClose={() => {}} title="Focus Restore">
+          <button>Confirm</button>
+        </Modal>
+      </>
+    );
+
+    const { rerender } = render(<TriggerHarness isOpen={false} />);
+    const trigger = screen.getByRole('button', { name: 'Open modal' });
+    trigger.focus();
+    expect(trigger).toHaveFocus();
+
+    rerender(<TriggerHarness isOpen={true} />);
+    expect(screen.getByRole('button', { name: 'Confirm' })).toHaveFocus();
+
+    rerender(<TriggerHarness isOpen={false} />);
+    expect(trigger).toHaveFocus();
+  });
+
+  it('has correct ARIA attributes and supports labels/description ids', () => {
+    render(
+      <Modal
+        isOpen={true}
+        onClose={() => {}}
+        title="Test Modal"
+        ariaDescribedBy="modal-description"
+      >
+        <p id="modal-description">Content</p>
+      </Modal>
+    );
+
+    const dialog = screen.getByRole('dialog');
+    const heading = screen.getByRole('heading', { name: 'Test Modal' });
+
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAttribute('aria-labelledby', heading.id);
+    expect(dialog).toHaveAttribute('aria-describedby', 'modal-description');
+  });
+
+  it('does not close on backdrop click when closeOnBackdropClick is false', () => {
+    const handleClose = vi.fn();
+    render(
+      <Modal isOpen={true} onClose={handleClose} title="Test Modal" closeOnBackdropClick={false}>
+        <div>Modal Content</div>
+      </Modal>
+    );
+
+    const backdrop = screen.getByRole('presentation');
+    fireEvent.click(backdrop);
+
+    expect(handleClose).not.toHaveBeenCalled();
+  });
+
+  it('renders without a title', () => {
     render(
       <Modal isOpen onClose={() => {}} title="Confirm">
         <p>x</p>
       </Modal>,
     );
-    const dialog = screen.getByRole("dialog");
-    expect(dialog).toHaveAttribute("aria-modal", "true");
-    expect(dialog).toHaveAttribute("aria-label", "Confirm");
+    expect(screen.queryByText('Test Modal')).toBeNull();
+    expect(screen.getByTestId('modal-content')).toBeInTheDocument();
   });
 });
