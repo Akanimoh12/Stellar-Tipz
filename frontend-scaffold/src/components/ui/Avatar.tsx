@@ -8,7 +8,6 @@ interface AvatarProps {
   size?: AvatarSize;
   address?: string;
   fallback?: string;
-  className?: string;
 }
 
 const sizeClasses: Record<AvatarSize, string> = {
@@ -62,7 +61,6 @@ const Avatar: React.FC<AvatarProps> = ({
   size = 'md',
   address,
   fallback,
-  className = '',
 }) => {
   const [imageError, setImageError] = useState(false);
   
@@ -79,16 +77,21 @@ const Avatar: React.FC<AvatarProps> = ({
 
   return (
     <div
-      className={`${sizeClasses[size]} border-2 border-black overflow-hidden flex items-center justify-center font-bold text-white ${className}`}
+      className={`${sizeClasses[size]} border-2 border-black overflow-hidden flex items-center justify-center font-bold text-white`}
       title={alt}
     >
-      {showImage ? (
-        <img
-          src={src}
-          alt={alt}
-          className="w-full h-full object-cover"
-          onError={() => setImageError(true)}
-        />
+    {showImage ? (
+        <picture>
+          <source type="image/webp" srcSet={src.replace(/\.(png|jpe?g)$/i, '.webp')} />
+          <img
+            src={src}
+            alt={alt}
+            className="w-full h-full object-cover"
+            loading="lazy"
+            decoding="async"
+            onError={() => setImageError(true)}
+          />
+        </picture>
       ) : showFallback ? (
         <div className={`w-full h-full ${bgColorClass} flex items-center justify-center`}>
           {getInitials(fallback)}

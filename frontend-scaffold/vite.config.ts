@@ -1,12 +1,11 @@
-/// <reference types="vitest" />
-import { defineConfig } from "vitest/config";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tsconfigPaths from "vite-tsconfig-paths";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
+import viteImagemin from "vite-plugin-imagemin";
 import path from "path";
 import { createHash } from "crypto";
 import fs from "fs";
-import { visualizer } from "rollup-plugin-visualizer";
 
 // Plugin to generate and log SRI hashes for built assets
 function sriPlugin() {
@@ -15,29 +14,16 @@ function sriPlugin() {
     apply: "build" as const,
     async writeBundle(options: any) {
       const outDir = options.dir || "build";
-      const getAllFiles = (dirPath: string, arrayOfFiles: string[] = []): string[] => {
-        const files = fs.readdirSync(dirPath);
+      const assets = fs.readdirSync(outDir, { recursive: true });
 
-        files.forEach((file) => {
-          const fullPath = path.join(dirPath, file);
-          if (fs.statSync(fullPath).isDirectory()) {
-            arrayOfFiles = getAllFiles(fullPath, arrayOfFiles);
-          } else {
-            arrayOfFiles.push(fullPath);
-          }
-        });
-
-        return arrayOfFiles;
-      };
-
-      const assets = getAllFiles(outDir);
-
-      assets.forEach((filePath: string) => {
-        const file = path.relative(outDir, filePath);
-        const content = fs.readFileSync(filePath);
-        const hash = createHash("sha384").update(content).digest("base64");
-        const integrity = `sha384-${hash}`;
-        console.log(`SRI for ${file}: ${integrity}`);
+      assets.forEach((file: string) => {
+        const filePath = path.join(outDir, file as string);
+        if (fs.statSync(filePath).isFile()) {
+          const content = fs.readFileSync(filePath);
+          const hash = createHash("sha384").update(content).digest("base64");
+          const integrity = `sha384-${hash}`;
+          console.log(`SRI for ${file}: ${integrity}`);
+        }
       });
     },
   };
@@ -52,9 +38,17 @@ export default defineConfig({
       globals: { Buffer: true },
     }),
     sriPlugin(),
-    visualizer({
-      filename: "bundle-analysis.html",
-      open: false,
+    viteImagemin({
+      optipng: { optimizationLevel: 7 },
+      mozjpeg: { quality: 80 },
+      webp: { quality: 80 },
+      svgo: {
+        plugins: [
+          { name: "removeViewBox", active: false },
+          { name: "removeEmptyAttrs", active: true },
+          { name: "removeComments", active: true },
+        ],
+      },
     }),
   ],
   resolve: {
@@ -69,15 +63,6 @@ export default defineConfig({
   build: {
     outDir: "build",
     sourcemap: true,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-stellar': ['@stellar/stellar-sdk', '@creit.tech/stellar-wallets-kit', '@stellar/freighter-api'],
-          'vendor-framer': ['framer-motion'],
-        }
-      }
-    }
   },
   css: {
     preprocessorOptions: {

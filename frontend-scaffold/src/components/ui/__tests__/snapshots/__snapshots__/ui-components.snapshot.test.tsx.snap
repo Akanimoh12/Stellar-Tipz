@@ -1,0 +1,1698 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Badge snapshots > bronze tier 1`] = `
+<div>
+  <div
+    class="relative inline-block"
+  >
+    <span
+      class="inline-flex items-center gap-1 border-2 px-3 py-1 text-sm font-bold uppercase transition-all duration-200 hover:scale-105 bg-orange-600 text-white border-orange-800 "
+      style="box-shadow: 2px 2px 0px 0px rgba(0,0,0,0.3);"
+    >
+      <span>
+        🥉
+      </span>
+      <span>
+        Bronze
+      </span>
+    </span>
+  </div>
+</div>
+`;
+
+exports[`Badge snapshots > diamond tier 1`] = `
+<div>
+  <div
+    class="relative inline-block"
+  >
+    <span
+      class="inline-flex items-center gap-1 border-2 px-3 py-1 text-sm font-bold uppercase transition-all duration-200 hover:scale-105 bg-blue-200 text-black border-blue-400 "
+      style="box-shadow: 2px 2px 0px 0px rgba(0,0,0,0.3);"
+    >
+      <span>
+        💎
+      </span>
+      <span>
+        Diamond
+      </span>
+    </span>
+  </div>
+</div>
+`;
+
+exports[`Badge snapshots > diamond tier with custom className 1`] = `
+<div>
+  <div
+    class="relative inline-block"
+  >
+    <span
+      class="inline-flex items-center gap-1 border-2 px-3 py-1 text-sm font-bold uppercase transition-all duration-200 hover:scale-105 bg-blue-200 text-black border-blue-400 text-xs"
+      style="box-shadow: 2px 2px 0px 0px rgba(0,0,0,0.3);"
+    >
+      <span>
+        💎
+      </span>
+      <span>
+        Diamond
+      </span>
+    </span>
+  </div>
+</div>
+`;
+
+exports[`Badge snapshots > gold tier 1`] = `
+<div>
+  <div
+    class="relative inline-block"
+  >
+    <span
+      class="inline-flex items-center gap-1 border-2 px-3 py-1 text-sm font-bold uppercase transition-all duration-200 hover:scale-105 bg-yellow-400 text-black border-yellow-600 "
+      style="box-shadow: 2px 2px 0px 0px rgba(0,0,0,0.3);"
+    >
+      <span>
+        🥇
+      </span>
+      <span>
+        Gold
+      </span>
+    </span>
+  </div>
+</div>
+`;
+
+exports[`Badge snapshots > gold tier with score (tooltip trigger present) 1`] = `
+<div>
+  <div
+    class="relative inline-block"
+  >
+    <span
+      class="inline-flex items-center gap-1 border-2 px-3 py-1 text-sm font-bold uppercase transition-all duration-200 hover:scale-105 bg-yellow-400 text-black border-yellow-600 "
+      style="box-shadow: 2px 2px 0px 0px rgba(0,0,0,0.3);"
+    >
+      <span>
+        🥇
+      </span>
+      <span>
+        Gold
+      </span>
+    </span>
+  </div>
+</div>
+`;
+
+exports[`Badge snapshots > new tier 1`] = `
+<div>
+  <div
+    class="relative inline-block"
+  >
+    <span
+      class="inline-flex items-center gap-1 border-2 px-3 py-1 text-sm font-bold uppercase transition-all duration-200 hover:scale-105 bg-gray-400 text-white border-gray-600 "
+      style="box-shadow: 2px 2px 0px 0px rgba(0,0,0,0.3);"
+    >
+      <span>
+        ⭐
+      </span>
+      <span>
+        New
+      </span>
+    </span>
+  </div>
+</div>
+`;
+
+exports[`Badge snapshots > silver tier 1`] = `
+<div>
+  <div
+    class="relative inline-block"
+  >
+    <span
+      class="inline-flex items-center gap-1 border-2 px-3 py-1 text-sm font-bold uppercase transition-all duration-200 hover:scale-105 bg-gray-300 text-black border-gray-500 "
+      style="box-shadow: 2px 2px 0px 0px rgba(0,0,0,0.3);"
+    >
+      <span>
+        🥈
+      </span>
+      <span>
+        Silver
+      </span>
+    </span>
+  </div>
+</div>
+`;
+
+exports[`Button snapshots > disabled state 1`] = `
+<div>
+  <button
+    class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-black text-white hover:-translate-x-1 hover:-translate-y-1 px-6 py-3 text-base "
+    disabled=""
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    Disabled
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > ghost variant 1`] = `
+<div>
+  <button
+    class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-transparent text-black border-transparent hover:border-black px-6 py-3 text-base "
+    style="box-shadow: none;"
+  >
+    Ghost
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > large size 1`] = `
+<div>
+  <button
+    class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-black text-white hover:-translate-x-1 hover:-translate-y-1 px-8 py-4 text-lg "
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    Large
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > loading state 1`] = `
+<div>
+  <button
+    class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-black text-white hover:-translate-x-1 hover:-translate-y-1 px-6 py-3 text-base "
+    disabled=""
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    <div
+      class="flex flex-col items-center gap-3"
+    >
+      <div
+        aria-label="Loading"
+        class="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"
+        role="status"
+      />
+    </div>
+    Loading...
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > loading state with custom text 1`] = `
+<div>
+  <button
+    class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-black text-white hover:-translate-x-1 hover:-translate-y-1 px-6 py-3 text-base "
+    disabled=""
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    <div
+      class="flex flex-col items-center gap-3"
+    >
+      <div
+        aria-label="Loading"
+        class="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"
+        role="status"
+      />
+    </div>
+    Sending…
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > medium size (default) 1`] = `
+<div>
+  <button
+    class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-black text-white hover:-translate-x-1 hover:-translate-y-1 px-6 py-3 text-base "
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    Medium
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > outline + large + disabled 1`] = `
+<div>
+  <button
+    class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-8 py-4 text-lg "
+    disabled=""
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    Big disabled
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > outline variant 1`] = `
+<div>
+  <button
+    class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-6 py-3 text-base "
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    Outline
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > primary variant 1`] = `
+<div>
+  <button
+    class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-black text-white hover:-translate-x-1 hover:-translate-y-1 px-6 py-3 text-base "
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    Click me
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > small size 1`] = `
+<div>
+  <button
+    class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-black text-white hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm "
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    Small
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > with leading icon 1`] = `
+<div>
+  <button
+    class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-black text-white hover:-translate-x-1 hover:-translate-y-1 px-6 py-3 text-base "
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    <span
+      aria-hidden="true"
+    >
+      ★
+    </span>
+    Starred
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > with trailing icon 1`] = `
+<div>
+  <button
+    class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-black text-white hover:-translate-x-1 hover:-translate-y-1 px-6 py-3 text-base "
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    Next
+    <span
+      aria-hidden="true"
+    >
+      →
+    </span>
+  </button>
+</div>
+`;
+
+exports[`Card snapshots > anchor card 1`] = `
+<div>
+  <a
+    class="bg-white border-3 border-black p-6 hover:-translate-x-1 hover:-translate-y-1 hover:border-gray-800 transition-all duration-200 hover:shadow-brutalist-lg cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 "
+    href="/dashboard"
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    Link card
+  </a>
+</div>
+`;
+
+exports[`Card snapshots > clickable (renders as button) 1`] = `
+<div>
+  <button
+    class="bg-white border-3 border-black p-6 hover:-translate-x-1 hover:-translate-y-1 hover:border-gray-800 transition-all duration-200 hover:shadow-brutalist-lg cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 "
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    type="button"
+  >
+    Clickable card
+  </button>
+</div>
+`;
+
+exports[`Card snapshots > default (medium padding) 1`] = `
+<div>
+  <div
+    class="bg-white border-3 border-black p-6   "
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    Card content
+  </div>
+</div>
+`;
+
+exports[`Card snapshots > hover enabled 1`] = `
+<div>
+  <div
+    class="bg-white border-3 border-black p-6 hover:-translate-x-1 hover:-translate-y-1 hover:border-gray-800 transition-all duration-200 hover:shadow-brutalist-lg  "
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    Hoverable
+  </div>
+</div>
+`;
+
+exports[`Card snapshots > large padding 1`] = `
+<div>
+  <div
+    class="bg-white border-3 border-black p-8   "
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    Large padding
+  </div>
+</div>
+`;
+
+exports[`Card snapshots > small padding 1`] = `
+<div>
+  <div
+    class="bg-white border-3 border-black p-4   "
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    Small padding
+  </div>
+</div>
+`;
+
+exports[`Card snapshots > with custom className 1`] = `
+<div>
+  <div
+    class="bg-white border-3 border-black p-6   extra-class"
+    style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+  >
+    Custom class
+  </div>
+</div>
+`;
+
+exports[`Divider snapshots > horizontal (default) 1`] = `
+<div>
+  <div
+    aria-orientation="horizontal"
+    class="border-t-2 border-black w-full "
+    role="separator"
+  />
+</div>
+`;
+
+exports[`Divider snapshots > horizontal with className 1`] = `
+<div>
+  <div
+    aria-orientation="horizontal"
+    class="border-t-2 border-black w-full my-8"
+    role="separator"
+  />
+</div>
+`;
+
+exports[`Divider snapshots > vertical 1`] = `
+<div>
+  <div
+    aria-orientation="vertical"
+    class="border-l-2 border-black h-full "
+    role="separator"
+  />
+</div>
+`;
+
+exports[`EmptyState snapshots > full props 1`] = `
+<div>
+  <div
+    class="flex flex-col items-center justify-center gap-4 py-12 px-6 text-center"
+  >
+    <div
+      class="text-4xl"
+    >
+      <span>
+        🔍
+      </span>
+    </div>
+    <h3
+      class="font-bold uppercase tracking-wide text-lg"
+    >
+      Creator not found
+    </h3>
+    <p
+      class="text-sm text-gray-600 max-w-sm"
+    >
+      We searched but couldn't find that creator.
+    </p>
+    <button
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-6 py-3 text-base "
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      Browse leaderboard
+    </button>
+  </div>
+</div>
+`;
+
+exports[`EmptyState snapshots > title only 1`] = `
+<div>
+  <div
+    class="flex flex-col items-center justify-center gap-4 py-12 px-6 text-center"
+  >
+    <h3
+      class="font-bold uppercase tracking-wide text-lg"
+    >
+      Nothing here yet
+    </h3>
+  </div>
+</div>
+`;
+
+exports[`EmptyState snapshots > with action button 1`] = `
+<div>
+  <div
+    class="flex flex-col items-center justify-center gap-4 py-12 px-6 text-center"
+  >
+    <h3
+      class="font-bold uppercase tracking-wide text-lg"
+    >
+      No results
+    </h3>
+    <p
+      class="text-sm text-gray-600 max-w-sm"
+    >
+      Try a different search term.
+    </p>
+    <button
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-6 py-3 text-base "
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      Clear search
+    </button>
+  </div>
+</div>
+`;
+
+exports[`EmptyState snapshots > with icon and description 1`] = `
+<div>
+  <div
+    class="flex flex-col items-center justify-center gap-4 py-12 px-6 text-center"
+  >
+    <div
+      class="text-4xl"
+    >
+      <span>
+        📭
+      </span>
+    </div>
+    <h3
+      class="font-bold uppercase tracking-wide text-lg"
+    >
+      No tips yet
+    </h3>
+    <p
+      class="text-sm text-gray-600 max-w-sm"
+    >
+      Be the first to support this creator.
+    </p>
+  </div>
+</div>
+`;
+
+exports[`Input snapshots > bare input 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <input
+      aria-invalid="false"
+      class="w-full px-4 py-3 border-2 bg-white text-black font-medium
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+          placeholder:text-gray-400 border-black "
+    />
+  </div>
+</div>
+`;
+
+exports[`Input snapshots > disabled state 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <label
+      class="block text-sm font-bold uppercase tracking-wide mb-2"
+      for="read-only"
+    >
+      Read-only
+    </label>
+    <input
+      aria-invalid="false"
+      class="w-full px-4 py-3 border-2 bg-white text-black font-medium
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+          placeholder:text-gray-400 border-black "
+      disabled=""
+      id="read-only"
+      value="alice"
+    />
+  </div>
+</div>
+`;
+
+exports[`Input snapshots > with error message 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <label
+      class="block text-sm font-bold uppercase tracking-wide mb-2"
+      for="email"
+    >
+      Email
+    </label>
+    <input
+      aria-describedby="email-error"
+      aria-invalid="true"
+      class="w-full px-4 py-3 border-2 bg-white text-black font-medium
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+          placeholder:text-gray-400 border-red-500 "
+      id="email"
+    />
+    <p
+      class="mt-1 text-sm text-red-500 font-medium"
+      id="email-error"
+    >
+      Invalid email address
+    </p>
+  </div>
+</div>
+`;
+
+exports[`Input snapshots > with helper text 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <label
+      class="block text-sm font-bold uppercase tracking-wide mb-2"
+      for="username"
+    >
+      Username
+    </label>
+    <input
+      aria-describedby="username-helper"
+      aria-invalid="false"
+      class="w-full px-4 py-3 border-2 bg-white text-black font-medium
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+          placeholder:text-gray-400 border-black "
+      id="username"
+    />
+    <p
+      class="mt-1 text-sm text-gray-600 font-medium"
+      id="username-helper"
+    >
+      3–32 characters, letters and numbers only
+    </p>
+  </div>
+</div>
+`;
+
+exports[`Input snapshots > with label 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <label
+      class="block text-sm font-bold uppercase tracking-wide mb-2"
+      for="username"
+    >
+      Username
+    </label>
+    <input
+      aria-invalid="false"
+      class="w-full px-4 py-3 border-2 bg-white text-black font-medium
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+          placeholder:text-gray-400 border-black "
+      id="username"
+    />
+  </div>
+</div>
+`;
+
+exports[`Input snapshots > with placeholder 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <input
+      aria-invalid="false"
+      class="w-full px-4 py-3 border-2 bg-white text-black font-medium
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+          placeholder:text-gray-400 border-black "
+      placeholder="Enter username"
+    />
+  </div>
+</div>
+`;
+
+exports[`Loader snapshots > default (medium) size 1`] = `
+<div>
+  <div
+    class="flex flex-col items-center gap-3"
+  >
+    <div
+      class="w-8 h-8 border-3 border-black border-t-transparent rounded-full animate-spin"
+    />
+  </div>
+</div>
+`;
+
+exports[`Loader snapshots > large size 1`] = `
+<div>
+  <div
+    class="flex flex-col items-center gap-3"
+  >
+    <div
+      class="w-12 h-12 border-3 border-black border-t-transparent rounded-full animate-spin"
+    />
+  </div>
+</div>
+`;
+
+exports[`Loader snapshots > small size 1`] = `
+<div>
+  <div
+    class="flex flex-col items-center gap-3"
+  >
+    <div
+      class="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"
+    />
+  </div>
+</div>
+`;
+
+exports[`Loader snapshots > with aria attributes 1`] = `
+<div>
+  <div
+    class="flex flex-col items-center gap-3"
+  >
+    <div
+      aria-label="Loading transaction"
+      class="w-8 h-8 border-3 border-black border-t-transparent rounded-full animate-spin"
+      role="status"
+    />
+  </div>
+</div>
+`;
+
+exports[`Loader snapshots > with loading text 1`] = `
+<div>
+  <div
+    class="flex flex-col items-center gap-3"
+  >
+    <div
+      class="w-8 h-8 border-3 border-black border-t-transparent rounded-full animate-spin"
+    />
+    <p
+      class="text-sm font-bold uppercase tracking-wide"
+    >
+      Loading profile…
+    </p>
+  </div>
+</div>
+`;
+
+exports[`Modal snapshots > closed modal renders empty 1`] = `<div />`;
+
+exports[`Modal snapshots > open modal with rich content 1`] = `
+<div>
+  <div
+    class="fixed inset-0 z-50 flex items-end justify-center sm:items-center"
+  >
+    <div
+      class="absolute inset-0 bg-black bg-opacity-50"
+      role="presentation"
+    />
+    <div
+      aria-label="Confirm Tip"
+      aria-modal="true"
+      class="relative z-10 w-full border-3 border-black bg-white p-6 sm:mx-4 sm:max-w-lg sm:p-8 max-sm:h-full max-sm:max-w-none max-sm:rounded-none"
+      role="dialog"
+      style="box-shadow: 6px 6px 0px 0px rgba(0,0,0,1);"
+    >
+      <div
+        class="flex items-center justify-between mb-6"
+      >
+        <h2
+          class="text-2xl font-black uppercase"
+          id="modal-title"
+        >
+          Confirm Tip
+        </h2>
+        <button
+          aria-label="Close modal"
+          class="text-2xl font-black hover:opacity-60 transition-opacity focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
+        >
+          ✕
+        </button>
+      </div>
+      <div>
+        <p>
+          Amount: 5 XLM
+        </p>
+        <p>
+          Recipient: Alice
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Modal snapshots > open modal with title and content 1`] = `
+<div>
+  <div
+    class="fixed inset-0 z-50 flex items-end justify-center sm:items-center"
+  >
+    <div
+      class="absolute inset-0 bg-black bg-opacity-50"
+      role="presentation"
+    />
+    <div
+      aria-label="Review Transaction"
+      aria-modal="true"
+      class="relative z-10 w-full border-3 border-black bg-white p-6 sm:mx-4 sm:max-w-lg sm:p-8 max-sm:h-full max-sm:max-w-none max-sm:rounded-none"
+      role="dialog"
+      style="box-shadow: 6px 6px 0px 0px rgba(0,0,0,1);"
+    >
+      <div
+        class="flex items-center justify-between mb-6"
+      >
+        <h2
+          class="text-2xl font-black uppercase"
+          id="modal-title"
+        >
+          Review Transaction
+        </h2>
+        <button
+          aria-label="Close modal"
+          class="text-2xl font-black hover:opacity-60 transition-opacity focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
+        >
+          ✕
+        </button>
+      </div>
+      <p>
+        Are you sure you want to proceed?
+      </p>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Modal snapshots > open modal without title 1`] = `
+<div>
+  <div
+    class="fixed inset-0 z-50 flex items-end justify-center sm:items-center"
+  >
+    <div
+      class="absolute inset-0 bg-black bg-opacity-50"
+      role="presentation"
+    />
+    <div
+      aria-modal="true"
+      class="relative z-10 w-full border-3 border-black bg-white p-6 sm:mx-4 sm:max-w-lg sm:p-8 max-sm:h-full max-sm:max-w-none max-sm:rounded-none"
+      role="dialog"
+      style="box-shadow: 6px 6px 0px 0px rgba(0,0,0,1);"
+    >
+      <p>
+        Untitled modal content
+      </p>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Pagination snapshots > first page of 10 1`] = `
+<div>
+  <nav
+    aria-label="Pagination"
+    class="flex flex-wrap items-center justify-center gap-2"
+  >
+    <button
+      aria-label="Go to first page"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+      disabled=""
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      First
+    </button>
+    <button
+      aria-label="Go to previous page"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+      disabled=""
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      Prev
+    </button>
+    <button
+      aria-current="page"
+      aria-label="Current page, page 1"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-black text-white hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      1
+    </button>
+    <button
+      aria-label="Go to page 2"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      2
+    </button>
+    <button
+      aria-label="Go to page 3"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      3
+    </button>
+    <button
+      aria-label="Go to page 4"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      4
+    </button>
+    <button
+      aria-label="Go to page 5"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      5
+    </button>
+    <button
+      aria-label="Go to next page"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      Next
+    </button>
+    <button
+      aria-label="Go to last page"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      Last
+    </button>
+  </nav>
+</div>
+`;
+
+exports[`Pagination snapshots > last page of 10 1`] = `
+<div>
+  <nav
+    aria-label="Pagination"
+    class="flex flex-wrap items-center justify-center gap-2"
+  >
+    <button
+      aria-label="Go to first page"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      First
+    </button>
+    <button
+      aria-label="Go to previous page"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      Prev
+    </button>
+    <button
+      aria-label="Go to page 6"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      6
+    </button>
+    <button
+      aria-label="Go to page 7"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      7
+    </button>
+    <button
+      aria-label="Go to page 8"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      8
+    </button>
+    <button
+      aria-label="Go to page 9"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      9
+    </button>
+    <button
+      aria-current="page"
+      aria-label="Current page, page 10"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-black text-white hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      10
+    </button>
+    <button
+      aria-label="Go to next page"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+      disabled=""
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      Next
+    </button>
+    <button
+      aria-label="Go to last page"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+      disabled=""
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      Last
+    </button>
+  </nav>
+</div>
+`;
+
+exports[`Pagination snapshots > middle page (page 3 of 10) 1`] = `
+<div>
+  <nav
+    aria-label="Pagination"
+    class="flex flex-wrap items-center justify-center gap-2"
+  >
+    <button
+      aria-label="Go to first page"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      First
+    </button>
+    <button
+      aria-label="Go to previous page"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      Prev
+    </button>
+    <button
+      aria-label="Go to page 1"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      1
+    </button>
+    <button
+      aria-label="Go to page 2"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      2
+    </button>
+    <button
+      aria-current="page"
+      aria-label="Current page, page 3"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-black text-white hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      3
+    </button>
+    <button
+      aria-label="Go to page 4"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      4
+    </button>
+    <button
+      aria-label="Go to page 5"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      5
+    </button>
+    <button
+      aria-label="Go to next page"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      Next
+    </button>
+    <button
+      aria-label="Go to last page"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      Last
+    </button>
+  </nav>
+</div>
+`;
+
+exports[`Pagination snapshots > single page renders nothing 1`] = `<div />`;
+
+exports[`Pagination snapshots > two-page pagination 1`] = `
+<div>
+  <nav
+    aria-label="Pagination"
+    class="flex flex-wrap items-center justify-center gap-2"
+  >
+    <button
+      aria-label="Go to first page"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+      disabled=""
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      First
+    </button>
+    <button
+      aria-label="Go to previous page"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+      disabled=""
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      Prev
+    </button>
+    <button
+      aria-current="page"
+      aria-label="Current page, page 1"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-black text-white hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      1
+    </button>
+    <button
+      aria-label="Go to page 2"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem]"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      2
+    </button>
+    <button
+      aria-label="Go to next page"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      Next
+    </button>
+    <button
+      aria-label="Go to last page"
+      class="inline-flex items-center justify-center gap-2 font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-white text-black hover:-translate-x-1 hover:-translate-y-1 px-3 py-1.5 text-sm min-w-[3rem] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+      style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
+    >
+      Last
+    </button>
+  </nav>
+</div>
+`;
+
+exports[`Select snapshots > basic select 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <div
+      class="relative"
+    >
+      <select
+        class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
+            focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+            appearance-none cursor-pointer
+             "
+      >
+        <option
+          value="testnet"
+        >
+          Testnet
+        </option>
+        <option
+          value="public"
+        >
+          Public Network
+        </option>
+      </select>
+      <div
+        class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-chevron-down w-5 h-5 text-black"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="m6 9 6 6 6-6"
+          />
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Select snapshots > disabled state 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <div
+      class="relative"
+    >
+      <select
+        class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
+            focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+            appearance-none cursor-pointer
+             "
+        disabled=""
+      >
+        <option
+          value="testnet"
+        >
+          Testnet
+        </option>
+        <option
+          value="public"
+        >
+          Public Network
+        </option>
+      </select>
+      <div
+        class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-chevron-down w-5 h-5 text-black"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="m6 9 6 6 6-6"
+          />
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Select snapshots > with error 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <label
+      class="block text-sm font-bold uppercase tracking-wide mb-2"
+      for="network"
+    >
+      Network
+    </label>
+    <div
+      class="relative"
+    >
+      <select
+        class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
+            focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+            appearance-none cursor-pointer
+            border-red-600 "
+        id="network"
+      >
+        <option
+          value="testnet"
+        >
+          Testnet
+        </option>
+        <option
+          value="public"
+        >
+          Public Network
+        </option>
+      </select>
+      <div
+        class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-chevron-down w-5 h-5 text-black"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="m6 9 6 6 6-6"
+          />
+        </svg>
+      </div>
+    </div>
+    <p
+      class="mt-1 text-sm text-red-600 font-medium"
+    >
+      Please select a network
+    </p>
+  </div>
+</div>
+`;
+
+exports[`Select snapshots > with label 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <label
+      class="block text-sm font-bold uppercase tracking-wide mb-2"
+      for="network"
+    >
+      Network
+    </label>
+    <div
+      class="relative"
+    >
+      <select
+        class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
+            focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+            appearance-none cursor-pointer
+             "
+        id="network"
+      >
+        <option
+          value="testnet"
+        >
+          Testnet
+        </option>
+        <option
+          value="public"
+        >
+          Public Network
+        </option>
+      </select>
+      <div
+        class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-chevron-down w-5 h-5 text-black"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="m6 9 6 6 6-6"
+          />
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Select snapshots > with placeholder 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <div
+      class="relative"
+    >
+      <select
+        class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
+            focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+            appearance-none cursor-pointer
+             "
+      >
+        <option
+          disabled=""
+          value=""
+        >
+          Choose a network
+        </option>
+        <option
+          value="testnet"
+        >
+          Testnet
+        </option>
+        <option
+          value="public"
+        >
+          Public Network
+        </option>
+      </select>
+      <div
+        class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-chevron-down w-5 h-5 text-black"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="m6 9 6 6 6-6"
+          />
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Skeleton snapshots > circle variant 1`] = `
+<div>
+  <style>
+    
+          @keyframes st_shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+          }
+          .st-skeleton {
+            background: linear-gradient(90deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.06) 100%);
+            background-size: 200% 100%;
+            animation: st_shimmer 1.2s ease-in-out infinite;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .st-skeleton { animation: none; }
+          }
+        
+  </style>
+  <div
+    class="st-skeleton "
+    data-testid="skeleton-circle"
+    style="width: 48px; height: 48px; border-radius: 9999px;"
+  />
+</div>
+`;
+
+exports[`Skeleton snapshots > default (rect) variant no explicit dimensions 1`] = `
+<div>
+  <style>
+    
+          @keyframes st_shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+          }
+          .st-skeleton {
+            background: linear-gradient(90deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.06) 100%);
+            background-size: 200% 100%;
+            animation: st_shimmer 1.2s ease-in-out infinite;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .st-skeleton { animation: none; }
+          }
+        
+  </style>
+  <div
+    class="st-skeleton "
+    data-testid="skeleton-rect"
+    style="border-radius: 12px;"
+  />
+</div>
+`;
+
+exports[`Skeleton snapshots > rect variant with fixed dimensions 1`] = `
+<div>
+  <style>
+    
+          @keyframes st_shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+          }
+          .st-skeleton {
+            background: linear-gradient(90deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.06) 100%);
+            background-size: 200% 100%;
+            animation: st_shimmer 1.2s ease-in-out infinite;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .st-skeleton { animation: none; }
+          }
+        
+  </style>
+  <div
+    class="st-skeleton "
+    data-testid="skeleton-rect"
+    style="width: 200px; height: 20px; border-radius: 12px;"
+  />
+</div>
+`;
+
+exports[`Skeleton snapshots > text variant with percentage width 1`] = `
+<div>
+  <style>
+    
+          @keyframes st_shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+          }
+          .st-skeleton {
+            background: linear-gradient(90deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.06) 100%);
+            background-size: 200% 100%;
+            animation: st_shimmer 1.2s ease-in-out infinite;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .st-skeleton { animation: none; }
+          }
+        
+  </style>
+  <div
+    class="st-skeleton "
+    data-testid="skeleton-text"
+    style="width: 80%; height: 16px; border-radius: 8px;"
+  />
+</div>
+`;
+
+exports[`Skeleton snapshots > with className override 1`] = `
+<div>
+  <style>
+    
+          @keyframes st_shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+          }
+          .st-skeleton {
+            background: linear-gradient(90deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.06) 100%);
+            background-size: 200% 100%;
+            animation: st_shimmer 1.2s ease-in-out infinite;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .st-skeleton { animation: none; }
+          }
+        
+  </style>
+  <div
+    class="st-skeleton h-4 w-full"
+    data-testid="skeleton-rect"
+    style="border-radius: 12px;"
+  />
+</div>
+`;
+
+exports[`Textarea snapshots > bare textarea 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <textarea
+      class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+          placeholder:text-gray-400 resize-y  "
+      rows="4"
+    />
+    <div
+      class="flex justify-between items-center mt-1"
+    >
+      <div />
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Textarea snapshots > with error 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <label
+      class="block text-sm font-bold uppercase tracking-wide mb-2"
+      for="message"
+    >
+      Message
+    </label>
+    <textarea
+      class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+          placeholder:text-gray-400 resize-y border-red-600 "
+      id="message"
+      rows="4"
+    />
+    <div
+      class="flex justify-between items-center mt-1"
+    >
+      <p
+        class="text-sm text-red-600 font-medium"
+      >
+        Message is too long
+      </p>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Textarea snapshots > with label 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <label
+      class="block text-sm font-bold uppercase tracking-wide mb-2"
+      for="bio"
+    >
+      Bio
+    </label>
+    <textarea
+      class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+          placeholder:text-gray-400 resize-y  "
+      id="bio"
+      rows="4"
+    />
+    <div
+      class="flex justify-between items-center mt-1"
+    >
+      <div />
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Textarea snapshots > with label and character counter 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <label
+      class="block text-sm font-bold uppercase tracking-wide mb-2"
+      for="message"
+    >
+      Message
+    </label>
+    <textarea
+      class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+          placeholder:text-gray-400 resize-y  "
+      id="message"
+      maxlength="280"
+      rows="4"
+    />
+    <div
+      class="flex justify-between items-center mt-1"
+    >
+      <div />
+      <p
+        class="text-sm font-medium text-gray-500"
+        data-testid="char-counter"
+      >
+        0
+         / 
+        280
+      </p>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Textarea snapshots > with pre-filled value and counter 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <textarea
+      class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+          placeholder:text-gray-400 resize-y  "
+      maxlength="280"
+      rows="4"
+    >
+      Hello world
+    </textarea>
+    <div
+      class="flex justify-between items-center mt-1"
+    >
+      <div />
+      <p
+        class="text-sm font-medium text-gray-500"
+        data-testid="char-counter"
+      >
+        11
+         / 
+        280
+      </p>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Textarea snapshots > with warnAt and dangerAt thresholds 1`] = `
+<div>
+  <div
+    class="w-full"
+  >
+    <label
+      class="block text-sm font-bold uppercase tracking-wide mb-2"
+      for="bio"
+    >
+      Bio
+    </label>
+    <textarea
+      class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+          placeholder:text-gray-400 resize-y  "
+      id="bio"
+      maxlength="280"
+      rows="4"
+    />
+    <div
+      class="flex justify-between items-center mt-1"
+    >
+      <div />
+      <p
+        class="text-sm font-medium text-gray-500"
+        data-testid="char-counter"
+      >
+        0
+         / 
+        280
+      </p>
+    </div>
+  </div>
+</div>
+`;

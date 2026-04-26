@@ -1,0 +1,93 @@
+version: 2
+updates:
+  # JavaScript dependencies for frontend
+  - package-ecosystem: "npm"
+    directory: "/frontend-scaffold"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "00:00"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "javascript"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    reviewers:
+      - "akan_nigeria"
+    groups:
+      react-dependencies:
+        patterns:
+          - "react*"
+          - "@types/react*"
+      stellar-dependencies:
+        patterns:
+          - "@stellar/*"
+      dev-dependencies:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "react*"
+          - "@stellar/*"
+        update-types:
+          - "development"
+    versioning-strategy: increase
+
+  # JavaScript dependencies for contracts
+  - package-ecosystem: "npm"
+    directory: "/contracts"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "00:00"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "javascript"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    reviewers:
+      - "akan_nigeria"
+    versioning-strategy: increase
+
+  # Rust dependencies for contracts
+  - package-ecosystem: "cargo"
+    directory: "/contracts"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "00:00"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "rust"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    reviewers:
+      - "akan_nigeria"
+    groups:
+      soroban-dependencies:
+        patterns:
+          - "soroban*"
+          - "stellar*"
+    versioning-strategy: increase
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "00:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    reviewers:
+      - "akan_nigeria"

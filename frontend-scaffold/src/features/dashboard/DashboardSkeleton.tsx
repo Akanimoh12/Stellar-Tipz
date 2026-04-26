@@ -63,12 +63,12 @@ const DashboardSkeleton: React.FC = () => {
         <div className="space-y-6">
           <Card className="space-y-4" padding="lg">
             <Skeleton width="180px" height="24px" />
-            <div className="space-y-2 border-2 border-black bg-white p-4">
+            <div className="border-2 border-black bg-white p-4 space-y-2">
               <Skeleton width="120px" height="10px" />
               <Skeleton width="100px" height="20px" />
             </div>
             <Skeleton width="100%" height="14px" />
-            <Skeleton width="90%" height="14px" className="mt-2" />
+              <Skeleton width="90%" height="14px" className="mt-2" />
           </Card>
 
           <Card className="space-y-4" padding="lg">

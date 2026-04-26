@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { TrendingUp, Users, Zap, DollarSign } from 'lucide-react';
 
 interface ContractStats {
@@ -10,13 +10,25 @@ interface ContractStats {
 }
 
 export const StatsPanel: React.FC = () => {
-  const stats: ContractStats = {
-    totalCreators: 1250,
-    totalTipsCount: 8934,
-    totalTipsVolume: 45670000000,
-    totalFeesCollected: 913400000,
+  const [stats, setStats] = useState<ContractStats>({
+    totalCreators: 0,
+    totalTipsCount: 0,
+    totalTipsVolume: 0,
+    totalFeesCollected: 0,
     feeBps: 200,
-  };
+  });
+
+  useEffect(() => {
+    // In a real implementation, fetch stats from contract
+    // For now, using mock data
+    setStats({
+      totalCreators: 1250,
+      totalTipsCount: 8934,
+      totalTipsVolume: 45670000000, // stroops
+      totalFeesCollected: 913400000, // stroops
+      feeBps: 200,
+    });
+  }, []);
 
   const formatStroops = (stroops: number) => {
     const xlm = stroops / 10000000;

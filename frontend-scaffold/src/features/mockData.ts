@@ -20,8 +20,7 @@ export const mockProfile: Profile = {
 export const mockTips: Tip[] = [
   {
     id: 1,
-    sender: "GACCTSUPPORTERONE1234567890EXAMPLE1111111111111",
-    benefactor: null,
+    tipper: "GACCTSUPPORTERONE1234567890EXAMPLE1111111111111",
     creator: mockProfile.owner,
     amount: "125000000",
     message: "Your thread on Stellar fees saved me hours.",
@@ -29,8 +28,7 @@ export const mockTips: Tip[] = [
   },
   {
     id: 2,
-    sender: "GACCTSUPPORTERTWO1234567890EXAMPLE2222222222222",
-    benefactor: null,
+    tipper: "GACCTSUPPORTERTWO1234567890EXAMPLE2222222222222",
     creator: mockProfile.owner,
     amount: "50000000",
     message: "Keep shipping these explainers.",
@@ -38,8 +36,7 @@ export const mockTips: Tip[] = [
   },
   {
     id: 3,
-    sender: "GACCTSUPPORTERTHREE1234567890EXAMPLE33333333333",
-    benefactor: null,
+    tipper: "GACCTSUPPORTERTHREE1234567890EXAMPLE33333333333",
     creator: mockProfile.owner,
     amount: "250000000",
     message: "Tipped from your live workshop audience.",
@@ -47,8 +44,7 @@ export const mockTips: Tip[] = [
   },
   {
     id: 4,
-    sender: "GACCTSUPPORTERFOUR1234567890EXAMPLE444444444444",
-    benefactor: null,
+    tipper: "GACCTSUPPORTERFOUR1234567890EXAMPLE444444444444",
     creator: mockProfile.owner,
     amount: "80000000",
     message: "",
@@ -56,8 +52,7 @@ export const mockTips: Tip[] = [
   },
   {
     id: 5,
-    sender: "GACCTSUPPORTERFIVE1234567890EXAMPLE555555555555",
-    benefactor: null,
+    tipper: "GACCTSUPPORTERFIVE1234567890EXAMPLE555555555555",
     creator: mockProfile.owner,
     amount: "150000000",
     message: "For the wallet onboarding guide.",
@@ -65,8 +60,7 @@ export const mockTips: Tip[] = [
   },
   {
     id: 6,
-    sender: "GACCTSUPPORTERSIX1234567890EXAMPLE6666666666666",
-    benefactor: null,
+    tipper: "GACCTSUPPORTERSIX1234567890EXAMPLE6666666666666",
     creator: mockProfile.owner,
     amount: "210000000",
     message: "Loved the hackathon demo.",

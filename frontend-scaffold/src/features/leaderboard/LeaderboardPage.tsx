@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { Crown, Medal, Trophy } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -7,13 +7,12 @@ import AmountDisplay from "../../components/shared/AmountDisplay";
 import CreditBadge from "../../components/shared/CreditBadge";
 import Avatar from "../../components/ui/Avatar";
 import Card from "../../components/ui/Card";
-import VirtualList from "../../components/shared/VirtualList";
+import Pagination from "../../components/ui/Pagination";
 import ErrorState from "../../components/shared/ErrorState";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useLeaderboard } from "@/hooks/useLeaderboard";
 import { categorizeError } from "@/helpers/error";
 import LeaderboardSkeleton from "./LeaderboardSkeleton";
-import { LeaderboardEntry, LeaderboardPeriod } from "@/types/contract";
 
 
 const PAGE_SIZE = 5;
@@ -21,8 +20,7 @@ const PAGE_SIZE = 5;
 const LeaderboardPage: React.FC = () => {
   usePageTitle('Leaderboard');
 
-  const [period, setPeriod] = useState<LeaderboardPeriod>('AllTime');
-  const { entries, loading, error, refetch } = useLeaderboard(period);
+  const { entries, loading, error, refetch } = useLeaderboard();
   const [currentPage, setCurrentPage] = useState(1);
   const totalPages = Math.ceil(entries.length / PAGE_SIZE);
 
@@ -42,30 +40,12 @@ const LeaderboardPage: React.FC = () => {
           <p className="text-xs font-black uppercase tracking-[0.25em] text-gray-600">
             Leaderboard
           </p>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h1 className="flex items-center gap-3 text-4xl font-black uppercase">
-              <Trophy size={34} />
-              Top creators
-            </h1>
-            <div className="flex bg-white border-2 border-black p-1 shadow-brutalist-sm">
-              {(['AllTime', 'Monthly', 'Weekly'] as LeaderboardPeriod[]).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => {
-                    setPeriod(p);
-                    setCurrentPage(1);
-                  }}
-                  className={`px-3 py-1 text-xs font-black uppercase transition-colors ${
-                    period === p ? 'bg-black text-white' : 'hover:bg-gray-100'
-                  }`}
-                >
-                  {p.replace(/([A-Z])/g, ' $1').trim()}
-                </button>
-              ))}
-            </div>
-          </div>
+          <h1 className="flex items-center gap-3 text-4xl font-black uppercase">
+            <Trophy size={34} />
+            Top creators
+          </h1>
           <p className="max-w-2xl text-base leading-7 text-gray-700">
-            A real-time snapshot of creators earning the most support on Stellar Tipz {period !== 'AllTime' && `for this ${period.replace('ly', '').toLowerCase()}`}. These rankings are fetched directly from the Tipz Soroban contract.
+            A real-time snapshot of creators earning the most support on Stellar Tipz. These rankings are fetched directly from the Tipz Soroban contract.
           </p>
         </Card>
 
@@ -75,7 +55,7 @@ const LeaderboardPage: React.FC = () => {
               <ErrorState category={categorizeError(error).category} onRetry={refetch} />
             </div>
           ) : (
-            entries.slice(0, 3).map((entry: LeaderboardEntry, index: number) => {
+            entries.slice(0, 3).map((entry, index) => {
               const icons = [<Crown key="crown" size={18} />, <Medal key="silver" size={18} />, <Medal key="bronze" size={18} />];
               const labels = ["1st", "2nd", "3rd"];
 
@@ -127,31 +107,37 @@ const LeaderboardPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleEntries.map((entry: LeaderboardEntry, index: number) => {
+                  {visibleEntries.map((entry, index) => {
                     const rank = (currentPage - 1) * PAGE_SIZE + index + 1;
 
                     return (
-                      <div className="grid grid-cols-[100px_1fr_150px_150px] border-b border-gray-300 hover:bg-gray-50 transition-colors h-full items-center">
-                        <div className="px-4 text-sm font-black">{rank}</div>
-                        <div className="px-4">
-                          <Link to={`/@${entry.username}`} className="flex items-center gap-3 w-max">
+                      <tr key={entry.address} className="border-b border-gray-300 hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-4 text-sm font-black">{rank}</td>
+                        <td className="px-4 py-4">
+                          <Link to={`/@${entry.username}`} className="flex items-center gap-3">
                             <Avatar address={entry.address} alt={entry.username} fallback={entry.username} size="md" />
                             <span className="font-black uppercase">{entry.username}</span>
                           </Link>
-                        </div>
-                        <div className="px-4">
+                        </td>
+                        <td className="px-4 py-4">
                           <AmountDisplay amount={entry.totalTipsReceived} className="text-sm" />
-                        </div>
-                        <div className="px-4">
+                        </td>
+                        <td className="px-4 py-4">
                           <CreditBadge score={entry.creditScore} />
-                        </div>
-                      </div>
+                        </td>
+                      </tr>
                     );
-                  }}
-                />
-              </div>
+                  })}
+                </tbody>
+              </table>
             )}
           </div>
+
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
         </Card>
       </section>
     </PageContainer>

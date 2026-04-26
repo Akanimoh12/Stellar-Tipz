@@ -34,16 +34,13 @@ import { useNavigate } from "react-router-dom";
 const TipPage: React.FC = () => {
   const { username } = useParams<{ username: string }>();
   const navigate = useNavigate();
-  const { connected, connect, publicKey } = useWallet();
+  const { connected, connect } = useWallet();
   const [amount, setAmount] = useState("5");
   const [message, setMessage] = useState("");
-  const [isAnonymous, setIsAnonymous] = useState(false);
   const { getProfileByUsername } = useContract();
   const [loading, setLoading] = useState(true);
   const [creator, setCreator] = useState<Profile | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
-
-  const isSelfTipping = connected && creator && publicKey === creator.owner;
 
   const fetchCreator = useCallback(async () => {
     if (!username) return;
@@ -84,7 +81,9 @@ const TipPage: React.FC = () => {
     error: flowError,
     txHash,
   } = useTipFlow(creator?.owner || "");
-  const flowErrorCategory = flowError ? categorizeError(flowError).category : null;
+  
+  // Transaction guard to prevent duplicate submissions
+  const { isPending: isTransactionPending, startTransaction } = useTransactionGuard();
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -92,7 +91,7 @@ const TipPage: React.FC = () => {
     if (isTransactionPending || step === "signing" || step === "submitting") {
       return;
     }
-    goToConfirm(amount, message, isAnonymous);
+    goToConfirm(amount, message);
   };
   
   // Wrapped confirm handler with transaction guard
@@ -129,7 +128,7 @@ const TipPage: React.FC = () => {
     return (
       <PageContainer maxWidth="xl" className="py-20">
         <ErrorState
-          category={categorizeError(fetchError || "Not Found").category}
+          category={categorizeError(fetchError || "Not Found")}
           onRetry={fetchCreator}
         />
       </PageContainer>
@@ -242,7 +241,7 @@ const TipPage: React.FC = () => {
               creator={creator}
               errorMessage={
                 flowError
-                  ? flowErrorCategory === "network"
+                  ? categorizeError(flowError) === "network"
                     ? ERRORS.NETWORK
                     : ERRORS.CONTRACT
                   : undefined
@@ -267,31 +266,8 @@ const TipPage: React.FC = () => {
                 onChange={(event) => setMessage(event.target.value)}
               />
 
-              <label className="flex items-center gap-3 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={isAnonymous}
-                  onChange={(e) => setIsAnonymous(e.target.checked)}
-                  className="w-5 h-5 border-2 border-black rounded-none appearance-none checked:bg-black relative after:content-['✓'] after:hidden checked:after:block after:text-white after:absolute after:inset-0 after:flex after:items-center after:justify-center font-bold"
-                />
-                <span className="text-sm font-bold group-hover:underline">Send tip anonymously</span>
-              </label>
-
               <div className="flex flex-col gap-3 sm:flex-row">
-                {isSelfTipping ? (
-                  <>
-                    <Button
-                      type="button"
-                      disabled
-                      className="sm:flex-1"
-                    >
-                      Can't tip yourself
-                    </Button>
-                    <p className="text-sm font-medium text-gray-600">
-                      You cannot send a tip to your own profile.
-                    </p>
-                  </>
-                ) : connected ? (
+                {connected ? (
                   <Button
                     type="submit"
                     loading={step === "signing" || step === "submitting"}
@@ -312,11 +288,9 @@ const TipPage: React.FC = () => {
                   </Button>
                 )}
 
-                {!isSelfTipping && (
-                  <Button type="button" variant="outline" onClick={reset}>
-                    Clear
-                  </Button>
-                )}
+                <Button type="button" variant="outline" onClick={reset}>
+                  Clear
+                </Button>
               </div>
             </form>
           )}
@@ -328,7 +302,6 @@ const TipPage: React.FC = () => {
             creator={creator}
             amount={amount}
             message={message}
-            isAnonymous={isAnonymous}
             submitting={step === "signing" || step === "submitting" || isTransactionPending}
           />
 
@@ -338,7 +311,7 @@ const TipPage: React.FC = () => {
               txHash={txHash ?? undefined}
               errorMessage={
                 flowError
-                  ? flowErrorCategory === "network"
+                  ? categorizeError(flowError) === "network"
                     ? ERRORS.NETWORK
                     : ERRORS.CONTRACT
                   : undefined

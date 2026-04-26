@@ -1,3 +1,5 @@
+import { hasHomoglyphs } from './sanitize';
+
 export interface ValidationResult {
   valid: boolean;
   error?: string;
@@ -13,6 +15,10 @@ export const validateUsername = (username: string): ValidationResult => {
 
   if (trimmed.length < 3 || trimmed.length > 32) {
     return { valid: false, error: "Username must be 3-32 characters long." };
+  }
+
+  if (hasHomoglyphs(trimmed)) {
+    return { valid: false, error: "Username contains potentially confusable characters." };
   }
 
   if (!USERNAME_RE.test(trimmed)) {

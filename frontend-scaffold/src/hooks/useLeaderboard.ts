@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
 import { useContract } from "./useContract";
-import { LeaderboardEntry, LeaderboardPeriod } from "../types/contract";
+import { LeaderboardEntry } from "../types/contract";
 import { env } from "../helpers/env";
 import { mockLeaderboard } from "../features/mockData";
 
@@ -24,7 +24,7 @@ export interface LeaderboardData {
 /**
  * Fetches leaderboard data from the contract and keeps it fresh.
  */
-export const useLeaderboard = (period: LeaderboardPeriod = 'AllTime'): LeaderboardData => {
+export const useLeaderboard = (): LeaderboardData => {
   const { getLeaderboard } = useContract();
 
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -34,8 +34,6 @@ export const useLeaderboard = (period: LeaderboardPeriod = 'AllTime'): Leaderboa
   const hasDataRef = useRef(false);
   const isFetchingRef = useRef(false);
 
-  const cacheKey = `${CACHE_KEY}_${period}`;
-
   /**
    * Load cached data from sessionStorage if available and not expired.
    */
@@ -43,7 +41,7 @@ export const useLeaderboard = (period: LeaderboardPeriod = 'AllTime'): Leaderboa
     try {
       if (env.useMockData) return mockLeaderboard;
 
-      const cached = sessionStorage.getItem(cacheKey);
+      const cached = sessionStorage.getItem(CACHE_KEY);
       if (!cached) return null;
 
       const parsed = JSON.parse(cached);
@@ -54,23 +52,35 @@ export const useLeaderboard = (period: LeaderboardPeriod = 'AllTime'): Leaderboa
         !Array.isArray(parsed.entries) ||
         typeof parsed.timestamp !== 'number'
       ) {
-        sessionStorage.removeItem(cacheKey);
+        sessionStorage.removeItem(CACHE_KEY);
+        return null;
+      }
+
+      // Validate entries have required fields
+      if (!parsed.entries.every((entry: Record<string, unknown>) =>
+        entry &&
+        typeof entry.address === 'string' &&
+        typeof entry.username === 'string' &&
+        typeof entry.totalTipsReceived === 'string' &&
+        typeof entry.creditScore === 'number'
+      )) {
+        sessionStorage.removeItem(CACHE_KEY);
         return null;
       }
 
       const isExpired = Date.now() - parsed.timestamp > CACHE_DURATION_MS;
 
       if (isExpired) {
-        sessionStorage.removeItem(cacheKey);
+        sessionStorage.removeItem(CACHE_KEY);
         return null;
       }
 
       return parsed.entries;
     } catch {
-      sessionStorage.removeItem(cacheKey);
+      sessionStorage.removeItem(CACHE_KEY);
       return null;
     }
-  }, [cacheKey]);
+  }, []);
 
   /**
    * Save data to sessionStorage with current timestamp.
@@ -82,11 +92,11 @@ export const useLeaderboard = (period: LeaderboardPeriod = 'AllTime'): Leaderboa
         entries: data,
         timestamp: Date.now(),
       };
-      sessionStorage.setItem(cacheKey, JSON.stringify(cacheData));
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
     } catch {
       // Silently fail
     }
-  }, [cacheKey]);
+  }, []);
 
   const fetchLeaderboard = useCallback(async () => {
     if (isFetchingRef.current) return;
@@ -106,7 +116,7 @@ export const useLeaderboard = (period: LeaderboardPeriod = 'AllTime'): Leaderboa
     setError(null);
 
     try {
-      const fetchedEntries = await getLeaderboard(period, 50);
+      const fetchedEntries = await getLeaderboard(50);
 
       setEntries(fetchedEntries);
       hasDataRef.current = true;
@@ -119,7 +129,7 @@ export const useLeaderboard = (period: LeaderboardPeriod = 'AllTime'): Leaderboa
       setLoading(false);
       isFetchingRef.current = false;
     }
-  }, [getLeaderboard, period, saveToCache]);
+  }, [getLeaderboard, saveToCache]);
 
   useEffect(() => {
     const cachedEntries = loadFromCache();
@@ -131,11 +141,9 @@ export const useLeaderboard = (period: LeaderboardPeriod = 'AllTime'): Leaderboa
         fetchLeaderboard();
       }
     } else {
-      setEntries([]);
-      hasDataRef.current = false;
       fetchLeaderboard();
     }
-  }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (env.useMockData) return;
@@ -148,10 +156,10 @@ export const useLeaderboard = (period: LeaderboardPeriod = 'AllTime'): Leaderboa
   }, [fetchLeaderboard]);
 
   const refetch = useCallback(() => {
-    sessionStorage.removeItem(cacheKey);
+    sessionStorage.removeItem(CACHE_KEY);
     hasDataRef.current = false;
     fetchLeaderboard();
-  }, [fetchLeaderboard, cacheKey]);
+  }, [fetchLeaderboard]);
 
   return { entries, loading, error, refetch };
 };

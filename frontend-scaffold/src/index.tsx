@@ -113,9 +113,8 @@ registerSW();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <Root />
     <I18nProvider>
-      <App />
+      <Root />
     </I18nProvider>
   </React.StrictMode>,
 );
