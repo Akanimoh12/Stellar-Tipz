@@ -88,9 +88,7 @@ fn test_event_tip_sent_contains_all_indexing_fields() {
     let timestamp: u64 = 1700000000;
 
     env.as_contract(&contract_id, || {
-        events::emit_tip_sent(
-            &env, tip_id, &tipper, &creator, amount, &message, timestamp, false,
-        );
+        events::emit_tip_sent(&env, tip_id, &tipper, &creator, amount, &message, timestamp, false);
     });
 
     let all = env.events().all();

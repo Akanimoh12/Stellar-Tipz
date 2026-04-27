@@ -148,8 +148,6 @@ fn test_withdrawal_drains_entire_balance() {
 #[test]
 fn test_rapid_tips_same_creator() {
     let (env, client, _admin, _fee_collector, token_address) = setup_env();
-    let mut budget = env.budget();
-    budget.reset_unlimited();
 
     let creator = Address::generate(&env);
     register_creator(&env, &client, &creator, "creator", "Creator");
@@ -219,13 +217,7 @@ fn test_full_lifecycle() {
         &String::from_str(&env, "A"),
         &false,
     );
-    client.send_tip(
-        &tipper,
-        &bob,
-        &2_000_000_000,
-        &String::from_str(&env, "B"),
-        &false,
-    );
+    client.send_tip(&tipper, &bob, &2_000_000_000, &String::from_str(&env, "B"), &false);
 
     // 3. Update profiles
     client.update_profile(

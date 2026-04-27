@@ -84,8 +84,6 @@ pub enum DataKey {
     CreatorTipCount(Address),
     /// Reverse index: (creator, local_index) → global tip ID
     CreatorTip(Address, u32),
-    /// Pending admin address (proposed but not yet accepted)
-    PendingAdmin,
     /// Pending two-step admin change proposal (full transition record).
     PendingAdminChange,
     /// Admin change history list (newest entries appended last).
@@ -134,6 +132,8 @@ pub enum DataKey {
     ActiveCreators30d,
     /// Creator last active timestamp
     CreatorLastActive(Address),
+    /// Supporter streak by (supporter, creator)
+    Streak(Address, Address),
     /// When set, profile is deactivated (unix timestamp); absent means active
     ProfileDeactivatedAt(Address),
     /// Rate limit status by address
@@ -593,6 +593,44 @@ pub fn reset_creator_tip_index(env: &Env, creator: &Address) {
     if env.storage().temporary().has(&count_key) {
         env.storage().temporary().remove(&count_key);
     }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Streak tracking
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Return the streak record for a supporter/creator pair, if any.
+pub fn get_streak(env: &Env, supporter: &Address, creator: &Address) -> Option<crate::types::Streak> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Streak(supporter.clone(), creator.clone()))
+}
+
+/// Persist a streak record for a supporter/creator pair.
+pub fn set_streak(env: &Env, streak: &crate::types::Streak) {
+    env.storage().persistent().set(
+        &DataKey::Streak(streak.supporter.clone(), streak.creator.clone()),
+        streak,
+    );
+}
+
+/// Return the total streak bonus accumulated for a creator.
+/// TODO: Store this in Profile struct to avoid extra storage key
+pub fn get_creator_streak_bonus(_env: &Env, _creator: &Address) -> u32 {
+    // Temporarily disabled to reduce DataKey variants
+    0
+}
+
+/// Add streak bonus points to a creator.
+/// TODO: Store this in Profile struct to avoid extra storage key
+pub fn add_creator_streak_bonus(_env: &Env, _creator: &Address, _bonus: u32) {
+    // Temporarily disabled to reduce DataKey variants
+}
+
+/// Adjust a creator's streak bonus by a signed delta.
+/// TODO: Store this in Profile struct to avoid extra storage key
+pub fn adjust_creator_streak_bonus(_env: &Env, _creator: &Address, _delta: i32) {
+    // Temporarily disabled to reduce DataKey variants
 }
 
 /// Remove all per-tipper tip index entries from temporary storage.

@@ -11,6 +11,7 @@ use crate::errors::ContractError;
 use crate::events::emit_tip_sent;
 use crate::leaderboard;
 use crate::storage::{self, DataKey};
+use crate::streaks;
 use crate::token;
 use crate::types::Tip;
 use crate::validation::{validate_message, validate_tip_amount};
@@ -159,8 +160,12 @@ pub fn send_tip(
     profile.total_tips_received += amount;
     profile.total_tips_count += 1;
 
+    // Update streak tracking before recomputing the creator score.
+    streaks::record_tip_streak(env, tipper, creator);
+
     // Update credit score based on new tip totals
-    profile.credit_score = credit::calculate_credit_score(&profile, env.ledger().timestamp());
+    profile.credit_score =
+        credit::calculate_credit_score_with_streak(env, &profile, env.ledger().timestamp());
 
     storage::set_profile(env, &profile);
     leaderboard::update_all_leaderboards(env, &profile, amount);

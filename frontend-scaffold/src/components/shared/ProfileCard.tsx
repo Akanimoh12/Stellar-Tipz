@@ -15,6 +15,7 @@ interface ProfileCardProps {
   variant?: 'default' | 'compact';
   creditScore?: number;
   totalTips?: string;
+  streak?: number;
 }
 
 const ProfileCard: React.FC<ProfileCardProps> = ({
@@ -24,7 +25,8 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
   onTip,
   variant = 'default',
   creditScore,
-  totalTips
+  totalTips,
+  streak,
 }) => {
   const { isFavorite, toggleFavorite } = useFavorites();
   const favorite = isFavorite(publicKey);
@@ -68,6 +70,11 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
                 <Trophy size={14} className="text-yellow-600" />
                 <AmountDisplay amount={totalTips} className="text-sm font-bold" />
               </div>
+            )}
+            {streak !== undefined && (
+              <p className="mt-1 text-xs font-bold uppercase tracking-wide text-gray-600">
+                Streak: {streak} days
+              </p>
             )}
           </div>
 

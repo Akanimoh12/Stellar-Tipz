@@ -41,7 +41,7 @@ const CopyButton: React.FC<CopyButtonProps> = ({
         try {
           document.execCommand('copy');
         } catch (err) {
-          throw new Error('Copy failed');
+          throw new Error('Copy failed', { cause: err });
         }
         document.body.removeChild(textArea);
       }

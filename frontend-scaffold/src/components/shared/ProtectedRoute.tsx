@@ -34,12 +34,13 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     }
 
     if (!walletType || connected) {
-      setReconnectTimedOut(false);
+      // Use queueMicrotask to avoid synchronous setState in effect
+      queueMicrotask(() => setReconnectTimedOut(false));
       return;
     }
 
     // Start a 5s window to allow auto-reconnect before redirecting.
-    setReconnectTimedOut(false);
+    queueMicrotask(() => setReconnectTimedOut(false));
     timeoutIdRef.current = window.setTimeout(() => {
       setReconnectTimedOut(true);
     }, RECONNECT_TIMEOUT_MS);

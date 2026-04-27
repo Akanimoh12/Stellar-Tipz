@@ -110,6 +110,15 @@ pub fn emit_credit_score_updated(env: &Env, creator: &Address, old_score: u32, n
     );
 }
 
+/// Topics : `("streak", "milestone")`
+/// Data   : `(supporter: Address, creator: Address, current: u32)`
+pub fn emit_streak_milestone(env: &Env, supporter: &Address, creator: &Address, current: u32) {
+    env.events().publish(
+        (symbol_short!("streak"), symbol_short!("milestone")),
+        (supporter.clone(), creator.clone(), current),
+    );
+}
+
 // ── Admin events ──────────────────────────────────────────────────────────────
 
 /// Topics : `("admin", "changed")`

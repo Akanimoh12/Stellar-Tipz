@@ -91,6 +91,16 @@ export interface ContractStats {
   feeBps: number;
 }
 
+/** Supporter streak for a creator/supporter pair. */
+export interface Streak {
+  supporter: string;
+  creator: string;
+  current: number;
+  longest: number;
+  lastTipDay: number | null;
+  bonusPoints: number;
+}
+
 /** Credit score tiers */
 export type CreditTier = 'new' | 'bronze' | 'silver' | 'gold' | 'diamond';
 

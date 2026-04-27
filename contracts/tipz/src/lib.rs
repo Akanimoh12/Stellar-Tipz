@@ -24,6 +24,7 @@ mod profile;
 mod stats;
 mod storage;
 mod subscription;
+mod streaks;
 mod tips;
 mod token;
 mod types;
@@ -302,7 +303,8 @@ impl TipzContract {
 
         storage::extend_instance_ttl(&env);
         let mut profile = storage::get_profile(&env, &address);
-        let score = credit::calculate_credit_score(&profile, env.ledger().timestamp());
+        let score =
+            credit::calculate_credit_score_with_streak(&env, &profile, env.ledger().timestamp());
         profile.credit_score = score;
         storage::set_profile(&env, &profile);
 
@@ -327,6 +329,19 @@ impl TipzContract {
         address: Address,
     ) -> Result<CreditBreakdown, ContractError> {
         credit::get_credit_breakdown(&env, &address)
+    }
+
+    /// Return the current supporter streak for a `(supporter, creator)` pair.
+    pub fn get_streak(
+        env: Env,
+        supporter: Address,
+        creator: Address,
+    ) -> Result<crate::types::Streak, ContractError> {
+        if !storage::has_profile(&env, &creator) {
+            return Err(ContractError::NotRegistered);
+        }
+
+        Ok(streaks::get_streak(&env, &supporter, &creator))
     }
 
     // ──────────────────────────────────────────────

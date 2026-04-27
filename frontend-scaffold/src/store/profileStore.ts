@@ -22,9 +22,9 @@ export const useProfileStore = create<ProfileStore>((set) => ({
   loading: false,
   error: null,
 
-  setProfile: (profile) => set({ profile }),
+  setProfile: (profile) => set({ profile, loading: false, error: null }),
 
-  clearProfile: () => set({ profile: null }),
+  clearProfile: () => set({ profile: null, loading: false, error: null }),
 
   setLoading: (loading) => set({ loading }),
 

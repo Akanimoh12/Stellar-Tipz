@@ -1,12 +1,10 @@
 //! Tests for multi-signature admin operations
 
-use soroban_sdk::{
-    testutils::{Address as _, Ledger},
-    vec, Address, Env,
-};
+use soroban_sdk::{testutils::{Address as _, Ledger as _}, vec, Address, Env};
 
 use crate::multisig::Action;
 use crate::test::test_init::setup_test_contract;
+use crate::TipzContractClient;
 
 #[test]
 fn test_multisig_pause() {
@@ -54,9 +52,8 @@ fn test_proposal_expiry() {
     let proposal_id = client.propose_action(&signer1, &Action::Pause);
 
     // Advance time by 8 days (proposal expires after 7 days)
-    env.ledger().with_mut(|li| {
-        li.timestamp += 8 * 24 * 3600;
-    });
+    let current_time = env.ledger().timestamp();
+    env.ledger().set_timestamp(current_time + 8 * 24 * 3600);
 
     // Try to approve expired proposal
     let result = client.try_approve_action(&signer2, &proposal_id);

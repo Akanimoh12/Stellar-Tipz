@@ -60,7 +60,7 @@ const PageTransition: React.FC<PageTransitionProps> = ({
     }
 
     switch (animationType) {
-      case 'slide':
+      case 'slide': {
         const direction = getSlideDirection();
         return {
           initial: { opacity: 0, x: direction.x },
@@ -68,6 +68,7 @@ const PageTransition: React.FC<PageTransitionProps> = ({
           exit: { opacity: 0, x: direction.x * -1 },
           transition: { duration: 0.3, ease: 'easeInOut' },
         };
+      }
       case 'fade':
       default:
         return {

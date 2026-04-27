@@ -75,6 +75,9 @@ pub const X_SUB_CAP: u32 = 50;
 /// Hard cap for normalized age sub-score.
 pub const AGE_CAP: u32 = 100;
 
+/// Bonus score awarded for each 7-tip streak milestone.
+pub const STREAK_BONUS_SCORE: u32 = 1;
+
 /// Tip volume (in stroops) that yields the maximum tip sub-score.
 const TIP_VOLUME_CAP: i128 = (TIP_CAP as i128) * TIP_DIVISOR;
 
@@ -113,8 +116,22 @@ pub fn get_credit_breakdown_for_profile(profile: &Profile, now: u64) -> CreditBr
         tip_score,
         x_score,
         age_score,
+        streak_score: 0,
         total,
     }
+}
+
+/// Build the weighted credit breakdown for `profile` including streak bonus.
+pub fn get_credit_breakdown_with_streak(
+    env: &Env,
+    profile: &Profile,
+    now: u64,
+) -> CreditBreakdown {
+    let mut breakdown = get_credit_breakdown_for_profile(profile, now);
+    let streak_score = storage::get_creator_streak_bonus(env, &profile.owner).min(MAX_SCORE);
+    breakdown.streak_score = streak_score;
+    breakdown.total = (breakdown.total + streak_score).min(MAX_SCORE);
+    breakdown
 }
 
 /// Compute the credit score (0–100) for `profile` at the given `now` timestamp
@@ -129,6 +146,11 @@ pub fn get_credit_breakdown_for_profile(profile: &Profile, now: u64) -> CreditBr
 /// | account age < 1 day                      | age component = 0              |
 pub fn calculate_credit_score(profile: &Profile, now: u64) -> u32 {
     get_credit_breakdown_for_profile(profile, now).total
+}
+
+/// Compute the credit score including streak bonuses.
+pub fn calculate_credit_score_with_streak(env: &Env, profile: &Profile, now: u64) -> u32 {
+    get_credit_breakdown_with_streak(env, profile, now).total
 }
 
 /// Map a credit score (0–100) to its [`CreditTier`].
@@ -158,7 +180,7 @@ pub fn get_credit_tier(env: &Env, address: &Address) -> Result<(u32, CreditTier)
     let profile: Profile = storage::get_profile(env, address);
 
     let now = env.ledger().timestamp();
-    let score = calculate_credit_score(&profile, now);
+    let score = calculate_credit_score_with_streak(env, &profile, now);
     let tier = get_tier(score);
 
     Ok((score, tier))
@@ -175,5 +197,5 @@ pub fn get_credit_breakdown(
 
     let profile: Profile = storage::get_profile(env, address);
     let now = env.ledger().timestamp();
-    Ok(get_credit_breakdown_for_profile(&profile, now))
+    Ok(get_credit_breakdown_with_streak(env, &profile, now))
 }

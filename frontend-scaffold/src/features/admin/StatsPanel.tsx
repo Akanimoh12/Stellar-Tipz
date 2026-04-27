@@ -21,12 +21,14 @@ export const StatsPanel: React.FC = () => {
   useEffect(() => {
     // In a real implementation, fetch stats from contract
     // For now, using mock data
-    setStats({
-      totalCreators: 1250,
-      totalTipsCount: 8934,
-      totalTipsVolume: 45670000000, // stroops
-      totalFeesCollected: 913400000, // stroops
-      feeBps: 200,
+    queueMicrotask(() => {
+      setStats({
+        totalCreators: 1250,
+        totalTipsCount: 8934,
+        totalTipsVolume: 45670000000, // stroops
+        totalFeesCollected: 913400000, // stroops
+        feeBps: 200,
+      });
     });
   }, []);
 

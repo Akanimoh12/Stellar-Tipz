@@ -73,7 +73,7 @@ export const useRealTimeNotifications = (creatorAddress?: string) => {
       },
     });
 
-    setIsConnected(true);
+    queueMicrotask(() => setIsConnected(true));
     streamRef.current = stream;
 
     return () => {

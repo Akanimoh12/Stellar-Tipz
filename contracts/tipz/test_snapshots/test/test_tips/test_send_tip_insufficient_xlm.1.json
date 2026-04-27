@@ -1075,6 +1075,9 @@
                 },
                 {
                   "string": "no funds"
+                },
+                {
+                  "bool": false
                 }
               ]
             }
@@ -1226,6 +1229,9 @@
                     },
                     {
                       "string": "no funds"
+                    },
+                    {
+                      "bool": false
                     }
                   ]
                 }

@@ -1634,6 +1634,9 @@
                 },
                 {
                   "string": "tip"
+                },
+                {
+                  "bool": false
                 }
               ]
             }
@@ -1733,6 +1736,9 @@
                     },
                     {
                       "string": "tip"
+                    },
+                    {
+                      "bool": false
                     }
                   ]
                 }

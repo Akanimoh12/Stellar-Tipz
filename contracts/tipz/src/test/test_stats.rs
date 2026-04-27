@@ -1,6 +1,8 @@
 //! Tests for platform analytics and statistics
 
-use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
+extern crate alloc;
+use alloc::format;
+use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
 use crate::test::test_init::setup_test_contract;
 use crate::TipzContractClient;
@@ -16,11 +18,6 @@ fn register_creator(client: &TipzContractClient, env: &Env, creator: &Address, u
     );
 }
 
-fn fund_tipper(client: &TipzContractClient, env: &Env, tipper: &Address) {
-    let token = client.get_config().native_token;
-    token::StellarAssetClient::new(env, &token).mint(tipper, &100_000_000);
-}
-
 #[test]
 fn test_platform_stats() {
     let env = Env::default();
@@ -33,7 +30,6 @@ fn test_platform_stats() {
     let tipper = Address::generate(&env);
 
     let client = setup_test_contract(&env, &admin);
-    fund_tipper(&client, &env, &tipper);
 
     // Register 3 creators
     register_creator(&client, &env, &creator1, "creator1");
@@ -93,7 +89,6 @@ fn test_stats_update_on_tip() {
     let tipper = Address::generate(&env);
 
     let client = setup_test_contract(&env, &admin);
-    fund_tipper(&client, &env, &tipper);
     register_creator(&client, &env, &creator, "creator");
 
     let before = client.get_platform_stats();
@@ -121,7 +116,6 @@ fn test_creator_stats() {
     let tipper = Address::generate(&env);
 
     let client = setup_test_contract(&env, &admin);
-    fund_tipper(&client, &env, &tipper);
     register_creator(&client, &env, &creator, "creator");
 
     // Send tips
@@ -157,7 +151,6 @@ fn test_24h_stats_tracking() {
     let tipper = Address::generate(&env);
 
     let client = setup_test_contract(&env, &admin);
-    fund_tipper(&client, &env, &tipper);
     register_creator(&client, &env, &creator, "creator");
 
     // Send tip
@@ -184,7 +177,6 @@ fn test_stats_after_withdrawal() {
     let tipper = Address::generate(&env);
 
     let client = setup_test_contract(&env, &admin);
-    fund_tipper(&client, &env, &tipper);
     register_creator(&client, &env, &creator, "creator");
 
     // Send tip
@@ -213,13 +205,12 @@ fn test_platform_stats_multiple_creators() {
     let tipper = Address::generate(&env);
 
     let client = setup_test_contract(&env, &admin);
-    fund_tipper(&client, &env, &tipper);
-    let usernames = ["creator0", "creator1", "creator2", "creator3", "creator4"];
 
     // Register multiple creators and send tips
     for i in 0..5 {
         let creator = Address::generate(&env);
-        register_creator(&client, &env, &creator, usernames[i]);
+        let username = format!("creator{}", i);
+        register_creator(&client, &env, &creator, &username);
 
         client.send_tip(
             &tipper,

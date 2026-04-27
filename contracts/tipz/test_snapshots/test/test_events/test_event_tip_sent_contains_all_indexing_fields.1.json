@@ -109,8 +109,36 @@
                 },
                 {
                   "u64": 1700000000
+                },
+                {
+                  "bool": false
                 }
               ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "error"
+              },
+              {
+                "error": {
+                  "object": "unexpected_size"
+                }
+              }
+            ],
+            "data": {
+              "string": "differing host vector and output vector lengths when unpacking vec to slice"
             }
           }
         }

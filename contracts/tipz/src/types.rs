@@ -163,6 +163,24 @@ pub struct Tip {
     pub is_anonymous: bool,
 }
 
+/// Supporter/creator streak record.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Streak {
+    /// Address of the supporter.
+    pub supporter: Address,
+    /// Address of the creator being tipped.
+    pub creator: Address,
+    /// Current consecutive streak count.
+    pub current: u32,
+    /// Longest streak observed for this pair.
+    pub longest: u32,
+    /// Day index of the last qualifying tip.
+    pub last_tip_day: Option<u64>,
+    /// Lifetime bonus points earned from this streak.
+    pub bonus_points: u32,
+}
+
 /// Leaderboard entry for top creators.
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -208,6 +226,8 @@ pub struct CreditBreakdown {
     pub x_score: u32,
     /// Weighted contribution from account age.
     pub age_score: u32,
+    /// Weighted contribution from supporter streaks.
+    pub streak_score: u32,
     /// Final score after summing all components (capped at 100).
     pub total: u32,
 }
