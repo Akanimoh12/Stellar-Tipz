@@ -32,7 +32,7 @@ const EmbedWidget: React.FC<EmbedWidgetProps> = ({
 
   useEffect(() => {
     if (username) {
-      setLoading(true);
+      Promise.resolve().then(() => setLoading(true));
       getProfileByUsername(username)
         .then(setCreator)
         .catch(console.error)

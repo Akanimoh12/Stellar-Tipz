@@ -5,7 +5,7 @@ use soroban_sdk::{Address, Env, String};
 use crate::errors::ContractError;
 use crate::events;
 use crate::storage;
-use crate::types::Profile;
+use crate::types::{Profile, ProfileWithDeactivation};
 use crate::validation;
 
 /// Register a new creator profile.
@@ -57,7 +57,7 @@ pub fn register_profile(
     validation::validate_bio(&bio)?;
     validation::validate_image_url(&image_url)?;
     // x_handle is optional: only validate and normalize if non-empty.
-    let normalized_x = if x_handle.len() > 0 {
+    let normalized_x = if !x_handle.is_empty() {
         validation::validate_x_handle(&x_handle)?;
         // Normalize: prepend @ if missing.
         let mut handle_buf = [0u8; 16];
@@ -211,6 +211,97 @@ pub fn update_profile(
     Ok(())
 }
 
+/// Load profile plus deactivation flags for read-only queries.
+pub fn get_profile_with_deactivation(
+    env: &Env,
+    address: &Address,
+) -> Result<ProfileWithDeactivation, ContractError> {
+    if !storage::has_profile(env, address) {
+        return Err(ContractError::NotRegistered);
+    }
+    let profile = storage::get_profile(env, address);
+    storage::bump_profile_ttl(env, address);
+    storage::bump_username_ttl(env, &profile.username);
+    let deactivated_at = storage::get_profile_deactivated_at(env, address);
+    let is_deactivated = deactivated_at.is_some();
+    Ok(ProfileWithDeactivation {
+        profile,
+        is_deactivated,
+        deactivated_at,
+    })
+}
+
+/// Temporarily deactivate a creator profile (self or admin moderation).
+///
+/// Removes the creator from the leaderboard and blocks new tips. Data and balance stay on-chain.
+pub fn deactivate_profile(
+    env: &Env,
+    caller: Address,
+    creator: Address,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    crate::admin::require_not_paused(env)?;
+
+    if !storage::has_profile(env, &creator) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    if caller == creator {
+        caller.require_auth();
+    } else {
+        crate::admin::require_admin(env, &caller)?;
+    }
+
+    if storage::is_profile_deactivated(env, &creator) {
+        return Err(ContractError::AlreadyDeactivated);
+    }
+
+    let now = env.ledger().timestamp();
+    storage::set_profile_deactivated_at(env, &creator, now);
+    crate::leaderboard::remove_from_all_leaderboards(env, &creator);
+
+    let username = storage::get_profile(env, &creator).username.clone();
+    storage::bump_profile_ttl(env, &creator);
+    storage::bump_username_ttl(env, &username);
+
+    events::emit_profile_deactivated(env, &creator, &caller);
+    Ok(())
+}
+
+/// Restore a deactivated profile (owner or admin).
+pub fn reactivate_profile(
+    env: &Env,
+    caller: Address,
+    creator: Address,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    crate::admin::require_not_paused(env)?;
+
+    if !storage::has_profile(env, &creator) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    if caller == creator {
+        caller.require_auth();
+    } else {
+        crate::admin::require_admin(env, &caller)?;
+    }
+
+    if !storage::is_profile_deactivated(env, &creator) {
+        return Err(ContractError::ProfileNotDeactivated);
+    }
+
+    storage::clear_profile_deactivation(env, &creator);
+    let profile = storage::get_profile(env, &creator);
+    crate::leaderboard::update_all_leaderboards(env, &profile, 0);
+
+    storage::bump_profile_ttl(env, &creator);
+    storage::bump_username_ttl(env, &profile.username);
+
+    events::emit_profile_reactivated(env, &creator, &caller);
+    Ok(())
+}
+
 /// Deregister the caller's profile, permanently removing it from the platform.
 ///
 /// # Requirements
@@ -248,13 +339,15 @@ pub fn deregister_profile(env: &Env, caller: Address) -> Result<(), ContractErro
         return Err(ContractError::BalanceNotZero);
     }
 
+    storage::clear_profile_deactivation(env, &caller);
+
     // 4.4: Storage cleanup operations
     storage::remove_profile(env, &caller);
     storage::remove_username_address(env, &profile.username);
     storage::decrement_total_creators(env);
 
     // 4.5: Leaderboard removal
-    crate::leaderboard::remove_from_leaderboard(env, &caller);
+    crate::leaderboard::remove_from_all_leaderboards(env, &caller);
 
     // 4.6: Tip index cleanup — reset temporary storage indices so that
     // stale counts cannot cause index collisions on re-registration.
@@ -266,7 +359,6 @@ pub fn deregister_profile(env: &Env, caller: Address) -> Result<(), ContractErro
 
     Ok(())
 }
-
 
 /// Set a custom donation page configuration for a creator
 pub fn set_donation_page(
@@ -296,7 +388,7 @@ pub fn set_donation_page(
     }
 
     // Validate theme color format (basic check for hex color)
-    if config.theme_color.len() > 0 && config.theme_color.len() != 7 {
+    if !config.theme_color.is_empty() && config.theme_color.len() != 7 {
         return Err(ContractError::InvalidAmount); // Reusing error for invalid format
     }
 

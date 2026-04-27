@@ -58,12 +58,7 @@ fn setup_env() -> (
         balance: 100_000_000, // 10 XLM
         registered_at: now,
         updated_at: now,
-        verification: VerificationStatus {
-            is_verified: false,
-            verification_type: VerificationType::Unverified,
-            verified_at: None,
-            revoked_at: None,
-        },
+        verification: crate::types::VerificationStatus::default(),
     };
     env.as_contract(&contract_id, || {
         storage::set_profile(&env, &profile);

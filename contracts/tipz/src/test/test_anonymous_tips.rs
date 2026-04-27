@@ -1,6 +1,6 @@
 //! Tests for anonymous tipping functionality
 
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
 
 use crate::test::test_init::setup_test_contract;
 use crate::TipzContractClient;
@@ -16,6 +16,11 @@ fn register_creator(client: &TipzContractClient, env: &Env, creator: &Address) {
     );
 }
 
+fn fund_tipper(client: &TipzContractClient, env: &Env, tipper: &Address) {
+    let token = client.get_config().native_token;
+    token::StellarAssetClient::new(env, &token).mint(tipper, &100_000_000);
+}
+
 #[test]
 fn test_anonymous_tip() {
     let env = Env::default();
@@ -27,6 +32,7 @@ fn test_anonymous_tip() {
 
     let client = setup_test_contract(&env, &admin);
     register_creator(&client, &env, &creator);
+    fund_tipper(&client, &env, &tipper);
 
     // Send anonymous tip
     client.send_tip(
@@ -57,6 +63,7 @@ fn test_tipper_sees_own_anonymous_tip() {
 
     let client = setup_test_contract(&env, &admin);
     register_creator(&client, &env, &creator);
+    fund_tipper(&client, &env, &tipper);
 
     // Send anonymous tip
     client.send_tip(
@@ -87,6 +94,7 @@ fn test_non_anonymous_tip() {
 
     let client = setup_test_contract(&env, &admin);
     register_creator(&client, &env, &creator);
+    fund_tipper(&client, &env, &tipper);
 
     // Send non-anonymous tip
     client.send_tip(
@@ -119,6 +127,8 @@ fn test_mixed_anonymous_and_public_tips() {
 
     let client = setup_test_contract(&env, &admin);
     register_creator(&client, &env, &creator);
+    fund_tipper(&client, &env, &tipper1);
+    fund_tipper(&client, &env, &tipper2);
 
     // Send anonymous tip
     client.send_tip(

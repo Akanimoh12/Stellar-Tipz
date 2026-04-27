@@ -9,17 +9,27 @@ use soroban_sdk::{contracttype, Address, String};
 /// without wrapping it in `Option` (which soroban-sdk does not support for
 /// custom contracttype enums).
 #[contracttype]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub enum VerificationType {
+    #[default]
     Unverified,
     Identity,
     SocialMedia,
     Community,
 }
 
+/// Period for leaderboard tracking.
+#[contracttype]
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+pub enum LeaderboardPeriod {
+    AllTime,
+    Monthly,
+    Weekly,
+}
+
 /// Verification status for a creator profile.
 #[contracttype]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct VerificationStatus {
     /// Whether the creator is verified
     pub is_verified: bool,
@@ -71,6 +81,34 @@ pub struct Profile {
     pub verification: VerificationStatus,
 }
 
+/// Profile plus deactivation state for queries (`get_profile`, `get_profile_by_username`).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProfileWithDeactivation {
+    pub profile: Profile,
+    pub is_deactivated: bool,
+    /// Set when the profile is deactivated (hidden from leaderboard, tips disabled).
+    pub deactivated_at: Option<u64>,
+}
+
+/// Pending time-locked admin rotation (see `ADMIN_CHANGE_TIMELOCK_SECS`).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdminChangeProposal {
+    pub new_admin: Address,
+    /// Unix timestamp after which `confirm_admin_change` may succeed.
+    pub confirmable_after: u64,
+}
+
+/// One recorded completed admin handoff (two-step confirm or direct `set_admin`).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdminChangeHistoryEntry {
+    pub old_admin: Address,
+    pub new_admin: Address,
+    pub confirmed_at: u64,
+}
+
 /// Recurring tip subscription record.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -109,8 +147,10 @@ pub struct PendingWithdrawal {
 pub struct Tip {
     /// Unique tip ID (monotonically increasing global counter)
     pub id: u32,
-    /// Address that sent the tip (None if anonymous)
-    pub tipper: Option<Address>,
+    /// Address that actually sent the funds
+    pub sender: Address,
+    /// Address that gets the credit (on behalf of). Same as sender for normal tips.
+    pub benefactor: Option<Address>,
     /// Address of the creator who received the tip
     pub creator: Address,
     /// Tip amount in stroops
@@ -149,8 +189,8 @@ pub struct LeaderboardEntry {
     pub address: Address,
     /// Creator's username
     pub username: String,
-    /// Lifetime tips received
-    pub total_tips_received: i128,
+    /// Tips received during the period
+    pub amount: i128,
     /// Current credit score
     pub credit_score: u32,
 }
@@ -264,4 +304,24 @@ pub struct DonationPageConfig {
     pub header_image_uri: String,
     /// Whether this is the default config
     pub is_default: bool,
+}
+
+/// Rate limit configuration for the contract.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RateLimitConfig {
+    /// Max operations per window
+    pub max_ops: u32,
+    /// Window duration in seconds (e.g., 3600 for 1 hour)
+    pub window_secs: u64,
+}
+
+/// Rate limit tracking for an address.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RateLimitStatus {
+    /// Number of operations performed in the current window
+    pub count: u32,
+    /// Timestamp when the current window started
+    pub last_op_time: u64,
 }

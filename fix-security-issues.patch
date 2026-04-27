@@ -1,0 +1,151 @@
+From 3bee60cd83585c11ef76f3a3e21dc02fabdbd87b Mon Sep 17 00:00:00 2001
+From: smartdev <smartdevs17@gmail.com>
+Date: Sat, 25 Apr 2026 08:26:46 +0100
+Subject: [PATCH] fix: address security issues - CSP headers, message
+ sanitization, self-tipping prevention
+
+- Add CSP headers to vercel.json and index.html for XSS prevention
+- Add message validation in contract to reject control characters
+- Add frontend self-tipping prevention with disabled tip button
+- Already implemented: self-tipping prevention in contract (tips.rs:142-144)
+- Already implemented: events for state-changing operations in events.rs
+
+Closes #493
+Closes #426
+Closes #425
+Closes #424
+---
+ contracts/tipz/src/errors.rs                  |  2 ++
+ contracts/tipz/src/validation.rs              | 11 ++++++++
+ frontend-scaffold/index.html                  |  1 +
+ .../src/features/tipping/TipPage.tsx          | 27 +++++++++++++++----
+ vercel.json                                   | 11 ++++++++
+ 5 files changed, 47 insertions(+), 5 deletions(-)
+
+diff --git a/contracts/tipz/src/errors.rs b/contracts/tipz/src/errors.rs
+index d65e67a..cf7b206 100644
+--- a/contracts/tipz/src/errors.rs
++++ b/contracts/tipz/src/errors.rs
+@@ -70,4 +70,6 @@ pub enum ContractError {
+     AdminChangeTimelockNotMet = 31,
+     /// A different admin change is already pending (cancel or wait before proposing another)
+     AdminChangeAlreadyPending = 32,
++    /// Tip message contains invalid control characters
++    InvalidMessage = 33,
+ }
+diff --git a/contracts/tipz/src/validation.rs b/contracts/tipz/src/validation.rs
+index 18a4517..9c25e03 100644
+--- a/contracts/tipz/src/validation.rs
++++ b/contracts/tipz/src/validation.rs
+@@ -307,5 +307,16 @@ pub fn validate_message(message: &String) -> Result<(), ContractError> {
+         return Err(ContractError::MessageTooLong);
+     }
+ 
++    if message.len() > 0 {
++        let mut buf = [0u8; 280];
++        let n = message.len() as usize;
++        message.copy_into_slice(&mut buf[..n]);
++        for &b in &buf[..n] {
++            if b < 0x20 && b != b'\n' && b != b'\t' && b != b'\r' {
++                return Err(ContractError::InvalidMessage);
++            }
++        }
++    }
++
+     Ok(())
+ }
+diff --git a/frontend-scaffold/index.html b/frontend-scaffold/index.html
+index 4f0cbb0..aece91c 100644
+--- a/frontend-scaffold/index.html
++++ b/frontend-scaffold/index.html
+@@ -4,6 +4,7 @@
+     <meta charset="utf-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1" />
+     <meta name="theme-color" content="#000000" />
++    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://horizon.stellar.org https://mainnet-horizon.stellar.org https://futurenet-horizon.stellar.org https://testnet-horizon.stellar.org https://soroban-rpc.stellar.services https://rpc-futurenet.stellar.org; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" />
+     <meta
+       name="description"
+       content="Stellar Tipz - Empowering creators through decentralized, instant, and fair tipping on Stellar Blockchain"
+diff --git a/frontend-scaffold/src/features/tipping/TipPage.tsx b/frontend-scaffold/src/features/tipping/TipPage.tsx
+index 89e5fd5..ac3fd8e 100644
+--- a/frontend-scaffold/src/features/tipping/TipPage.tsx
++++ b/frontend-scaffold/src/features/tipping/TipPage.tsx
+@@ -34,7 +34,7 @@ import { useNavigate } from "react-router-dom";
+ const TipPage: React.FC = () => {
+   const { username } = useParams<{ username: string }>();
+   const navigate = useNavigate();
+-  const { connected, connect } = useWallet();
++  const { connected, connect, publicKey } = useWallet();
+   const [amount, setAmount] = useState("5");
+   const [message, setMessage] = useState("");
+   const { getProfileByUsername } = useContract();
+@@ -42,6 +42,8 @@ const TipPage: React.FC = () => {
+   const [creator, setCreator] = useState<Profile | null>(null);
+   const [fetchError, setFetchError] = useState<string | null>(null);
+ 
++  const isSelfTipping = connected && creator && publicKey === creator.owner;
++
+   const fetchCreator = useCallback(async () => {
+     if (!username) return;
+     setLoading(true);
+@@ -267,7 +269,20 @@ const TipPage: React.FC = () => {
+               />
+ 
+               <div className="flex flex-col gap-3 sm:flex-row">
+-                {connected ? (
++                {isSelfTipping ? (
++                  <>
++                    <Button
++                      type="button"
++                      disabled
++                      className="sm:flex-1"
++                    >
++                      Can't tip yourself
++                    </Button>
++                    <p className="text-sm font-medium text-gray-600">
++                      You cannot send a tip to your own profile.
++                    </p>
++                  </>
++                ) : connected ? (
+                   <Button
+                     type="submit"
+                     loading={step === "signing" || step === "submitting"}
+@@ -288,9 +303,11 @@ const TipPage: React.FC = () => {
+                   </Button>
+                 )}
+ 
+-                <Button type="button" variant="outline" onClick={reset}>
+-                  Clear
+-                </Button>
++                {!isSelfTipping && (
++                  <Button type="button" variant="outline" onClick={reset}>
++                    Clear
++                  </Button>
++                )}
+               </div>
+             </form>
+           )}
+diff --git a/vercel.json b/vercel.json
+index 88bd023..f34bc42 100644
+--- a/vercel.json
++++ b/vercel.json
+@@ -7,5 +7,16 @@
+       "source": "/(.*)",
+       "destination": "/index.html"
+     }
++  ],
++  "headers": [
++    {
++      "source": "/(.*)",
++      "headers": [
++        {
++          "key": "Content-Security-Policy",
++          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://horizon.stellar.org https://mainnet-horizon.stellar.org https://futurenet-horizon.stellar.org https://testnet-horizon.stellar.org https://soroban-rpc.stellar.services https://rpc-futurenet.stellar.org; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
++        }
++      ]
++    }
+   ]
+ }
+-- 
+2.51.2
+

@@ -87,16 +87,13 @@ pub fn get_multisig_config(env: &Env) -> Option<MultisigConfig> {
 }
 
 /// Check if multi-sig is enabled
+#[allow(dead_code)]
 pub fn is_multisig_enabled(env: &Env) -> bool {
     get_multisig_config(env).is_some()
 }
 
 /// Propose a new action for multi-sig approval
-pub fn propose_action(
-    env: &Env,
-    signer: &Address,
-    action: Action,
-) -> Result<u32, ContractError> {
+pub fn propose_action(env: &Env, signer: &Address, action: Action) -> Result<u32, ContractError> {
     storage::extend_instance_ttl(env);
     signer.require_auth();
 
@@ -149,11 +146,7 @@ pub fn propose_action(
 }
 
 /// Approve an existing proposal
-pub fn approve_action(
-    env: &Env,
-    signer: &Address,
-    proposal_id: u32,
-) -> Result<(), ContractError> {
+pub fn approve_action(env: &Env, signer: &Address, proposal_id: u32) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     signer.require_auth();
 

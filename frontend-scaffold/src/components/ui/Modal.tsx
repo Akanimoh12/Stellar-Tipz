@@ -1,68 +1,94 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title?: string;
+  closeOnBackdropClick?: boolean;
+  ariaLabelledBy?: string;
+  ariaDescribedBy?: string;
   children: React.ReactNode;
 }
 
-const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+const Modal: React.FC<ModalProps> = ({
+  isOpen,
+  onClose,
+  title,
+  closeOnBackdropClick = true,
+  ariaLabelledBy,
+  ariaDescribedBy,
+  children,
+}) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const previousBodyOverflowRef = useRef<string>('');
+  const generatedTitleId = useId();
+
+  const effectiveLabelledBy = ariaLabelledBy ?? (title ? generatedTitleId : undefined);
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    if (!isOpen) {
+      return;
+    }
 
-      if (e.key === 'Tab' && modalRef.current) {
-        const focusableElements = modalRef.current.querySelectorAll(
-          'a[href], button, textarea, input[type="text"], input[type="radio"], input[type="checkbox"], select, [tabindex]:not([tabindex="-1"])'
-        );
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!modalRef.current) {
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+
+      if (e.key === 'Tab') {
+        const focusableElements = Array.from(modalRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+
+        if (focusableElements.length === 0) {
+          modalRef.current.focus();
+          e.preventDefault();
+          return;
+        }
+
         const firstElement = focusableElements[0] as HTMLElement;
         const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
 
         if (e.shiftKey) {
-          if (document.activeElement === firstElement) {
-            lastElement?.focus();
+          if (document.activeElement === firstElement || document.activeElement === modalRef.current) {
+            lastElement.focus();
             e.preventDefault();
           }
         } else {
           if (document.activeElement === lastElement) {
-            firstElement?.focus();
+            firstElement.focus();
             e.preventDefault();
           }
         }
       }
     };
 
-    if (isOpen) {
-      previousFocusRef.current = document.activeElement as HTMLElement;
-      document.addEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = 'hidden';
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    previousBodyOverflowRef.current = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleKeyDown);
 
-      const timer = setTimeout(() => {
-        if (modalRef.current) {
-          const focusableElements = modalRef.current.querySelectorAll(
-            'a[href], button, textarea, input[type="text"], input[type="radio"], input[type="checkbox"], select, [tabindex]:not([tabindex="-1"])'
-          );
-          if (focusableElements.length) {
-            (focusableElements[0] as HTMLElement).focus();
-          } else {
-            modalRef.current.focus();
-          }
-        }
-      }, 10);
-
-      return () => {
-        clearTimeout(timer);
-        document.removeEventListener('keydown', handleKeyDown);
-        document.body.style.overflow = 'unset';
-        if (previousFocusRef.current) {
-          previousFocusRef.current.focus();
-        }
-      };
+    if (modalRef.current) {
+      const focusableElements = Array.from(modalRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+      if (focusableElements.length > 0) {
+        focusableElements[0].focus();
+      } else {
+        modalRef.current.focus();
+      }
     }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousBodyOverflowRef.current;
+      previousFocusRef.current?.focus();
+    };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
@@ -72,21 +98,28 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black bg-opacity-50"
-        onClick={onClose}
+        onClick={() => {
+          if (closeOnBackdropClick) {
+            onClose();
+          }
+        }}
         role="presentation"
       />
 
       {/* Modal content */}
       <div
+        ref={modalRef}
+        tabIndex={-1}
         className="relative z-10 w-full border-3 border-black bg-white p-6 sm:mx-4 sm:max-w-lg sm:p-8 max-sm:h-full max-sm:max-w-none max-sm:rounded-none"
         style={{ boxShadow: '6px 6px 0px 0px rgba(0,0,0,1)' }}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={effectiveLabelledBy}
+        aria-describedby={ariaDescribedBy}
       >
         {title && (
           <div className="flex items-center justify-between mb-6">
-            <h2 id="modal-title" className="text-2xl font-black uppercase">{title}</h2>
+            <h2 id={effectiveLabelledBy} className="text-2xl font-black uppercase">{title}</h2>
             <button
               onClick={onClose}
               className="text-2xl font-black hover:opacity-60 transition-opacity focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"

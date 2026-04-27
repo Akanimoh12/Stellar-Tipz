@@ -24,6 +24,10 @@ pub fn create_subscription(
         return Err(ContractError::NotRegistered);
     }
 
+    if storage::is_profile_deactivated(env, &creator) {
+        return Err(ContractError::ProfileDeactivated);
+    }
+
     if subscriber == creator {
         return Err(ContractError::CannotTipSelf);
     }

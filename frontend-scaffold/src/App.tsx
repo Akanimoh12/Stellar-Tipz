@@ -7,6 +7,7 @@ import ScrollToTop from "@/components/shared/ScrollToTop";
 import ErrorBoundary from "@/components/shared/ErrorBoundary";
 import ToastContainer from "@/components/shared/ToastContainer";
 import KeyboardShortcutsProvider from "@/components/shared/KeyboardShortcutsProvider";
+import PageTransition from "@/components/shared/PageTransition";
 import { routes } from "@/routes";
 import { useI18n } from "@/i18n";
 import { useOfflineStatus } from "@/hooks/useOfflineStatus";
@@ -61,7 +62,9 @@ const AppRoutes: React.FC = () => {
             {t("app.skipToMain")}
           </a>
           <Header />
-          <div className="flex-1">{routeElements}</div>
+          <div className="flex-1">
+            <PageTransition animationType="fade">{routeElements}</PageTransition>
+          </div>
           <Footer />
         </div>
       </ErrorBoundary>

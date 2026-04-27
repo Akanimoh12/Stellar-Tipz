@@ -1,83 +1,52 @@
-# Security Audit Notes
+# Security Audit Checklist: Stellar Tipz Soroban Contract
 
-This document records a targeted review of the Tipz contract codebase for issue #228.
+This document outlines the security audit and hardening measures implemented for the Stellar Tipz smart contract.
 
-## Scope
+## Known Attack Vectors & Mitigations
 
-- `contracts/tipz/src/tips.rs`
-- `contracts/tipz/src/fees.rs`
-- `contracts/tipz/src/credit.rs`
-- `contracts/tipz/src/profile.rs`
-- `contracts/tipz/src/storage.rs`
-- `contracts/tipz/src/token.rs`
-- `contracts/tipz/src/admin.rs`
-- `contracts/tipz/src/withdraw.rs`
+### 1. Reentrancy
+**Description:** A malicious contract calls back into the Tipz contract before the first execution completes, potentially draining funds or creating inconsistent state.
+**Mitigation:** 
+- The Soroban protocol natively prevents reentrancy. Any cross-contract call that attempts to re-enter a contract currently in the call stack will be trapped and fail.
+- All state modifications (like updating profile balances) occur before external calls (like token transfers).
 
-## Findings by checklist item
+### 2. Integer Overflow / Underflow
+**Description:** Arithmetic operations exceed the bounds of `i128`, wrapping around and causing logical errors (e.g., negative balances becoming positive).
+**Mitigation:**
+- Rust's `checked_add` and `checked_sub` are used for critical accumulations (e.g., `storage::add_to_tips_volume`, `storage::add_to_fees`).
+- The Soroban compilation profile is configured with `overflow-checks = true` for both debug and release profiles by default.
+- Validation functions reject negative amounts (`amount <= 0`).
 
-### Reentrancy
+### 3. Access Control & Authorization
+**Description:** Unauthorized users executing privileged functions (e.g., withdrawing someone else's tips or changing admin config).
+**Mitigation:**
+- `caller.require_auth()` is strictly used for all functions that act on behalf of a user (`send_tip`, `withdraw_tips`, `register_profile`, etc.).
+- Admin-only functions (like `set_fee_bps` or `pause_contract`) properly invoke `admin.require_auth()`.
+- Unregistered or deactivated profiles are prevented from sending or receiving tips via early checks.
 
-- Soroban contract execution is single-threaded and does not support EVM-style fallback callbacks.
-- `token::transfer_xlm` uses `token::TokenClient::transfer` against the native SAC and does not expose a callback path into this contract.
-- No explicit reentrancy guard is required for current call patterns.
+### 4. Front-Running / Transaction Ordering
+**Description:** Attackers reorder transactions in the mempool to profit (e.g., front-running a tip to alter the credit score before a leaderboard snapshot).
+**Mitigation:**
+- Stellar's consensus mechanism minimizes traditional front-running opportunities.
+- Tips and withdrawals are strictly additive or subtractive, and operations do not rely on precise transaction ordering to be secure.
 
-Status: addressed.
+### 5. Denial of Service (DoS)
+**Description:** Attackers send excessive data or trigger infinite loops to consume all available gas, rendering the contract unusable.
+**Mitigation:**
+- Gas limits are strictly enforced by the Soroban runtime.
+- There are no unbounded loops over state (e.g., pagination is limited to `MAX_PAGE_LIMIT = 50`).
+- Input lengths are bounded (e.g., usernames max 32 chars, bios max 280 chars) to prevent excessive storage or compute.
 
-### Integer overflow
+### 6. Storage Exhaustion
+**Description:** Attackers create massive amounts of storage entries to bloat state and increase fees.
+**Mitigation:**
+- Temporary storage is used for `Tip` records, automatically expiring them after `TIP_TTL_LEDGERS`.
+- A minimum tip amount (`MinTipAmount`) creates an economic cost for spamming tips.
+- Profile registration requires authorization and costs gas.
 
-- `fees::calculate_fee` already uses checked arithmetic.
-- `storage::add_to_tips_volume` now uses `checked_add` and returns `OverflowError` on overflow.
-- `storage::add_to_fees` now uses `checked_add` and returns `OverflowError` on overflow.
-- Remaining arithmetic hotspots reviewed:
-  - `tips.rs` profile counters increment in bounded domains for realistic usage.
-  - `credit.rs` score math is bounded and clamped to small integer ranges.
-  - `storage.rs` counter increments (`TipCount`, `TotalCreators`) remain plain `+ 1` and should be migrated to checked arithmetic in a follow-up hardening patch if strict overflow safety is required for all counters.
-
-Status: partially addressed with key monetary accumulators hardened.
-
-### Authorization
-
-- All key state-changing entry paths enforce authorization on the expected actor:
-  - `register_profile` / `update_profile` require caller auth.
-  - `send_tip` requires tipper auth.
-  - `withdraw_tips` requires caller auth in `tips.rs` path.
-  - Admin operations (`set_fee`, `set_fee_collector`, `set_admin`, X-metrics updates, ttl bump) enforce admin checks.
-
-Status: addressed.
-
-### Storage exhaustion
-
-- Tip records are stored in temporary storage with explicit TTL (`TIP_TTL_LEDGERS`) via `set_tip_ttl`.
-- Contract instance TTL is periodically extended for active state.
-- Profiles and username mappings intentionally use persistent storage and can grow with user adoption.
-
-Status: acceptable with current model (temporary tips + persistent profiles).
-
-### Front-running
-
-- Tip transactions and ordering are subject to validator sequencing and mempool visibility.
-- There is no contract-level mitigation for sequencing risk, and this is acceptable for the tipping use-case.
-
-Status: documented risk accepted.
-
-### Griefing (username squatting)
-
-- Username registration is first-come-first-served and low-cost.
-- A motivated actor can squat common names.
-- Mitigations not yet implemented (examples: reservation fees, username auctions, expiry/reclamation, moderation/admin reclaim policy).
-
-Status: open product/policy risk.
-
-### Fee bypass
-
-- Main withdraw flow in `tips.rs::withdraw_tips` always computes and transfers fee before finalizing state updates.
-- No public path was identified that withdraws creator balance without passing the fee calculation in `fees::calculate_fee`.
-- Legacy `withdraw.rs` remains in tree and should be considered for removal to avoid confusion, but public contract wiring uses `tips.rs` withdraw path.
-
-Status: addressed for active withdraw path.
-
-## Recommended follow-ups
-
-1. Convert all storage counter increments (`u32` counters) to checked arithmetic with explicit overflow errors.
-2. Remove or deprecate legacy `withdraw.rs` if it is not part of the active contract API.
-3. Define an anti-squatting policy for usernames and implement corresponding contract or governance controls.
+### 7. State Consistency & Desync
+**Description:** The contract state becomes inconsistent (e.g., sum of balances does not match total XLM held).
+**Mitigation:**
+- `UsernameToAddress` and `Profile` entries have their TTL bumped together (`bump_profile_ttl` and `bump_username_ttl`) to prevent desynchronization.
+- Total tips received, total tips count, and balance are atomically updated during `send_tip`.
+- Invariants are verified through the `test_security.rs` test suite.

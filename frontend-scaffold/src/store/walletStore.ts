@@ -1,5 +1,6 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
+import { secureStorage } from "../services/secureStorage";
 
 export type Network = 'TESTNET' | 'PUBLIC';
 type SigningStatus = 'idle' | 'signing' | 'signed' | 'error';
@@ -28,6 +29,7 @@ interface WalletState {
   /** walletType of the active wallet (backward-compat). */
   walletType: string | null;
   signingStatus: SigningStatus;
+  _hasHydrated: boolean;
 }
 
 interface WalletActions {
@@ -49,6 +51,18 @@ interface WalletActions {
 }
 
 type WalletStore = WalletState & WalletActions;
+
+const initialWalletState: WalletState = {
+  publicKey: null,
+  connected: false,
+  connecting: false,
+  isReconnecting: false,
+  error: null,
+  network: "TESTNET",
+  walletType: null,
+  signingStatus: "idle",
+  _hasHydrated: false,
+};
 
 export const useWalletStore = create<WalletStore>()(
   persist(
@@ -141,8 +155,15 @@ export const useWalletStore = create<WalletStore>()(
       setSigningStatus: (signingStatus: SigningStatus) => set({ signingStatus }),
     }),
     {
-      name: 'tipz_wallet',
-      // Persist multi-wallet list and active key
+      name: "tipz-wallet",
+      onRehydrateStorage: () => (state) => {
+        state?._hasHydrated = true;
+      },
+      storage: createJSONStorage(() => ({
+        getItem: (name) => secureStorage.get(name),
+        setItem: (name, value) => secureStorage.set(name, value),
+        removeItem: (name) => secureStorage.remove(name),
+      })),
       partialize: (state) => ({
         wallets: state.wallets,
         activeWalletKey: state.activeWalletKey,

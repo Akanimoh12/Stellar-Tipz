@@ -14,7 +14,7 @@
 use soroban_sdk::{contracttype, Address, Env, String};
 
 use crate::errors::ContractError;
-use crate::types::Profile;
+use crate::types::{Profile, LeaderboardPeriod, LeaderboardEntry, RateLimitConfig, RateLimitStatus};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // TTL constants
@@ -60,8 +60,10 @@ pub enum DataKey {
     TipCount,
     /// Individual tip record by index
     Tip(u32),
-    /// Leaderboard (top creators)
-    Leaderboard,
+    /// Leaderboard (top creators) per period
+    Leaderboard(crate::types::LeaderboardPeriod),
+    /// Timestamp of last leaderboard reset per period
+    LastLeaderboardReset(crate::types::LeaderboardPeriod),
     /// Total registered creators
     TotalCreators,
     /// Lifetime tip volume
@@ -84,8 +86,10 @@ pub enum DataKey {
     CreatorTip(Address, u32),
     /// Pending admin address (proposed but not yet accepted)
     PendingAdmin,
-    /// Verification status by creator address
-    VerificationStatus(Address),
+    /// Pending two-step admin change proposal (full transition record).
+    PendingAdminChange,
+    /// Admin change history list (newest entries appended last).
+    AdminChangeHistory,
     /// Pending verification request by creator address
     VerificationRequest(Address),
     /// Subscription by (subscriber, creator)
@@ -134,6 +138,14 @@ pub enum DataKey {
     Streak(Address, Address),
     /// Aggregate streak bonus credited to a creator
     CreatorStreakBonus(Address),
+    /// When set, profile is deactivated (unix timestamp); absent means active
+    ProfileDeactivatedAt(Address),
+    /// Rate limit status by address
+    RateLimit(Address),
+    /// Global rate limit configuration
+    RateLimitConfig,
+    /// Tips received by a creator during a specific period (Address, Period, StartTimestamp)
+    CreatorPeriodVolume(Address, crate::types::LeaderboardPeriod, u64),
 }
 
 /// Extend the contract instance TTL when a write transaction starts.
@@ -241,19 +253,83 @@ pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
 }
 
-/// Returns the pending (proposed) admin address, or `None` if no proposal is active.
-pub fn get_pending_admin(env: &Env) -> Option<Address> {
-    env.storage().instance().get(&DataKey::PendingAdmin)
+/// Pending admin change proposal, if any.
+pub fn get_pending_admin_change(env: &Env) -> Option<crate::types::AdminChangeProposal> {
+    env.storage()
+        .instance()
+        .get(&DataKey::PendingAdminChange)
 }
 
-/// Stores a pending admin proposal.
-pub fn set_pending_admin(env: &Env, admin: &Address) {
-    env.storage().instance().set(&DataKey::PendingAdmin, admin);
+pub fn set_pending_admin_change(env: &Env, proposal: &crate::types::AdminChangeProposal) {
+    env.storage()
+        .instance()
+        .set(&DataKey::PendingAdminChange, proposal);
 }
 
-/// Removes any pending admin proposal.
-pub fn remove_pending_admin(env: &Env) {
-    env.storage().instance().remove(&DataKey::PendingAdmin);
+pub fn remove_pending_admin_change(env: &Env) {
+    env.storage().instance().remove(&DataKey::PendingAdminChange);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Profile deactivation (separate from `Profile` blob for upgrade-safe reads)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// `true` when the creator profile is temporarily deactivated.
+pub fn is_profile_deactivated(env: &Env, address: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::ProfileDeactivatedAt(address.clone()))
+}
+
+/// Ledger timestamp when the profile was deactivated, if deactivated.
+pub fn get_profile_deactivated_at(env: &Env, address: &Address) -> Option<u64> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ProfileDeactivatedAt(address.clone()))
+}
+
+pub fn set_profile_deactivated_at(env: &Env, address: &Address, at: u64) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ProfileDeactivatedAt(address.clone()), &at);
+}
+
+pub fn clear_profile_deactivation(env: &Env, address: &Address) {
+    let key = DataKey::ProfileDeactivatedAt(address.clone());
+    if env.storage().persistent().has(&key) {
+        env.storage().persistent().remove(&key);
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Admin change history
+// ──────────────────────────────────────────────────────────────────────────────
+
+fn load_admin_change_history(env: &Env) -> soroban_sdk::Vec<crate::types::AdminChangeHistoryEntry> {
+    env.storage()
+        .instance()
+        .get(&DataKey::AdminChangeHistory)
+        .unwrap_or(soroban_sdk::Vec::new(env))
+}
+
+pub fn get_admin_change_history_next_id(env: &Env) -> u32 {
+    load_admin_change_history(env).len()
+}
+
+/// Append a completed admin change to history (sequential ids, newest has highest id).
+pub fn append_admin_change_history(env: &Env, entry: &crate::types::AdminChangeHistoryEntry) {
+    let mut history = load_admin_change_history(env);
+    history.push_back(entry.clone());
+    env.storage()
+        .instance()
+        .set(&DataKey::AdminChangeHistory, &history);
+}
+
+pub fn get_admin_change_history_entry(
+    env: &Env,
+    id: u32,
+) -> Option<crate::types::AdminChangeHistoryEntry> {
+    load_admin_change_history(env).get(id)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -595,6 +671,125 @@ pub fn reset_tipper_tip_index(env: &Env, tipper: &Address) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Leaderboard (Multi-period)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the leaderboard for a specific period.
+pub fn get_leaderboard(
+    env: &Env,
+    period: LeaderboardPeriod,
+) -> soroban_sdk::Vec<LeaderboardEntry> {
+    env.storage()
+        .instance()
+        .get(&DataKey::Leaderboard(period))
+        .unwrap_or(soroban_sdk::Vec::new(env))
+}
+
+/// Sets the leaderboard for a specific period.
+pub fn set_leaderboard(
+    env: &Env,
+    period: LeaderboardPeriod,
+    leaderboard: &soroban_sdk::Vec<LeaderboardEntry>,
+) {
+    env.storage()
+        .instance()
+        .set(&DataKey::Leaderboard(period), leaderboard);
+}
+
+/// Returns the timestamp of the last reset for a specific period.
+pub fn get_last_leaderboard_reset(env: &Env, period: LeaderboardPeriod) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::LastLeaderboardReset(period))
+        .unwrap_or(0)
+}
+
+/// Sets the timestamp of the last reset for a specific period.
+pub fn set_last_leaderboard_reset(env: &Env, period: LeaderboardPeriod, at: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::LastLeaderboardReset(period), &at);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Rate Limiting
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the current rate limit configuration.
+pub fn get_rate_limit_config(env: &Env) -> RateLimitConfig {
+    env.storage()
+        .instance()
+        .get(&DataKey::RateLimitConfig)
+        .unwrap_or(RateLimitConfig {
+            max_ops: 50,
+            window_secs: 3600, // 1 hour default
+        })
+}
+
+/// Sets the rate limit configuration.
+pub fn set_rate_limit_config(env: &Env, config: &RateLimitConfig) {
+    env.storage()
+        .instance()
+        .set(&DataKey::RateLimitConfig, config);
+}
+
+/// Returns the current rate limit status for an address.
+pub fn get_rate_limit_status(env: &Env, address: &Address) -> Option<RateLimitStatus> {
+    env.storage()
+        .instance()
+        .get(&DataKey::RateLimit(address.clone()))
+}
+
+/// Sets the rate limit status for an address.
+pub fn set_rate_limit_status(env: &Env, address: &Address, status: &RateLimitStatus) {
+    env.storage()
+        .instance()
+        .set(&DataKey::RateLimit(address.clone()), status);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Period Volume Tracking
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the tip volume received by a creator during a specific period.
+pub fn get_creator_period_volume(
+    env: &Env,
+    creator: &Address,
+    period: LeaderboardPeriod,
+) -> i128 {
+    let start_at = get_last_leaderboard_reset(env, period);
+    env.storage()
+        .instance()
+        .get(&DataKey::CreatorPeriodVolume(creator.clone(), period, start_at))
+        .unwrap_or(0)
+}
+
+/// Adds `amount` to a creator's tip volume for a specific period.
+pub fn add_creator_period_volume(
+    env: &Env,
+    creator: &Address,
+    period: LeaderboardPeriod,
+    amount: i128,
+) -> i128 {
+    let start_at = get_last_leaderboard_reset(env, period);
+    let current = get_creator_period_volume(env, creator, period);
+    let next = current.saturating_add(amount);
+    env.storage()
+        .instance()
+        .set(&DataKey::CreatorPeriodVolume(creator.clone(), period, start_at), &next);
+    next
+}
+
+/// Resets a creator's period volume (e.g. after a leaderboard reset).
+/// Note: With timestamp-based keys, we don't strictly need this, but it can be used for cleanup.
+pub fn reset_creator_period_volume(env: &Env, creator: &Address, period: LeaderboardPeriod) {
+    let start_at = get_last_leaderboard_reset(env, period);
+    env.storage()
+        .instance()
+        .remove(&DataKey::CreatorPeriodVolume(creator.clone(), period, start_at));
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Creator counter
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -798,12 +993,7 @@ mod tests {
             balance: 0,
             registered_at: 0,
             updated_at: 0,
-            verification: VerificationStatus {
-                is_verified: false,
-                verification_type: VerificationType::Unverified,
-                verified_at: None,
-                revoked_at: None,
-            },
+            verification: crate::types::VerificationStatus::default(),
         };
         env.as_contract(&id, || {
             set_profile(&env, &profile);
@@ -832,12 +1022,7 @@ mod tests {
             balance: 500,
             registered_at: 100,
             updated_at: 200,
-            verification: VerificationStatus {
-                is_verified: false,
-                verification_type: VerificationType::Unverified,
-                verified_at: None,
-                revoked_at: None,
-            },
+            verification: crate::types::VerificationStatus::default(),
         };
         env.as_contract(&id, || {
             set_profile(&env, &profile);
@@ -985,12 +1170,7 @@ mod tests {
             balance: 0,
             registered_at: 0,
             updated_at: 0,
-            verification: VerificationStatus {
-                is_verified: false,
-                verification_type: VerificationType::Unverified,
-                verified_at: None,
-                revoked_at: None,
-            },
+            verification: crate::types::VerificationStatus::default(),
         };
         env.as_contract(&id, || {
             // Set profile
@@ -1007,45 +1187,6 @@ mod tests {
 // ──────────────────────────────────────────────────────────────────────────────
 // Verification storage functions
 // ──────────────────────────────────────────────────────────────────────────────
-
-#[allow(dead_code)]
-pub fn get_verification_status(
-    env: &Env,
-    address: &Address,
-) -> Option<crate::types::VerificationStatus> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::VerificationStatus(address.clone()))
-}
-
-#[allow(dead_code)]
-pub fn set_verification_status(
-    env: &Env,
-    address: &Address,
-    status: &crate::types::VerificationStatus,
-) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::VerificationStatus(address.clone()), status);
-    bump_profile_ttl(env, address);
-}
-
-#[allow(dead_code)]
-pub fn remove_verification_status(env: &Env, address: &Address) {
-    env.storage()
-        .persistent()
-        .remove(&DataKey::VerificationStatus(address.clone()));
-}
-
-#[allow(dead_code)]
-pub fn get_verification_request(
-    env: &Env,
-    address: &Address,
-) -> Option<crate::types::VerificationType> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::VerificationRequest(address.clone()))
-}
 
 pub fn set_verification_request(
     env: &Env,
@@ -1065,7 +1206,6 @@ pub fn remove_verification_request(env: &Env, address: &Address) {
         .remove(&DataKey::VerificationRequest(address.clone()));
 }
 
-
 // ──────────────────────────────────────────────────────────────────────────────
 // Donation page storage functions
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1076,11 +1216,7 @@ pub fn get_donation_page(env: &Env, creator: &Address) -> Option<crate::types::D
         .get(&DataKey::DonationPage(creator.clone()))
 }
 
-pub fn set_donation_page(
-    env: &Env,
-    creator: &Address,
-    config: &crate::types::DonationPageConfig,
-) {
+pub fn set_donation_page(env: &Env, creator: &Address, config: &crate::types::DonationPageConfig) {
     env.storage()
         .persistent()
         .set(&DataKey::DonationPage(creator.clone()), config);
@@ -1112,9 +1248,7 @@ pub fn get_tips_last_24h(env: &Env) -> u32 {
 }
 
 pub fn set_tips_last_24h(env: &Env, count: u32) {
-    env.storage()
-        .instance()
-        .set(&DataKey::TipsLast24h, &count);
+    env.storage().instance().set(&DataKey::TipsLast24h, &count);
 }
 
 pub fn get_volume_last_24h(env: &Env) -> i128 {
@@ -1143,6 +1277,7 @@ pub fn set_active_creators_30d(env: &Env, count: u32) {
         .set(&DataKey::ActiveCreators30d, &count);
 }
 
+#[allow(dead_code)]
 pub fn get_creator_last_active(env: &Env, creator: &Address) -> u64 {
     env.storage()
         .persistent()

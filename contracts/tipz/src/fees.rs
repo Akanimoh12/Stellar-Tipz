@@ -98,9 +98,7 @@ mod tests {
 
     #[test]
     fn fee_rounds_to_zero_for_tiny_amount() {
-        // 200 bps of 49 stroops = 0.98 → truncates to 0, but minimum 1 stroop applies
-        // The implementation enforces a 1-stroop minimum fee when fee_bps > 0
-        // to prevent fee circumvention via dust withdrawals (see calculate_fee docs).
+        // 200 bps of 49 stroops = 0.98, but non-zero fees floor to 1 stroop.
         let (fee, net) = calculate_fee(49, 200).unwrap();
         assert_eq!(fee, 1);
         assert_eq!(net, 48);
@@ -141,7 +139,7 @@ mod tests {
         let max_amount = i128::MAX;
         let result = calculate_fee(max_amount, 200); // 2%
         assert!(result.is_ok() || result.is_err(), "Should not panic");
-        
+
         // Verify it returns overflow error for values that would overflow
         let result = calculate_fee(i128::MAX, 2);
         assert_eq!(result, Err(ContractError::OverflowError));
@@ -152,10 +150,13 @@ mod tests {
         // Amounts where 2% rounds to 0
         let tiny = 49; // 49 * 200 / 10000 = 0.98 → rounds to 0
         let (fee, net) = calculate_fee(tiny, 200).unwrap();
-        assert!(fee >= 1, "Fee should never round to zero for non-zero amounts");
+        assert!(
+            fee >= 1,
+            "Fee should never round to zero for non-zero amounts"
+        );
         assert_eq!(fee, 1);
         assert_eq!(net, 48);
-        
+
         // Test with even smaller amounts
         let very_tiny = 1;
         let (fee, net) = calculate_fee(very_tiny, 200).unwrap();
@@ -179,9 +180,9 @@ mod tests {
         // Test values adjacent to i128::MAX
         let near_max = i128::MAX - 1;
         let result = calculate_fee(near_max, 1); // 0.01% - should not overflow
-        // This might overflow depending on the value, but should not panic
+                                                 // This might overflow depending on the value, but should not panic
         assert!(result.is_ok() || result.is_err());
-        
+
         // Test with a value that definitely won't overflow
         let safe_large = i128::MAX / 10_000;
         let (fee, net) = calculate_fee(safe_large, 200).unwrap();
@@ -206,7 +207,7 @@ mod tests {
         let (fee, net) = calculate_fee(333, 100).unwrap();
         assert_eq!(fee, 3);
         assert_eq!(net, 330);
-        
+
         // 3333 stroops at 1% = 33.33 → rounds to 33
         let (fee, net) = calculate_fee(3333, 100).unwrap();
         assert_eq!(fee, 33);
@@ -219,11 +220,11 @@ mod tests {
         // 50 stroops at 200 bps = 1.0 exactly
         let (fee, net) = calculate_fee(50, 200).unwrap();
         assert_eq!(fee, 1);
-        
+
         // 49 stroops at 200 bps = 0.98 → rounds to 0, but min 1 applies
         let (fee, net) = calculate_fee(49, 200).unwrap();
         assert_eq!(fee, 1);
-        
+
         // 51 stroops at 200 bps = 1.02 → rounds to 1
         let (fee, net) = calculate_fee(51, 200).unwrap();
         assert_eq!(fee, 1);
@@ -233,7 +234,7 @@ mod tests {
     fn test_fee_invariant_maintained() {
         // Verify fee + net == amount for various amounts
         let test_amounts = [1, 10, 100, 1000, 10_000, 100_000, 1_000_000, 10_000_000];
-        
+
         for amount in test_amounts {
             let (fee, net) = calculate_fee(amount, 200).unwrap();
             assert_eq!(fee + net, amount, "Invariant failed for amount {}", amount);
@@ -247,7 +248,7 @@ mod tests {
         let (fee, net) = calculate_fee(amount, 1000).unwrap();
         assert_eq!(fee, 100_000);
         assert_eq!(net, 900_000);
-        
+
         // Verify minimum fee still applies for tiny amounts
         let (fee, _net) = calculate_fee(1, 1000).unwrap();
         assert_eq!(fee, 1);
@@ -260,7 +261,7 @@ mod tests {
         let (fee, net) = calculate_fee(amount, 1).unwrap();
         assert_eq!(fee, 1);
         assert_eq!(net, 9_999);
-        
+
         // Below threshold, minimum fee applies
         let (fee, net) = calculate_fee(100, 1).unwrap();
         assert_eq!(fee, 1);

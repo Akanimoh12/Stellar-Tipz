@@ -81,7 +81,7 @@ pub fn get_creator_stats(env: &Env, creator: &Address) -> Result<CreatorStats, C
     storage::extend_instance_ttl(env);
 
     let profile = storage::get_profile(env, creator);
-    let rank = crate::leaderboard::get_leaderboard_rank(env, creator);
+    let rank = crate::leaderboard::get_leaderboard_rank(env, crate::types::LeaderboardPeriod::AllTime, creator);
 
     Ok(CreatorStats {
         creator: creator.clone(),
@@ -97,10 +97,10 @@ pub fn get_creator_stats(env: &Env, creator: &Address) -> Result<CreatorStats, C
 /// Update 24-hour statistics when a tip is sent
 pub fn update_24h_stats(env: &Env, amount: i128) {
     let now = env.ledger().timestamp();
-    
+
     // Get current 24h window start
     let window_start = storage::get_stats_window_start(env);
-    
+
     // If more than 24 hours have passed, reset the window
     if now - window_start > 86400 {
         storage::set_stats_window_start(env, now);
@@ -119,7 +119,7 @@ pub fn update_24h_stats(env: &Env, amount: i128) {
 pub fn mark_creator_active(env: &Env, creator: &Address) {
     let now = env.ledger().timestamp();
     storage::set_creator_last_active(env, creator, now);
-    
+
     // Update active creators count for 30d window
     update_active_creators_count(env);
 }

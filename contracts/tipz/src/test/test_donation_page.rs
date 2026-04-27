@@ -39,7 +39,10 @@ fn test_set_donation_page() {
     client.set_donation_page(&creator, &config);
 
     let page = client.get_donation_page(&creator);
-    assert_eq!(page.welcome_message, String::from_str(&env, "Support my art!"));
+    assert_eq!(
+        page.welcome_message,
+        String::from_str(&env, "Support my art!")
+    );
     assert_eq!(page.theme_color, String::from_str(&env, "#ff6b6b"));
     assert!(!page.is_default);
 }
@@ -58,7 +61,10 @@ fn test_donation_page_default() {
     // Creator without custom page gets default
     let page = client.get_donation_page(&creator);
     assert!(page.is_default);
-    assert_eq!(page.welcome_message, String::from_str(&env, "Support my work!"));
+    assert_eq!(
+        page.welcome_message,
+        String::from_str(&env, "Support my work!")
+    );
 }
 
 #[test]
@@ -171,6 +177,9 @@ fn test_donation_page_update() {
     client.set_donation_page(&creator, &config2);
 
     let page = client.get_donation_page(&creator);
-    assert_eq!(page.welcome_message, String::from_str(&env, "Updated message"));
+    assert_eq!(
+        page.welcome_message,
+        String::from_str(&env, "Updated message")
+    );
     assert_eq!(page.theme_color, String::from_str(&env, "#00ff00"));
 }

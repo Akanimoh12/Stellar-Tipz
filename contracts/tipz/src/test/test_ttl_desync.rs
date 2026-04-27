@@ -232,3 +232,45 @@ fn test_get_profile_by_username_succeeds_when_active() {
     let profile = client.get_profile_by_username(&String::from_str(&env, "alice"));
     assert_eq!(profile.owner, creator);
 }
+
+// ── TTL bumped on get_profile (read access) ─────────────────────────────────────
+
+#[test]
+fn test_get_profile_extends_profile_ttl_on_read() {
+    let (env, client, contract_id, creator, _tipper) = setup();
+
+    let _profile = client.get_profile(&creator);
+
+    env.as_contract(&contract_id, || {
+        let profile_key = DataKey::Profile(creator.clone());
+        let ttl = env.storage().persistent().get_ttl(&profile_key);
+        assert_eq!(ttl, PROFILE_TTL_MAX_LEDGERS);
+
+        let profile: Profile = env.storage().persistent().get(&profile_key).unwrap();
+        let username_ttl = env
+            .storage()
+            .persistent()
+            .get_ttl(&DataKey::UsernameToAddress(profile.username));
+        assert_eq!(username_ttl, PROFILE_TTL_MAX_LEDGERS);
+    });
+}
+
+#[test]
+fn test_get_profile_by_username_extends_profile_ttl_on_read() {
+    let (env, client, contract_id, creator, _tipper) = setup();
+
+    let _profile = client.get_profile_by_username(&String::from_str(&env, "alice"));
+
+    env.as_contract(&contract_id, || {
+        let profile_key = DataKey::Profile(creator.clone());
+        let ttl = env.storage().persistent().get_ttl(&profile_key);
+        assert_eq!(ttl, PROFILE_TTL_MAX_LEDGERS);
+
+        let profile: Profile = env.storage().persistent().get(&profile_key).unwrap();
+        let username_ttl = env
+            .storage()
+            .persistent()
+            .get_ttl(&DataKey::UsernameToAddress(profile.username));
+        assert_eq!(username_ttl, PROFILE_TTL_MAX_LEDGERS);
+    });
+}

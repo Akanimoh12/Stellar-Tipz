@@ -20,7 +20,7 @@ use crate::CONTRACT_VERSION;
 struct TestCtx<'a> {
     env: Env,
     client: TipzContractClient<'a>,
-    admin: Address,
+    _admin: Address,
 }
 
 fn setup() -> TestCtx<'static> {
@@ -38,16 +38,20 @@ fn setup() -> TestCtx<'static> {
 
     client.initialize(&admin, &fee_collector, &200_u32, &native_token);
 
-    TestCtx { env, client, admin }
+    TestCtx {
+        env,
+        client,
+        _admin: admin,
+    }
 }
 
 // ── get_version ──────────────────────────────────────────────────────────────
 
 #[test]
-fn test_get_version_returns_1_after_initialize() {
+fn test_get_version_matches_constant_after_initialize() {
     let ctx = setup();
     let version = ctx.client.get_version();
-    assert_eq!(version, 1);
+    assert_eq!(version, CONTRACT_VERSION);
 }
 
 #[test]
@@ -82,7 +86,7 @@ fn test_initialize_stores_version_in_storage() {
             .get(&DataKey::ContractVersion)
             .unwrap()
     });
-    assert_eq!(stored, 1);
+    assert_eq!(stored, CONTRACT_VERSION);
 }
 
 #[test]
@@ -130,13 +134,12 @@ fn test_non_admin_upgrade_does_not_change_version() {
 
     let _ = ctx.client.try_upgrade(&attacker, &dummy_wasm_hash);
 
-    // Version should remain 1 ( CONTRACT_VERSION )
     assert_eq!(ctx.client.get_version(), CONTRACT_VERSION);
 }
 
 // ── regression: contract version constant ────────────────────────────────────
 
 #[test]
-fn test_contract_version_constant_is_1() {
-    assert_eq!(CONTRACT_VERSION, 1);
+fn test_contract_version_constant_is_2() {
+    assert_eq!(CONTRACT_VERSION, 2);
 }

@@ -38,13 +38,13 @@ use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
 
 use crate::errors::ContractError;
 use crate::types::{
-    BatchSkip, ContractConfig, ContractStats, CreditBreakdown, CreditTier, LeaderboardEntry,
-    Profile, Tip,
+    AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip, ContractConfig, ContractStats,
+    CreditBreakdown, CreditTier, LeaderboardEntry, Profile, ProfileWithDeactivation, Tip,
 };
 
 /// The current contract interface version, stored on-chain during initialization.
 /// Must be incremented manually in source when the contract interface changes.
-pub const CONTRACT_VERSION: u32 = 1;
+pub const CONTRACT_VERSION: u32 = 2;
 
 #[contract]
 pub struct TipzContract;
@@ -128,6 +128,26 @@ impl TipzContract {
         profile::deregister_profile(&env, caller)
     }
 
+    /// Deactivate a creator profile (owner deactivates self, or admin moderates `creator`).
+    ///
+    /// Hides the creator from the leaderboard and blocks tips; profile data and balance remain.
+    pub fn deactivate_profile(
+        env: Env,
+        caller: Address,
+        creator: Address,
+    ) -> Result<(), ContractError> {
+        profile::deactivate_profile(&env, caller, creator)
+    }
+
+    /// Reactivate a previously deactivated profile (owner or admin).
+    pub fn reactivate_profile(
+        env: Env,
+        caller: Address,
+        creator: Address,
+    ) -> Result<(), ContractError> {
+        profile::reactivate_profile(&env, caller, creator)
+    }
+
     /// Update X (Twitter) metrics for a creator (admin only).
     pub fn update_x_metrics(
         env: Env,
@@ -168,24 +188,23 @@ impl TipzContract {
         admin::batch_update_x_metrics_preview(&env, &caller, updates)
     }
 
-    /// Get a profile by address.
-    pub fn get_profile(env: Env, address: Address) -> Result<Profile, ContractError> {
-        if !storage::has_profile(&env, &address) {
-            return Err(ContractError::NotRegistered);
-        }
-
-        Ok(storage::get_profile(&env, &address))
+    /// Get a profile by address, including deactivation status.
+    pub fn get_profile(env: Env, address: Address) -> Result<ProfileWithDeactivation, ContractError> {
+        profile::get_profile_with_deactivation(&env, &address)
     }
 
-    /// Get a profile by username.
-    pub fn get_profile_by_username(env: Env, username: String) -> Result<Profile, ContractError> {
+    /// Get a profile by username, including deactivation status.
+    pub fn get_profile_by_username(
+        env: Env,
+        username: String,
+    ) -> Result<ProfileWithDeactivation, ContractError> {
         let address =
             storage::get_username_address(&env, &username).ok_or(ContractError::NotFound)?;
         // Guard against orphaned state: Profile exists but UsernameToAddress expired (or vice versa).
         if !storage::is_profile_active(&env, &address) {
             return Err(ContractError::NotFound);
         }
-        Ok(storage::get_profile(&env, &address))
+        profile::get_profile_with_deactivation(&env, &address)
     }
 
     // ──────────────────────────────────────────────
@@ -202,6 +221,18 @@ impl TipzContract {
         is_anonymous: bool,
     ) -> Result<(), ContractError> {
         tips::send_tip(&env, &tipper, &creator, amount, &message, is_anonymous)
+    }
+
+    /// Send a tip on behalf of someone else.
+    pub fn send_tip_on_behalf(
+        env: Env,
+        sender: Address,
+        on_behalf_of: Address,
+        creator: Address,
+        amount: i128,
+        message: String,
+    ) -> Result<(), ContractError> {
+        tips::send_tip_on_behalf(&env, &sender, &on_behalf_of, &creator, amount, &message)
     }
 
     /// Withdraw accumulated tips (fee deducted).
@@ -319,21 +350,36 @@ impl TipzContract {
 
     /// Get the top creators by total tips received, sorted descending.
     ///
-    /// Returns at most `limit` entries.  Passing `limit = 0` returns all
+    /// Returns at most `limit` entries. Passing `limit = 0` returns all
     /// stored entries (up to 50).
-    pub fn get_leaderboard(env: Env, limit: u32) -> Result<Vec<LeaderboardEntry>, ContractError> {
-        Ok(leaderboard::get_leaderboard(&env, limit))
+    pub fn get_leaderboard(
+        env: Env,
+        period: crate::types::LeaderboardPeriod,
+        limit: u32,
+    ) -> Result<Vec<crate::types::LeaderboardEntry>, ContractError> {
+        Ok(leaderboard::get_leaderboard(&env, period, limit))
     }
 
-    /// Return the 1-based rank of `address` on the leaderboard, or `None`
-    /// when the address has not yet appeared in the top 50.
-    pub fn get_leaderboard_rank(env: Env, address: Address) -> Option<u32> {
-        leaderboard::get_leaderboard_rank(&env, &address)
+    /// Reset a specific leaderboard period (admin only).
+    pub fn reset_leaderboard(
+        env: Env,
+        caller: Address,
+        period: crate::types::LeaderboardPeriod,
+    ) -> Result<(), ContractError> {
+        admin::require_admin(&env, &caller)?;
+        leaderboard::reset_leaderboard(&env, period);
+        Ok(())
     }
 
-    /// Return the current number of entries on the leaderboard (0–50).
-    pub fn get_leaderboard_size(env: Env) -> u32 {
-        leaderboard::get_leaderboard_size(&env)
+    /// Return the 1-based rank of `address` on the leaderboard for a specific period, 
+    /// or `None` when the address has not yet appeared in the top 50.
+    pub fn get_leaderboard_rank(env: Env, period: crate::types::LeaderboardPeriod, address: Address) -> Option<u32> {
+        leaderboard::get_leaderboard_rank(&env, period, &address)
+    }
+
+    /// Return the current number of entries on the leaderboard for a specific period (0–50).
+    pub fn get_leaderboard_size(env: Env, period: crate::types::LeaderboardPeriod) -> u32 {
+        leaderboard::get_leaderboard_size(&env, period)
     }
 
     // ──────────────────────────────────────────────
@@ -360,33 +406,44 @@ impl TipzContract {
 
     /// Transfer the admin role directly to a new address. Admin only.
     ///
-    /// For a safer two-step transfer use `propose_admin` + `accept_admin`.
+    /// Clears any pending time-locked admin proposal. Records the handoff in admin change history.
     pub fn set_admin(env: Env, caller: Address, new_admin: Address) -> Result<(), ContractError> {
         admin::set_admin(&env, &caller, &new_admin)
     }
 
-    /// Propose a new admin (current admin only). Step 1 of two-step admin transfer.
-    pub fn propose_admin(
+    /// Propose a new admin with a 48-hour time lock (current admin only).
+    pub fn propose_admin_change(
         env: Env,
         caller: Address,
         new_admin: Address,
     ) -> Result<(), ContractError> {
-        admin::propose_admin(&env, &caller, &new_admin)
+        admin::propose_admin_change(&env, &caller, &new_admin)
     }
 
-    /// Accept the pending admin proposal (proposed admin only). Step 2 of two-step admin transfer.
-    pub fn accept_admin(env: Env, caller: Address) -> Result<(), ContractError> {
-        admin::accept_admin(&env, &caller)
+    /// Confirm the pending admin change after the time lock (proposed new admin only).
+    pub fn confirm_admin_change(env: Env, caller: Address) -> Result<(), ContractError> {
+        admin::confirm_admin_change(&env, &caller)
     }
 
-    /// Cancel a pending admin proposal (current admin only).
-    pub fn cancel_admin_proposal(env: Env, caller: Address) -> Result<(), ContractError> {
-        admin::cancel_admin_proposal(&env, &caller)
+    /// Cancel the pending time-locked admin change (current admin only).
+    pub fn cancel_admin_change(env: Env, caller: Address) -> Result<(), ContractError> {
+        admin::cancel_admin_change(&env, &caller)
     }
 
-    /// Return the pending admin address, or `None` if no proposal is active.
-    pub fn get_pending_admin(env: Env) -> Result<Option<Address>, ContractError> {
-        admin::get_pending_admin(&env)
+    /// Return the pending admin-change proposal, if any.
+    pub fn get_admin_change_proposal(
+        env: Env,
+    ) -> Result<Option<AdminChangeProposal>, ContractError> {
+        admin::get_admin_change_proposal(&env)
+    }
+
+    /// Return admin change history entries, newest first (`offset` skips from the newest).
+    pub fn get_admin_change_history(
+        env: Env,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<AdminChangeHistoryEntry>, ContractError> {
+        admin::get_admin_change_history(&env, limit, offset)
     }
 
     /// Get global contract statistics.
@@ -481,6 +538,29 @@ impl TipzContract {
 
     pub fn get_min_tip_amount(env: Env) -> i128 {
         storage::get_min_tip_amount(&env)
+    }
+
+    /// Update rate limit configuration. Admin only.
+    pub fn set_rate_limit_config(
+        env: Env,
+        caller: Address,
+        max_ops: u32,
+        window_secs: u64,
+    ) -> Result<(), ContractError> {
+        admin::require_admin(&env, &caller)?;
+        storage::set_rate_limit_config(
+            &env,
+            &crate::types::RateLimitConfig {
+                max_ops,
+                window_secs,
+            },
+        );
+        Ok(())
+    }
+
+    /// Get current rate limit configuration.
+    pub fn get_rate_limit_config(env: Env) -> crate::types::RateLimitConfig {
+        storage::get_rate_limit_config(&env)
     }
 
     // ──────────────────────────────────────────────
