@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useState } from "react";
 import {
   Contract,
   TimeoutInfinite,
@@ -25,6 +25,7 @@ import {
   Tip,
   LeaderboardEntry,
   ContractStats,
+  Streak,
   getCreditTier as calculateCreditTier,
 } from "../types/contract";
 import { ProfileFormData } from "../types/profile";
@@ -58,6 +59,7 @@ function safeStringToBigInt(amount: string): bigint {
 export const useContract = () => {
   const wallet = useWallet();
   const { network } = useWalletStore();
+  const [loading, setLoading] = useState(false);
 
   const networkDetails: NetworkDetails = useMemo(
     () => ({
@@ -75,6 +77,33 @@ export const useContract = () => {
   const server = useMemo(() => getServer(networkDetails), [networkDetails]);
   const contractId = env.contractId;
 
+  const withLoading = useCallback(
+    async <T>(operation: () => Promise<T>): Promise<T> => {
+      setLoading(true);
+      try {
+        return await operation();
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
+  const withRetry = useCallback(async <T,>(
+    operation: () => Promise<T>,
+    attempts = 2,
+  ): Promise<T> => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  }, []);
+
   // Warn once in development when contract ID is not configured
   if (!contractId) {
     console.warn("[useContract] VITE_CONTRACT_ID is not set — contract calls will be skipped.");
@@ -84,51 +113,90 @@ export const useContract = () => {
 
   const getProfile = useCallback(
     async (address: string): Promise<Profile> => {
-      const contract = new Contract(contractId);
-      const txBuilder = getSimulationTxBuilder(
-        address,
-        BASE_FEE,
-        networkDetails.networkPassphrase,
-      );
-      const tx = txBuilder
-        .addOperation(contract.call("get_profile", accountToScVal(address)))
-        .setTimeout(TimeoutInfinite)
-        .build();
+      return withLoading(async () => {
+        const contract = new Contract(contractId);
+        const txBuilder = getSimulationTxBuilder(
+          address,
+          BASE_FEE,
+          networkDetails.networkPassphrase,
+        );
+        const tx = txBuilder
+          .addOperation(contract.call("get_profile", accountToScVal(address)))
+          .setTimeout(TimeoutInfinite)
+          .build();
 
-      return simulateTx<Profile>(tx, server);
+        return withRetry(() => simulateTx<Profile>(tx, server));
+      });
     },
-    [contractId, server, networkDetails],
+    [contractId, server, networkDetails, withLoading, withRetry],
   );
 
   const getProfileByUsername = useCallback(
     async (username: string): Promise<Profile> => {
-      const contract = new Contract(contractId);
-      const txBuilder = wallet.publicKey
-        ? await getTxBuilder(
-            wallet.publicKey,
-            BASE_FEE,
-            server,
-            networkDetails.networkPassphrase,
+      return withLoading(async () => {
+        const contract = new Contract(contractId);
+        const txBuilder = wallet.publicKey
+          ? await getTxBuilder(
+              wallet.publicKey,
+              BASE_FEE,
+              server,
+              networkDetails.networkPassphrase,
+            )
+          : getSimulationTxBuilder(
+              READ_ONLY_SOURCE,
+              BASE_FEE,
+              networkDetails.networkPassphrase,
+            );
+        const tx = txBuilder
+          .addOperation(
+            contract.call("get_profile_by_username", nativeToScVal(username)),
           )
-        : getSimulationTxBuilder(
-            READ_ONLY_SOURCE,
-            BASE_FEE,
-            networkDetails.networkPassphrase,
-          );
-      const tx = txBuilder
-        .addOperation(
-          contract.call("get_profile_by_username", nativeToScVal(username)),
-        )
-        .setTimeout(TimeoutInfinite)
-        .build();
+          .setTimeout(TimeoutInfinite)
+          .build();
 
-      return simulateTx<Profile>(tx, server);
+        return withRetry(() => simulateTx<Profile>(tx, server));
+      });
     },
-    [contractId, wallet.publicKey, server, networkDetails],
+    [contractId, wallet.publicKey, server, networkDetails, withLoading, withRetry],
   );
 
   const getLeaderboard = useCallback(
     async (limit: number): Promise<LeaderboardEntry[]> => {
+      return withLoading(async () => {
+        const contract = new Contract(contractId);
+        const txBuilder = wallet.publicKey
+          ? await getTxBuilder(
+              wallet.publicKey,
+              BASE_FEE,
+              server,
+              networkDetails.networkPassphrase,
+            )
+          : getSimulationTxBuilder(
+              READ_ONLY_SOURCE,
+              BASE_FEE,
+              networkDetails.networkPassphrase,
+            );
+        const tx = txBuilder
+          .addOperation(
+            contract.call(
+              "get_leaderboard",
+              nativeToScVal(limit, { type: "u32" }),
+            ),
+          )
+          .setTimeout(TimeoutInfinite)
+          .build();
+
+        return withRetry(() => simulateTx<LeaderboardEntry[]>(tx, server));
+      });
+    },
+    [contractId, wallet.publicKey, server, networkDetails, withLoading, withRetry],
+  );
+
+  const getStats = useCallback(async (): Promise<ContractStats> => {
+    return withLoading(async () => {
+      if (!contractId) {
+        throw new Error("Contract ID is not configured");
+      }
       const contract = new Contract(contractId);
       const txBuilder = wallet.publicKey
         ? await getTxBuilder(
@@ -143,44 +211,13 @@ export const useContract = () => {
             networkDetails.networkPassphrase,
           );
       const tx = txBuilder
-        .addOperation(
-          contract.call(
-            "get_leaderboard",
-            nativeToScVal(limit, { type: "u32" }),
-          ),
-        )
+        .addOperation(contract.call("get_stats"))
         .setTimeout(TimeoutInfinite)
         .build();
 
-      return simulateTx<LeaderboardEntry[]>(tx, server);
-    },
-    [contractId, wallet.publicKey, server, networkDetails],
-  );
-
-  const getStats = useCallback(async (): Promise<ContractStats> => {
-    if (!contractId) {
-      throw new Error("Contract ID is not configured");
-    }
-    const contract = new Contract(contractId);
-    const txBuilder = wallet.publicKey
-      ? await getTxBuilder(
-          wallet.publicKey,
-          BASE_FEE,
-          server,
-          networkDetails.networkPassphrase,
-        )
-      : getSimulationTxBuilder(
-          READ_ONLY_SOURCE,
-          BASE_FEE,
-          networkDetails.networkPassphrase,
-        );
-    const tx = txBuilder
-      .addOperation(contract.call("get_stats"))
-      .setTimeout(TimeoutInfinite)
-      .build();
-
-    return simulateTx<ContractStats>(tx, server);
-  }, [contractId, wallet.publicKey, server, networkDetails]);
+      return withRetry(() => simulateTx<ContractStats>(tx, server));
+    });
+  }, [contractId, wallet.publicKey, server, networkDetails, withLoading, withRetry]);
 
   const getMinTipAmount = useCallback(async (): Promise<string> => {
     // Default of 1 XLM returned when contract is unavailable or not yet deployed
@@ -190,7 +227,7 @@ export const useContract = () => {
       return DEFAULT_MIN_TIP_XLM;
     }
 
-    try {
+    return withLoading(async () => {
       const contract = new Contract(contractId);
       const txBuilder = wallet.publicKey
         ? await getTxBuilder(
@@ -209,216 +246,263 @@ export const useContract = () => {
         .setTimeout(TimeoutInfinite)
         .build();
 
-      const minTipStroops = await simulateTx<number>(tx, server);
+      const minTipStroops = await withRetry(() => simulateTx<number>(tx, server));
       // Convert stroops to XLM string for display
       return (minTipStroops / 1e7).toString();
-    } catch {
-      return DEFAULT_MIN_TIP_XLM;
-    }
-  }, [contractId, wallet.publicKey, server, networkDetails]);
+    }).catch(() => DEFAULT_MIN_TIP_XLM);
+  }, [contractId, wallet.publicKey, server, networkDetails, withLoading, withRetry]);
 
   const getRecentTips = useCallback(
     async (creator: string, limit: number, offset: number): Promise<Tip[]> => {
-      const contract = new Contract(contractId);
-      const txBuilder = wallet.publicKey
-        ? await getTxBuilder(
-            wallet.publicKey,
-            BASE_FEE,
-            server,
-            networkDetails.networkPassphrase,
+      return withLoading(async () => {
+        const contract = new Contract(contractId);
+        const txBuilder = wallet.publicKey
+          ? await getTxBuilder(
+              wallet.publicKey,
+              BASE_FEE,
+              server,
+              networkDetails.networkPassphrase,
+            )
+          : getSimulationTxBuilder(
+              READ_ONLY_SOURCE,
+              BASE_FEE,
+              networkDetails.networkPassphrase,
+            );
+        const tx = txBuilder
+          .addOperation(
+            contract.call(
+              "get_recent_tips",
+              accountToScVal(creator),
+              nativeToScVal(limit, { type: "u32" }),
+              nativeToScVal(offset, { type: "u32" }),
+            ),
           )
-        : getSimulationTxBuilder(
-            READ_ONLY_SOURCE,
-            BASE_FEE,
-            networkDetails.networkPassphrase,
-          );
-      const tx = txBuilder
-        .addOperation(
-          contract.call(
-            "get_recent_tips",
-            accountToScVal(creator),
-            nativeToScVal(limit, { type: "u32" }),
-            nativeToScVal(offset, { type: "u32" }),
-          ),
-        )
-        .setTimeout(TimeoutInfinite)
-        .build();
+          .setTimeout(TimeoutInfinite)
+          .build();
 
-      return simulateTx<Tip[]>(tx, server);
+        return withRetry(() => simulateTx<Tip[]>(tx, server));
+      });
     },
-    [contractId, wallet.publicKey, server, networkDetails],
+    [contractId, wallet.publicKey, server, networkDetails, withLoading, withRetry],
   );
 
   const getCreatorTipCount = useCallback(
     async (creator: string): Promise<number> => {
-      const contract = new Contract(contractId);
-      const txBuilder = wallet.publicKey
-        ? await getTxBuilder(
-            wallet.publicKey,
-            BASE_FEE,
-            server,
-            networkDetails.networkPassphrase,
+      return withLoading(async () => {
+        const contract = new Contract(contractId);
+        const txBuilder = wallet.publicKey
+          ? await getTxBuilder(
+              wallet.publicKey,
+              BASE_FEE,
+              server,
+              networkDetails.networkPassphrase,
+            )
+          : getSimulationTxBuilder(
+              READ_ONLY_SOURCE,
+              BASE_FEE,
+              networkDetails.networkPassphrase,
+            );
+        const tx = txBuilder
+          .addOperation(
+            contract.call("get_creator_tip_count", accountToScVal(creator)),
           )
-        : getSimulationTxBuilder(
-            READ_ONLY_SOURCE,
-            BASE_FEE,
-            networkDetails.networkPassphrase,
-          );
-      const tx = txBuilder
-        .addOperation(
-          contract.call("get_creator_tip_count", accountToScVal(creator)),
-        )
-        .setTimeout(TimeoutInfinite)
-        .build();
+          .setTimeout(TimeoutInfinite)
+          .build();
 
-      return simulateTx<number>(tx, server);
+        return withRetry(() => simulateTx<number>(tx, server));
+      });
     },
-    [contractId, wallet.publicKey, server, networkDetails],
+    [contractId, wallet.publicKey, server, networkDetails, withLoading, withRetry],
   );
 
   const getTipsByTipper = useCallback(
     async (tipper: string, limit: number): Promise<Tip[]> => {
-      const contract = new Contract(contractId);
-      const txBuilder = wallet.publicKey
-        ? await getTxBuilder(
-            wallet.publicKey,
-            BASE_FEE,
-            server,
-            networkDetails.networkPassphrase,
+      return withLoading(async () => {
+        const contract = new Contract(contractId);
+        const txBuilder = wallet.publicKey
+          ? await getTxBuilder(
+              wallet.publicKey,
+              BASE_FEE,
+              server,
+              networkDetails.networkPassphrase,
+            )
+          : getSimulationTxBuilder(
+              READ_ONLY_SOURCE,
+              BASE_FEE,
+              networkDetails.networkPassphrase,
+            );
+        const tx = txBuilder
+          .addOperation(
+            contract.call(
+              "get_tips_by_tipper",
+              accountToScVal(tipper),
+              nativeToScVal(limit, { type: "u32" }),
+            ),
           )
-        : getSimulationTxBuilder(
-            READ_ONLY_SOURCE,
-            BASE_FEE,
-            networkDetails.networkPassphrase,
-          );
-      const tx = txBuilder
-        .addOperation(
-          contract.call(
-            "get_tips_by_tipper",
-            accountToScVal(tipper),
-            nativeToScVal(limit, { type: "u32" }),
-          ),
-        )
-        .setTimeout(TimeoutInfinite)
-        .build();
+          .setTimeout(TimeoutInfinite)
+          .build();
 
-      return simulateTx<Tip[]>(tx, server);
+        return withRetry(() => simulateTx<Tip[]>(tx, server));
+      });
     },
-    [contractId, wallet.publicKey, server, networkDetails],
+    [contractId, wallet.publicKey, server, networkDetails, withLoading, withRetry],
   );
 
   const getTipperTipCount = useCallback(
     async (tipper: string): Promise<number> => {
-      const contract = new Contract(contractId);
-      const txBuilder = wallet.publicKey
-        ? await getTxBuilder(
-            wallet.publicKey,
-            BASE_FEE,
-            server,
-            networkDetails.networkPassphrase,
+      return withLoading(async () => {
+        const contract = new Contract(contractId);
+        const txBuilder = wallet.publicKey
+          ? await getTxBuilder(
+              wallet.publicKey,
+              BASE_FEE,
+              server,
+              networkDetails.networkPassphrase,
+            )
+          : getSimulationTxBuilder(
+              READ_ONLY_SOURCE,
+              BASE_FEE,
+              networkDetails.networkPassphrase,
+            );
+        const tx = txBuilder
+          .addOperation(
+            contract.call("get_tipper_tip_count", accountToScVal(tipper)),
           )
-        : getSimulationTxBuilder(
-            READ_ONLY_SOURCE,
-            BASE_FEE,
-            networkDetails.networkPassphrase,
-          );
-      const tx = txBuilder
-        .addOperation(
-          contract.call("get_tipper_tip_count", accountToScVal(tipper)),
-        )
-        .setTimeout(TimeoutInfinite)
-        .build();
+          .setTimeout(TimeoutInfinite)
+          .build();
 
-      return simulateTx<number>(tx, server);
+        return withRetry(() => simulateTx<number>(tx, server));
+      });
     },
-    [contractId, wallet.publicKey, server, networkDetails],
+    [contractId, wallet.publicKey, server, networkDetails, withLoading, withRetry],
   );
 
   const getCreditTier = useCallback(
     async (address: string) => {
-      const profile = await getProfile(address);
-      const tier = calculateCreditTier(profile.creditScore);
-      return { score: profile.creditScore, tier };
+      return withLoading(async () => {
+        const profile = await getProfile(address);
+        const tier = calculateCreditTier(profile.creditScore);
+        return { score: profile.creditScore, tier };
+      });
     },
-    [getProfile],
+    [getProfile, withLoading],
+  );
+
+  const getStreak = useCallback(
+    async (supporter: string, creator: string): Promise<Streak> => {
+      return withLoading(async () => {
+        const contract = new Contract(contractId);
+        const txBuilder = wallet.publicKey
+          ? await getTxBuilder(
+              wallet.publicKey,
+              BASE_FEE,
+              server,
+              networkDetails.networkPassphrase,
+            )
+          : getSimulationTxBuilder(
+              READ_ONLY_SOURCE,
+              BASE_FEE,
+              networkDetails.networkPassphrase,
+            );
+        const tx = txBuilder
+          .addOperation(
+            contract.call(
+              "get_streak",
+              accountToScVal(supporter),
+              accountToScVal(creator),
+            ),
+          )
+          .setTimeout(TimeoutInfinite)
+          .build();
+
+        return withRetry(() => simulateTx<Streak>(tx, server));
+      });
+    },
+    [contractId, wallet.publicKey, server, networkDetails, withLoading, withRetry],
   );
 
   // --- Write Methods ---
 
   const registerProfile = useCallback(
     async (data: ProfileFormData): Promise<string> => {
-      if (!wallet.publicKey) throw new Error("Wallet not connected");
+      const publicKey = wallet.publicKey;
+      if (!publicKey) throw new Error("Wallet not connected");
 
-      const contract = new Contract(contractId);
-      const txBuilder = await getTxBuilder(
-        wallet.publicKey,
-        BASE_FEE,
-        server,
-        networkDetails.networkPassphrase,
-      );
+      return withLoading(async () => {
+        const contract = new Contract(contractId);
+        const txBuilder = await getTxBuilder(
+          publicKey,
+          BASE_FEE,
+          server,
+          networkDetails.networkPassphrase,
+        );
 
-      const tx = txBuilder
-        .addOperation(
-          contract.call(
-            "register_profile",
-            accountToScVal(wallet.publicKey),
-            nativeToScVal(data.username),
-            nativeToScVal(data.displayName),
-            nativeToScVal(data.bio),
-            nativeToScVal(data.imageUrl),
-            nativeToScVal(data.xHandle),
-          ),
-        )
-        .setTimeout(TimeoutInfinite)
-        .build();
+        const tx = txBuilder
+          .addOperation(
+            contract.call(
+              "register_profile",
+              accountToScVal(publicKey),
+              nativeToScVal(data.username),
+              nativeToScVal(data.displayName),
+              nativeToScVal(data.bio),
+              nativeToScVal(data.imageUrl),
+              nativeToScVal(data.xHandle),
+            ),
+          )
+          .setTimeout(TimeoutInfinite)
+          .build();
 
-      const xdr = tx.toXDR();
-      const signedXdr = await wallet.signTransaction(xdr);
-      return submitTx(signedXdr, networkDetails.networkPassphrase, server);
+        const xdr = tx.toXDR();
+        const signedXdr = await wallet.signTransaction(xdr);
+        return submitTx(signedXdr, networkDetails.networkPassphrase, server);
+      });
     },
-    [contractId, wallet, server, networkDetails],
+    [contractId, wallet, server, networkDetails, withLoading],
   );
 
   const updateProfile = useCallback(
     async (data: Partial<ProfileFormData>): Promise<string> => {
-      if (!wallet.publicKey) throw new Error("Wallet not connected");
+      const publicKey = wallet.publicKey;
+      if (!publicKey) throw new Error("Wallet not connected");
 
-      const contract = new Contract(contractId);
-      const txBuilder = await getTxBuilder(
-        wallet.publicKey,
-        BASE_FEE,
-        server,
-        networkDetails.networkPassphrase,
-      );
+      return withLoading(async () => {
+        const contract = new Contract(contractId);
+        const txBuilder = await getTxBuilder(
+          publicKey,
+          BASE_FEE,
+          server,
+          networkDetails.networkPassphrase,
+        );
 
-      // Helper function to convert optional string to ScVal
-      // Returns an Option with Some(value) if value is provided, else None
-      const optionalStringToScVal = (value?: string): xdr.ScVal => {
-        if (value !== undefined && value !== "") {
-          return nativeToScVal({ type: "some", value: value });
-        }
-        return nativeToScVal({ type: "none" });
-      };
+        // Helper function to convert optional string to ScVal
+        // Returns an Option with Some(value) if value is provided, else None
+        const optionalStringToScVal = (value?: string): xdr.ScVal => {
+          if (value !== undefined && value !== "") {
+            return nativeToScVal({ type: "some", value: value });
+          }
+          return nativeToScVal({ type: "none" });
+        };
 
-      const tx = txBuilder
-        .addOperation(
-          contract.call(
-            "update_profile",
-            accountToScVal(wallet.publicKey),
-            optionalStringToScVal(data.displayName),
-            optionalStringToScVal(data.bio),
-            optionalStringToScVal(data.imageUrl),
-            optionalStringToScVal(data.xHandle),
-          ),
-        )
-        .setTimeout(TimeoutInfinite)
-        .build();
+        const tx = txBuilder
+          .addOperation(
+            contract.call(
+              "update_profile",
+              accountToScVal(publicKey),
+              optionalStringToScVal(data.displayName),
+              optionalStringToScVal(data.bio),
+              optionalStringToScVal(data.imageUrl),
+              optionalStringToScVal(data.xHandle),
+            ),
+          )
+          .setTimeout(TimeoutInfinite)
+          .build();
 
-      const xdr_tx = tx.toXDR();
-      const signedXdr = await wallet.signTransaction(xdr_tx);
-      return submitTx(signedXdr, networkDetails.networkPassphrase, server);
+        const xdr_tx = tx.toXDR();
+        const signedXdr = await wallet.signTransaction(xdr_tx);
+        return submitTx(signedXdr, networkDetails.networkPassphrase, server);
+      });
     },
-    [contractId, wallet, server, networkDetails],
+    [contractId, wallet, server, networkDetails, withLoading],
   );
 
   const sendTip = useCallback(
@@ -427,73 +511,80 @@ export const useContract = () => {
       amount: string,
       message: string,
     ): Promise<string> => {
-      if (!wallet.publicKey) throw new Error("Wallet not connected");
+      const publicKey = wallet.publicKey;
+      if (!publicKey) throw new Error("Wallet not connected");
 
-      const contract = new Contract(contractId);
-      const txBuilder = await getTxBuilder(
-        wallet.publicKey,
-        BASE_FEE,
-        server,
-        networkDetails.networkPassphrase,
-      );
+      return withLoading(async () => {
+        const contract = new Contract(contractId);
+        const txBuilder = await getTxBuilder(
+          publicKey,
+          BASE_FEE,
+          server,
+          networkDetails.networkPassphrase,
+        );
 
-      // Convert XLM amount to stroops before sending to contract
-      const stroopAmount = xlmToStroop(amount).toString();
+        // Convert XLM amount to stroops before sending to contract
+        const stroopAmount = xlmToStroop(amount).toString();
 
-      const tx = txBuilder
-        .addOperation(
-          contract.call(
-            "send_tip",
-            accountToScVal(wallet.publicKey),
-            accountToScVal(creator),
-            numberToI128(safeStringToBigInt(stroopAmount)),
-            nativeToScVal(message),
-          ),
-        )
-        .setTimeout(TimeoutInfinite)
-        .build();
+        const tx = txBuilder
+          .addOperation(
+            contract.call(
+              "send_tip",
+              accountToScVal(publicKey),
+              accountToScVal(creator),
+              numberToI128(safeStringToBigInt(stroopAmount)),
+              nativeToScVal(message),
+            ),
+          )
+          .setTimeout(TimeoutInfinite)
+          .build();
 
-      const xdr = tx.toXDR();
-      const signedXdr = await wallet.signTransaction(xdr);
-      return submitTx(signedXdr, networkDetails.networkPassphrase, server);
+        const xdr = tx.toXDR();
+        const signedXdr = await wallet.signTransaction(xdr);
+        return submitTx(signedXdr, networkDetails.networkPassphrase, server);
+      });
     },
-    [contractId, wallet, server, networkDetails],
+    [contractId, wallet, server, networkDetails, withLoading],
   );
 
   const withdrawTips = useCallback(
     async (amount: string): Promise<string> => {
-      if (!wallet.publicKey) throw new Error("Wallet not connected");
+      const publicKey = wallet.publicKey;
+      if (!publicKey) throw new Error("Wallet not connected");
 
-      const contract = new Contract(contractId);
-      const txBuilder = await getTxBuilder(
-        wallet.publicKey,
-        BASE_FEE,
-        server,
-        networkDetails.networkPassphrase,
-      );
+      return withLoading(async () => {
+        const contract = new Contract(contractId);
+        const txBuilder = await getTxBuilder(
+          publicKey,
+          BASE_FEE,
+          server,
+          networkDetails.networkPassphrase,
+        );
 
-      // Convert XLM amount to stroops before sending to contract
-      const stroopAmount = xlmToStroop(amount).toString();
+        // Convert XLM amount to stroops before sending to contract
+        const stroopAmount = xlmToStroop(amount).toString();
 
-      const tx = txBuilder
-        .addOperation(
-          contract.call(
-            "withdraw_tips",
-            accountToScVal(wallet.publicKey),
-            numberToI128(safeStringToBigInt(stroopAmount)),
-          ),
-        )
-        .setTimeout(TimeoutInfinite)
-        .build();
+        const tx = txBuilder
+          .addOperation(
+            contract.call(
+              "withdraw_tips",
+              accountToScVal(publicKey),
+              numberToI128(safeStringToBigInt(stroopAmount)),
+            ),
+          )
+          .setTimeout(TimeoutInfinite)
+          .build();
 
-      const xdr = tx.toXDR();
-      const signedXdr = await wallet.signTransaction(xdr);
-      return submitTx(signedXdr, networkDetails.networkPassphrase, server);
+        const xdr = tx.toXDR();
+        const signedXdr = await wallet.signTransaction(xdr);
+        return submitTx(signedXdr, networkDetails.networkPassphrase, server);
+      });
     },
-    [contractId, wallet, server, networkDetails],
+    [contractId, wallet, server, networkDetails, withLoading],
   );
 
   return {
+    loading,
     getProfile,
     getProfileByUsername,
     getLeaderboard,
@@ -504,6 +595,7 @@ export const useContract = () => {
     getTipsByTipper,
     getTipperTipCount,
     getCreditTier,
+    getStreak,
     registerProfile,
     updateProfile,
     sendTip,

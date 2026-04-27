@@ -123,7 +123,7 @@ fn test_send_tip_success() {
     env.as_contract(&contract_id, || {
         let tip: Tip = env.storage().temporary().get(&DataKey::Tip(0)).unwrap();
         assert_eq!(tip.id, 0);
-        assert_eq!(tip.tipper, tipper);
+        assert_eq!(tip.tipper, Some(tipper));
         assert_eq!(tip.creator, creator);
         assert_eq!(tip.amount, amount);
     });
@@ -208,7 +208,7 @@ fn test_send_tip_self() {
     });
 
     let message = String::from_str(&env, "Self tip");
-    let result = client.try_send_tip(&self_tipper, &self_tipper, &10_000_000, &message);
+    let result = client.try_send_tip(&self_tipper, &self_tipper, &10_000_000, &message, &false);
     assert_eq!(result, Err(Ok(ContractError::CannotTipSelf)));
 }
 
@@ -219,7 +219,7 @@ fn test_send_tip_unregistered_creator() {
     let unregistered = Address::generate(&env);
     let message = String::from_str(&env, "Hello");
 
-    let result = client.try_send_tip(&tipper, &unregistered, &10_000_000, &message);
+    let result = client.try_send_tip(&tipper, &unregistered, &10_000_000, &message, &false);
     assert_eq!(result, Err(Ok(ContractError::NotRegistered)));
 }
 
@@ -228,7 +228,7 @@ fn test_send_tip_zero_amount() {
     let (env, client, _contract_id, tipper, creator, _sac) = setup_env();
 
     let message = String::from_str(&env, "Zero tip");
-    let result = client.try_send_tip(&tipper, &creator, &0, &message);
+    let result = client.try_send_tip(&tipper, &creator, &0, &message, &false);
     assert_eq!(result, Err(Ok(ContractError::InvalidAmount)));
 }
 
@@ -237,7 +237,7 @@ fn test_send_tip_invalid_amount_negative() {
     let (env, client, _contract_id, tipper, creator, _sac) = setup_env();
 
     let message = String::from_str(&env, "Negative tip");
-    let result = client.try_send_tip(&tipper, &creator, &-1, &message);
+    let result = client.try_send_tip(&tipper, &creator, &-1, &message, &false);
     assert_eq!(result, Err(Ok(ContractError::InvalidAmount)));
 }
 
@@ -250,7 +250,7 @@ fn test_send_tip_message_too_long() {
         &env,
         "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     );
-    let result = client.try_send_tip(&tipper, &creator, &10_000_000, &long_msg);
+    let result = client.try_send_tip(&tipper, &creator, &10_000_000, &long_msg, &false);
     assert_eq!(result, Err(Ok(ContractError::MessageTooLong)));
 }
 
@@ -260,7 +260,7 @@ fn test_send_tip_insufficient_xlm() {
 
     let broke = Address::generate(&env);
     let message = String::from_str(&env, "no funds");
-    let result = client.try_send_tip(&broke, &creator, &10_000_000, &message);
+    let result = client.try_send_tip(&broke, &creator, &10_000_000, &message, &false);
     assert_eq!(result, Err(Ok(ContractError::InsufficientBalance)));
 }
 
@@ -641,7 +641,7 @@ fn test_get_recent_tips_pagination_full_walk() {
     let msg = String::from_str(&env, "tip");
     // Send 5 tips
     for i in 1..=5 {
-        client.send_tip(&tipper, &creator, &(i * 10_000_000), &msg);
+        client.send_tip(&tipper, &creator, &(i * 10_000_000), &msg, &false);
     }
 
     // Page 1: offset 0, limit 2 → tips 5, 4

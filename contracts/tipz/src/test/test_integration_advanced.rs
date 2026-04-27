@@ -127,6 +127,7 @@ fn test_withdrawal_drains_entire_balance() {
         &creator,
         &tip_amount,
         &String::from_str(&env, "Tip"),
+        &false,
     );
 
     let profile_before = client.get_profile(&creator);
@@ -157,7 +158,7 @@ fn test_rapid_tips_same_creator() {
 
     for _ in 0..100 {
         env.budget().reset_default();
-        client.send_tip(&tipper, &creator, &tip_amount, &message);
+        client.send_tip(&tipper, &creator, &tip_amount, &message, &false);
     }
 
     let profile = client.get_profile(&creator);
@@ -214,8 +215,9 @@ fn test_full_lifecycle() {
         &alice,
         &1_000_000_000,
         &String::from_str(&env, "A"),
+        &false,
     );
-    client.send_tip(&tipper, &bob, &2_000_000_000, &String::from_str(&env, "B"));
+    client.send_tip(&tipper, &bob, &2_000_000_000, &String::from_str(&env, "B"), &false);
 
     // 3. Update profiles
     client.update_profile(
@@ -274,6 +276,7 @@ fn test_fee_change_mid_tip() {
         &creator,
         &tip_amount,
         &String::from_str(&env, "Tip"),
+        &false,
     );
 
     // Fee is 200 bps (2%)

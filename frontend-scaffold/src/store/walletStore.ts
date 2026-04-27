@@ -33,8 +33,10 @@ interface WalletState {
 interface WalletActions {
   /** Add (or activate) a wallet. If already in the list it becomes active. */
   connect: (publicKey: string, walletType?: string) => void;
+  setAddress: (publicKey: string, walletType?: string) => void;
   /** Disconnect all wallets and clear persisted state. */
   disconnect: () => void;
+  clearAddress: () => void;
   /** Remove a specific wallet from the list. */
   removeWallet: (publicKey: string) => void;
   /** Switch the active wallet used for signing. */
@@ -81,6 +83,10 @@ export const useWalletStore = create<WalletStore>()(
         });
       },
 
+      setAddress: (publicKey: string, walletType?: string) => {
+        get().connect(publicKey, walletType);
+      },
+
       disconnect: () =>
         set({
           wallets: [],
@@ -91,6 +97,10 @@ export const useWalletStore = create<WalletStore>()(
           walletType: null,
           signingStatus: 'idle',
         }),
+
+      clearAddress: () => {
+        get().disconnect();
+      },
 
       removeWallet: (publicKey: string) => {
         const { wallets, activeWalletKey } = get();

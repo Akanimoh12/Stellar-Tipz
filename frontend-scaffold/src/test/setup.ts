@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { vi } from "vitest";
+import { sorobanMock } from "./mocks/soroban";
 
 class MockIntersectionObserver implements IntersectionObserver {
   readonly root = null;
@@ -64,10 +65,10 @@ vi.mock("@creit.tech/stellar-wallets-kit", () => ({
 }));
 
 vi.mock("@stellar/stellar-sdk", () => ({
-  Contract: vi.fn(),
+  Contract: sorobanMock.Contract,
   TimeoutInfinite: 0,
-  nativeToScVal: vi.fn(),
-  xdr: {},
+  nativeToScVal: sorobanMock.nativeToScVal,
+  xdr: sorobanMock.xdr,
   Networks: {
     TESTNET: "Test SDF Network ; September 2015",
     PUBLIC: "Public Global Stellar Network ; September 2015",

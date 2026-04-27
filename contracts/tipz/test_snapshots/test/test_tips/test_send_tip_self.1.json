@@ -1297,6 +1297,9 @@
                 },
                 {
                   "string": "Self tip"
+                },
+                {
+                  "bool": false
                 }
               ]
             }
@@ -1396,6 +1399,9 @@
                     },
                     {
                       "string": "Self tip"
+                    },
+                    {
+                      "bool": false
                     }
                   ]
                 }

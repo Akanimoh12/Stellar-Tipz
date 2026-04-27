@@ -64,7 +64,7 @@ fn test_event_tip_sent() {
     let message = String::from_str(&env, "thanks!");
 
     env.as_contract(&contract_id, || {
-        events::emit_tip_sent(&env, 0, &from, &to, 5_000_000, &message, 1234567890);
+        events::emit_tip_sent(&env, 0, &from, &to, 5_000_000, &message, 1234567890, false);
     });
 
     let all = env.events().all();
@@ -88,7 +88,7 @@ fn test_event_tip_sent_contains_all_indexing_fields() {
     let timestamp: u64 = 1700000000;
 
     env.as_contract(&contract_id, || {
-        events::emit_tip_sent(&env, tip_id, &tipper, &creator, amount, &message, timestamp);
+        events::emit_tip_sent(&env, tip_id, &tipper, &creator, amount, &message, timestamp, false);
     });
 
     let all = env.events().all();

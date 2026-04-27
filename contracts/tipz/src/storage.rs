@@ -130,6 +130,10 @@ pub enum DataKey {
     ActiveCreators30d,
     /// Creator last active timestamp
     CreatorLastActive(Address),
+    /// Supporter streak by (supporter, creator)
+    Streak(Address, Address),
+    /// Aggregate streak bonus credited to a creator
+    CreatorStreakBonus(Address),
 }
 
 /// Extend the contract instance TTL when a write transaction starts.
@@ -517,6 +521,57 @@ pub fn reset_creator_tip_index(env: &Env, creator: &Address) {
     if env.storage().temporary().has(&count_key) {
         env.storage().temporary().remove(&count_key);
     }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Streak tracking
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Return the streak record for a supporter/creator pair, if any.
+pub fn get_streak(env: &Env, supporter: &Address, creator: &Address) -> Option<crate::types::Streak> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Streak(supporter.clone(), creator.clone()))
+}
+
+/// Persist a streak record for a supporter/creator pair.
+pub fn set_streak(env: &Env, streak: &crate::types::Streak) {
+    env.storage().persistent().set(
+        &DataKey::Streak(streak.supporter.clone(), streak.creator.clone()),
+        streak,
+    );
+}
+
+/// Return the total streak bonus accumulated for a creator.
+pub fn get_creator_streak_bonus(env: &Env, creator: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::CreatorStreakBonus(creator.clone()))
+        .unwrap_or(0)
+}
+
+/// Add streak bonus points to a creator.
+pub fn add_creator_streak_bonus(env: &Env, creator: &Address, bonus: u32) {
+    if bonus == 0 {
+        return;
+    }
+    let key = DataKey::CreatorStreakBonus(creator.clone());
+    let current = get_creator_streak_bonus(env, creator);
+    env.storage()
+        .persistent()
+        .set(&key, &(current.saturating_add(bonus)));
+}
+
+/// Adjust a creator's streak bonus by a signed delta.
+pub fn adjust_creator_streak_bonus(env: &Env, creator: &Address, delta: i32) {
+    if delta == 0 {
+        return;
+    }
+
+    let key = DataKey::CreatorStreakBonus(creator.clone());
+    let current = get_creator_streak_bonus(env, creator) as i32;
+    let next = (current + delta).max(0) as u32;
+    env.storage().persistent().set(&key, &next);
 }
 
 /// Remove all per-tipper tip index entries from temporary storage.

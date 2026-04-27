@@ -132,7 +132,7 @@ fn test_leaderboard_single_creator() {
     insert_profile(&env, &contract_id, &creator, "alice");
 
     let amount: i128 = 10_000_000; // 1 XLM
-    client.send_tip(&tipper, &creator, &amount, &String::from_str(&env, ""));
+    client.send_tip(&tipper, &creator, &amount, &String::from_str(&env, ""), &false);
 
     let board = client.get_leaderboard(&50);
     assert_eq!(board.len(), 1);
@@ -396,7 +396,7 @@ fn test_insert_when_board_has_one_entry() {
 
     let alice = Address::generate(&env);
     insert_profile(&env, &contract_id, &alice, "alice");
-    client.send_tip(&tipper, &alice, &30_000_000, &String::from_str(&env, "")); // 3 XLM
+    client.send_tip(&tipper, &alice, &30_000_000, &String::from_str(&env, ""), &false); // 3 XLM
 
     let board_one = client.get_leaderboard(&50);
     assert_eq!(board_one.len(), 1, "should have exactly one entry");
@@ -405,7 +405,7 @@ fn test_insert_when_board_has_one_entry() {
     // bob joins with a smaller tip — alice should stay at rank 1.
     let bob = Address::generate(&env);
     insert_profile(&env, &contract_id, &bob, "bob");
-    client.send_tip(&tipper, &bob, &10_000_000, &String::from_str(&env, "")); // 1 XLM
+    client.send_tip(&tipper, &bob, &10_000_000, &String::from_str(&env, ""), &false); // 1 XLM
 
     let board_two = client.get_leaderboard(&50);
     assert_eq!(board_two.len(), 2, "should now have two entries");

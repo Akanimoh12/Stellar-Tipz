@@ -1,5 +1,7 @@
 //! Tests for platform analytics and statistics
 
+extern crate alloc;
+use alloc::format;
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
 use crate::test::test_init::setup_test_contract;

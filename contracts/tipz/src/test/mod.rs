@@ -18,6 +18,7 @@ mod test_profile_query;
 mod test_profiles;
 mod test_register;
 mod test_stats;
+mod test_streaks;
 mod test_subscriptions;
 mod test_tips;
 mod test_ttl_desync;
