@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { Github, Keyboard, Menu, Moon, Sun, X } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -11,6 +10,7 @@ import NetworkBadge from "../shared/NetworkBadge";
 import WalletSwitcher from "../shared/WalletSwitcher";
 import Button from "../ui/Button";
 import { getModifierKey } from "../../hooks/useKeyboardShortcuts";
+import MobileMenu from "./MobileMenu";
 
 const UNSEEN_TIPS_KEY = "tipz_unseen_tips";
 
@@ -201,104 +201,12 @@ const Header: React.FC = () => {
         </button>
       </div>
 
-      <AnimatePresence>
-        {mobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -16 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="absolute left-0 right-0 top-full border-b-3 border-black bg-white dark:border-white dark:bg-black md:hidden"
-          >
-            <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-[0.2em]">
-                  {t("nav.navigation")}
-                </span>
-                <button
-                  type="button"
-                  onClick={closeMobileMenu}
-                  className="inline-flex items-center justify-center border-2 border-black bg-white p-2 dark:border-white dark:bg-black"
-                  aria-label="Close mobile menu"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              <Link
-                to="/leaderboard"
-                onClick={closeMobileMenu}
-                className="border-2 border-black bg-yellow-100 px-4 py-3 font-bold uppercase tracking-wide dark:bg-yellow-900 dark:text-white"
-              >
-                {t("nav.leaderboard")}
-              </Link>
-              <Link
-                to="/dashboard"
-                onClick={closeMobileMenu}
-                className="border-2 border-black bg-white px-4 py-3 font-bold uppercase tracking-wide dark:border-white dark:bg-black dark:text-white"
-              >
-                {navDashboard}
-              </Link>
-              <Link
-                to="/transactions"
-                onClick={closeMobileMenu}
-                className="border-2 border-black bg-white px-4 py-3 font-bold uppercase tracking-wide dark:border-white dark:bg-black dark:text-white"
-              >
-                Transactions
-              </Link>
-              <Link
-                to="/profile"
-                onClick={closeMobileMenu}
-                className="border-2 border-black bg-white px-4 py-3 font-bold uppercase tracking-wide dark:border-white dark:bg-black dark:text-white"
-              >
-                {t("nav.profile")}
-              </Link>
-
-              <div className="flex flex-col gap-2 border-t-2 border-black pt-2 dark:border-white">
-                <div className="flex items-center justify-between px-2">
-                  <span className="text-xs font-bold uppercase dark:text-white">
-                    {t("nav.theme")}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={toggleTheme}
-                    className="inline-flex items-center justify-center border-2 border-black bg-white p-2 transition-opacity hover:opacity-60 dark:border-white dark:bg-black"
-                    style={{ boxShadow: shadow }}
-                    aria-label={`Switch to ${
-                      theme === "light" ? "dark" : "light"
-                    } mode`}
-                  >
-                    {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
-                  </button>
-                </div>
-                <div className="flex items-center justify-between px-2">
-                  <span className="text-xs font-bold uppercase dark:text-white">
-                    {t("nav.network")}
-                  </span>
-                  <NetworkBadge />
-                </div>
-                <button
-                  type="button"
-                  onClick={openKeyboardShortcuts}
-                  className="flex items-center justify-between border-2 border-black bg-white px-3 py-2 text-xs font-bold uppercase dark:border-white dark:bg-black dark:text-white"
-                >
-                  Keyboard shortcuts
-                  <Keyboard size={16} />
-                </button>
-                {connected ? (
-                  <div onClick={closeMobileMenu}>
-                    <WalletSwitcher onAddWallet={connect} />
-                  </div>
-                ) : (
-                  <Button className="w-full" onClick={handleWalletAction}>
-                    {t("wallet.connect")}
-                  </Button>
-                )}
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <MobileMenu
+        isOpen={mobileMenuOpen}
+        onClose={closeMobileMenu}
+        navDashboard={navDashboard}
+        onKeyboardShortcuts={openKeyboardShortcuts}
+      />
     </header>
   );
 };
