@@ -84,8 +84,6 @@ pub enum DataKey {
     CreatorTipCount(Address),
     /// Reverse index: (creator, local_index) → global tip ID
     CreatorTip(Address, u32),
-    /// Pending admin address (proposed but not yet accepted)
-    PendingAdmin,
     /// Pending two-step admin change proposal (full transition record).
     PendingAdminChange,
     /// Admin change history list (newest entries appended last).
@@ -136,8 +134,6 @@ pub enum DataKey {
     CreatorLastActive(Address),
     /// Supporter streak by (supporter, creator)
     Streak(Address, Address),
-    /// Aggregate streak bonus credited to a creator
-    CreatorStreakBonus(Address),
     /// When set, profile is deactivated (unix timestamp); absent means active
     ProfileDeactivatedAt(Address),
     /// Rate limit status by address
@@ -619,35 +615,22 @@ pub fn set_streak(env: &Env, streak: &crate::types::Streak) {
 }
 
 /// Return the total streak bonus accumulated for a creator.
-pub fn get_creator_streak_bonus(env: &Env, creator: &Address) -> u32 {
-    env.storage()
-        .persistent()
-        .get(&DataKey::CreatorStreakBonus(creator.clone()))
-        .unwrap_or(0)
+/// TODO: Store this in Profile struct to avoid extra storage key
+pub fn get_creator_streak_bonus(_env: &Env, _creator: &Address) -> u32 {
+    // Temporarily disabled to reduce DataKey variants
+    0
 }
 
 /// Add streak bonus points to a creator.
-pub fn add_creator_streak_bonus(env: &Env, creator: &Address, bonus: u32) {
-    if bonus == 0 {
-        return;
-    }
-    let key = DataKey::CreatorStreakBonus(creator.clone());
-    let current = get_creator_streak_bonus(env, creator);
-    env.storage()
-        .persistent()
-        .set(&key, &(current.saturating_add(bonus)));
+/// TODO: Store this in Profile struct to avoid extra storage key
+pub fn add_creator_streak_bonus(_env: &Env, _creator: &Address, _bonus: u32) {
+    // Temporarily disabled to reduce DataKey variants
 }
 
 /// Adjust a creator's streak bonus by a signed delta.
-pub fn adjust_creator_streak_bonus(env: &Env, creator: &Address, delta: i32) {
-    if delta == 0 {
-        return;
-    }
-
-    let key = DataKey::CreatorStreakBonus(creator.clone());
-    let current = get_creator_streak_bonus(env, creator) as i32;
-    let next = (current + delta).max(0) as u32;
-    env.storage().persistent().set(&key, &next);
+/// TODO: Store this in Profile struct to avoid extra storage key
+pub fn adjust_creator_streak_bonus(_env: &Env, _creator: &Address, _delta: i32) {
+    // Temporarily disabled to reduce DataKey variants
 }
 
 /// Remove all per-tipper tip index entries from temporary storage.
