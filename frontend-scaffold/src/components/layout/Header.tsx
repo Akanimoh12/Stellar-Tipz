@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Github, Keyboard, Menu, Moon, Sun, X } from "lucide-react";
+import { Github, Keyboard, Menu, Moon, Search, Sun, X } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { useTheme } from "@/hooks/useTheme";
@@ -98,6 +98,11 @@ const Header: React.FC = () => {
     );
   };
 
+  const openGlobalSearch = () => {
+    window.dispatchEvent(new Event("tipz:open-global-search"));
+    closeMobileMenu();
+  };
+
   return (
     <header
       ref={headerRef}
@@ -141,6 +146,17 @@ const Header: React.FC = () => {
         </nav>
 
         <div className="hidden items-center gap-4 md:flex">
+          <button
+            type="button"
+            onClick={openGlobalSearch}
+            className="inline-flex items-center gap-2 border-2 border-black bg-white px-3 py-2 text-xs font-black uppercase tracking-wide transition-opacity hover:opacity-60 dark:border-white dark:bg-black"
+            style={{ boxShadow: shadow }}
+            aria-label="Open creator search"
+            title={`Search creators (${getModifierKey()} + K)`}
+          >
+            <Search size={14} />
+            Search
+          </button>
           <button
             type="button"
             onClick={toggleTheme}
@@ -206,6 +222,7 @@ const Header: React.FC = () => {
         onClose={closeMobileMenu}
         navDashboard={navDashboard}
         onKeyboardShortcuts={openKeyboardShortcuts}
+        onSearch={openGlobalSearch}
       />
     </header>
   );

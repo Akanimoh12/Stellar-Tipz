@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import type { Profile } from "@/types";
 import { useSearch } from "@/hooks/useSearch";
 import Avatar from "@/components/ui/Avatar";
+import CreditBadge from "@/components/shared/CreditBadge";
 import { truncateString } from "@/helpers/format";
 
 interface GlobalSearchProps {
@@ -62,8 +63,6 @@ const HighlightedText: React.FC<HighlightedTextProps> = ({
 const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -109,10 +108,15 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
     } else {
       document.body.style.overflow = "";
     }
+
     return () => {
       document.body.style.overflow = "";
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [query, displayResults.length, recentSearches.length]);
 
   const handleSelect = useCallback(
     (profile: Profile) => {
@@ -127,6 +131,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
     (e: React.KeyboardEvent) => {
       const totalItems =
         displayResults.length > 0 ? displayResults.length : recentSearches.length;
+      if (totalItems === 0) return;
 
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -136,7 +141,10 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
         setSelectedIndex((prev) => (prev - 1 + totalItems) % totalItems);
       } else if (e.key === "Enter") {
         e.preventDefault();
-        const items = displayResults.length > 0 ? displayResults : recentSearches.map((p) => ({ item: p }));
+        const items =
+          displayResults.length > 0
+            ? displayResults
+            : recentSearches.map((p) => ({ item: p }));
         if (items[selectedIndex]) {
           handleSelect(items[selectedIndex].item);
         }
@@ -172,7 +180,6 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
       </AnimatePresence>
 
       <motion.div
-        ref={containerRef}
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -16 }}
@@ -195,7 +202,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Search creators, usernames..."
+            placeholder="Search creators, usernames, x handles..."
             className="flex-1 bg-transparent text-sm font-medium placeholder:text-gray-400 focus:outline-none"
             aria-label="Search creators"
             aria-autocomplete="list"
@@ -215,7 +222,6 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
         </div>
 
         <div
-          ref={listRef}
           id="search-results"
           className="max-h-80 overflow-y-auto"
           role="listbox"
@@ -225,10 +231,10 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
             <div className="px-4 py-8 text-center">
               <Search size={32} className="mx-auto mb-3 text-gray-300" />
               <p className="text-sm font-medium text-gray-500">
-                Search for creators by username or display name
+                Search for creators by username, display name, or x handle
               </p>
               <p className="mt-2 text-xs text-gray-400">
-                Try: "stellarjane" or "orbitmax"
+                Try: "stellarjane" or "@orbitmax"
               </p>
             </div>
           )}
@@ -267,19 +273,16 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
                   />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">
-                      <HighlightedText
-                        text={profile.displayName || profile.username}
-                        matchKey="displayName"
-                      />
+                      {profile.displayName || profile.username}
                     </p>
                     <p className="truncate text-xs text-gray-400">
-                      @{profile.username} · {truncateString(profile.owner)}
+                      @{profile.username} | {truncateString(profile.owner)}
+                    </p>
+                    <p className="mt-1">
+                      <CreditBadge score={profile.creditScore} showScore={false} />
                     </p>
                   </div>
-                  <ArrowRight
-                    size={14}
-                    className="text-gray-300 shrink-0"
-                  />
+                  <ArrowRight size={14} className="text-gray-300 shrink-0" />
                 </button>
               ))}
             </div>
@@ -319,7 +322,19 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
                       matches={result.matches}
                       matchKey="username"
                     />{" "}
-                    · {truncateString(profile.owner)}
+                    |{" "}
+                    <HighlightedText
+                      text={
+                        profile.xHandle
+                          ? `x.com/${profile.xHandle}`
+                          : truncateString(profile.owner)
+                      }
+                      matches={result.matches}
+                      matchKey="xHandle"
+                    />
+                  </p>
+                  <p className="mt-1">
+                    <CreditBadge score={profile.creditScore} showScore={false} />
                   </p>
                 </div>
                 <ArrowRight size={14} className="text-gray-300 shrink-0" />
@@ -331,11 +346,22 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
             <div className="px-4 py-8 text-center">
               <Search size={32} className="mx-auto mb-3 text-gray-300" />
               <p className="text-sm font-medium text-gray-500">
-                No results found for "{query}"
+                No creators found for "{query}"
               </p>
               <p className="mt-2 text-xs text-gray-400">
-                Try searching for a different username
+                Try a different keyword or browse the leaderboard.
               </p>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  navigate("/leaderboard");
+                }}
+                className="mt-4 inline-flex items-center gap-2 border-2 border-black px-3 py-1.5 text-xs font-black uppercase tracking-wide hover:bg-black hover:text-white dark:border-white"
+              >
+                Browse leaderboard
+                <ArrowRight size={12} />
+              </button>
             </div>
           )}
         </div>
@@ -344,16 +370,16 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
           <div className="flex items-center gap-3 text-xs text-gray-400">
             <span className="flex items-center gap-1">
               <kbd className="border border-gray-300 px-1.5 py-0.5 font-mono text-xs">
-                ↑
+                Up
               </kbd>
               <kbd className="border border-gray-300 px-1.5 py-0.5 font-mono text-xs">
-                ↓
+                Down
               </kbd>
               <span className="ml-1">to navigate</span>
             </span>
             <span className="flex items-center gap-1">
               <kbd className="border border-gray-300 px-1.5 py-0.5 font-mono text-xs">
-                ↵
+                Enter
               </kbd>
               <span className="ml-1">to select</span>
             </span>

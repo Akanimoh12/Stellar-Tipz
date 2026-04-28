@@ -24,11 +24,13 @@ interface RecentSearch {
   owner: string;
   username: string;
   displayName: string;
+  xHandle: string;
+  creditScore: number;
 }
 
 function loadRecentSearches(): Profile[] {
   try {
-    const stored = sessionStorage.getItem(RECENT_SEARCHES_KEY);
+    const stored = localStorage.getItem(RECENT_SEARCHES_KEY);
     if (!stored) return [];
     const parsed = JSON.parse(stored) as RecentSearch[];
     return parsed.map((p) => ({
@@ -37,10 +39,10 @@ function loadRecentSearches(): Profile[] {
       displayName: p.displayName,
       bio: "",
       imageUrl: "",
-      xHandle: "",
+      xHandle: p.xHandle || "",
       xFollowers: 0,
       xEngagementAvg: 0,
-      creditScore: 0,
+      creditScore: p.creditScore || 0,
       totalTipsReceived: "0",
       totalTipsCount: 0,
       balance: "0",
@@ -58,15 +60,17 @@ function saveRecentSearches(profiles: Profile[]): void {
       owner: p.owner,
       username: p.username,
       displayName: p.displayName,
+      xHandle: p.xHandle || "",
+      creditScore: p.creditScore || 0,
     }));
-    sessionStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(toSave));
+    localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(toSave));
   } catch {
     // Silently fail
   }
 }
 
 const fuseOptions: IFuseOptions<Profile> = {
-  keys: ["username", "displayName", "owner"],
+  keys: ["username", "displayName", "xHandle", "owner"],
   threshold: 0.3,
   includeMatches: true,
   includeScore: true,
@@ -206,7 +210,7 @@ export const useSearch = () => {
 
   const clearRecent = useCallback(() => {
     setRecentSearches([]);
-    sessionStorage.removeItem(RECENT_SEARCHES_KEY);
+    localStorage.removeItem(RECENT_SEARCHES_KEY);
   }, []);
 
   return {
