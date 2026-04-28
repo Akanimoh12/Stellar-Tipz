@@ -20,6 +20,18 @@ const KeyboardShortcutsProvider: React.FC = () => {
     setHelpOpen(false);
   }, []);
 
+  React.useEffect(() => {
+    const openSearch = () => {
+      setHelpOpen(false);
+      setSearchOpen(true);
+    };
+
+    window.addEventListener("tipz:open-global-search", openSearch);
+    return () => {
+      window.removeEventListener("tipz:open-global-search", openSearch);
+    };
+  }, []);
+
   // Focus the tip amount input on the current tip page.
   // If the custom input isn't visible yet, click the "Custom" trigger button first.
   const focusTipAmount = useCallback(() => {

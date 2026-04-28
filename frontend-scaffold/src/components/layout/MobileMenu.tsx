@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Keyboard, Moon, Sun, X } from "lucide-react";
+import { Keyboard, Moon, Search, Sun, X } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { useI18n } from "@/i18n";
@@ -16,6 +16,7 @@ interface MobileMenuProps {
   onClose: () => void;
   navDashboard: React.ReactNode;
   onKeyboardShortcuts: () => void;
+  onSearch: () => void;
 }
 
 const FOCUSABLE =
@@ -26,6 +27,7 @@ const MobileMenu: React.FC<MobileMenuProps> = ({
   onClose,
   navDashboard,
   onKeyboardShortcuts,
+  onSearch,
 }) => {
   const { t } = useI18n();
   const { theme, toggleTheme } = useTheme();
@@ -173,6 +175,15 @@ const MobileMenu: React.FC<MobileMenuProps> = ({
                 </span>
                 <NetworkBadge />
               </div>
+
+              <button
+                type="button"
+                onClick={onSearch}
+                className="flex items-center justify-between border-2 border-black bg-white px-3 py-2 text-xs font-bold uppercase dark:border-white dark:bg-black dark:text-white"
+              >
+                Search creators ({getModifierKey()} + K)
+                <Search size={16} />
+              </button>
 
               <button
                 type="button"
