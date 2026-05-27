@@ -16,6 +16,9 @@ const LeaderboardPage = lazy(
 const TipPage = lazy(() => import("@/features/tipping/TipPage"));
 const TipReceipt = lazy(() => import("@/features/tipping/TipReceipt"));
 const EmbedWidget = lazy(() => import("@/features/tipping/EmbedWidget"));
+const EmbedGeneratorPage = lazy(
+  () => import("@/features/embed/EmbedGeneratorPage"),
+);
 const TransactionsPage = lazy(
   () => import("@/features/transactions/TransactionsPage"),
 );
@@ -45,6 +48,10 @@ export const routes: RouteObject[] = [
   {
     path: "/embed/@:username",
     element: wrap(<EmbedWidget />),
+  },
+  {
+    path: "/embed/generate",
+    element: protect(<EmbedGeneratorPage />),
   },
   {
     path: "/receipt",

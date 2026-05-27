@@ -24,6 +24,7 @@ import EarningsTab from "./EarningsTab";
 import OverviewTab from "./OverviewTab";
 import SettingsTab from "./SettingsTab";
 import TipsTab from "./TipsTab";
+import TipsChart from "./TipsChart";
 import FavoritesList from "./FavoritesList";
 import { DashboardProvider } from "./DashboardContext";
 
@@ -128,6 +129,15 @@ const DashboardPage: React.FC = () => {
           >
             <h2 id="earnings-history-heading" className="text-xl font-black uppercase mb-4">Earnings History</h2>
             <EarningsChart tips={tips} />
+          </section>
+
+          <section
+            role="region"
+            aria-labelledby="tips-analytics-heading"
+            className="border-4 border-black bg-white p-6 shadow-brutalist"
+          >
+            <h2 id="tips-analytics-heading" className="text-xl font-black uppercase mb-4">Tips Analytics</h2>
+            <TipsChart tips={tips} />
           </section>
         </div>
       ),
