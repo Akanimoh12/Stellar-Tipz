@@ -34,29 +34,29 @@ use crate::TipzContract;
 use crate::TipzContractClient;
 
 // CPU instruction and memory byte thresholds (inclusive upper bounds).
-const CPU_REGISTER:              u64 = 30_000_000;
-const CPU_SEND_TIP_SHORT:        u64 = 40_000_000;
-const CPU_SEND_TIP_MAX_MSG:      u64 = 45_000_000;
-const CPU_SEND_TIP_FULL_BOARD:   u64 = 50_000_000;
-const CPU_WITHDRAW:              u64 = 30_000_000;
-const CPU_GET_LEADERBOARD_FULL:  u64 = 20_000_000;
+const CPU_REGISTER: u64 = 30_000_000;
+const CPU_SEND_TIP_SHORT: u64 = 40_000_000;
+const CPU_SEND_TIP_MAX_MSG: u64 = 45_000_000;
+const CPU_SEND_TIP_FULL_BOARD: u64 = 50_000_000;
+const CPU_WITHDRAW: u64 = 30_000_000;
+const CPU_GET_LEADERBOARD_FULL: u64 = 20_000_000;
 
-const MEM_REGISTER:              u64 = 10_000_000;
-const MEM_SEND_TIP_SHORT:        u64 = 10_000_000;
-const MEM_SEND_TIP_MAX_MSG:      u64 = 12_000_000;
-const MEM_SEND_TIP_FULL_BOARD:   u64 = 15_000_000;
-const MEM_WITHDRAW:              u64 = 10_000_000;
-const MEM_GET_LEADERBOARD_FULL:  u64 = 8_000_000;
+const MEM_REGISTER: u64 = 10_000_000;
+const MEM_SEND_TIP_SHORT: u64 = 10_000_000;
+const MEM_SEND_TIP_MAX_MSG: u64 = 12_000_000;
+const MEM_SEND_TIP_FULL_BOARD: u64 = 15_000_000;
+const MEM_WITHDRAW: u64 = 10_000_000;
+const MEM_GET_LEADERBOARD_FULL: u64 = 8_000_000;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 /// Names used for leaderboard-filling helpers (3–32 chars, [a-z0-9_]).
 const BOARD_NAMES: [&str; 50] = [
-    "b001", "b002", "b003", "b004", "b005", "b006", "b007", "b008", "b009", "b010",
-    "b011", "b012", "b013", "b014", "b015", "b016", "b017", "b018", "b019", "b020",
-    "b021", "b022", "b023", "b024", "b025", "b026", "b027", "b028", "b029", "b030",
-    "b031", "b032", "b033", "b034", "b035", "b036", "b037", "b038", "b039", "b040",
-    "b041", "b042", "b043", "b044", "b045", "b046", "b047", "b048", "b049", "b050",
+    "b001", "b002", "b003", "b004", "b005", "b006", "b007", "b008", "b009", "b010", "b011", "b012",
+    "b013", "b014", "b015", "b016", "b017", "b018", "b019", "b020", "b021", "b022", "b023", "b024",
+    "b025", "b026", "b027", "b028", "b029", "b030", "b031", "b032", "b033", "b034", "b035", "b036",
+    "b037", "b038", "b039", "b040", "b041", "b042", "b043", "b044", "b045", "b046", "b047", "b048",
+    "b049", "b050",
 ];
 
 /// Full environment: initialised contract + SAC + funded tipper.
@@ -189,17 +189,21 @@ fn test_register_profile_budget() {
     let caller = Address::generate(&env);
 
     // Build worst-case string values.
-    let username     = String::from_str(&env, "abcdefghijklmnopqrstuvwxyz123456"); // 32 chars
-    let display_name = String::from_str(&env,
-        "Alice Wonderland — The Longest Display Name You Can Have In Tipz!"); // ≤64 chars
-    // 280-char bio.
-    let bio = String::from_str(&env,
+    let username = String::from_str(&env, "abcdefghijklmnopqrstuvwxyz123456"); // 32 chars
+    let display_name = String::from_str(
+        &env,
+        "Alice Wonderland — The Longest Display Name You Can Have In Tipz!",
+    ); // ≤64 chars
+       // 280-char bio.
+    let bio = String::from_str(
+        &env,
         "Lorem ipsum dolor sit amet, consectetur adipiscing elit. \
          Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. \
          Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris \
-         nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in re");
+         nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in re",
+    );
     let image_url = String::from_str(&env, "https://example.com/avatar.png");
-    let x_handle  = String::from_str(&env, "alice_x_handle");
+    let x_handle = String::from_str(&env, "alice_x_handle");
 
     env.budget().reset_unlimited();
 
@@ -285,7 +289,12 @@ fn test_send_tip_budget_max_message() {
     let cpu = env.budget().cpu_instruction_cost();
     let mem = env.budget().memory_bytes_cost();
 
-    soroban_sdk::log!(&env, "send_tip (max 280-char msg): CPU={}, MEM={}", cpu, mem);
+    soroban_sdk::log!(
+        &env,
+        "send_tip (max 280-char msg): CPU={}, MEM={}",
+        cpu,
+        mem
+    );
 
     assert!(
         cpu <= CPU_SEND_TIP_MAX_MSG,
@@ -411,7 +420,12 @@ fn test_get_leaderboard_budget_full() {
     let cpu = env.budget().cpu_instruction_cost();
     let mem = env.budget().memory_bytes_cost();
 
-    soroban_sdk::log!(&env, "get_leaderboard (50 entries): CPU={}, MEM={}", cpu, mem);
+    soroban_sdk::log!(
+        &env,
+        "get_leaderboard (50 entries): CPU={}, MEM={}",
+        cpu,
+        mem
+    );
 
     assert_eq!(board.len(), MAX_LEADERBOARD_SIZE);
     assert!(
@@ -437,9 +451,9 @@ fn test_send_tip_message_length_overhead() {
     let (env_full, client_full, contract_id_full, tipper_full, _) = setup();
 
     let creator_empty = Address::generate(&env_empty);
-    let creator_full  = Address::generate(&env_full);
+    let creator_full = Address::generate(&env_full);
     insert_profile(&env_empty, &contract_id_empty, &creator_empty, "alice");
-    insert_profile(&env_full,  &contract_id_full,  &creator_full,  "alice");
+    insert_profile(&env_full, &contract_id_full, &creator_full, "alice");
 
     let amount: i128 = 10_000_000;
 
@@ -463,13 +477,7 @@ fn test_send_tip_message_length_overhead() {
          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     );
     env_full.budget().reset_unlimited();
-    client_full.send_tip(
-        &tipper_full,
-        &creator_full,
-        &amount,
-        &max_msg,
-        &false,
-    );
+    client_full.send_tip(&tipper_full, &creator_full, &amount, &max_msg, &false);
     let cpu_full = env_full.budget().cpu_instruction_cost();
 
     let overhead = cpu_full.saturating_sub(cpu_empty);

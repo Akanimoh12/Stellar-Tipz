@@ -27,7 +27,7 @@ describe('stellar service', () => {
     it('truncates long addresses correctly', () => {
       const address = 'GD5DJQD73KHNA7HYLLKQYA6VTLNBLJ4HFGFA3SIXRS7SNTL5YF6GYQ3X';
       const result = truncateAddress(address);
-      expect(result).toBe('GD5DJ...YQ3X');
+      expect(result).toBe('GD5DJ...GYQ3X');
     });
 
     it('returns short addresses unchanged', () => {

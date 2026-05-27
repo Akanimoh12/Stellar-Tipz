@@ -47,13 +47,12 @@ pub fn record_tip_streak(env: &Env, supporter: &Address, creator: &Address) -> S
     streak.last_tip_day = Some(today);
     streak.bonus_points = streak.current / 7;
 
-    storage::adjust_creator_streak_bonus(
-        env,
-        creator,
-        streak.bonus_points as i32 - previous_bonus,
-    );
+    storage::adjust_creator_streak_bonus(env, creator, streak.bonus_points as i32 - previous_bonus);
 
-    if STREAK_MILESTONES.iter().any(|milestone| *milestone == streak.current) {
+    if STREAK_MILESTONES
+        .iter()
+        .any(|milestone| *milestone == streak.current)
+    {
         emit_streak_milestone(env, supporter, creator, streak.current);
     }
 

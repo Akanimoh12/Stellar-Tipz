@@ -86,6 +86,32 @@ const OverviewTab: React.FC = () => {
     setWithdrawOpen(false);
   }, []);
 
+  const weeklyData = useMemo(() => buildWeeklyChart(tips), [tips]);
+  const maxBar = useMemo(
+    () => Math.max(...weeklyData.map((d) => d.total), 1),
+    [weeklyData],
+  );
+  const tipLink = useMemo(
+    () => (profile ? `${window.location.origin}/@${profile.username}` : ""),
+    [profile],
+  );
+  const totalEarnedValue = useMemo(
+    () => `${stroopToXlm(profile?.totalTipsReceived ?? "0")} XLM`,
+    [profile],
+  );
+  const tipsThisWeekValue = useMemo(
+    () => countThisWeek(tips).toString(),
+    [tips],
+  );
+  const currentBalanceValue = useMemo(
+    () => `${stroopToXlm(profile?.balance ?? "0")} XLM`,
+    [profile],
+  );
+  const trendingIcon = useMemo(() => <TrendingUp size={22} />, []);
+  const coinsIcon = useMemo(() => <Coins size={22} />, []);
+  const balanceIcon = useMemo(() => "💰", []);
+  const neutralPositiveChange = useMemo(() => ({ value: 0, positive: true }), []);
+
   if (loading && !profile) {
     return (
       <div className="space-y-8 py-6" aria-busy="true">
@@ -144,32 +170,6 @@ const OverviewTab: React.FC = () => {
       </div>
     );
   }
-
-  const weeklyData = useMemo(() => buildWeeklyChart(tips), [tips]);
-  const maxBar = useMemo(
-    () => Math.max(...weeklyData.map((d) => d.total), 1),
-    [weeklyData],
-  );
-  const tipLink = useMemo(
-    () => `${window.location.origin}/@${profile.username}`,
-    [profile.username],
-  );
-  const totalEarnedValue = useMemo(
-    () => `${stroopToXlm(profile.totalTipsReceived)} XLM`,
-    [profile.totalTipsReceived],
-  );
-  const tipsThisWeekValue = useMemo(
-    () => countThisWeek(tips).toString(),
-    [tips],
-  );
-  const currentBalanceValue = useMemo(
-    () => `${stroopToXlm(profile.balance)} XLM`,
-    [profile.balance],
-  );
-  const trendingIcon = useMemo(() => <TrendingUp size={22} />, []);
-  const coinsIcon = useMemo(() => <Coins size={22} />, []);
-  const balanceIcon = useMemo(() => "💰", []);
-  const neutralPositiveChange = useMemo(() => ({ value: 0, positive: true }), []);
 
   return (
     <div className="space-y-8">

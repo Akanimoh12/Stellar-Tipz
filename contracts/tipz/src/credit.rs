@@ -122,11 +122,7 @@ pub fn get_credit_breakdown_for_profile(profile: &Profile, now: u64) -> CreditBr
 }
 
 /// Build the weighted credit breakdown for `profile` including streak bonus.
-pub fn get_credit_breakdown_with_streak(
-    env: &Env,
-    profile: &Profile,
-    now: u64,
-) -> CreditBreakdown {
+pub fn get_credit_breakdown_with_streak(env: &Env, profile: &Profile, now: u64) -> CreditBreakdown {
     let mut breakdown = get_credit_breakdown_for_profile(profile, now);
     let streak_score = storage::get_creator_streak_bonus(env, &profile.owner).min(MAX_SCORE);
     breakdown.streak_score = streak_score;

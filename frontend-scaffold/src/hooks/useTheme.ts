@@ -18,32 +18,39 @@ export const useTheme = (): UseThemeReturn => {
       if (stored === 'light' || stored === 'dark' || stored === 'system') {
         return stored as ThemeMode;
       }
-      return 'system';
+      return window.matchMedia?.('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light';
     }
-    return 'system';
+    return 'light';
   });
 
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const mediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
     
     const resolveTheme = (currentTheme: ThemeMode) => {
       if (currentTheme === 'system') {
-        return mediaQuery.matches ? 'dark' : 'light';
+        return mediaQuery?.matches ? 'dark' : 'light';
       }
       return currentTheme as 'light' | 'dark';
     };
 
     const newResolvedTheme = resolveTheme(theme);
-    setResolvedTheme(newResolvedTheme);
+    const timeoutId = window.setTimeout(() => {
+      setResolvedTheme(newResolvedTheme);
+    }, 0);
 
     const root = document.documentElement;
     root.classList.toggle('dark', newResolvedTheme === 'dark');
+
+    return () => window.clearTimeout(timeoutId);
   }, [theme]);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const mediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
+    if (!mediaQuery) return;
     
     const handleChange = (e: MediaQueryListEvent) => {
       if (theme === 'system') {
@@ -68,8 +75,9 @@ export const useTheme = (): UseThemeReturn => {
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setTheme(resolvedTheme === 'light' ? 'dark' : 'light');
-  }, [resolvedTheme, setTheme]);
+    const currentTheme = theme === 'system' ? resolvedTheme : theme;
+    setTheme(currentTheme === 'light' ? 'dark' : 'light');
+  }, [resolvedTheme, setTheme, theme]);
 
   return { theme, resolvedTheme, setTheme, toggleTheme };
 };

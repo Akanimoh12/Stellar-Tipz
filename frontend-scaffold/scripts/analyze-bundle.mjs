@@ -13,12 +13,6 @@ const BUNDLE_SIZE_LIMITS = {
   total: 500 * 1024, // 500KB
 };
 
-interface FileInfo {
-  name: string;
-  size: number;
-  gzipSize: number;
-}
-
 function formatBytes(bytes) {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
@@ -61,8 +55,11 @@ function analyzeBundle() {
     }
   });
 
+  const runtimeFileInfos = fileInfos.filter((file) => !file.name.endsWith('.map'));
+
   // Sort by size
   fileInfos.sort((a, b) => b.size - a.size);
+  runtimeFileInfos.sort((a, b) => b.size - a.size);
 
   // Report
   console.log('\n📊 Bundle Analysis Report\n');
@@ -95,7 +92,7 @@ function analyzeBundle() {
   console.log();
 
   // Check Stellar SDK bundle
-  const stellarFiles = fileInfos.filter(
+  const stellarFiles = runtimeFileInfos.filter(
     (f) => f.name.includes('stellar') || f.name.includes('soroban')
   );
 

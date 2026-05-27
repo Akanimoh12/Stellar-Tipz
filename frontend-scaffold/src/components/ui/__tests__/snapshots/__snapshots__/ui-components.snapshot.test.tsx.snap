@@ -182,12 +182,13 @@ exports[`Button snapshots > loading state 1`] = `
     style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
   >
     <div
+      aria-label="Loading"
       class="flex flex-col items-center gap-3"
+      role="status"
     >
       <div
-        aria-label="Loading"
         class="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"
-        role="status"
+        data-essential-motion="loading"
       />
     </div>
     Loading...
@@ -203,12 +204,13 @@ exports[`Button snapshots > loading state with custom text 1`] = `
     style="box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);"
   >
     <div
+      aria-label="Loading"
       class="flex flex-col items-center gap-3"
+      role="status"
     >
       <div
-        aria-label="Loading"
         class="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"
-        role="status"
+        data-essential-motion="loading"
       />
     </div>
     Sending…
@@ -519,7 +521,8 @@ exports[`Input snapshots > bare input 1`] = `
       aria-invalid="false"
       class="w-full px-4 py-3 border-2 bg-white text-black font-medium
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
-          placeholder:text-gray-400 border-black "
+          placeholder:text-gray-700 dark:text-gray-300 border-black "
+      id=":r0:"
     />
   </div>
 </div>
@@ -540,7 +543,7 @@ exports[`Input snapshots > disabled state 1`] = `
       aria-invalid="false"
       class="w-full px-4 py-3 border-2 bg-white text-black font-medium
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
-          placeholder:text-gray-400 border-black "
+          placeholder:text-gray-700 dark:text-gray-300 border-black "
       disabled=""
       id="read-only"
       value="alice"
@@ -565,12 +568,14 @@ exports[`Input snapshots > with error message 1`] = `
       aria-invalid="true"
       class="w-full px-4 py-3 border-2 bg-white text-black font-medium
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
-          placeholder:text-gray-400 border-red-500 "
+          placeholder:text-gray-700 dark:text-gray-300 border-red-500 "
       id="email"
     />
     <p
+      aria-live="assertive"
       class="mt-1 text-sm text-red-500 font-medium"
       id="email-error"
+      role="alert"
     >
       Invalid email address
     </p>
@@ -594,7 +599,7 @@ exports[`Input snapshots > with helper text 1`] = `
       aria-invalid="false"
       class="w-full px-4 py-3 border-2 bg-white text-black font-medium
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
-          placeholder:text-gray-400 border-black "
+          placeholder:text-gray-700 dark:text-gray-300 border-black "
       id="username"
     />
     <p
@@ -622,7 +627,7 @@ exports[`Input snapshots > with label 1`] = `
       aria-invalid="false"
       class="w-full px-4 py-3 border-2 bg-white text-black font-medium
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
-          placeholder:text-gray-400 border-black "
+          placeholder:text-gray-700 dark:text-gray-300 border-black "
       id="username"
     />
   </div>
@@ -638,7 +643,8 @@ exports[`Input snapshots > with placeholder 1`] = `
       aria-invalid="false"
       class="w-full px-4 py-3 border-2 bg-white text-black font-medium
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
-          placeholder:text-gray-400 border-black "
+          placeholder:text-gray-700 dark:text-gray-300 border-black "
+      id=":r2:"
       placeholder="Enter username"
     />
   </div>
@@ -652,6 +658,7 @@ exports[`Loader snapshots > default (medium) size 1`] = `
   >
     <div
       class="w-8 h-8 border-3 border-black border-t-transparent rounded-full animate-spin"
+      data-essential-motion="loading"
     />
   </div>
 </div>
@@ -664,6 +671,7 @@ exports[`Loader snapshots > large size 1`] = `
   >
     <div
       class="w-12 h-12 border-3 border-black border-t-transparent rounded-full animate-spin"
+      data-essential-motion="loading"
     />
   </div>
 </div>
@@ -676,6 +684,7 @@ exports[`Loader snapshots > small size 1`] = `
   >
     <div
       class="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"
+      data-essential-motion="loading"
     />
   </div>
 </div>
@@ -684,12 +693,13 @@ exports[`Loader snapshots > small size 1`] = `
 exports[`Loader snapshots > with aria attributes 1`] = `
 <div>
   <div
+    aria-label="Loading transaction"
     class="flex flex-col items-center gap-3"
+    role="status"
   >
     <div
-      aria-label="Loading transaction"
       class="w-8 h-8 border-3 border-black border-t-transparent rounded-full animate-spin"
-      role="status"
+      data-essential-motion="loading"
     />
   </div>
 </div>
@@ -702,6 +712,7 @@ exports[`Loader snapshots > with loading text 1`] = `
   >
     <div
       class="w-8 h-8 border-3 border-black border-t-transparent rounded-full animate-spin"
+      data-essential-motion="loading"
     />
     <p
       class="text-sm font-bold uppercase tracking-wide"
@@ -724,18 +735,19 @@ exports[`Modal snapshots > open modal with rich content 1`] = `
       role="presentation"
     />
     <div
-      aria-label="Confirm Tip"
+      aria-labelledby=":rk:"
       aria-modal="true"
       class="relative z-10 w-full border-3 border-black bg-white p-6 sm:mx-4 sm:max-w-lg sm:p-8 max-sm:h-full max-sm:max-w-none max-sm:rounded-none"
       role="dialog"
       style="box-shadow: 6px 6px 0px 0px rgba(0,0,0,1);"
+      tabindex="-1"
     >
       <div
         class="flex items-center justify-between mb-6"
       >
         <h2
           class="text-2xl font-black uppercase"
-          id="modal-title"
+          id=":rk:"
         >
           Confirm Tip
         </h2>
@@ -769,18 +781,19 @@ exports[`Modal snapshots > open modal with title and content 1`] = `
       role="presentation"
     />
     <div
-      aria-label="Review Transaction"
+      aria-labelledby=":rh:"
       aria-modal="true"
       class="relative z-10 w-full border-3 border-black bg-white p-6 sm:mx-4 sm:max-w-lg sm:p-8 max-sm:h-full max-sm:max-w-none max-sm:rounded-none"
       role="dialog"
       style="box-shadow: 6px 6px 0px 0px rgba(0,0,0,1);"
+      tabindex="-1"
     >
       <div
         class="flex items-center justify-between mb-6"
       >
         <h2
           class="text-2xl font-black uppercase"
-          id="modal-title"
+          id=":rh:"
         >
           Review Transaction
         </h2>
@@ -813,6 +826,7 @@ exports[`Modal snapshots > open modal without title 1`] = `
       class="relative z-10 w-full border-3 border-black bg-white p-6 sm:mx-4 sm:max-w-lg sm:p-8 max-sm:h-full max-sm:max-w-none max-sm:rounded-none"
       role="dialog"
       style="box-shadow: 6px 6px 0px 0px rgba(0,0,0,1);"
+      tabindex="-1"
     >
       <p>
         Untitled modal content
@@ -1114,10 +1128,12 @@ exports[`Select snapshots > basic select 1`] = `
       class="relative"
     >
       <select
+        aria-invalid="false"
         class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
             focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
             appearance-none cursor-pointer
              "
+        id=":rc:"
       >
         <option
           value="testnet"
@@ -1165,11 +1181,13 @@ exports[`Select snapshots > disabled state 1`] = `
       class="relative"
     >
       <select
+        aria-invalid="false"
         class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
             focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
             appearance-none cursor-pointer
              "
         disabled=""
+        id=":rg:"
       >
         <option
           value="testnet"
@@ -1223,6 +1241,8 @@ exports[`Select snapshots > with error 1`] = `
       class="relative"
     >
       <select
+        aria-describedby="network-error"
+        aria-invalid="true"
         class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
             focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
             appearance-none cursor-pointer
@@ -1263,7 +1283,10 @@ exports[`Select snapshots > with error 1`] = `
       </div>
     </div>
     <p
+      aria-live="assertive"
       class="mt-1 text-sm text-red-600 font-medium"
+      id="network-error"
+      role="alert"
     >
       Please select a network
     </p>
@@ -1286,6 +1309,7 @@ exports[`Select snapshots > with label 1`] = `
       class="relative"
     >
       <select
+        aria-invalid="false"
         class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
             focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
             appearance-none cursor-pointer
@@ -1338,10 +1362,12 @@ exports[`Select snapshots > with placeholder 1`] = `
       class="relative"
     >
       <select
+        aria-invalid="false"
         class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
             focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
             appearance-none cursor-pointer
              "
+        id=":re:"
       >
         <option
           disabled=""
@@ -1397,7 +1423,6 @@ exports[`Skeleton snapshots > circle variant 1`] = `
           .st-skeleton {
             background: linear-gradient(90deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.06) 100%);
             background-size: 200% 100%;
-            animation: st_shimmer 1.2s ease-in-out infinite;
           }
           @media (prefers-reduced-motion: reduce) {
             .st-skeleton { animation: none; }
@@ -1405,9 +1430,10 @@ exports[`Skeleton snapshots > circle variant 1`] = `
         
   </style>
   <div
-    class="st-skeleton "
+    aria-hidden="true"
+    class="skeleton st-skeleton "
     data-testid="skeleton-circle"
-    style="width: 48px; height: 48px; border-radius: 9999px;"
+    style="width: 48px; height: 48px; border-radius: 9999px; animation: st_shimmer 1.2s ease-in-out infinite;"
   />
 </div>
 `;
@@ -1423,7 +1449,6 @@ exports[`Skeleton snapshots > default (rect) variant no explicit dimensions 1`] 
           .st-skeleton {
             background: linear-gradient(90deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.06) 100%);
             background-size: 200% 100%;
-            animation: st_shimmer 1.2s ease-in-out infinite;
           }
           @media (prefers-reduced-motion: reduce) {
             .st-skeleton { animation: none; }
@@ -1431,9 +1456,10 @@ exports[`Skeleton snapshots > default (rect) variant no explicit dimensions 1`] 
         
   </style>
   <div
-    class="st-skeleton "
+    aria-hidden="true"
+    class="skeleton st-skeleton "
     data-testid="skeleton-rect"
-    style="border-radius: 12px;"
+    style="border-radius: 12px; animation: st_shimmer 1.2s ease-in-out infinite;"
   />
 </div>
 `;
@@ -1449,7 +1475,6 @@ exports[`Skeleton snapshots > rect variant with fixed dimensions 1`] = `
           .st-skeleton {
             background: linear-gradient(90deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.06) 100%);
             background-size: 200% 100%;
-            animation: st_shimmer 1.2s ease-in-out infinite;
           }
           @media (prefers-reduced-motion: reduce) {
             .st-skeleton { animation: none; }
@@ -1457,9 +1482,10 @@ exports[`Skeleton snapshots > rect variant with fixed dimensions 1`] = `
         
   </style>
   <div
-    class="st-skeleton "
+    aria-hidden="true"
+    class="skeleton st-skeleton "
     data-testid="skeleton-rect"
-    style="width: 200px; height: 20px; border-radius: 12px;"
+    style="width: 200px; height: 20px; border-radius: 12px; animation: st_shimmer 1.2s ease-in-out infinite;"
   />
 </div>
 `;
@@ -1475,7 +1501,6 @@ exports[`Skeleton snapshots > text variant with percentage width 1`] = `
           .st-skeleton {
             background: linear-gradient(90deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.06) 100%);
             background-size: 200% 100%;
-            animation: st_shimmer 1.2s ease-in-out infinite;
           }
           @media (prefers-reduced-motion: reduce) {
             .st-skeleton { animation: none; }
@@ -1483,9 +1508,10 @@ exports[`Skeleton snapshots > text variant with percentage width 1`] = `
         
   </style>
   <div
-    class="st-skeleton "
+    aria-hidden="true"
+    class="skeleton st-skeleton "
     data-testid="skeleton-text"
-    style="width: 80%; height: 16px; border-radius: 8px;"
+    style="width: 80%; height: 16px; border-radius: 8px; animation: st_shimmer 1.2s ease-in-out infinite;"
   />
 </div>
 `;
@@ -1501,7 +1527,6 @@ exports[`Skeleton snapshots > with className override 1`] = `
           .st-skeleton {
             background: linear-gradient(90deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.06) 100%);
             background-size: 200% 100%;
-            animation: st_shimmer 1.2s ease-in-out infinite;
           }
           @media (prefers-reduced-motion: reduce) {
             .st-skeleton { animation: none; }
@@ -1509,9 +1534,10 @@ exports[`Skeleton snapshots > with className override 1`] = `
         
   </style>
   <div
-    class="st-skeleton h-4 w-full"
+    aria-hidden="true"
+    class="skeleton st-skeleton h-4 w-full"
     data-testid="skeleton-rect"
-    style="border-radius: 12px;"
+    style="border-radius: 12px; animation: st_shimmer 1.2s ease-in-out infinite;"
   />
 </div>
 `;
@@ -1522,9 +1548,11 @@ exports[`Textarea snapshots > bare textarea 1`] = `
     class="w-full"
   >
     <textarea
+      aria-invalid="false"
       class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
-          placeholder:text-gray-400 resize-y  "
+          placeholder:text-gray-700 dark:text-gray-300 resize-y  "
+      id=":r6:"
       rows="4"
     />
     <div
@@ -1548,9 +1576,11 @@ exports[`Textarea snapshots > with error 1`] = `
       Message
     </label>
     <textarea
+      aria-describedby="message-error"
+      aria-invalid="true"
       class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
-          placeholder:text-gray-400 resize-y border-red-600 "
+          placeholder:text-gray-700 dark:text-gray-300 resize-y border-red-600 "
       id="message"
       rows="4"
     />
@@ -1558,7 +1588,10 @@ exports[`Textarea snapshots > with error 1`] = `
       class="flex justify-between items-center mt-1"
     >
       <p
+        aria-live="assertive"
         class="text-sm text-red-600 font-medium"
+        id="message-error"
+        role="alert"
       >
         Message is too long
       </p>
@@ -1579,9 +1612,10 @@ exports[`Textarea snapshots > with label 1`] = `
       Bio
     </label>
     <textarea
+      aria-invalid="false"
       class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
-          placeholder:text-gray-400 resize-y  "
+          placeholder:text-gray-700 dark:text-gray-300 resize-y  "
       id="bio"
       rows="4"
     />
@@ -1606,9 +1640,11 @@ exports[`Textarea snapshots > with label and character counter 1`] = `
       Message
     </label>
     <textarea
+      aria-describedby="message-counter"
+      aria-invalid="false"
       class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
-          placeholder:text-gray-400 resize-y  "
+          placeholder:text-gray-700 dark:text-gray-300 resize-y  "
       id="message"
       maxlength="280"
       rows="4"
@@ -1618,8 +1654,9 @@ exports[`Textarea snapshots > with label and character counter 1`] = `
     >
       <div />
       <p
-        class="text-sm font-medium text-gray-500"
+        class="text-sm font-medium text-gray-800 dark:text-gray-200"
         data-testid="char-counter"
+        id="message-counter"
       >
         0
          / 
@@ -1636,9 +1673,12 @@ exports[`Textarea snapshots > with pre-filled value and counter 1`] = `
     class="w-full"
   >
     <textarea
+      aria-describedby=":rb:-counter"
+      aria-invalid="false"
       class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
-          placeholder:text-gray-400 resize-y  "
+          placeholder:text-gray-700 dark:text-gray-300 resize-y  "
+      id=":rb:"
       maxlength="280"
       rows="4"
     >
@@ -1649,8 +1689,9 @@ exports[`Textarea snapshots > with pre-filled value and counter 1`] = `
     >
       <div />
       <p
-        class="text-sm font-medium text-gray-500"
+        class="text-sm font-medium text-gray-800 dark:text-gray-200"
         data-testid="char-counter"
+        id=":rb:-counter"
       >
         11
          / 
@@ -1673,9 +1714,11 @@ exports[`Textarea snapshots > with warnAt and dangerAt thresholds 1`] = `
       Bio
     </label>
     <textarea
+      aria-describedby="bio-counter"
+      aria-invalid="false"
       class="w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
-          placeholder:text-gray-400 resize-y  "
+          placeholder:text-gray-700 dark:text-gray-300 resize-y  "
       id="bio"
       maxlength="280"
       rows="4"
@@ -1685,8 +1728,9 @@ exports[`Textarea snapshots > with warnAt and dangerAt thresholds 1`] = `
     >
       <div />
       <p
-        class="text-sm font-medium text-gray-500"
+        class="text-sm font-medium text-gray-800 dark:text-gray-200"
         data-testid="char-counter"
+        id="bio-counter"
       >
         0
          / 

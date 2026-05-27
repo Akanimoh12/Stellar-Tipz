@@ -502,16 +502,86 @@ fn snapshot_score_regression_table() {
     }
 
     let rows = [
-        Row { label: "fresh profile", tips_stroops: 0, x_followers: 0, x_engagement: 0, age_days: 0, expected: 40 },
-        Row { label: "10 XLM tips only", tips_stroops: 100_000_000, x_followers: 0, x_engagement: 0, age_days: 0, expected: 42 },
-        Row { label: "50 XLM tips only", tips_stroops: 500_000_000, x_followers: 0, x_engagement: 0, age_days: 0, expected: 50 },
-        Row { label: "100 XLM tips only", tips_stroops: 1_000_000_000, x_followers: 0, x_engagement: 0, age_days: 0, expected: 60 },
-        Row { label: "max followers, no engagement", tips_stroops: 0, x_followers: 2_500, x_engagement: 0, age_days: 0, expected: 55 },
-        Row { label: "max engagement, no followers", tips_stroops: 0, x_followers: 0, x_engagement: 500, age_days: 0, expected: 55 },
-        Row { label: "max X metrics", tips_stroops: 0, x_followers: 2_500, x_engagement: 500, age_days: 0, expected: 70 },
-        Row { label: "100-day-old account", tips_stroops: 0, x_followers: 0, x_engagement: 0, age_days: 100, expected: 41 },
-        Row { label: "1000-day-old account", tips_stroops: 0, x_followers: 0, x_engagement: 0, age_days: 1000, expected: 50 },
-        Row { label: "all max → cap 100", tips_stroops: 1_000_000_000, x_followers: 2_500, x_engagement: 500, age_days: 1000, expected: 100 },
+        Row {
+            label: "fresh profile",
+            tips_stroops: 0,
+            x_followers: 0,
+            x_engagement: 0,
+            age_days: 0,
+            expected: 40,
+        },
+        Row {
+            label: "10 XLM tips only",
+            tips_stroops: 100_000_000,
+            x_followers: 0,
+            x_engagement: 0,
+            age_days: 0,
+            expected: 42,
+        },
+        Row {
+            label: "50 XLM tips only",
+            tips_stroops: 500_000_000,
+            x_followers: 0,
+            x_engagement: 0,
+            age_days: 0,
+            expected: 50,
+        },
+        Row {
+            label: "100 XLM tips only",
+            tips_stroops: 1_000_000_000,
+            x_followers: 0,
+            x_engagement: 0,
+            age_days: 0,
+            expected: 60,
+        },
+        Row {
+            label: "max followers, no engagement",
+            tips_stroops: 0,
+            x_followers: 2_500,
+            x_engagement: 0,
+            age_days: 0,
+            expected: 55,
+        },
+        Row {
+            label: "max engagement, no followers",
+            tips_stroops: 0,
+            x_followers: 0,
+            x_engagement: 500,
+            age_days: 0,
+            expected: 55,
+        },
+        Row {
+            label: "max X metrics",
+            tips_stroops: 0,
+            x_followers: 2_500,
+            x_engagement: 500,
+            age_days: 0,
+            expected: 70,
+        },
+        Row {
+            label: "100-day-old account",
+            tips_stroops: 0,
+            x_followers: 0,
+            x_engagement: 0,
+            age_days: 100,
+            expected: 41,
+        },
+        Row {
+            label: "1000-day-old account",
+            tips_stroops: 0,
+            x_followers: 0,
+            x_engagement: 0,
+            age_days: 1000,
+            expected: 50,
+        },
+        Row {
+            label: "all max → cap 100",
+            tips_stroops: 1_000_000_000,
+            x_followers: 2_500,
+            x_engagement: 500,
+            age_days: 1000,
+            expected: 100,
+        },
     ];
 
     for row in rows {
@@ -641,11 +711,11 @@ fn property_tier_matches_get_tier_of_score() {
     let contract_id = register_contract(&env);
 
     let cases = [
-        (0_i128, 0_u32, 0_u32, 0_u64),                              // Silver (40)
-        (500_000_000, 0, 0, 0),                                     // Silver (50)
-        (1_000_000_000, 2_500, 500, 86_400 * 1000),                 // Diamond (100)
-        (0, 2_500, 500, 0),                                         // Gold (70)
-        (0, 0, 100, 0),                                             // Silver (43)
+        (0_i128, 0_u32, 0_u32, 0_u64),              // Silver (40)
+        (500_000_000, 0, 0, 0),                     // Silver (50)
+        (1_000_000_000, 2_500, 500, 86_400 * 1000), // Diamond (100)
+        (0, 2_500, 500, 0),                         // Gold (70)
+        (0, 0, 100, 0),                             // Silver (43)
     ];
 
     env.as_contract(&contract_id, || {

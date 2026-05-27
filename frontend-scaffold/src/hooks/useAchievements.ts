@@ -125,13 +125,16 @@ export function useAchievements({
     const derived = deriveAchievements(tipCount, streak);
     const newOnes = derived.filter((id) => !unlockedIds.includes(id));
     if (newOnes.length > 0) {
-      const updated = [...unlockedIds, ...newOnes];
-      setUnlockedIds(updated);
-      saveUnlocked(updated);
-      // Show notification for the first newly unlocked achievement
-      setNewAchievement(ACHIEVEMENTS[newOnes[0]]);
+      const timeoutId = window.setTimeout(() => {
+        const updated = [...unlockedIds, ...newOnes];
+        setUnlockedIds(updated);
+        saveUnlocked(updated);
+        setNewAchievement(ACHIEVEMENTS[newOnes[0]]);
+      }, 0);
+
+      return () => window.clearTimeout(timeoutId);
     }
-  }, [tipCount, streak]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tipCount, streak, unlockedIds]);
 
   const triggerAchievement = useCallback(
     (id: AchievementId) => {

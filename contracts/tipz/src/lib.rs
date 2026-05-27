@@ -23,8 +23,8 @@ mod multisig;
 mod profile;
 mod stats;
 mod storage;
-mod subscription;
 mod streaks;
+mod subscription;
 mod tips;
 mod token;
 mod types;
@@ -189,7 +189,10 @@ impl TipzContract {
     }
 
     /// Get a profile by address, including deactivation status.
-    pub fn get_profile(env: Env, address: Address) -> Result<ProfileWithDeactivation, ContractError> {
+    pub fn get_profile(
+        env: Env,
+        address: Address,
+    ) -> Result<ProfileWithDeactivation, ContractError> {
         profile::get_profile_with_deactivation(&env, &address)
     }
 
@@ -371,9 +374,13 @@ impl TipzContract {
         Ok(())
     }
 
-    /// Return the 1-based rank of `address` on the leaderboard for a specific period, 
+    /// Return the 1-based rank of `address` on the leaderboard for a specific period,
     /// or `None` when the address has not yet appeared in the top 50.
-    pub fn get_leaderboard_rank(env: Env, period: crate::types::LeaderboardPeriod, address: Address) -> Option<u32> {
+    pub fn get_leaderboard_rank(
+        env: Env,
+        period: crate::types::LeaderboardPeriod,
+        address: Address,
+    ) -> Option<u32> {
         leaderboard::get_leaderboard_rank(&env, period, &address)
     }
 

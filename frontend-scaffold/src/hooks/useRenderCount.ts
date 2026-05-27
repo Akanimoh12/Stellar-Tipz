@@ -14,7 +14,9 @@ export function useRenderCount(componentName: string, instanceKey?: string): num
 
     if (typeof window !== "undefined") {
       const key = instanceKey ? `${componentName}:${instanceKey}` : componentName;
+      // eslint-disable-next-line react-hooks/immutability
       window.__TIPZ_RENDER_COUNTS__ = window.__TIPZ_RENDER_COUNTS__ ?? {};
+      // eslint-disable-next-line react-hooks/immutability
       window.__TIPZ_RENDER_COUNTS__[key] =
         (window.__TIPZ_RENDER_COUNTS__[key] ?? 0) + 1;
     }

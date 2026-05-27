@@ -189,7 +189,19 @@ vi.mock("@/features/landing/TopCreatorsSection", () => ({
   default: () => <section aria-label="Top creators">Alice</section>,
 }));
 
+vi.mock("../features/landing/StatsSection", () => ({
+  default: () => <section aria-label="Platform stats">100 creators</section>,
+}));
+
+vi.mock("../features/landing/TopCreatorsSection", () => ({
+  default: () => <section aria-label="Top creators">Alice</section>,
+}));
+
 vi.mock("@/features/landing/TrendingCreatorsSection", () => ({
+  default: () => <section aria-label="Trending creators">Trending creators</section>,
+}));
+
+vi.mock("../features/landing/TrendingCreatorsSection", () => ({
   default: () => <section aria-label="Trending creators">Trending creators</section>,
 }));
 

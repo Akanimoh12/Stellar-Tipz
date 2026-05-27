@@ -170,11 +170,7 @@ pub fn emit_admin_change_proposed(
 ) {
     env.events().publish(
         (symbol_short!("admin"), symbol_short!("chgprop")),
-        (
-            current_admin.clone(),
-            new_admin.clone(),
-            confirmable_after,
-        ),
+        (current_admin.clone(), new_admin.clone(), confirmable_after),
     );
 }
 

@@ -39,6 +39,10 @@ const DashboardPage: React.FC = () => {
   const { latestTip, markSeen, unseenCount } = useTipNotifications(
     profile?.owner,
   );
+  const { newAchievement, dismissNotification } = useAchievements({
+    tipCount: Number(profile?.totalTipsCount ?? 0),
+    streak: profile?.streak ?? 0,
+  });
 
   if (!connected) {
     return (
@@ -106,11 +110,6 @@ const DashboardPage: React.FC = () => {
   }
 
   const creator = profile;
-
-  const { newAchievement, dismissNotification, unlockedIds } = useAchievements({
-    tipCount: Number(creator.totalTipsCount ?? 0),
-    streak: creator.streak ?? 0,
-  });
 
   const tabs = [
     {

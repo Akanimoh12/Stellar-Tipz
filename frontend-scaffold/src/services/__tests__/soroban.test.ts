@@ -47,8 +47,8 @@ vi.mock('@stellar/stellar-sdk', async () => {
 
 describe('soroban service', () => {
   const mockNetworkPassphrase = 'Test SDF Network ; September 2015';
-  const mockPubKey = 'GD5DJQD73KHNA7HYLLKQYA6VTLNBLJ4HFGFA3SIXRS7SNTL5YF6GYQ3X';
-  const mockContractId = 'CDLZFC3SYJYDZT7S46ZPZK4475FQDKMGTLEGHFGNQYX2GIRWK3QMNM';
+  const mockPubKey = 'GB356CPOSANA5DQNSN7N46VVMWSR5Q5GSW45DEONTIRSXQAZPKPDLQYH';
+  const mockContractId = 'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526';
   const mockRpcUrl = 'https://soroban-testnet.stellar.org/';
 
   let mockServer: any;
@@ -67,7 +67,9 @@ describe('soroban service', () => {
       prepareTransaction: vi.fn(),
     };
 
-    (SorobanRpc.Server as any).mockImplementation(() => mockServer);
+    (SorobanRpc.Server as any).mockImplementation(function MockSorobanServer() {
+      return mockServer;
+    });
   });
 
   afterEach(() => {
@@ -349,7 +351,7 @@ describe('soroban service', () => {
     it('fetches token balance for address', async () => {
       const txBuilder = getSimulationTxBuilder(mockPubKey, BASE_FEE, mockNetworkPassphrase);
       
-      const mockResult = { retval: xdr.ScVal.scvI128(BigInt(10000000)) };
+      const mockResult = { retval: xdr.ScVal.scvString('10000000') };
       mockServer.simulateTransaction.mockResolvedValue({
         result: mockResult,
       });
@@ -365,7 +367,7 @@ describe('soroban service', () => {
     it('builds payment transaction', async () => {
       const txBuilder = getSimulationTxBuilder(mockPubKey, BASE_FEE, mockNetworkPassphrase);
       
-      const preparedTx = txBuilder.build();
+      const preparedTx = { toXDR: vi.fn(() => 'prepared-payment-xdr') };
       mockServer.prepareTransaction.mockResolvedValue(preparedTx);
 
       const xdr = await makePayment(
@@ -385,7 +387,7 @@ describe('soroban service', () => {
     it('builds payment without memo', async () => {
       const txBuilder = getSimulationTxBuilder(mockPubKey, BASE_FEE, mockNetworkPassphrase);
       
-      const preparedTx = txBuilder.build();
+      const preparedTx = { toXDR: vi.fn(() => 'prepared-payment-xdr') };
       mockServer.prepareTransaction.mockResolvedValue(preparedTx);
 
       const xdr = await makePayment(
