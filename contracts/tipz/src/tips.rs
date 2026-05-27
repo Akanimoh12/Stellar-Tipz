@@ -13,7 +13,7 @@ use crate::leaderboard;
 use crate::storage::{self, DataKey};
 use crate::streaks;
 use crate::token;
-use crate::types::Tip;
+use crate::types::{ScheduledTip, Tip};
 use crate::validation::{validate_message, validate_tip_for_creator};
 
 /// Create a new [`Tip`] record and store it in temporary storage.
@@ -387,4 +387,346 @@ pub fn withdraw_tips(env: &Env, caller: &Address, amount: i128) -> Result<(), Co
     crate::events::emit_tips_withdrawn(env, caller, net, fee);
 
     Ok(())
+}
+
+/// Schedule a tip for future delivery.
+///
+/// The tip amount is locked in the contract until the delivery time.
+/// The sender can cancel the tip before delivery (with a cancellation fee).
+///
+/// # Parameters
+/// - `sender` – the address scheduling the tip
+/// - `creator` – the recipient creator address
+/// - `amount` – the tip amount in stroops
+/// - `message` – optional message for the tip
+/// - `deliver_at` – timestamp when the tip should be delivered
+///
+/// # Errors
+/// - [`ContractError::NotInitialized`] if contract not initialized
+/// - [`ContractError::ContractPaused`] if contract is paused
+/// - [`ContractError::NotRegistered`] if creator has no profile
+/// - [`ContractError::ProfileDeactivated`] if creator profile is deactivated
+/// - [`ContractError::CannotTipSelf`] if sender == creator
+/// - [`ContractError::InvalidAmount`] if amount <= 0
+/// - [`ContractError::InvalidInput`] if deliver_at is in the past
+pub fn send_scheduled_tip(
+    env: &Env,
+    sender: &Address,
+    creator: &Address,
+    amount: i128,
+    message: &String,
+    deliver_at: u64,
+) -> Result<u32, ContractError> {
+    storage::extend_instance_ttl(env);
+    let config = storage::get_runtime_config(env).ok_or(ContractError::NotInitialized)?;
+    if config.paused {
+        return Err(ContractError::ContractPaused);
+    }
+    sender.require_auth();
+    crate::validation::check_rate_limit_with_config(
+        env,
+        sender,
+        &config.admin,
+        &config.rate_limit,
+    )?;
+
+    if !storage::has_profile(env, creator) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    if storage::is_profile_deactivated(env, creator) {
+        return Err(ContractError::ProfileDeactivated);
+    }
+
+    if sender == creator {
+        return Err(ContractError::CannotTipSelf);
+    }
+
+    if amount <= 0 {
+        return Err(ContractError::InvalidAmount);
+    }
+
+    let now = env.ledger().timestamp();
+    if deliver_at <= now {
+        return Err(ContractError::InvalidInput);
+    }
+
+    validate_message(message)?;
+
+    // Lock the funds in the contract
+    let contract_address = env.current_contract_address();
+    token::transfer_xlm_with_token(env, &config.native_token, sender, &contract_address, amount)?;
+
+    // Create scheduled tip
+    let scheduled_tip_id = storage::increment_scheduled_tip_count(env);
+    let scheduled_tip = ScheduledTip {
+        id: scheduled_tip_id,
+        sender: sender.clone(),
+        creator: creator.clone(),
+        amount,
+        message: message.clone(),
+        deliver_at,
+        delivered: false,
+        delivered_at: None,
+        cancelled: false,
+        cancelled_at: None,
+        created_at: now,
+    };
+
+    storage::set_scheduled_tip(env, scheduled_tip_id, &scheduled_tip);
+    storage::add_sender_scheduled_tip(env, sender, scheduled_tip_id);
+    storage::add_creator_scheduled_tip(env, creator, scheduled_tip_id);
+
+    // Emit event
+    crate::events::emit_scheduled_tip_created(
+        env,
+        scheduled_tip_id,
+        sender,
+        creator,
+        amount,
+        deliver_at,
+    );
+
+    Ok(scheduled_tip_id)
+}
+
+/// Deliver a scheduled tip at or after the scheduled time.
+///
+/// This can be called by anyone after the delivery time has passed.
+/// The tip is transferred to the creator's balance.
+///
+/// # Parameters
+/// - `scheduled_tip_id` – the ID of the scheduled tip to deliver
+///
+/// # Errors
+/// - [`ContractError::NotFound`] if scheduled tip doesn't exist
+/// - [`ContractError::InvalidInput`] if tip already delivered or cancelled
+/// - [`ContractError::InvalidInput`] if delivery time hasn't passed yet
+pub fn deliver_scheduled_tip(
+    env: &Env,
+    scheduled_tip_id: u32,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    crate::admin::require_not_paused(env)?;
+
+    let mut scheduled_tip = storage::get_scheduled_tip(env, scheduled_tip_id)
+        .ok_or(ContractError::NotFound)?;
+
+    if scheduled_tip.delivered {
+        return Err(ContractError::InvalidInput);
+    }
+
+    if scheduled_tip.cancelled {
+        return Err(ContractError::InvalidInput);
+    }
+
+    let now = env.ledger().timestamp();
+    if now < scheduled_tip.deliver_at {
+        return Err(ContractError::InvalidInput);
+    }
+
+    // Mark as delivered
+    scheduled_tip.delivered = true;
+    scheduled_tip.delivered_at = Some(now);
+    storage::set_scheduled_tip(env, scheduled_tip_id, &scheduled_tip);
+
+    // Update creator profile
+    let mut profile = storage::get_profile(env, &scheduled_tip.creator);
+    profile.balance += scheduled_tip.amount;
+    profile.total_tips_received += scheduled_tip.amount;
+    profile.total_tips_count += 1;
+
+    // Update streak tracking
+    streaks::record_tip_streak(env, &scheduled_tip.sender, &scheduled_tip.creator);
+
+    // Update credit score
+    profile.credit_score =
+        credit::calculate_credit_score_with_streak(env, &profile, now);
+
+    storage::set_profile(env, &profile);
+    leaderboard::update_all_leaderboards_for_active(env, &profile, scheduled_tip.amount);
+
+    // Update goal progress
+    crate::goals::update_goal_progress(env, &scheduled_tip.creator, scheduled_tip.amount);
+
+    // Bump TTL
+    storage::bump_existing_profile_ttl(env, &scheduled_tip.creator);
+    storage::bump_username_ttl(env, &profile.username);
+
+    // Create a regular tip record
+    let tip_id = store_tip(
+        env,
+        &scheduled_tip.sender,
+        None,
+        &scheduled_tip.creator,
+        scheduled_tip.amount,
+        scheduled_tip.message.clone(),
+        false,
+    );
+    storage::add_tipper_tip(env, &scheduled_tip.sender, tip_id);
+    storage::add_creator_tip(env, &scheduled_tip.creator, tip_id);
+
+    // Update stats
+    storage::add_to_tips_volume(env, scheduled_tip.amount)?;
+    crate::stats::update_24h_stats(env, scheduled_tip.amount);
+    crate::stats::mark_creator_active(env, &scheduled_tip.creator);
+
+    // Emit tip sent event
+    emit_tip_sent(
+        env,
+        tip_id,
+        &scheduled_tip.sender,
+        &scheduled_tip.creator,
+        scheduled_tip.amount,
+        &scheduled_tip.message,
+        now,
+        false,
+    );
+
+    // Emit scheduled tip delivered event
+    crate::events::emit_scheduled_tip_delivered(env, scheduled_tip_id, &scheduled_tip.creator);
+
+    Ok(())
+}
+
+/// Cancel a scheduled tip before delivery.
+///
+/// The sender can cancel the tip and receive a refund minus a cancellation fee.
+///
+/// # Parameters
+/// - `scheduled_tip_id` – the ID of the scheduled tip to cancel
+///
+/// # Errors
+/// - [`ContractError::NotFound`] if scheduled tip doesn't exist
+/// - [`ContractError::InvalidInput`] if tip already delivered or cancelled
+/// - [`ContractError::InvalidInput`] if delivery time has already passed
+/// - [`ContractError::Unauthorized`] if caller is not the sender
+pub fn cancel_scheduled_tip(
+    env: &Env,
+    caller: &Address,
+    scheduled_tip_id: u32,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    crate::admin::require_not_paused(env)?;
+    caller.require_auth();
+
+    let mut scheduled_tip = storage::get_scheduled_tip(env, scheduled_tip_id)
+        .ok_or(ContractError::NotFound)?;
+
+    if scheduled_tip.sender != *caller {
+        return Err(ContractError::Unauthorized);
+    }
+
+    if scheduled_tip.delivered {
+        return Err(ContractError::InvalidInput);
+    }
+
+    if scheduled_tip.cancelled {
+        return Err(ContractError::InvalidInput);
+    }
+
+    let now = env.ledger().timestamp();
+    if now >= scheduled_tip.deliver_at {
+        return Err(ContractError::InvalidInput);
+    }
+
+    // Mark as cancelled
+    scheduled_tip.cancelled = true;
+    scheduled_tip.cancelled_at = Some(now);
+    storage::set_scheduled_tip(env, scheduled_tip_id, &scheduled_tip);
+
+    // Calculate refund with cancellation fee (1% fee)
+    let cancellation_fee = scheduled_tip.amount / 100;
+    let refund_amount = scheduled_tip.amount - cancellation_fee;
+
+    // Refund the sender
+    let contract_address = env.current_contract_address();
+    token::transfer_xlm(env, &contract_address, &scheduled_tip.sender, refund_amount)?;
+
+    // Send cancellation fee to fee collector
+    if cancellation_fee > 0 {
+        let fee_collector = storage::get_fee_collector(env);
+        token::transfer_xlm(env, &contract_address, &fee_collector, cancellation_fee)?;
+        storage::add_to_fees(env, cancellation_fee)?;
+    }
+
+    // Emit event
+    crate::events::emit_scheduled_tip_cancelled(
+        env,
+        scheduled_tip_id,
+        &scheduled_tip.sender,
+        refund_amount,
+        cancellation_fee,
+    );
+
+    Ok(())
+}
+
+/// Get a scheduled tip by ID.
+pub fn get_scheduled_tip(env: &Env, scheduled_tip_id: u32) -> Option<ScheduledTip> {
+    storage::get_scheduled_tip(env, scheduled_tip_id)
+}
+
+/// Get scheduled tips for a sender.
+pub fn get_scheduled_tips_by_sender(
+    env: &Env,
+    sender: &Address,
+    limit: u32,
+    offset: u32,
+) -> Vec<ScheduledTip> {
+    let limit = if limit > MAX_PAGE_LIMIT {
+        MAX_PAGE_LIMIT
+    } else {
+        limit
+    };
+    let ids = storage::get_sender_scheduled_tip_ids(env, sender);
+    let mut result = Vec::new(env);
+    let mut found = 0_u32;
+
+    for (i, tip_id) in ids.iter().enumerate() {
+        if (i as u32) < offset {
+            continue;
+        }
+        if found >= limit {
+            break;
+        }
+        if let Some(tip) = storage::get_scheduled_tip(env, tip_id) {
+            result.push_back(tip);
+            found += 1;
+        }
+    }
+
+    result
+}
+
+/// Get scheduled tips for a creator.
+pub fn get_scheduled_tips_by_creator(
+    env: &Env,
+    creator: &Address,
+    limit: u32,
+    offset: u32,
+) -> Vec<ScheduledTip> {
+    let limit = if limit > MAX_PAGE_LIMIT {
+        MAX_PAGE_LIMIT
+    } else {
+        limit
+    };
+    let ids = storage::get_creator_scheduled_tip_ids(env, creator);
+    let mut result = Vec::new(env);
+    let mut found = 0_u32;
+
+    for (i, tip_id) in ids.iter().enumerate() {
+        if (i as u32) < offset {
+            continue;
+        }
+        if found >= limit {
+            break;
+        }
+        if let Some(tip) = storage::get_scheduled_tip(env, tip_id) {
+            result.push_back(tip);
+            found += 1;
+        }
+    }
+
+    result
 }
