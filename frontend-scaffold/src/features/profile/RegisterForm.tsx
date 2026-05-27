@@ -86,7 +86,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
     (field: keyof ProfileFormData) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       setForm((prev) => ({ ...prev, [field]: e.target.value }));
-      if (errors[field]) {
+      if ((errors as Record<string, string | undefined>)[field]) {
         setErrors((prev) => ({ ...prev, [field]: undefined }));
       }
     };

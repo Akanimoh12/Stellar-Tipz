@@ -7,4 +7,12 @@ export interface ProfileFormData {
   bio: string;
   imageUrl: string;
   xHandle: string;
+  /** Optional banner / cover image URL or data-URL (from cropper) */
+  bannerUrl?: string;
+  /** Profile colour theme key */
+  themeKey?: string;
+  /** GitHub username (without @) */
+  githubHandle?: string;
+  /** Creator website URL */
+  websiteUrl?: string;
 }
