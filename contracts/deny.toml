@@ -1,0 +1,63 @@
+# cargo-deny configuration
+# Issue #740: Security audit and license checking
+
+[advisories]
+# Check for security vulnerabilities
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+vulnerability = "deny"
+unmaintained = "warn"
+yanked = "warn"
+notice = "warn"
+ignore = [
+    # Add any advisories to ignore here with justification
+    # Example:
+    # "RUSTSEC-2020-0001", # Justification: Not applicable to our use case
+]
+
+[licenses]
+# Deny licenses that are not compatible with the project
+unlicensed = "deny"
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Zlib",
+]
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "AGPL-3.0",
+]
+copyleft = "warn"
+allow-osi-fsf-free = "neither"
+default = "deny"
+confidence-threshold = 0.8
+
+[bans]
+# Deny multiple versions of the same crate
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+allow = []
+deny = []
+
+skip = [
+    # Add crates to skip duplicate version checks
+    # Example: { name = "bitflags", version = "=1.3.2" }
+]
+
+skip-tree = []
+
+[sources]
+# Deny crates from unknown registries
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

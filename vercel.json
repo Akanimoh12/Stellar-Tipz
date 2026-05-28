@@ -60,10 +60,6 @@
           "value": "no-store, no-cache, must-revalidate"
         },
         {
-          "key": "Access-Control-Allow-Origin",
-          "value": "https://stellar-tipz.vercel.app"
-        },
-        {
           "key": "Access-Control-Allow-Methods",
           "value": "GET, POST, OPTIONS"
         },
