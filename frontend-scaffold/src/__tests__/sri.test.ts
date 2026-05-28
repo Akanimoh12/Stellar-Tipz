@@ -1,31 +1,28 @@
-import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { describe, expect, it } from 'vitest';
+
+const indexHtml = readFileSync(fileURLToPath(new URL('../../index.html', import.meta.url)), 'utf8');
+
+const externalAssetTags = [
+  ...(indexHtml.match(
+    /<link\b(?=[^>]*rel=["'][^"']*stylesheet[^"']*["'])[^>]*href=["']https?:\/\/[^"']+["'][^>]*>/gi,
+  ) ?? []),
+  ...(indexHtml.match(/<script\b[^>]*src=["']https?:\/\/[^"']+["'][^>]*><\/script>/gi) ?? []),
+];
 
 describe('Subresource Integrity (SRI)', () => {
-  it('should have SRI hash for Google Fonts stylesheet', () => {
-    const styleLinks = Array.from(document.querySelectorAll('link[rel="stylesheet"]'));
-    const googleFontsLink = styleLinks.find(
-      (link) => link.getAttribute('href')?.includes('fonts.googleapis.com')
-    );
+  it('adds SRI to every external stylesheet and script in index.html', () => {
+    expect(externalAssetTags.length).toBeGreaterThan(0);
 
-    expect(googleFontsLink).toBeTruthy();
-    expect(googleFontsLink?.getAttribute('integrity')).toBeTruthy();
-    expect(googleFontsLink?.getAttribute('crossorigin')).toBe('anonymous');
-  });
-
-  it('all external scripts should have integrity attribute if loaded via CDN', () => {
-    const scripts = Array.from(document.querySelectorAll('script[src]'));
-    scripts.forEach((script) => {
-      const src = script.getAttribute('src');
-      if (src && src.startsWith('http')) {
-        expect(script.getAttribute('integrity')).toBeTruthy();
-        expect(script.getAttribute('crossorigin')).toBe('anonymous');
-      }
+    externalAssetTags.forEach((tag) => {
+      expect(tag).toMatch(/integrity="sha384-[^"]+"/);
+      expect(tag).toMatch(/crossorigin="anonymous"/);
     });
   });
 
-  it('should not break if external resources have SRI', () => {
-    // This test ensures that the page loads successfully with SRI attributes present
-    expect(document).toBeTruthy();
-    expect(document.head).toBeTruthy();
+  it('includes a graceful fallback for SRI failures', () => {
+    expect(indexHtml).toContain('window.__tipzRetryExternalAsset');
+    expect(indexHtml).toContain('onerror="window.__tipzRetryExternalAsset(this)"');
   });
 });

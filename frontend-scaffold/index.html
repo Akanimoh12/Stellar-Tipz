@@ -39,11 +39,26 @@
       href="https://fonts.gstatic.com"
       crossorigin
     />
+    <script>
+      window.__tipzRetryExternalAsset = (element) => {
+        if (!element || element.dataset.sriFallbackApplied === "true") {
+          return;
+        }
+
+        element.dataset.sriFallbackApplied = "true";
+
+        const fallback = element.cloneNode(true);
+        fallback.removeAttribute("integrity");
+        fallback.removeAttribute("crossorigin");
+        element.replaceWith(fallback);
+      };
+    </script>
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap"
       rel="stylesheet"
-      integrity="sha384-4WK6e-yI/UWb8C4T10cX5k0W1lVj3fTb1FXfIdJtNkFhVIlMhp8FhPTYq7QT7qLx"
+      integrity="sha384-GNGJyR9xe5TZbDj8Nh1pievNeRng/+BYbGOWqN6h7I4/5h0mMjQ4yt+DbT5BH6KA"
       crossorigin="anonymous"
+      onerror="window.__tipzRetryExternalAsset(this)"
     />
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml" />
