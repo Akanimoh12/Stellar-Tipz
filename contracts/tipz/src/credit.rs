@@ -85,6 +85,10 @@ const TIP_VOLUME_CAP: i128 = (TIP_CAP as i128) * TIP_DIVISOR;
 /// contribute anything to the score.
 const SECONDS_PER_DAY: u64 = 86_400;
 
+/// Hard upper bound on the credit score stored in a profile. Scores computed
+/// above this value are clamped here to prevent unbounded growth.
+pub const MAX_CREDIT_SCORE: u32 = MAX_SCORE;
+
 /// Build the weighted credit component breakdown for `profile` at `now`.
 pub fn get_credit_breakdown_for_profile(profile: &Profile, now: u64) -> CreditBreakdown {
     // ── Step 1: tip sub-score (0–100) ──────────────────────────────────────
@@ -123,10 +127,16 @@ pub fn get_credit_breakdown_for_profile(profile: &Profile, now: u64) -> CreditBr
     // yielding the documented point budgets: tips ≤20, X ≤30, age ≤10. The
     // weighted parts are added to BASE_SCORE (40) and the total is capped at
     // MAX_SCORE so the result always lands in 0–100.
-    let tip_score = tip_sub * TIP_WEIGHT / MAX_SCORE;
-    let x_score = x_sub * X_WEIGHT / MAX_SCORE;
-    let age_score = age_sub * AGE_WEIGHT / MAX_SCORE;
-    let total = (BASE_SCORE + tip_score + x_score + age_score).min(MAX_SCORE);
+    // Saturating arithmetic is used throughout so that pathological inputs
+    // (e.g. all fields at maximum) can never cause a u32 overflow.
+    let tip_score = tip_sub.saturating_mul(TIP_WEIGHT) / MAX_SCORE;
+    let x_score = x_sub.saturating_mul(X_WEIGHT) / MAX_SCORE;
+    let age_score = age_sub.saturating_mul(AGE_WEIGHT) / MAX_SCORE;
+    let total = BASE_SCORE
+        .saturating_add(tip_score)
+        .saturating_add(x_score)
+        .saturating_add(age_score)
+        .min(MAX_SCORE);
 
     CreditBreakdown {
         base: BASE_SCORE,
@@ -143,7 +153,7 @@ pub fn get_credit_breakdown_with_streak(env: &Env, profile: &Profile, now: u64) 
     let mut breakdown = get_credit_breakdown_for_profile(profile, now);
     let streak_score = storage::get_creator_streak_bonus(env, &profile.owner).min(MAX_SCORE);
     breakdown.streak_score = streak_score;
-    breakdown.total = (breakdown.total + streak_score).min(MAX_SCORE);
+    breakdown.total = breakdown.total.saturating_add(streak_score).min(MAX_SCORE);
     breakdown
 }
 

@@ -142,6 +142,12 @@ pub fn get_tips_by_tipper(env: &Env, tipper: &Address, limit: u32) -> Vec<Tip> {
     result
 }
 
+/// Maximum tip amount accepted per single call (100 000 XLM in stroops).
+pub const MAX_TIP_AMOUNT: i128 = 1_000_000_000_000_i128;
+
+/// Maximum per-creator tip count stored in the profile.
+pub const MAX_TIP_COUNT: u32 = u32::MAX;
+
 /// Send an XLM tip from `tipper` to a registered `creator`.
 pub fn send_tip(
     env: &Env,
@@ -181,9 +187,18 @@ pub fn send_tip(
     // Security: native SAC transfer has no callback path into this contract.
     token::transfer_xlm_with_token(env, &config.native_token, tipper, &contract_address, amount)?;
 
-    profile.balance += amount;
-    profile.total_tips_received += amount;
-    profile.total_tips_count += 1;
+    profile.balance = profile
+        .balance
+        .checked_add(amount)
+        .ok_or(ContractError::OverflowError)?;
+    profile.total_tips_received = profile
+        .total_tips_received
+        .checked_add(amount)
+        .ok_or(ContractError::OverflowError)?;
+    profile.total_tips_count = profile
+        .total_tips_count
+        .checked_add(1)
+        .ok_or(ContractError::OverflowError)?;
 
     // Update streak tracking before recomputing the creator score.
     streaks::record_tip_streak(env, tipper, creator);
@@ -285,9 +300,18 @@ pub fn send_tip_on_behalf(
     token::transfer_xlm(env, sender, &contract_address, amount)?;
 
     let mut profile = storage::get_profile(env, creator);
-    profile.balance += amount;
-    profile.total_tips_received += amount;
-    profile.total_tips_count += 1;
+    profile.balance = profile
+        .balance
+        .checked_add(amount)
+        .ok_or(ContractError::OverflowError)?;
+    profile.total_tips_received = profile
+        .total_tips_received
+        .checked_add(amount)
+        .ok_or(ContractError::OverflowError)?;
+    profile.total_tips_count = profile
+        .total_tips_count
+        .checked_add(1)
+        .ok_or(ContractError::OverflowError)?;
 
     profile.credit_score = credit::calculate_credit_score(&profile, env.ledger().timestamp());
 
@@ -532,9 +556,18 @@ pub fn deliver_scheduled_tip(
 
     // Update creator profile
     let mut profile = storage::get_profile(env, &scheduled_tip.creator);
-    profile.balance += scheduled_tip.amount;
-    profile.total_tips_received += scheduled_tip.amount;
-    profile.total_tips_count += 1;
+    profile.balance = profile
+        .balance
+        .checked_add(scheduled_tip.amount)
+        .ok_or(ContractError::OverflowError)?;
+    profile.total_tips_received = profile
+        .total_tips_received
+        .checked_add(scheduled_tip.amount)
+        .ok_or(ContractError::OverflowError)?;
+    profile.total_tips_count = profile
+        .total_tips_count
+        .checked_add(1)
+        .ok_or(ContractError::OverflowError)?;
 
     // Update streak tracking
     streaks::record_tip_streak(env, &scheduled_tip.sender, &scheduled_tip.creator);
