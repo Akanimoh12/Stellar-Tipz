@@ -7,6 +7,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { useI18n } from "@/i18n";
 
 import NetworkBadge from "../shared/NetworkBadge";
+import WalletBalance from "../shared/WalletBalance";
 import WalletSwitcher from "../shared/WalletSwitcher";
 import Button from "../ui/Button";
 import { getModifierKey } from "../../hooks/useKeyboardShortcuts";
@@ -154,7 +155,10 @@ const Header: React.FC = () => {
             <NetworkBadge />
           </div>
           {connected ? (
-            <WalletSwitcher onAddWallet={connect} />
+            <>
+              <WalletBalance />
+              <WalletSwitcher onAddWallet={connect} />
+            </>
           ) : (
             <Button
               size="sm"
