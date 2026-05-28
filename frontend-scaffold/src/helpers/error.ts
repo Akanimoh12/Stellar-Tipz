@@ -9,6 +9,7 @@ export const ERRORS = {
   CONTRACT: "Something went wrong. Please try again.",
   NOT_FOUND: "The requested content could not be found.",
   WALLET: "Wallet action failed. Please check your wallet and try again.",
+  RATE_LIMITED: "Too many requests. Please wait a moment before trying again.",
 };
 
 export type ErrorCategory =
@@ -18,6 +19,7 @@ export type ErrorCategory =
   | "not-found"
   | "validation"
   | "timeout"
+  | "rate-limited"
   | "unknown";
 
 export interface CategorizedError {
@@ -140,6 +142,21 @@ export const categorizeError = (error: unknown): CategorizedError => {
       category: "validation",
       message: "Please check your input and try again.",
       retryable: false,
+    };
+  }
+
+  // Rate limited
+  if (
+    errorString.includes("rate limit") ||
+    errorString.includes("rate_limit") ||
+    errorString.includes("too many requests") ||
+    errorString.includes("429") ||
+    errorString.includes("rate-limited")
+  ) {
+    return {
+      category: "rate-limited",
+      message: ERRORS.RATE_LIMITED,
+      retryable: true,
     };
   }
 

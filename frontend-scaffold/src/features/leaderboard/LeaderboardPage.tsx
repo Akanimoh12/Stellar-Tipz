@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Crown, Medal, Trophy } from "lucide-react";
+import { Crown, Medal, Trophy, UserPlus } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import PageContainer from "../../components/layout/PageContainer";
@@ -8,7 +8,9 @@ import CreditBadge from "../../components/shared/CreditBadge";
 import Avatar from "../../components/ui/Avatar";
 import Card from "../../components/ui/Card";
 import Pagination from "../../components/ui/Pagination";
+import EmptyState from "../../components/ui/EmptyState";
 import ErrorState from "../../components/shared/ErrorState";
+import PullToRefresh from "../../components/shared/PullToRefresh";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useLeaderboard } from "@/hooks/useLeaderboard";
 import { categorizeError } from "@/helpers/error";
@@ -40,6 +42,7 @@ const LeaderboardPage: React.FC = () => {
   }
 
   return (
+    <PullToRefresh onRefresh={refetch}>
     <PageContainer maxWidth="xl" className="space-y-8 py-10">
       <section aria-labelledby="leaderboard-heading" className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
         <Card className="space-y-5 bg-yellow-100" padding="lg" hover>
@@ -99,9 +102,12 @@ const LeaderboardPage: React.FC = () => {
 
           <div className="overflow-x-auto">
             {entries.length === 0 ? (
-              <div className="text-center py-20 border-2 border-dashed border-black">
-                <p className="font-black uppercase text-gray-800 dark:text-gray-200">No creators found on the leaderboard yet.</p>
-              </div>
+              <EmptyState
+                icon={<Trophy size={40} />}
+                title="No creators yet"
+                description="Be the first creator on Stellar Tipz. Register your profile and start receiving tips from your supporters."
+                action={{ label: "Register as creator", to: "/register" }}
+              />
             ) : (
               <table className="min-w-full border-collapse">
                 <thead>
@@ -147,6 +153,7 @@ const LeaderboardPage: React.FC = () => {
         </Card>
       </section>
     </PageContainer>
+    </PullToRefresh>
   );
 };
 

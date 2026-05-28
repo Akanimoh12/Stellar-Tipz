@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Github, Keyboard, Menu, Moon, Sun, X } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 import { useTheme } from "@/hooks/useTheme";
 import { useWallet } from "@/hooks/useWallet";
@@ -17,6 +17,7 @@ const UNSEEN_TIPS_KEY = "tipz_unseen_tips";
 const Header: React.FC = () => {
   const { connected, publicKey, connect, disconnect } = useWallet();
   const { theme, toggleTheme } = useTheme();
+  const { pathname } = useLocation();
   const { t } = useI18n();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [unseenTips, setUnseenTips] = useState(0);
@@ -117,25 +118,25 @@ const Header: React.FC = () => {
         <nav aria-label="Primary navigation" className="hidden items-center gap-6 md:flex">
           <Link
             to="/leaderboard"
-            className="text-sm font-bold uppercase tracking-wide hover:underline"
+            className={`text-sm font-bold uppercase tracking-wide nav-indicator ${pathname === '/leaderboard' ? 'active' : ''}`}
           >
             {t("nav.leaderboard")}
           </Link>
           <Link
             to="/dashboard"
-            className="text-sm font-bold uppercase tracking-wide hover:underline"
+            className={`text-sm font-bold uppercase tracking-wide nav-indicator ${pathname === '/dashboard' ? 'active' : ''}`}
           >
             {navDashboard}
           </Link>
           <Link
             to="/transactions"
-            className="text-sm font-bold uppercase tracking-wide hover:underline"
+            className={`text-sm font-bold uppercase tracking-wide nav-indicator ${pathname === '/transactions' ? 'active' : ''}`}
           >
             Transactions
           </Link>
           <Link
             to="/profile"
-            className="text-sm font-bold uppercase tracking-wide hover:underline"
+            className={`text-sm font-bold uppercase tracking-wide nav-indicator ${pathname === '/profile' ? 'active' : ''}`}
           >
             {t("nav.profile")}
           </Link>

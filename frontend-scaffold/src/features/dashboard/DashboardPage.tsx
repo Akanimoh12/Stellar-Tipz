@@ -1,9 +1,10 @@
 import React from "react";
-import { Bell, LayoutDashboard, Wallet, X, Flame } from "lucide-react";
+import { Bell, LayoutDashboard, Share2, Wallet, X, Flame } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import PageContainer from "@/components/layout/PageContainer";
 import ErrorState from "@/components/shared/ErrorState";
+import PullToRefresh from "@/components/shared/PullToRefresh";
 import WalletConnect from "@/components/shared/WalletConnect";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
@@ -194,6 +195,7 @@ const DashboardPage: React.FC = () => {
 
   return (
     <DashboardProvider value={dashboard}>
+    <PullToRefresh onRefresh={refetch}>
     <PageContainer maxWidth="xl" className="space-y-8 py-10">
       <section aria-labelledby="dashboard-heading" className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
@@ -257,8 +259,30 @@ const DashboardPage: React.FC = () => {
         </section>
       )}
 
+      {tips.length === 0 && creator.totalTipsCount === 0 && (
+        <section
+          role="region"
+          aria-label="No tips received"
+          className="border-4 border-black bg-white p-6 shadow-brutalist"
+        >
+          <EmptyState
+            icon={<Share2 size={40} />}
+            title="No tips received"
+            description="Share your public profile link to start receiving tips from your supporters."
+            action={{
+              label: "Share profile",
+              onClick: () => {
+                const url = `${window.location.origin}/@${creator.username}`;
+                navigator.clipboard.writeText(url);
+              },
+            }}
+          />
+        </section>
+      )}
+
       <Tabs tabs={tabs} defaultTab="overview" />
     </PageContainer>
+    </PullToRefresh>
     <AchievementNotification
       achievement={newAchievement}
       onDismiss={dismissNotification}

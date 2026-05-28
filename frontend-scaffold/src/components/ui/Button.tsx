@@ -28,12 +28,12 @@ const Button: React.FC<ButtonProps> = ({
   const isLoadingState = loading || isLoading;
   
   const base =
-    "font-bold uppercase tracking-wide transition-transform duration-200 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
+    "font-bold uppercase tracking-wide transition-all duration-150 border-2 border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
 
   const variants: Record<string, string> = {
-    primary: "bg-black text-white hover:-translate-x-1 hover:-translate-y-1",
-    outline: "bg-white text-black hover:-translate-x-1 hover:-translate-y-1",
-    ghost: "bg-transparent text-black border-transparent hover:border-black",
+    primary: "bg-black text-white hover:translate-y-[-2px] active:translate-y-[1px] active:translate-x-[1px]",
+    outline: "bg-white text-black hover:translate-y-[-2px] active:translate-y-[1px] active:translate-x-[1px]",
+    ghost: "bg-transparent text-black border-transparent hover:border-black active:translate-y-[1px]",
   };
 
   const sizes: Record<string, string> = {

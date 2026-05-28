@@ -5,6 +5,7 @@ interface BadgeProps {
   tier: BadgeTier;
   score?: number;
   className?: string;
+  pulse?: boolean;
 }
 
 const tierConfig: Record<BadgeTier, { 
@@ -51,14 +52,14 @@ const tierConfig: Record<BadgeTier, {
   },
 };
 
-const Badge: React.FC<BadgeProps> = ({ tier, score, className = '' }) => {
+const Badge: React.FC<BadgeProps> = ({ tier, score, className = '', pulse = false }) => {
   const [showTooltip, setShowTooltip] = useState(false);
   const config = tierConfig[tier];
 
   return (
     <div className="relative inline-block">
       <span
-        className={`inline-flex items-center gap-1 border-2 px-3 py-1 text-sm font-bold uppercase transition-all duration-200 hover:scale-105 ${config.bg} ${config.text} ${config.border} ${className}`}
+        className={`inline-flex items-center gap-1 border-2 px-3 py-1 text-sm font-bold uppercase transition-all duration-150 hover:scale-105 ${pulse ? 'badge-pulse' : ''} ${config.bg} ${config.text} ${config.border} ${className}`}
         onMouseEnter={() => score !== undefined && setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
         style={{ boxShadow: '2px 2px 0px 0px rgba(0,0,0,0.3)' }}

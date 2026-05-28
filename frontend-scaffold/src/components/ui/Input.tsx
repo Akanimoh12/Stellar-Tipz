@@ -34,8 +34,8 @@ const Input: React.FC<InputProps> = ({
       )}
       <input
         id={inputId}
-        className={`w-full px-4 py-3 border-2 bg-white text-black font-medium
-          focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
+        className={`w-full px-4 py-3 border-2 bg-white text-black font-medium transition-colors duration-150
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist focus:border-gray-500
           placeholder:text-gray-700 dark:text-gray-300 ${
             error ? 'border-red-500' : 'border-black'
           } ${className}`}

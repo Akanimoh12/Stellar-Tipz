@@ -36,7 +36,7 @@ const Card: React.FC<CardProps> = ({
   const isInteractive = isClickable || onClick || href;
   
   const hoverClass = (hover || isInteractive)
-    ? 'hover:-translate-x-1 hover:-translate-y-1 hover:border-gray-800 transition-all duration-200 hover:shadow-brutalist-lg'
+    ? 'hover:-translate-x-1 hover:-translate-y-1 hover:border-gray-800 transition-all duration-150 hover:shadow-brutal-lg'
     : '';
 
   const interactiveClass = isInteractive
