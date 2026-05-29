@@ -2,6 +2,7 @@ import React from 'react';
 import ErrorState from './ErrorState';
 import { categorizeError } from '@/helpers/error';
 import { logger } from '../../services/logger';
+import { captureError } from '@/services/sentry';
 
 interface ErrorBoundaryProps {
   fallback?: React.ReactNode;
@@ -61,7 +62,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   };
 
   reportError = (error: Error, errorInfo: React.ErrorInfo) => {
-    // Future: Send to analytics service
+    captureError(error);
     logger.debug('components/shared/ErrorBoundary', 'Error reporting hook', {
       error: error.message,
       stack: error.stack,

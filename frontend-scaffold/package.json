@@ -81,6 +81,7 @@
   },
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "^1.9.5",
+    "@sentry/react": "^8.0.0",
     "@emotion/is-prop-valid": "^1.4.0",
     "@stellar/freighter-api": "1.7.1",
     "@stellar/stellar-sdk": "^11.3.0",

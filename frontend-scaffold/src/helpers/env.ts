@@ -42,3 +42,39 @@ export function getEnv(envVars?: Record<string, string | undefined>): EnvConfig 
 }
 
 export const env = getEnv();
+
+function isValidUrl(value: string): boolean {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validates required environment variables at startup.
+ * Throws on missing critical vars; warns on missing optional vars.
+ */
+export function validateEnv(envVars?: Record<string, string | undefined>): void {
+  const source =
+    envVars ??
+    (import.meta as unknown as { env: Record<string, string | undefined> }).env ??
+    {};
+
+  if (!source.VITE_CONTRACT_ID) {
+    throw new Error("VITE_CONTRACT_ID is required");
+  }
+
+  if (source.VITE_SOROBAN_RPC_URL && !isValidUrl(source.VITE_SOROBAN_RPC_URL)) {
+    throw new Error("VITE_SOROBAN_RPC_URL must be a valid URL");
+  }
+
+  if (source.VITE_HORIZON_URL && !isValidUrl(source.VITE_HORIZON_URL)) {
+    throw new Error("VITE_HORIZON_URL must be a valid URL");
+  }
+
+  if (!source.VITE_SENTRY_DSN) {
+    console.warn("[env] VITE_SENTRY_DSN is not set – error tracking will be disabled");
+  }
+}

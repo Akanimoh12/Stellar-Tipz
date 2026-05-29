@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { secureStorage } from "../services/secureStorage";
 import type { WalletErrorType } from "../helpers/error";
+import { setUser } from "../services/sentry";
 
 export type Network = 'TESTNET' | 'PUBLIC';
 type SigningStatus = 'idle' | 'signing' | 'signed' | 'error';
@@ -106,13 +107,15 @@ export const useWalletStore = create<WalletStore>()(
           walletType: wt,
           sessionExpiresAt: Date.now() + SESSION_TIMEOUT_MS,
         });
+        setUser(publicKey);
       },
 
       setAddress: (publicKey: string, walletType?: string) => {
         get().connect(publicKey, walletType);
       },
 
-      disconnect: () =>
+      disconnect: () => {
+        setUser(null);
         set({
           wallets: [],
           activeWalletKey: null,
@@ -123,7 +126,8 @@ export const useWalletStore = create<WalletStore>()(
           walletType: null,
           signingStatus: 'idle',
           sessionExpiresAt: null,
-        }),
+        });
+      },
 
       clearAddress: () => {
         get().disconnect();

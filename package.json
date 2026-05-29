@@ -6,6 +6,10 @@
   "directories": {
     "doc": "docs"
   },
+  "devDependencies": {
+    "@commitlint/cli": "^19.0.0",
+    "@commitlint/config-conventional": "^19.0.0"
+  },
   "scripts": {
     "prepare": "cd frontend-scaffold && npx husky ../../.husky || true",
     "dev": "cd frontend-scaffold && npm run dev",

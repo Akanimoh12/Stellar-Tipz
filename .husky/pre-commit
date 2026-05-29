@@ -15,5 +15,11 @@ if git diff --cached --name-only | xargs grep -lE \
   exit 1
 fi
 
+# Run cargo fmt on staged Rust files
+STAGED_RS=$(git diff --cached --name-only | grep '\.rs$' || true)
+if [ -n "$STAGED_RS" ]; then
+  cargo fmt -- $STAGED_RS 2>/dev/null || true
+fi
+
 # Run lint-staged in frontend-scaffold
 cd frontend-scaffold && npx lint-staged

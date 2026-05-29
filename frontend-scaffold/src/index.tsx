@@ -4,8 +4,24 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { I18nProvider } from "./i18n";
 import { logger } from "./services/logger";
+import { validateEnv } from "./helpers/env";
+import { initSentry } from "./services/sentry";
 
 import "./index.scss";
+
+try {
+  validateEnv();
+} catch (err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  logger.error("startup", "Environment validation failed", { error: msg });
+  const root = document.getElementById("root");
+  if (root) {
+    root.innerHTML = `<pre style="color:red;font-family:monospace;padding:1rem">Environment error: ${msg}\n\nSet the required variables in your .env file and restart.</pre>`;
+  }
+  throw err;
+}
+
+initSentry();
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
