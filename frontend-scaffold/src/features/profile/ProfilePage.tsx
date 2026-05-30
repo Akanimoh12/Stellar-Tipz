@@ -19,6 +19,7 @@ import { createProfileShareData } from "@/helpers/sharing";
 import Skeleton from "@/components/ui/Skeleton";
 
 import ProfileView from "./ProfileView";
+import ProfileViewSkeleton from "./ProfileViewSkeleton";
 import ProfileStats, { ProfileStatsSkeleton } from "./ProfileStats";
 import ActivityFeed from "./ActivityFeed";
 import RegisterForm from "./RegisterForm";
@@ -205,7 +206,7 @@ const ProfilePage: React.FC = () => {
       <Breadcrumbs items={[{ label: 'Home', href: '/' }, { label: 'Profile' }]} />
       {/* Main Profile View Card */}
       <section aria-label="Profile summary">
-        <ProfileView profile={profile} />
+        {loading ? <ProfileViewSkeleton /> : <ProfileView profile={profile} />}
       </section>
 
       <div className="grid gap-8 lg:grid-cols-[1fr_340px]">

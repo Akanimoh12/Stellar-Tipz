@@ -1,5 +1,8 @@
 //! Credit score calculation and tier classification for the Tipz contract.
 //!
+//! For the complete credit score documentation including formula, weights, examples,
+//! and update mechanisms, see [`docs/CREDIT_SCORE.md`](../../../docs/CREDIT_SCORE.md).
+//!
 //! ## Score range
 //! All scores are in the range **0 – 100**.  Newly registered profiles start
 //! at the base score of **40** (bottom of the Silver tier) because they
@@ -11,6 +14,7 @@
 //!       + tip_sub  * 20 / 100   (0-20 pts — tip volume component)
 //!       + x_sub    * 30 / 100   (0-30 pts — X metrics component)
 //!       + age_sub  * 10 / 100   (0-10 pts — account age component)
+//!       + streak_bonus           (0-∞ pts — streak bonus component, capped at 100)
 //!
 //! capped at 100
 //! ```
@@ -22,6 +26,7 @@
 //! | `tip_sub`  | `total_tips_received (stroops) / 10_000_000`       | 100 |
 //! | `x_sub`    | `min(followers/50, 50) + min((posts+replies×1.5)/10, 50)` | 100 |
 //! | `age_sub`  | `age_in_days / 10`  (0 when age < 1 day)          | 100 |
+//! | `streak_bonus` | `sum of supporter streak milestones / 7`        | 100 |
 //!
 //! ## Tier boundaries
 //! | Tier    | Range   |

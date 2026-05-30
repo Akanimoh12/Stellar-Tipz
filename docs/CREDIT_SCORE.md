@@ -19,11 +19,12 @@ score = BASE_SCORE (40)
       + tip_sub  * 20 / 100   →  0–20 pts  (tip volume component)
       + x_sub    * 30 / 100   →  0–30 pts  (X metrics component)
       + age_sub  * 10 / 100   →  0–10 pts  (account age component)
+      + streak_bonus           →  0–∞ pts  (streak bonus component)
 
-Maximum score: 100
+Maximum score: 100 (capped)
 ```
 
-Each sub-score is independently capped at 100 before weighting.
+Each sub-score is independently capped at 100 before weighting. The streak bonus is added after weighting and is also capped at 100.
 
 ### Component Breakdown
 
@@ -33,6 +34,7 @@ Each sub-score is independently capped at 100 before weighting.
 | **Tip volume** | 20% | 20 pts | `total_tips_received` (stroops) |
 | **X metrics** | 30% | 30 pts | `x_followers` + `x_engagement_avg` |
 | **Account age** | 10% | 10 pts | Days since `registered_at` |
+| **Streak bonus** | — | Uncapped (capped at 100 total) | 1 point per 7-tip streak milestone |
 
 ---
 
@@ -97,17 +99,38 @@ Accounts younger than 1 day contribute **0** to the age component.
 
 Maximum reached after ~1,000 days (~2.7 years).
 
+### 4. Streak Bonus (uncapped, but total score capped at 100)
+
+```
+streak_bonus = sum of all supporter streak milestones / 7
+
+Each supporter earns 1 bonus point for every 7 consecutive tips to the same creator.
+The creator's total streak bonus is the sum of all supporter bonus points.
+```
+
+| Supporter streak | Bonus points | Creator's total streak bonus |
+|------------------|--------------|------------------------------|
+| 0-6 tips | 0 | 0 |
+| 7-13 tips | 1 | 1 |
+| 14-20 tips | 2 | 2 |
+| 21-27 tips | 3 | 3 |
+| ... | ... | ... |
+
+The streak bonus is added after all other components and is also capped at 100 to ensure the total score never exceeds 100.
+
+**Example**: If a creator has 10 supporters each on a 14-tip streak, the creator receives 10 × 2 = 20 streak bonus points.
+
 ---
 
 ## Score Examples
 
-| Creator type | Tips (XLM) | x_followers | x_engagement_avg | Age (days) | Score | Tier |
-|-------------|-----------|-------------|-----------------|-----------|-------|------|
-| Newly registered | 0 | 0 | 0 | 0 | 40 | Silver |
-| Active tipper, no X | 10 | 0 | 0 | 30 | 43 | Silver |
-| X presence, no tips | 0 | 2,500 | 100 | 60 | 53 | Silver |
-| Established creator | 50 | 2,500 | 200 | 365 | 67 | Gold |
-| Elite creator | 100+ | 2,500+ | 500+ | 1,000+ | 100 | Diamond |
+| Creator type | Tips (XLM) | x_followers | x_engagement_avg | Age (days) | Streak Bonus | Score | Tier |
+|-------------|-----------|-------------|-----------------|-----------|--------------|-------|------|
+| Newly registered | 0 | 0 | 0 | 0 | 0 | 40 | Silver |
+| Active tipper, no X | 10 | 0 | 0 | 30 | 0 | 43 | Silver |
+| X presence, no tips | 0 | 2,500 | 100 | 60 | 0 | 53 | Silver |
+| Established creator | 50 | 2,500 | 200 | 365 | 5 | 72 | Gold |
+| Elite creator | 100+ | 2,500+ | 500+ | 1,000+ | 20+ | 100 | Diamond |
 
 ---
 
@@ -137,6 +160,7 @@ pub const MAX_SCORE: u32      = 100;
 pub const TIP_WEIGHT: u32     = 20;   // percent
 pub const X_WEIGHT: u32       = 30;   // percent
 pub const AGE_WEIGHT: u32     = 10;   // percent
+pub const STREAK_BONUS_SCORE: u32 = 1;  // per streak milestone
 pub const TIP_DIVISOR: i128   = 10_000_000;
 pub const FOLLOWER_DIVISOR: u32  = 50;
 pub const ENGAGEMENT_DIVISOR: u32 = 10;
@@ -162,10 +186,13 @@ let age_sub: u32 = {
     (age_days as u32 / AGE_DIVISOR).min(AGE_CAP)
 };
 
+let streak_score = storage::get_creator_streak_bonus(env, &profile.owner).min(MAX_SCORE);
+
 let total = (BASE_SCORE
     + tip_sub * TIP_WEIGHT / MAX_SCORE
     + x_sub   * X_WEIGHT   / MAX_SCORE
-    + age_sub * AGE_WEIGHT / MAX_SCORE)
+    + age_sub * AGE_WEIGHT / MAX_SCORE
+    + streak_score)
     .min(MAX_SCORE);
 ```
 
@@ -177,6 +204,7 @@ let total = (BASE_SCORE
 2. **Admin update**: The admin calls `update_x_metrics(target, x_followers, x_engagement_avg)` or the batch variant `batch_update_x_metrics` (up to 50 creators per call)
 3. **Recalculation**: The contract recalculates and stores the new credit score on the profile
 4. **Event**: A `CreditScoreUpdated` event is emitted with the old and new scores
+5. **Streak updates**: When a supporter sends a tip, their streak is tracked. Every 7 consecutive tips to the same creator increments the creator's streak bonus by 1 point
 
 ### Why Off-chain?
 

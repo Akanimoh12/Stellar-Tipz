@@ -490,6 +490,8 @@ fn get_tipper_tip_count(env: Env, tipper: Address) -> u32
 
 ## Credit Score
 
+For complete documentation of the credit score algorithm including formula, weights, examples, and update mechanisms, see [CREDIT_SCORE.md](CREDIT_SCORE.md).
+
 ### `calculate_credit_score`
 
 Calculate and return the credit score for a profile (0–100), updating on-chain state.

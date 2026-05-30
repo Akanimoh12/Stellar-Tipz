@@ -64,22 +64,22 @@ Tipz delivers:
 
 ## 🏆 Credit Score System
 
-Our unique credit score algorithm provides transparent creator credibility:
+Our unique credit score algorithm provides transparent creator credibility. For complete documentation including the formula, weights, examples, and update mechanisms, see [docs/CREDIT_SCORE.md](docs/CREDIT_SCORE.md).
 
-```
-Credit Score = (Followers/10 × 50%) + ((Posts + Replies×1.5)/5 × 30%) + (Base 200 × 20%)
-
-Maximum: 1000 points
-```
+**Quick Overview:**
+- Score range: **0–100**
+- Base score: **40** (all new creators start at Silver tier)
+- Components: Tip volume (20%), X metrics (30%), Account age (10%), Streak bonus (uncapped)
+- Maximum score: **100** (Diamond tier)
 
 ### Scoring Tiers
 
 | Tier | Score Range | Badge | Description |
 |------|-------------|-------|-------------|
-| 🥉 **Bronze** | 0-400 | Entry Level | New or small creators |
-| 🥈 **Silver** | 401-700 | Established | Growing presence |
-| 🥇 **Gold** | 701-900 | Proven | Strong community |
-| 💎 **Diamond** | 901-1000 | Elite | Top-tier creators |
+| 🥉 **Bronze** | 20-39 | Entry Level | Below base (not achievable via normal registration) |
+| 🥈 **Silver** | 40-59 | Established | Default for all newly registered creators |
+| 🥇 **Gold** | 60-79 | Proven | Growing tips, X presence, or account age |
+| 💎 **Diamond** | 80-100 | Elite | Strong across all components |
 
 **Why Credit Scores Matter:**
 - Helps tippers discover quality creators

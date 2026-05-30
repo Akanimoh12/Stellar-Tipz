@@ -30,7 +30,7 @@ const CreditBadge: React.FC<CreditBadgeProps> = ({
   );
 
   return (
-    <Tooltip content={`Credit Score: ${score}/1000 • Tier: ${tier}`}>
+    <Tooltip content={`Credit Score: ${score}/100 • Tier: ${tier}`}>
       {clickable ? (
         <Link
           to="/docs/credit-score"
