@@ -29,6 +29,7 @@ import EmbedCodeGenerator from "./EmbedCodeGenerator";
 import GoalProgress from "./GoalProgress";
 import SetGoalForm from "./SetGoalForm";
 import AchievementGallery from "@/features/achievements/AchievementGallery";
+import StreakDisplay from "@/features/achievements/StreakDisplay";
 import { useAchievements } from "@/hooks/useAchievements";
 import { logger } from "../../services/logger";
 
@@ -50,7 +51,10 @@ const ProfilePage: React.FC = () => {
     profile?.owner ? s.getCreatorGoal(profile.owner) : undefined,
   );
   const [feeBps, setFeeBps] = useState(250); // Default to 250 (2.5%) as fallback
-  const { unlockedIds } = useAchievements({ tipCount: profile?.totalTipsCount ?? 0 });
+  const { unlockedIds, unlockedAt, longestStreak } = useAchievements({
+    tipCount: profile?.totalTipsCount ?? 0,
+    streak: profile?.streak ?? 0,
+  });
 
   usePageTitle(
     loading
@@ -293,10 +297,23 @@ const ProfilePage: React.FC = () => {
             </Card>
           </section>
 
-          {/* Achievements Section */}
+          {/* Achievements & Streak Section */}
           <section role="region" aria-labelledby="achievements-heading" className="space-y-4">
+            <h2 id="achievements-heading" className="text-2xl font-black uppercase tracking-tight">
+              Achievements &amp; Streaks
+            </h2>
             <Card padding="lg" className="border-4 shadow-brutalist">
-              <AchievementGallery unlockedIds={unlockedIds} />
+              <h3 className="text-lg font-black uppercase mb-4">Streak</h3>
+              <StreakDisplay
+                current={profile.streak ?? 0}
+                longest={longestStreak}
+              />
+            </Card>
+            <Card padding="lg" className="border-4 shadow-brutalist">
+              <AchievementGallery
+                unlockedIds={unlockedIds}
+                unlockedAt={unlockedAt}
+              />
             </Card>
           </section>
         </div>

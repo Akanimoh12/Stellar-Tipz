@@ -1,74 +1,59 @@
 import React from "react";
-import { motion } from "framer-motion";
-import { Lock } from "lucide-react";
 import { ACHIEVEMENTS, AchievementId } from "@/hooks/useAchievements";
+import AchievementCard from "./AchievementCard";
 
 interface AchievementGalleryProps {
   /** IDs of achievements the user has unlocked */
   unlockedIds: AchievementId[];
+  /** Unix ms timestamp for each unlocked achievement */
+  unlockedAt?: Partial<Record<AchievementId, number>>;
   className?: string;
 }
 
 /**
- * Displays all achievements in a grid, showing locked/unlocked state.
- * Used on the profile page to showcase earned achievements.
+ * Displays all achievements in a grid, showing locked/unlocked state with earned dates.
+ * Used on the profile page and public creator pages to showcase earned achievements.
  */
 const AchievementGallery: React.FC<AchievementGalleryProps> = ({
   unlockedIds,
+  unlockedAt = {},
   className = "",
 }) => {
   const all = Object.values(ACHIEVEMENTS);
+  const earned = unlockedIds.length;
+  const total = all.length;
 
   return (
     <div className={className}>
-      <h3 className="text-xl font-black uppercase tracking-tight mb-4">
-        Achievements
-      </h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-xl font-black uppercase tracking-tight">
+          Achievements
+        </h3>
+        <span className="text-xs font-black uppercase tracking-wide text-gray-500">
+          {earned}/{total} earned
+        </span>
+      </div>
+
+      {earned === 0 && (
+        <p className="mb-4 text-sm font-bold text-gray-500">
+          No achievements yet — keep tipping to unlock badges!
+        </p>
+      )}
+
       <div
         className="grid grid-cols-2 gap-3 sm:grid-cols-3"
         role="list"
         aria-label="Achievement gallery"
       >
-        {all.map((achievement, i) => {
-          const isUnlocked = unlockedIds.includes(achievement.id);
-          return (
-            <motion.div
-              key={achievement.id}
-              role="listitem"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05, duration: 0.3 }}
-              className={`flex flex-col items-center gap-2 border-[3px] p-4 text-center transition-transform duration-200 ${
-                isUnlocked
-                  ? "border-black bg-yellow-50 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]"
-                  : "border-gray-300 bg-gray-50 opacity-50"
-              }`}
-              aria-label={
-                isUnlocked
-                  ? `${achievement.label} — unlocked`
-                  : `${achievement.label} — locked`
-              }
-            >
-              <span className="text-3xl leading-none" aria-hidden="true">
-                {isUnlocked ? achievement.emoji : <Lock size={28} className="text-gray-400" />}
-              </span>
-              <p
-                className={`text-xs font-black uppercase tracking-wide ${
-                  isUnlocked ? "text-black" : "text-gray-400"
-                }`}
-              >
-                {achievement.label}
-              </p>
-              <p
-                className={`text-xs font-bold leading-snug ${
-                  isUnlocked ? "text-gray-700" : "text-gray-400"
-                }`}
-              >
-                {achievement.description}
-              </p>
-            </motion.div>
-          );
-        })}
+        {all.map((achievement, i) => (
+          <AchievementCard
+            key={achievement.id}
+            achievement={achievement}
+            isUnlocked={unlockedIds.includes(achievement.id)}
+            unlockedAt={unlockedAt[achievement.id]}
+            index={i}
+          />
+        ))}
       </div>
     </div>
   );

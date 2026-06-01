@@ -55,6 +55,8 @@ export const ACHIEVEMENTS: Record<AchievementId, Achievement> = {
 };
 
 const STORAGE_KEY = "tipz-achievements";
+const DATES_KEY = "tipz-achievement-dates";
+const LONGEST_STREAK_KEY = "tipz-longest-streak";
 
 function loadUnlocked(): AchievementId[] {
   try {
@@ -73,10 +75,45 @@ function saveUnlocked(ids: AchievementId[]) {
   }
 }
 
+function loadDates(): Partial<Record<AchievementId, number>> {
+  try {
+    const raw = localStorage.getItem(DATES_KEY);
+    return raw ? (JSON.parse(raw) as Partial<Record<AchievementId, number>>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveDates(dates: Partial<Record<AchievementId, number>>) {
+  try {
+    localStorage.setItem(DATES_KEY, JSON.stringify(dates));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function loadLongestStreak(): number {
+  try {
+    const raw = localStorage.getItem(LONGEST_STREAK_KEY);
+    return raw ? parseInt(raw, 10) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveLongestStreak(n: number) {
+  try {
+    localStorage.setItem(LONGEST_STREAK_KEY, String(n));
+  } catch {
+    // ignore storage errors
+  }
+}
+
 /**
  * Derives which achievements should be unlocked based on tip count and streak.
+ * Exported so public profile views can derive achievements without localStorage side-effects.
  */
-function deriveAchievements(
+export function deriveAchievements(
   tipCount: number,
   streak: number,
 ): AchievementId[] {
@@ -100,6 +137,10 @@ interface UseAchievementsReturn {
   unlockedIds: AchievementId[];
   /** Full achievement objects for unlocked achievements */
   unlocked: Achievement[];
+  /** Unix ms timestamp for each unlocked achievement */
+  unlockedAt: Partial<Record<AchievementId, number>>;
+  /** Longest streak ever seen (persisted in localStorage) */
+  longestStreak: number;
   /** The most recently unlocked achievement (for notification display) */
   newAchievement: Achievement | null;
   /** Manually trigger an achievement unlock (e.g. after a tip action) */
@@ -110,7 +151,7 @@ interface UseAchievementsReturn {
 
 /**
  * Hook for tracking tipping achievements and streaks.
- * Persists unlocked achievements to localStorage.
+ * Persists unlocked achievements and earned dates to localStorage.
  * Derives new unlocks from tipCount and streak props.
  */
 export function useAchievements({
@@ -118,7 +159,17 @@ export function useAchievements({
   streak = 0,
 }: UseAchievementsOptions = {}): UseAchievementsReturn {
   const [unlockedIds, setUnlockedIds] = useState<AchievementId[]>(loadUnlocked);
+  const [unlockedAt, setUnlockedAt] = useState<Partial<Record<AchievementId, number>>>(loadDates);
+  const [longestStreak, setLongestStreak] = useState<number>(loadLongestStreak);
   const [newAchievement, setNewAchievement] = useState<Achievement | null>(null);
+
+  // Update longest streak whenever current streak grows
+  useEffect(() => {
+    if (streak > longestStreak) {
+      setLongestStreak(streak);
+      saveLongestStreak(streak);
+    }
+  }, [streak, longestStreak]);
 
   // Derive achievements from current stats and unlock any new ones
   useEffect(() => {
@@ -129,12 +180,21 @@ export function useAchievements({
         const updated = [...unlockedIds, ...newOnes];
         setUnlockedIds(updated);
         saveUnlocked(updated);
+
+        const now = Date.now();
+        const updatedDates: Partial<Record<AchievementId, number>> = { ...unlockedAt };
+        for (const id of newOnes) {
+          if (!updatedDates[id]) updatedDates[id] = now;
+        }
+        setUnlockedAt(updatedDates);
+        saveDates(updatedDates);
+
         setNewAchievement(ACHIEVEMENTS[newOnes[0]]);
       }, 0);
 
       return () => window.clearTimeout(timeoutId);
     }
-  }, [tipCount, streak, unlockedIds]);
+  }, [tipCount, streak, unlockedIds, unlockedAt]);
 
   const triggerAchievement = useCallback(
     (id: AchievementId) => {
@@ -142,16 +202,21 @@ export function useAchievements({
       const updated = [...unlockedIds, id];
       setUnlockedIds(updated);
       saveUnlocked(updated);
+
+      const updatedDates: Partial<Record<AchievementId, number>> = { ...unlockedAt, [id]: Date.now() };
+      setUnlockedAt(updatedDates);
+      saveDates(updatedDates);
+
       setNewAchievement(ACHIEVEMENTS[id]);
     },
-    [unlockedIds],
+    [unlockedIds, unlockedAt],
   );
 
   const dismissNotification = useCallback(() => {
     setNewAchievement(null);
   }, []);
 
-  const unlocked = unlockedIds.map((id) => ACHIEVEMENTS[id]).filter(Boolean);
+  const unlocked = unlockedIds.map((id) => ACHIEVEMENTS[id]).filter(Boolean) as Achievement[];
 
-  return { unlockedIds, unlocked, newAchievement, triggerAchievement, dismissNotification };
+  return { unlockedIds, unlocked, unlockedAt, longestStreak, newAchievement, triggerAchievement, dismissNotification };
 }

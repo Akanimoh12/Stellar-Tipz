@@ -34,6 +34,9 @@ import TipResult from "./TipResult";
 import RecentTips from "./RecentTips";
 import GoalProgress from "@/features/profile/GoalProgress";
 import { useGoalStore } from "@/store/goalStore";
+import AchievementGallery from "@/features/achievements/AchievementGallery";
+import StreakDisplay from "@/features/achievements/StreakDisplay";
+import { deriveAchievements } from "@/hooks/useAchievements";
 import { TipConfirmationModal } from "./TipConfirmationModal";
 import { useTipFlow } from "./useTipFlow";
 import { usePageMeta } from "@/hooks/usePageMeta";
@@ -504,6 +507,38 @@ const TipPage: React.FC = () => {
             </Link>
           </div>
           <RecentTips address={creator.owner} />
+        </Card>
+      </section>
+
+      <section
+        role="region"
+        aria-labelledby="creator-achievements-heading"
+        className="space-y-6"
+      >
+        <h2
+          id="creator-achievements-heading"
+          className="text-2xl font-black uppercase tracking-tight"
+        >
+          Creator Achievements
+        </h2>
+
+        {(creator.streak ?? 0) > 0 && (
+          <Card padding="lg" className="border-4 shadow-brutalist">
+            <h3 className="text-lg font-black uppercase mb-4">Streak</h3>
+            <StreakDisplay
+              current={creator.streak ?? 0}
+              longest={creator.streak ?? 0}
+            />
+          </Card>
+        )}
+
+        <Card padding="lg" className="border-4 shadow-brutalist">
+          <AchievementGallery
+            unlockedIds={deriveAchievements(
+              creator.totalTipsCount,
+              creator.streak ?? 0,
+            )}
+          />
         </Card>
       </section>
     </PageContainer>

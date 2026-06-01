@@ -20,6 +20,8 @@ import TipQRCode from "@/features/profile/TipQRCode";
 import DashboardSkeleton from "./DashboardSkeleton";
 import EarningsChart from "./EarningsChart";
 import AchievementNotification from "@/features/achievements/AchievementNotification";
+import AchievementGallery from "@/features/achievements/AchievementGallery";
+import StreakDisplay from "@/features/achievements/StreakDisplay";
 import { useAchievements } from "@/hooks/useAchievements";
 
 import EarningsTab from "./EarningsTab";
@@ -43,7 +45,7 @@ const DashboardPage: React.FC = () => {
   const { latestTip, markSeen, unseenCount } = useTipNotifications(
     profile?.owner,
   );
-  const { newAchievement, dismissNotification } = useAchievements({
+  const { newAchievement, dismissNotification, unlockedIds, unlockedAt, longestStreak } = useAchievements({
     tipCount: Number(profile?.totalTipsCount ?? 0),
     streak: profile?.streak ?? 0,
   });
@@ -125,7 +127,22 @@ const DashboardPage: React.FC = () => {
         <div className="pt-6 space-y-8">
           <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
             <OverviewTab />
-            <TipQRCode username={creator.username} />
+            <div className="space-y-6">
+              <TipQRCode username={creator.username} />
+              <section
+                role="region"
+                aria-labelledby="dashboard-streak-heading"
+                className="border-4 border-black bg-white p-6 shadow-brutalist"
+              >
+                <h2 id="dashboard-streak-heading" className="text-xl font-black uppercase mb-4">
+                  Streak
+                </h2>
+                <StreakDisplay
+                  current={creator.streak ?? 0}
+                  longest={longestStreak}
+                />
+              </section>
+            </div>
           </div>
           <section
             role="region"
@@ -167,6 +184,24 @@ const DashboardPage: React.FC = () => {
       content: (
         <div className="pt-6">
           <FavoritesList />
+        </div>
+      ),
+    },
+    {
+      id: "achievements",
+      label: "Achievements",
+      content: (
+        <div className="pt-6 space-y-6">
+          <section
+            role="region"
+            aria-labelledby="dashboard-achievements-heading"
+            className="border-4 border-black bg-white p-6 shadow-brutalist"
+          >
+            <AchievementGallery
+              unlockedIds={unlockedIds}
+              unlockedAt={unlockedAt}
+            />
+          </section>
         </div>
       ),
     },
