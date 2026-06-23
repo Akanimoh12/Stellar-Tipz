@@ -1,12 +1,36 @@
 # Stellar Tipz — Backend
 
+[![Contributing Guide](https://img.shields.io/badge/Contributing-Backend%20Guide-0e8a16?style=flat-square)](docs/BACKEND_CONTRIBUTING.md)
+[![Base branch](https://img.shields.io/badge/PR%20target-test--implement--drips-1d76db?style=flat-square)](../../tree/test-implement-drips)
+
 The off-chain, real-time backend for Stellar Tipz. It provides the REST API, an
 on-chain **indexer** that mirrors Soroban contract events into PostgreSQL, credit
 scoring, X (Twitter) integration, notifications, and a WebSocket layer for live updates.
 
-> ⚠️ This backend is being built on the **`test-implement-drips`** branch.
-> Pick an issue, branch off `test-implement-drips`, and open your PR **against
-> `test-implement-drips`** (not `main`).
+## Want to contribute?
+
+> **All backend PRs must target `test-implement-drips` — not `main`.**
+> Branch off `test-implement-drips`, implement one issue per PR, and open your pull
+> request back into `test-implement-drips`.
+
+Read the full workflow in **[docs/BACKEND_CONTRIBUTING.md](docs/BACKEND_CONTRIBUTING.md)**.
+It covers the definition of done, module conventions, and local verification steps.
+
+### How to claim an issue
+
+1. **Find a task** — browse open issues labelled [`backend`](https://github.com/Akanimoh12/Stellar-Tipz/labels/backend). Each issue is atomic and lists acceptance criteria plus file hints.
+2. **Comment to claim it** — leave a short comment on the issue (for example: _"I'd like to work on this"_). Wait for a maintainer to assign you so two contributors don't start the same work.
+3. **Branch off `test-implement-drips`:**
+   ```bash
+   git checkout test-implement-drips
+   git pull
+   git checkout -b feat/<short-name>-<issue-number>
+   ```
+4. **Implement, verify, and open a PR against `test-implement-drips`** — reference the issue (`Closes #123`) and run:
+   ```bash
+   cd backend
+   npm run typecheck && npm run lint && npm run test
+   ```
 
 ---
 
@@ -90,5 +114,12 @@ for HTTP errors — the global error handler formats them.
 
 ## Contributing
 
-See [docs/BACKEND_CONTRIBUTING.md](docs/BACKEND_CONTRIBUTING.md) and the open issues.
-Issues are atomic and self-contained — each lists acceptance criteria and file hints.
+Start with **[docs/BACKEND_CONTRIBUTING.md](docs/BACKEND_CONTRIBUTING.md)** — it is the
+canonical guide for claiming issues, branching, and opening PRs.
+
+Quick reminders:
+
+- **Comment on an issue before you start** so maintainers can assign it to you.
+- **Open every backend PR against `test-implement-drips`** (never `main`).
+- **One issue per PR** — keep changes small and focused.
+- Issues are atomic and self-contained; each lists acceptance criteria and file hints.
