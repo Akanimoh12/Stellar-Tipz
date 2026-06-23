@@ -13,14 +13,38 @@ datasource db {
 }
 
 /// A creator/user identified by their Stellar wallet address.
-/// Extended by profile, credit, tips and other modules in later issues.
+/// Extended by credit, tips and other modules in later issues.
 model User {
-  id            String         @id @default(cuid())
-  stellarAddress String        @unique
-  username      String?        @unique
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  notifications Notification[]
+  id            String   @id @default(cuid())
+  stellarAddress String  @unique
+  username      String?  @unique
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  profile              Profile?
+  leaderboardSnapshots LeaderboardSnapshot[]
+  streak               Streak?
+}
+
+/// Creator's public-facing profile page.
+/// Display content lives here; on-chain stats (credit_score, tips_received, etc.)
+/// belong on a separate stats/metrics model added in a later issue.
+model Profile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+
+  displayName String?
+  avatarUrl   String?
+  bio         String?
+  website     String?
+  xHandle     String?
+  bannerUrl   String?
+  githubHandle String?
+  themeKey    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 /// On-chain tip mirrored off-chain by the indexer.
@@ -44,36 +68,32 @@ model IndexerCursor {
   updatedAt   DateTime @updatedAt
 }
 
-/// Refund requests tied to a specific tip.
-model Refund {
-  id        String   @id @default(cuid())
-  tipId     String   @unique
-  tip       Tip      @relation(fields: [tipId], references: [id])
-  amount    BigInt
-  reason    String
-  status    String   @default("pending")
-  txHash    String?
-  createdAt DateTime @default(now())
+/// Leaderboard period tracked by snapshots.
+enum Period {
+  WEEKLY
+  MONTHLY
+  ALL_TIME
 }
 
-/// In-app notification for a user.
-model Notification {
+/// Periodic leaderboard snapshot entry for fast reads and historical ranking.
+model LeaderboardSnapshot {
   id        String   @id @default(cuid())
+  period    Period
+  rank      Int
   userId    String
   user      User     @relation(fields: [userId], references: [id])
-  type      String
-  payload   Json
-  readAt    DateTime?
+  totalTips BigInt
   createdAt DateTime @default(now())
-
-  @@index([userId, readAt])
 }
 
-/// Cached X (Twitter) account metrics.
-model XAccount {
-  id         String   @id @default(cuid())
-  handle     String   @unique
-  followers  Int      @default(0)
-  engagement Float?
-  fetchedAt  DateTime @default(now())
+/// Per-user tipping streak tracking. One row per user (userId is unique).
+model Streak {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id])
+  currentStreak Int       @default(0)
+  longestStreak Int       @default(0)
+  lastTipDate   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }

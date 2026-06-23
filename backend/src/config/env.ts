@@ -9,7 +9,7 @@ import { z } from 'zod';
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
-  API_BASE_PATH: z.string().default('/api'),
+  API_BASE_PATH: z.string().default('/api/v1'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
 
   DATABASE_URL: z.string().url(),

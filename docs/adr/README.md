@@ -18,6 +18,7 @@ ADR that `Supersedes` the old one and mark the old one `Superseded`.
 | [004](./ADR-004-storage-strategy.md) | Storage strategy (persistent / temporary / instance) | Accepted |
 | [005](./ADR-005-frontend-state-management.md) | Frontend state management (Zustand) | Accepted |
 | [006](./ADR-006-fee-structure.md) | Fee structure design | Accepted |
+| [007](./ADR-007-profile-user-boundary.md) | Profile vs User off-chain data model boundary | Accepted |
 
 ## Adding a new ADR
 
