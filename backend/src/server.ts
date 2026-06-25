@@ -2,11 +2,26 @@ import { createServer } from 'node:http';
 import { createApp } from './app.js';
 import { env } from '@/config/env.js';
 import { logger } from './common/utils/logger.js';
+import { prisma } from './db/prisma.js';
+import { redis } from './db/redis.js';
+import { registerClosable, closeAll } from './common/utils/lifecycle.js';
 
 /** Process entry point: starts the HTTP server (and, later, the WebSocket + indexer). */
 async function bootstrap(): Promise<void> {
   const app = createApp();
   const httpServer = createServer(app);
+
+  // Register Prisma and Redis for graceful shutdown.
+  registerClosable({
+    name: 'Prisma',
+    close: () => prisma.$disconnect(),
+  });
+  registerClosable({
+    name: 'Redis',
+    close: async () => {
+      await redis.quit();
+    },
+  });
 
   // The realtime gateway (Socket.IO) attaches to this httpServer — see the realtime issues.
   // initRealtime(httpServer);
@@ -15,12 +30,17 @@ async function bootstrap(): Promise<void> {
     logger.info(`🚀 Stellar Tipz backend listening on http://localhost:${env.PORT}`);
   });
 
-  const shutdown = (signal: string) => {
+  const shutdown = async (signal: string) => {
     logger.info(`${signal} received, shutting down...`);
-    httpServer.close(() => process.exit(0));
+    httpServer.close(async () => {
+      await closeAll();
+      logger.info('Graceful shutdown complete');
+      process.exit(0);
+    });
   };
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }
 
 bootstrap().catch((err) => {

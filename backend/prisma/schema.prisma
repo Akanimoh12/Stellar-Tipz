@@ -15,57 +15,104 @@ datasource db {
 /// A creator/user identified by their Stellar wallet address.
 /// Extended by credit, tips and other modules in later issues.
 model User {
-  id            String   @id @default(cuid())
-  stellarAddress String  @unique
-  username      String?  @unique
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String   @id @default(cuid())
+  stellarAddress String   @unique
+  username       String?  @unique
+  displayName    String?
+  bio            String?
+  imageUrl       String?
+  avatarCid      String?
+  xHandle        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  profile              Profile?
+  apiKeys              ApiKey[]
+  notifications        Notification[]
   leaderboardSnapshots LeaderboardSnapshot[]
   streak               Streak?
-  refreshTokens        RefreshToken[]
+  sentTips             Tip[]                @relation("SentTips")
+  receivedTips         Tip[]                @relation("ReceivedTips")
+  creditScore          CreditScore?
+  creditScoreHistory   CreditScoreHistory[]
+  withdrawals          Withdrawal[]
 }
 
-/// Creator's public-facing profile page.
-/// Display content lives here; on-chain stats (credit_score, tips_received, etc.)
-/// belong on a separate stats/metrics model added in a later issue.
-model Profile {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id])
+/// API key for service/admin access and webhook integrations.
+model ApiKey {
+  id          String   @id @default(cuid())
+  hashedKey   String   @unique
+  scopes      String[]
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  displayName String?
-  avatarUrl   String?
-  bio         String?
-  website     String?
-  xHandle     String?
-  bannerUrl   String?
-  githubHandle String?
-  themeKey    String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  @@index([createdById])
 }
 
 /// On-chain tip mirrored off-chain by the indexer.
 /// Fields and relations are expanded in the tips/indexer issues.
 model Tip {
-  id           String   @id @default(cuid())
-  txHash       String   @unique
-  ledger       Int
-  fromAddress  String
-  toAddress    String
+  id            String    @id @default(cuid())
+  txHash        String    @unique
+  ledger        Int
+  fromAddress   String
+  toAddress     String
   amountStroops BigInt
-  message      String?
-  createdAt    DateTime @default(now())
+  networkFee    BigInt    @default(0)
+  tokenCode     String    @default("XLM")
+  isAnonymous   Boolean   @default(false)
+  status        TipStatus @default(PENDING)
+  message       String?
+  createdAt     DateTime  @default(now())
+
+  senderId      String?
+  sender        User?     @relation("SentTips", fields: [senderId], references: [id])
+  recipientId   String?
+  recipient     User?     @relation("ReceivedTips", fields: [recipientId], references: [id])
+
+  refund        Refund?
 }
 
 /// Tracks indexer progress per event topic so it can resume after a restart.
 model IndexerCursor {
-  topic       String   @id
-  lastLedger  Int
-  updatedAt   DateTime @updatedAt
+  topic      String   @id
+  lastLedger Int
+  updatedAt  DateTime @updatedAt
+}
+
+/// Refund requests tied to a specific tip.
+model Refund {
+  id        String   @id @default(cuid())
+  tipId     String   @unique
+  tip       Tip      @relation(fields: [tipId], references: [id])
+  amount    BigInt
+  reason    String
+  status    String   @default("pending")
+  txHash    String?
+  createdAt DateTime @default(now())
+}
+
+/// In-app notification for a user.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  type      String
+  payload   Json
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}
+
+/// Cached X (Twitter) account metrics.
+model XAccount {
+  id         String   @id @default(cuid())
+  handle     String   @unique
+  followers  Int      @default(0)
+  engagement Float?
+  fetchedAt  DateTime @default(now())
 }
 
 /// Leaderboard period tracked by snapshots.
@@ -98,33 +145,63 @@ model Streak {
   updatedAt     DateTime  @updatedAt
 }
 
-/// Authentication challenge for Stellar wallet signature verification.
-/// Used in the challenge-response auth flow.
+/// Short-lived wallet authentication challenge.
+/// Created when a wallet requests a sign-in nonce; deleted (or expired) after verification.
+/// TTL is enforced by the application layer via AUTH_CHALLENGE_TTL_SECONDS.
 model AuthChallenge {
-  id             String   @id @default(cuid())
-  stellarAddress String
-  challenge      String   @unique
-  expiresAt      DateTime
-  usedAt         DateTime?
-  createdAt      DateTime @default(now())
+  id        String   @id @default(cuid())
+  /// The wallet address this challenge was issued for.
+  address   String
+  /// Random nonce the wallet must sign to prove ownership.
+  nonce     String   @unique
+  /// UTC timestamp after which the challenge is no longer valid.
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 
-  @@index([stellarAddress])
-  @@index([challenge])
+  @@index([address])
   @@index([expiresAt])
 }
 
-/// Refresh token for JWT token rotation.
-/// Allows users to obtain new access tokens without re-authenticating.
-model RefreshToken {
-  id             String   @id @default(cuid())
-  userId         String
-  user           User     @relation(fields: [userId], references: [id])
-  token          String   @unique
-  expiresAt      DateTime
-  revokedAt      DateTime?
-  createdAt      DateTime @default(now())
+enum TipStatus {
+  CONFIRMED
+  PENDING
+  REFUNDED
+}
+
+enum WithdrawalStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+model CreditScore {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  value      Int
+  computedAt DateTime @default(now())
+}
+
+model CreditScoreHistory {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  value      Int
+  computedAt DateTime @default(now())
 
   @@index([userId])
-  @@index([token])
-  @@index([expiresAt])
+}
+
+model Withdrawal {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      BigInt
+  fee         BigInt
+  txHash      String?          @unique
+  status      WithdrawalStatus @default(PENDING)
+  requestedAt DateTime         @default(now())
+  confirmedAt DateTime?
+
+  @@index([userId])
 }
