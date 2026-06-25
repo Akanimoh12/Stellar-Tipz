@@ -8,11 +8,8 @@
 import jwt from 'jsonwebtoken';
 import { env } from '@/config/env.js';
 import { BadRequestError } from '@/common/errors/AppError.js';
-import {
-  SignAccessTokenInputSchema,
-  type JwtPayload,
-  type SignAccessTokenInput,
-} from './auth.schema.js';
+import { SignAccessTokenInputSchema, type SignAccessTokenInput } from './auth.schema.js';
+import type { AuthPayload } from './auth.types.js';
 
 /**
  * Signs a short-lived JWT access token for the given user.
@@ -27,23 +24,12 @@ export function signAccessToken(user: SignAccessTokenInput): string {
     throw new BadRequestError('Invalid user input for token signing', result.error.flatten());
   }
 
-  const payload: JwtPayload = {
-    sub: result.data.id,
-    address: result.data.stellarAddress,
+  const payload: AuthPayload = {
+    userId: result.data.id,
+    stellarAddress: result.data.stellarAddress,
   };
 
   return jwt.sign(payload, env.JWT_SECRET, {
     expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
   });
-}
-
-/**
- * Verifies and decodes a JWT access token.
- *
- * @param token - Raw JWT string from the Authorization header.
- * @returns Decoded payload.
- * @throws {JsonWebTokenError | TokenExpiredError} on invalid/expired tokens.
- */
-export function verifyAccessToken(token: string): JwtPayload {
-  return jwt.verify(token, env.JWT_SECRET) as JwtPayload;
 }

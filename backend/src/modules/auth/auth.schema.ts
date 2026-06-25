@@ -1,14 +1,30 @@
 import { z } from 'zod';
 
-/** Shape of the JWT payload we sign and verify. */
-export const JwtPayloadSchema = z.object({
-  sub: z.string().min(1),          // User.id (cuid)
-  address: z.string().min(1),      // User.stellarAddress
-  iat: z.number().optional(),
-  exp: z.number().optional(),
+/**
+ * Zod validation schemas for auth endpoints.
+ */
+
+// ── Request schemas ───────────────────────────────────────────────────────────
+
+export const challengeSchema = z.object({
+  stellarAddress: z.string().min(1, 'Stellar address is required'),
 });
 
-export type JwtPayload = z.infer<typeof JwtPayloadSchema>;
+export const verifySchema = z.object({
+  stellarAddress: z.string().min(1, 'Stellar address is required'),
+  signature: z.string().min(1, 'Signature is required'),
+  challenge: z.string().min(1, 'Challenge is required'),
+});
+
+export const refreshSchema = z.object({
+  refreshToken: z.string().min(1, 'Refresh token is required'),
+});
+
+export type ChallengeInput = z.infer<typeof challengeSchema>;
+export type VerifyInput = z.infer<typeof verifySchema>;
+export type RefreshInput = z.infer<typeof refreshSchema>;
+
+// ── #835 — JWT access token issuance util ─────────────────────────────────────
 
 /** Input accepted by signAccessToken(). */
 export const SignAccessTokenInputSchema = z.object({
@@ -18,13 +34,14 @@ export const SignAccessTokenInputSchema = z.object({
 
 export type SignAccessTokenInput = z.infer<typeof SignAccessTokenInputSchema>;
 
+// ── #845 — GET /auth/me response ─────────────────────────────────────────────
+
 /** Response shape for GET /auth/me */
 export const MeResponseSchema = z.object({
   id: z.string(),
   stellarAddress: z.string(),
   username: z.string().nullable(),
   createdAt: z.string(),
-  updatedAt: z.string(),
 });
 
 export type MeResponse = z.infer<typeof MeResponseSchema>;

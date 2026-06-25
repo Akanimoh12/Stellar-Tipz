@@ -1,40 +1,35 @@
-/**
- * requireAuth middleware — protects routes that need a valid JWT access token.
- *
- * Reads the Bearer token from the Authorization header, verifies it, and
- * attaches the decoded payload to `res.locals.user` for downstream handlers.
- */
-
-import type { NextFunction, Request, Response } from 'express';
-import { JsonWebTokenError, TokenExpiredError } from 'jsonwebtoken';
+import { Request, Response, NextFunction } from 'express';
+import { verifyAccessToken } from './auth.service.js';
 import { UnauthorizedError } from '@/common/errors/AppError.js';
-import { verifyAccessToken } from './auth.utils.js';
-import type { JwtPayload } from './auth.schema.js';
+import type { AuthPayload } from './auth.types.js';
 
-// Extend Express's res.locals type so callers get full type-safety.
-declare module 'express-serve-static-core' {
-  interface Locals {
-    user?: JwtPayload;
+declare module 'express' {
+  interface Request {
+    auth?: AuthPayload;
   }
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+/**
+ * Middleware to verify JWT access token and attach auth payload to request.
+ * Extracts token from Authorization header: "Bearer <token>"
+ */
+export function authMiddleware(req: Request, _res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
-    return next(new UnauthorizedError('Missing or malformed Authorization header'));
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return next(new UnauthorizedError('Missing or invalid authorization header'));
   }
 
-  const token = authHeader.slice(7);
+  const token = authHeader.substring(7);
+
   try {
-    res.locals.user = verifyAccessToken(token);
+    const payload = verifyAccessToken(token);
+    req.auth = payload;
     next();
-  } catch (err) {
-    if (err instanceof TokenExpiredError) {
-      next(new UnauthorizedError('Access token expired'));
-    } else if (err instanceof JsonWebTokenError) {
-      next(new UnauthorizedError('Invalid access token'));
-    } else {
-      next(err);
-    }
+  } catch (error) {
+    next(error);
   }
 }
+
+/** Alias kept for backward compat with any code referencing requireAuth. */
+export const requireAuth = authMiddleware;

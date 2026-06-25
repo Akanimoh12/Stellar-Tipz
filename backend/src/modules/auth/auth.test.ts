@@ -1,24 +1,14 @@
 /**
  * Tests for #835 (signAccessToken util) and #845 (GET /auth/me endpoint).
  *
- * The Prisma client is mocked so no real DB connection is needed.
+ * The Prisma client and env are mocked so no real DB or env file is needed.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
-import { createApp } from '@/app.js';
 
-// ── Mock Prisma so tests run without a real database ──────────────────────────
-vi.mock('@/db/prisma.js', () => ({
-  prisma: {
-    user: {
-      findUnique: vi.fn(),
-    },
-  },
-}));
-
-// ── Mock env so JWT_SECRET is always available in the test process ────────────
+// ── Mock env before any module that imports it ────────────────────────────────
 vi.mock('@/config/env.js', () => ({
   env: {
     NODE_ENV: 'test',
@@ -33,10 +23,18 @@ vi.mock('@/config/env.js', () => ({
   },
 }));
 
+// ── Mock Prisma so tests run without a real database ──────────────────────────
+vi.mock('@/db/prisma.js', () => ({
+  prisma: {
+    user: {
+      findUnique: vi.fn(),
+    },
+  },
+}));
+
+import { createApp } from '@/app.js';
 import { prisma } from '@/db/prisma.js';
 import { signAccessToken } from './auth.utils.js';
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 const TEST_SECRET = 'test-secret-key-for-vitest';
 
@@ -47,11 +45,11 @@ function makeToken(payload: object, secret = TEST_SECRET, options?: jwt.SignOpti
 // ── #835 signAccessToken ──────────────────────────────────────────────────────
 
 describe('signAccessToken (issue #835)', () => {
-  it('returns a valid JWT with sub and address claims', () => {
+  it('returns a valid JWT with userId and stellarAddress claims', () => {
     const token = signAccessToken({ id: 'user_01', stellarAddress: 'GABC' });
     const decoded = jwt.verify(token, TEST_SECRET) as jwt.JwtPayload;
-    expect(decoded.sub).toBe('user_01');
-    expect(decoded['address']).toBe('GABC');
+    expect(decoded['userId']).toBe('user_01');
+    expect(decoded['stellarAddress']).toBe('GABC');
   });
 
   it('throws BadRequestError when id is empty', () => {
@@ -62,7 +60,7 @@ describe('signAccessToken (issue #835)', () => {
     expect(() => signAccessToken({ id: 'user_01', stellarAddress: '' })).toThrow();
   });
 
-  it('produces a token that expires', () => {
+  it('produces a token with an expiry', () => {
     const token = signAccessToken({ id: 'user_01', stellarAddress: 'GABC' });
     const decoded = jwt.verify(token, TEST_SECRET) as jwt.JwtPayload;
     expect(decoded.exp).toBeDefined();
@@ -87,12 +85,12 @@ describe('GET /api/v1/auth/me (issue #845)', () => {
     vi.clearAllMocks();
   });
 
-  // ── success ──────────────────────────────────────────────────────────────────
+  // ── success ───────────────────────────────────────────────────────────────
 
   it('returns 200 with the user summary for a valid token', async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(fakeUser as never);
 
-    const token = makeToken({ sub: 'user_01', address: 'GABC123' });
+    const token = makeToken({ userId: 'user_01', stellarAddress: 'GABC123' });
     const res = await request(app)
       .get('/api/v1/auth/me')
       .set('Authorization', `Bearer ${token}`);
@@ -121,7 +119,7 @@ describe('GET /api/v1/auth/me (issue #845)', () => {
   });
 
   it('returns 401 when token is expired', async () => {
-    const expired = makeToken({ sub: 'user_01', address: 'GABC' }, TEST_SECRET, {
+    const expired = makeToken({ userId: 'user_01', stellarAddress: 'GABC' }, TEST_SECRET, {
       expiresIn: -1,
     });
     const res = await request(app)
@@ -132,7 +130,7 @@ describe('GET /api/v1/auth/me (issue #845)', () => {
   });
 
   it('returns 401 when token is signed with the wrong secret', async () => {
-    const wrongSecret = makeToken({ sub: 'user_01', address: 'GABC' }, 'wrong-secret');
+    const wrongSecret = makeToken({ userId: 'user_01', stellarAddress: 'GABC' }, 'wrong-secret');
     const res = await request(app)
       .get('/api/v1/auth/me')
       .set('Authorization', `Bearer ${wrongSecret}`);
@@ -144,7 +142,7 @@ describe('GET /api/v1/auth/me (issue #845)', () => {
   it('returns 404 when the user no longer exists in the DB', async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null);
 
-    const token = makeToken({ sub: 'ghost_user', address: 'GABC' });
+    const token = makeToken({ userId: 'ghost_user', stellarAddress: 'GABC' });
     const res = await request(app)
       .get('/api/v1/auth/me')
       .set('Authorization', `Bearer ${token}`);

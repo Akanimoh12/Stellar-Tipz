@@ -18,9 +18,24 @@ model User {
   id             String   @id @default(cuid())
   stellarAddress String   @unique
   username       String?  @unique
+  displayName    String?
+  bio            String?
+  imageUrl       String?
+  avatarCid      String?
+  xHandle        String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  apiKeys        ApiKey[]
+
+  apiKeys              ApiKey[]
+  notifications        Notification[]
+  leaderboardSnapshots LeaderboardSnapshot[]
+  streak               Streak?
+  sentTips             Tip[]                @relation("SentTips")
+  receivedTips         Tip[]                @relation("ReceivedTips")
+  creditScore          CreditScore?
+  creditScoreHistory   CreditScoreHistory[]
+  withdrawals          Withdrawal[]
+  refreshTokens        RefreshToken[]
 }
 
 /// API key for service/admin access and webhook integrations.
@@ -39,14 +54,24 @@ model ApiKey {
 /// On-chain tip mirrored off-chain by the indexer.
 /// Fields and relations are expanded in the tips/indexer issues.
 model Tip {
-  id            String   @id @default(cuid())
-  txHash        String   @unique
+  id            String    @id @default(cuid())
+  txHash        String    @unique
   ledger        Int
   fromAddress   String
   toAddress     String
   amountStroops BigInt
+  networkFee    BigInt    @default(0)
+  tokenCode     String    @default("XLM")
+  isAnonymous   Boolean   @default(false)
+  status        TipStatus @default(PENDING)
   message       String?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime  @default(now())
+
+  senderId      String?
+  sender        User?     @relation("SentTips", fields: [senderId], references: [id])
+  recipientId   String?
+  recipient     User?     @relation("ReceivedTips", fields: [recipientId], references: [id])
+
   refund        Refund?
 }
 
@@ -125,15 +150,76 @@ model Streak {
 /// Created when a wallet requests a sign-in nonce; deleted (or expired) after verification.
 /// TTL is enforced by the application layer via AUTH_CHALLENGE_TTL_SECONDS.
 model AuthChallenge {
-  id        String   @id @default(cuid())
+  id             String    @id @default(cuid())
   /// The wallet address this challenge was issued for.
-  address   String
-  /// Random nonce the wallet must sign to prove ownership.
-  nonce     String   @unique
+  stellarAddress String
+  /// Random hex challenge the wallet must sign to prove ownership.
+  challenge      String    @unique
   /// UTC timestamp after which the challenge is no longer valid.
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  expiresAt      DateTime
+  /// Set when the challenge has been successfully consumed.
+  usedAt         DateTime?
+  createdAt      DateTime  @default(now())
 
-  @@index([address])
+  @@index([stellarAddress])
   @@index([expiresAt])
+}
+
+/// Refresh token stored server-side for token rotation.
+/// Raw token value is never persisted — only the hashed form.
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Raw token value (rotation: store plain for now, hash in #848).
+  token     String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+enum TipStatus {
+  CONFIRMED
+  PENDING
+  REFUNDED
+}
+
+enum WithdrawalStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+model CreditScore {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  value      Int
+  computedAt DateTime @default(now())
+}
+
+model CreditScoreHistory {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  value      Int
+  computedAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Withdrawal {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      BigInt
+  fee         BigInt
+  txHash      String?          @unique
+  status      WithdrawalStatus @default(PENDING)
+  requestedAt DateTime         @default(now())
+  confirmedAt DateTime?
+
+  @@index([userId])
 }
