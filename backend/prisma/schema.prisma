@@ -287,3 +287,23 @@ model AnalyticsDaily {
   /// Distinct users that sent or received a tip on this day.
   activeUsers Int      @default(0)
 }
+
+/// Append-only audit trail of privileged / admin actions for accountability.
+/// Rows are written by the application whenever an actor performs a sensitive
+/// operation; they are never updated or deleted.
+model AuditLog {
+  id        String   @id @default(cuid())
+  /// Identifier of who performed the action (user id, api key id or "system").
+  actor     String
+  /// Machine-readable action name, e.g. "user.ban" or "tip.refund".
+  action    String
+  /// Identifier of the entity the action was performed on, when applicable.
+  target    String?
+  /// Arbitrary structured context for the action (before/after values, reason…).
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([actor])
+  @@index([action])
+  @@index([createdAt])
+}
