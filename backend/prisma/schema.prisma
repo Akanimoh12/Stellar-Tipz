@@ -20,6 +20,8 @@ model User {
   username       String?  @unique
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt      DateTime?
   apiKeys        ApiKey[]
   refreshTokens  RefreshToken[]
   goals          Goal[]
@@ -42,6 +44,8 @@ model ApiKey {
   createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt   DateTime?
 
   @@index([createdById])
 }
@@ -109,6 +113,8 @@ model Notification {
   payload   Json
   readAt    DateTime?
   createdAt DateTime  @default(now())
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt DateTime?
 
   @@index([userId, readAt])
   @@index([createdAt])
@@ -206,6 +212,8 @@ model Goal {
   status        GoalStatus @default(ACTIVE)
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt     DateTime?
 
   @@index([userId])
   @@index([status])
@@ -239,6 +247,8 @@ model Subscription {
   status        SubscriptionStatus   @default(ACTIVE)
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt     DateTime?
 
   webhookDeliveries WebhookDelivery[]
 
