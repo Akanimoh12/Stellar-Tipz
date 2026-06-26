@@ -33,6 +33,11 @@ model User {
 
   tipperSubscriptions  Subscription[] @relation("SubscriptionTipper")
   creatorSubscriptions Subscription[] @relation("SubscriptionCreator")
+  notifications        Notification[]
+  leaderboardSnapshots LeaderboardSnapshot[]
+  streak               Streak?
+
+  @@index([createdAt])
 }
 
 /// API key for service/admin access and webhook integrations.
@@ -70,6 +75,9 @@ model Tip {
   recipient     User?     @relation("ReceivedTips", fields: [recipientId], references: [id])
 
   refund        Refund?
+
+  @@index([toAddress, createdAt])
+  @@index([fromAddress, createdAt])
 }
 
 /// Tracks indexer progress per event topic so it can resume after a restart.
@@ -77,6 +85,24 @@ model IndexerCursor {
   topic      String   @id
   lastLedger Int
   updatedAt  DateTime @updatedAt
+}
+
+/// Raw decoded on-chain event persisted for audit and replay.
+model EventLog {
+  id        String   @id @default(cuid())
+  /// Event topic (e.g. "tip_sent", "subscription_charged").
+  topic     String
+  /// Ledger sequence number where the event was emitted.
+  ledger    Int
+  /// Transaction hash that emitted the event.
+  txHash    String
+  /// Decoded event payload as JSON.
+  data      Json
+  createdAt DateTime @default(now())
+
+  @@index([topic])
+  @@index([ledger])
+  @@index([txHash])
 }
 
 /// Refund requests tied to a specific tip.
@@ -102,6 +128,7 @@ model Notification {
   createdAt DateTime  @default(now())
 
   @@index([userId, readAt])
+  @@index([createdAt])
 }
 
 /// Cached X (Twitter) account metrics.
@@ -129,6 +156,8 @@ model LeaderboardSnapshot {
   user      User     @relation(fields: [userId], references: [id])
   totalTips BigInt
   createdAt DateTime @default(now())
+
+  @@index([period, rank])
 }
 
 /// Per-user tipping streak tracking. One row per user (userId is unique).
@@ -200,6 +229,7 @@ model Goal {
   updatedAt     DateTime   @updatedAt
 
   @@index([userId])
+  @@index([status])
 }
 
 /// Billing cadence for a recurring tip subscription.

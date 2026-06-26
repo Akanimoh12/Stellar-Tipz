@@ -29,6 +29,8 @@
 
 export type OpenApiPaths = Record<string, Record<string, unknown>>;
 
+export type OpenApiTag = { name: string; description: string };
+
 export type OpenApiDocument = {
   openapi: string;
   info: {
@@ -37,6 +39,7 @@ export type OpenApiDocument = {
     description: string;
   };
   paths: OpenApiPaths;
+  tags?: OpenApiTag[];
 };
 
 /** Base OpenAPI document — extended by feature modules via `mergeOpenApiPaths`. */
@@ -48,6 +51,10 @@ export const openApiDocument: OpenApiDocument = {
     description:
       'Off-chain REST API for Stellar Tipz. Paths are added incrementally as feature modules land.',
   },
+  tags: [
+    { name: 'Health', description: 'Service liveness' },
+    { name: 'Auth', description: 'Wallet authentication' },
+  ],
   paths: {
     '/health': {
       get: {
