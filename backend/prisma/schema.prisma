@@ -61,6 +61,7 @@ model Tip {
   amountStroops BigInt
   message       String?
   createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
   refund        Refund?
 
   @@index([toAddress, createdAt])
@@ -71,6 +72,7 @@ model Tip {
 model IndexerCursor {
   topic      String   @id
   lastLedger Int
+  createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
 
@@ -86,6 +88,7 @@ model EventLog {
   /// Decoded event payload as JSON.
   data      Json
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([topic])
   @@index([ledger])
@@ -102,6 +105,7 @@ model Refund {
   status    String   @default("pending")
   txHash    String?
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 /// In-app notification for a user.
@@ -113,6 +117,7 @@ model Notification {
   payload   Json
   readAt    DateTime?
   createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   /// Soft-delete marker: non-null means the record is logically deleted.
   deletedAt DateTime?
 
@@ -127,6 +132,8 @@ model XAccount {
   followers  Int      @default(0)
   engagement Float?
   fetchedAt  DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 /// Leaderboard period tracked by snapshots.
@@ -145,6 +152,7 @@ model LeaderboardSnapshot {
   user      User     @relation(fields: [userId], references: [id])
   totalTips BigInt
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([period, rank])
 }
@@ -173,6 +181,7 @@ model AuthChallenge {
   /// UTC timestamp after which the challenge is no longer valid.
   expiresAt DateTime
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([address])
   @@index([expiresAt])
@@ -188,6 +197,7 @@ model RefreshToken {
   expiresAt   DateTime
   revokedAt   DateTime?
   createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([userId])
 }
@@ -296,6 +306,8 @@ model AnalyticsDaily {
   newUsers    Int      @default(0)
   /// Distinct users that sent or received a tip on this day.
   activeUsers Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 /// Append-only audit trail of privileged / admin actions for accountability.
@@ -312,6 +324,7 @@ model AuditLog {
   /// Arbitrary structured context for the action (before/after values, reason…).
   metadata  Json?
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([actor])
   @@index([action])
