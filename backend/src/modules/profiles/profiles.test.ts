@@ -2,6 +2,7 @@ import request from 'supertest';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { createApp } from '../../app.js';
 import { validateUsername } from './profiles.service.js';
+import { PROFILE_UPDATE_RATE_LIMIT_MAX } from './profiles.routes.js';
 
 const { mockFindUnique, mockFindFirst, mockUpdate } = vi.hoisted(() => ({
   mockFindUnique: vi.fn(),
@@ -26,8 +27,12 @@ vi.mock('jsonwebtoken', () => ({
 }));
 
 vi.mock('node:crypto', () => ({
-  default: { randomBytes: vi.fn(() => Buffer.from('abcdef1234567890abcdef1234567890')) },
+  default: {
+    randomBytes: vi.fn(() => Buffer.from('abcdef1234567890abcdef1234567890')),
+    randomUUID: vi.fn(() => 'test-uuid-1234'),
+  },
   randomBytes: vi.fn(() => Buffer.from('abcdef1234567890abcdef1234567890')),
+  randomUUID: vi.fn(() => 'test-uuid-1234'),
 }));
 
 const validAddress = 'GF5YV3FQRHRMA7IQWCZKGRRJ5P7CEPIVBQLM4X2FEHS2IU57KF3U4CLN';
@@ -290,5 +295,98 @@ describe('GET /api/v1/profiles/check-username', () => {
     const res = await request(app).get('/api/v1/profiles/check-username?username=ab');
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('PATCH /api/v1/profiles/me', () => {
+  const now = new Date();
+  const activeUser = {
+    id: 'user-1',
+    stellarAddress: validAddress,
+    username: 'oldname',
+    profileImageCid: null,
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns 401 without auth', async () => {
+    const app = createApp();
+    const res = await request(app).patch('/api/v1/profiles/me').send({ username: 'newname' });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 for an invalid username (too short)', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .patch('/api/v1/profiles/me')
+      .set('Authorization', authHeader)
+      .send({ username: 'ab' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('updates the profile username', async () => {
+    mockFindUnique.mockResolvedValue(activeUser);
+    mockFindFirst.mockResolvedValue(null);
+    mockUpdate.mockResolvedValue({ ...activeUser, username: 'newname' });
+
+    const app = createApp();
+    const res = await request(app)
+      .patch('/api/v1/profiles/me')
+      .set('Authorization', authHeader)
+      .send({ username: 'newname' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.username).toBe('newname');
+  });
+
+  it('returns 409 when the new username is already taken', async () => {
+    mockFindUnique.mockResolvedValue(activeUser);
+    mockFindFirst.mockResolvedValue({ id: 'user-2', username: 'newname' });
+
+    const app = createApp();
+    const res = await request(app)
+      .patch('/api/v1/profiles/me')
+      .set('Authorization', authHeader)
+      .send({ username: 'newname' });
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('CONFLICT');
+  });
+});
+
+describe('PATCH /api/v1/profiles/me — rate limiting', () => {
+  it('returns 429 after exceeding the rate limit', async () => {
+    const now = new Date();
+    const activeUser = {
+      id: 'user-1',
+      stellarAddress: validAddress,
+      username: 'testuser',
+      profileImageCid: null,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    };
+
+    mockFindUnique.mockResolvedValue(activeUser);
+    mockFindFirst.mockResolvedValue(null);
+    mockUpdate.mockResolvedValue({ ...activeUser, username: 'updated' });
+
+    const app = createApp();
+    const statuses: number[] = [];
+
+    // Send more requests than the limit allows to guarantee hitting 429
+    for (let i = 0; i < PROFILE_UPDATE_RATE_LIMIT_MAX + 1; i++) {
+      const res = await request(app)
+        .patch('/api/v1/profiles/me')
+        .set('Authorization', authHeader)
+        .send({ username: `user${i}` });
+      statuses.push(res.status);
+    }
+
+    expect(statuses).toContain(429);
   });
 });

@@ -40,3 +40,10 @@ export const checkUsernameQuerySchema = z.object({
     .max(32, 'Username must be at most 32 characters')
     .regex(/^[a-z0-9_]+$/, 'Username must be lowercase alphanumeric with underscores'),
 });
+
+/** Body for `PATCH /profiles/me` — all fields are optional; at least one must change. */
+export const updateProfileSchema = z.object({
+  username: usernameSchema.optional(),
+});
+
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

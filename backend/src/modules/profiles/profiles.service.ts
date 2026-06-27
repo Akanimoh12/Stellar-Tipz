@@ -1,8 +1,9 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../db/prisma.js';
-import { NotFoundError, BadRequestError } from '../../common/errors/AppError.js';
+import { NotFoundError, BadRequestError, ConflictError } from '../../common/errors/AppError.js';
 import { reservedUsernames, usernameSchema } from './profiles.schema.js';
 import { config } from '../../config/index.js';
+import type { UpdateProfileInput } from './profiles.schema.js';
 
 export interface ProfileResult {
   id: string;
@@ -28,6 +29,20 @@ function toProfile(user: {
     profileImageCid: user.profileImageCid,
     createdAt: user.createdAt,
   };
+}
+
+/**
+ * Validates a username against the schema rules and reserved-username list.
+ * Throws a BadRequestError with a human-readable message on failure.
+ */
+export function validateUsername(username: string): void {
+  const result = usernameSchema.safeParse(username);
+  if (!result.success) {
+    throw new BadRequestError(result.error.errors[0].message);
+  }
+  if ((reservedUsernames as readonly string[]).includes(username.toLowerCase())) {
+    throw new BadRequestError(`Username "${username}" is reserved`);
+  }
 }
 
 export async function checkUsernameAvailability(username: string): Promise<{ available: boolean }> {
@@ -98,4 +113,37 @@ export async function uploadProfileImage(
   });
 
   return { profileImageCid: cid };
+}
+
+/**
+ * PATCH /profiles/me — update mutable profile fields for the authenticated user.
+ * Username uniqueness and reserved-word rules are enforced before the DB write.
+ */
+export async function updateProfile(
+  userId: string,
+  data: UpdateProfileInput,
+): Promise<ProfileResult> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || user.deletedAt) throw new NotFoundError('Profile not found');
+
+  if (data.username !== undefined) {
+    validateUsername(data.username);
+    const taken = await prisma.user.findFirst({
+      where: {
+        username: { equals: data.username, mode: 'insensitive' },
+        NOT: { id: userId },
+        deletedAt: null,
+      },
+    });
+    if (taken) throw new ConflictError('Username is already taken');
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      ...(data.username !== undefined && { username: data.username }),
+    },
+  });
+
+  return toProfile(updated)!;
 }

@@ -1,9 +1,11 @@
 import { Contract, TransactionBuilder, SorobanRpc, nativeToScVal, Networks } from '@stellar/stellar-sdk';
-import type { Prisma, Tip } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { Tip } from '@prisma/client';
 import { config } from '../../config/index.js';
 import { prisma } from '../../db/prisma.js';
 import { BadRequestError, NotFoundError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
+import type { RecordTipInput } from './tips.schema.js';
 
 export interface GetTipsParams {
   cursor?: string;
@@ -137,18 +139,6 @@ export async function prepareTip(
   };
 }
 
-/** API-safe view of a Tip (BigInt amount serialized to a decimal string). */
-export interface TipResult {
-  id: string;
-  txHash: string;
-  ledger: number;
-  fromAddress: string;
-  toAddress: string;
-  amountStroops: string;
-  message: string | null;
-  createdAt: Date;
-}
-
 export interface PaginatedTips {
   data: TipResult[];
   nextCursor: string | null;
@@ -214,4 +204,36 @@ export async function getTipsSentByAddress(
   cursor?: string,
 ): Promise<PaginatedTips> {
   return listTips({ fromAddress }, limit, cursor);
+}
+
+/**
+ * POST /tips — record an on-chain tip, idempotent by txHash.
+ * If a tip with the given txHash already exists the existing record is returned
+ * instead of inserting a duplicate. A Prisma P2002 unique-constraint violation
+ * (from a concurrent insert) is handled the same way.
+ */
+export async function recordTip(input: RecordTipInput): Promise<TipResult> {
+  const existing = await prisma.tip.findUnique({ where: { txHash: input.txHash } });
+  if (existing) return toTipResult(existing);
+
+  try {
+    const tip = await prisma.tip.create({
+      data: {
+        txHash: input.txHash,
+        ledger: input.ledger,
+        fromAddress: input.fromAddress,
+        toAddress: input.toAddress,
+        amountStroops: BigInt(input.amountStroops),
+        message: input.message,
+      },
+    });
+    return toTipResult(tip);
+  } catch (err) {
+    // Handle concurrent duplicate insert (race condition on the unique index).
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      const tip = await prisma.tip.findUnique({ where: { txHash: input.txHash } });
+      if (tip) return toTipResult(tip);
+    }
+    throw err;
+  }
 }
