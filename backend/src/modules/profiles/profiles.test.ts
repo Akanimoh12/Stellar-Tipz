@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { createApp } from '../../app.js';
+import { validateUsername } from './profiles.service.js';
 
 const { mockFindUnique, mockUpdate } = vi.hoisted(() => ({
   mockFindUnique: vi.fn(),
@@ -140,6 +141,52 @@ describe('PATCH /api/v1/profiles/reactivate', () => {
       .send({});
     expect(res.status).toBe(200);
     expect(res.body.data.stellarAddress).toBe(validAddress);
+  });
+});
+
+describe('validateUsername', () => {
+  it('accepts a valid lowercase username', () => {
+    expect(() => validateUsername('john_doe')).not.toThrow();
+  });
+
+  it('accepts a username with numbers', () => {
+    expect(() => validateUsername('user123')).not.toThrow();
+  });
+
+  it('rejects a username shorter than 3 characters', () => {
+    expect(() => validateUsername('ab')).toThrow('Username must be at least 3 characters');
+  });
+
+  it('rejects a username longer than 32 characters', () => {
+    expect(() => validateUsername('a'.repeat(33))).toThrow('Username must be at most 32 characters');
+  });
+
+  it('rejects a username with uppercase letters', () => {
+    expect(() => validateUsername('JohnDoe')).toThrow(
+      'Username can only contain lowercase letters, numbers, and underscores',
+    );
+  });
+
+  it('rejects a username with special characters', () => {
+    expect(() => validateUsername('john-doe')).toThrow(
+      'Username can only contain lowercase letters, numbers, and underscores',
+    );
+  });
+
+  it('rejects a reserved username', () => {
+    expect(() => validateUsername('admin')).toThrow('Username "admin" is reserved');
+  });
+
+  it('rejects another reserved username', () => {
+    expect(() => validateUsername('stellar')).toThrow('Username "stellar" is reserved');
+  });
+
+  it('rejects the test reserved username', () => {
+    expect(() => validateUsername('test')).toThrow('Username "test" is reserved');
+  });
+
+  it('rejects the help reserved username', () => {
+    expect(() => validateUsername('help')).toThrow('Username "help" is reserved');
   });
 });
 

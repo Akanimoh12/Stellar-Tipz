@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../db/prisma.js';
 import { NotFoundError, BadRequestError } from '../../common/errors/AppError.js';
+import { reservedUsernames, usernameSchema } from './profiles.schema.js';
 import { config } from '../../config/index.js';
 
 export interface ProfileResult {
@@ -27,6 +28,18 @@ function toProfile(user: {
     profileImageCid: user.profileImageCid,
     createdAt: user.createdAt,
   };
+}
+
+const reservedSet = new Set<string>(reservedUsernames);
+
+export function validateUsername(username: string): void {
+  const result = usernameSchema.safeParse(username);
+  if (!result.success) {
+    throw new BadRequestError(result.error.errors[0].message);
+  }
+  if (reservedSet.has(username)) {
+    throw new BadRequestError(`Username "${username}" is reserved`);
+  }
 }
 
 export async function getProfileByAddress(address: string): Promise<ProfileResult> {
