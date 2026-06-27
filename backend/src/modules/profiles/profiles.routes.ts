@@ -6,6 +6,7 @@ import { mergeOpenApiPaths } from '../../docs/openapi.js';
 
 export const profilesRouter = Router();
 
+profilesRouter.get('/check-username', profilesController.checkUsername);
 profilesRouter.get('/by-address/:address', profilesController.getByAddress);
 profilesRouter.patch('/reactivate', requireAuth, profilesController.reactivate);
 profilesRouter.post('/image', requireAuth, profilesController.uploadImage);

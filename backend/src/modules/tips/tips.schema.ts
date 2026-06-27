@@ -9,11 +9,24 @@ export const prepareTipSchema = z.object({
 
 export type PrepareTipInput = z.infer<typeof prepareTipSchema>;
 
-export const getTipsQuerySchema = z.object({
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-  address: z.string().regex(/^G[A-Z2-7]{55}$/, 'Invalid Stellar address').optional(),
-  direction: z.enum(['sent', 'received']).optional(),
+/** Path params for `GET /tips/:id`. */
+export const tipIdParamSchema = z.object({
+  id: z.string().cuid('Invalid tip id'),
 });
 
-export type GetTipsQueryInput = z.infer<typeof getTipsQuerySchema>;
+export type TipIdParam = z.infer<typeof tipIdParamSchema>;
+
+/** Path params for `GET /profiles/:username/tips`. */
+export const usernameParamSchema = z.object({
+  username: z.string().min(1, 'Username is required').max(50),
+});
+
+export type UsernameParam = z.infer<typeof usernameParamSchema>;
+
+/** Cursor pagination query for tip list endpoints. */
+export const tipsListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().cuid('Invalid cursor').optional(),
+});
+
+export type TipsListQuery = z.infer<typeof tipsListQuerySchema>;

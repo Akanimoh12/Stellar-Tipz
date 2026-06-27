@@ -1,7 +1,8 @@
 import { Contract, TransactionBuilder, SorobanRpc, nativeToScVal, Networks } from '@stellar/stellar-sdk';
-import { prisma } from '../../db/prisma.js';
+import type { Prisma, Tip } from '@prisma/client';
 import { config } from '../../config/index.js';
-import { BadRequestError } from '../../common/errors/AppError.js';
+import { prisma } from '../../db/prisma.js';
+import { BadRequestError, NotFoundError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
 
 export interface GetTipsParams {
@@ -134,4 +135,83 @@ export async function prepareTip(
     contractId,
     networkPassphrase,
   };
+}
+
+/** API-safe view of a Tip (BigInt amount serialized to a decimal string). */
+export interface TipResult {
+  id: string;
+  txHash: string;
+  ledger: number;
+  fromAddress: string;
+  toAddress: string;
+  amountStroops: string;
+  message: string | null;
+  createdAt: Date;
+}
+
+export interface PaginatedTips {
+  data: TipResult[];
+  nextCursor: string | null;
+}
+
+function toTipResult(tip: Tip): TipResult {
+  return {
+    id: tip.id,
+    txHash: tip.txHash,
+    ledger: tip.ledger,
+    fromAddress: tip.fromAddress,
+    toAddress: tip.toAddress,
+    amountStroops: tip.amountStroops.toString(),
+    message: tip.message,
+    createdAt: tip.createdAt,
+  };
+}
+
+/** GET /tips/:id — fetch a single tip by its id. */
+export async function getTipById(id: string): Promise<TipResult> {
+  const tip = await prisma.tip.findUnique({ where: { id } });
+  if (!tip) throw new NotFoundError('Tip not found');
+  return toTipResult(tip);
+}
+
+/** Shared cursor-paginated list query, newest first. */
+async function listTips(
+  where: Prisma.TipWhereInput,
+  limit: number,
+  cursor?: string,
+): Promise<PaginatedTips> {
+  const rows = await prisma.tip.findMany({
+    where,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: limit + 1,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+  });
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+
+  return {
+    data: page.map(toTipResult),
+    nextCursor: hasMore ? page[page.length - 1].id : null,
+  };
+}
+
+/** GET /profiles/:username/tips — tips received by the profile with this username. */
+export async function getTipsReceivedByUsername(
+  username: string,
+  limit: number,
+  cursor?: string,
+): Promise<PaginatedTips> {
+  const user = await prisma.user.findUnique({ where: { username } });
+  if (!user || user.deletedAt) throw new NotFoundError('Profile not found');
+  return listTips({ toAddress: user.stellarAddress }, limit, cursor);
+}
+
+/** GET /users/me/tips/sent — tips sent by the authenticated user's address. */
+export async function getTipsSentByAddress(
+  fromAddress: string,
+  limit: number,
+  cursor?: string,
+): Promise<PaginatedTips> {
+  return listTips({ fromAddress }, limit, cursor);
 }
