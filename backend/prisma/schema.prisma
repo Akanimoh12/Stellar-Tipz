@@ -20,6 +20,8 @@ model User {
   username       String?  @unique
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt      DateTime?
   apiKeys        ApiKey[]
   refreshTokens  RefreshToken[]
   goals          Goal[]
@@ -42,6 +44,8 @@ model ApiKey {
   createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt   DateTime?
 
   @@index([createdById])
 }
@@ -57,6 +61,7 @@ model Tip {
   amountStroops BigInt
   message       String?
   createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
   refund        Refund?
 
   @@index([toAddress, createdAt])
@@ -67,6 +72,7 @@ model Tip {
 model IndexerCursor {
   topic      String   @id
   lastLedger Int
+  createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
 
@@ -82,6 +88,7 @@ model EventLog {
   /// Decoded event payload as JSON.
   data      Json
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([topic])
   @@index([ledger])
@@ -98,6 +105,7 @@ model Refund {
   status    String   @default("pending")
   txHash    String?
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 /// In-app notification for a user.
@@ -109,6 +117,9 @@ model Notification {
   payload   Json
   readAt    DateTime?
   createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt DateTime?
 
   @@index([userId, readAt])
   @@index([createdAt])
@@ -121,6 +132,8 @@ model XAccount {
   followers  Int      @default(0)
   engagement Float?
   fetchedAt  DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 /// Leaderboard period tracked by snapshots.
@@ -139,6 +152,7 @@ model LeaderboardSnapshot {
   user      User     @relation(fields: [userId], references: [id])
   totalTips BigInt
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([period, rank])
 }
@@ -167,6 +181,7 @@ model AuthChallenge {
   /// UTC timestamp after which the challenge is no longer valid.
   expiresAt DateTime
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([address])
   @@index([expiresAt])
@@ -182,6 +197,7 @@ model RefreshToken {
   expiresAt   DateTime
   revokedAt   DateTime?
   createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([userId])
 }
@@ -206,6 +222,8 @@ model Goal {
   status        GoalStatus @default(ACTIVE)
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt     DateTime?
 
   @@index([userId])
   @@index([status])
@@ -239,6 +257,8 @@ model Subscription {
   status        SubscriptionStatus   @default(ACTIVE)
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt     DateTime?
 
   webhookDeliveries WebhookDelivery[]
 
@@ -269,4 +289,44 @@ model WebhookDelivery {
 
   @@index([subscriptionId])
   @@index([status, nextAttemptAt])
+}
+
+/// Pre-aggregated daily platform analytics, one row per calendar day (UTC).
+/// Populated by a scheduled job so dashboards can read trends without scanning
+/// the raw Tip/User tables.
+model AnalyticsDaily {
+  id          String   @id @default(cuid())
+  /// Calendar day (UTC) this aggregate covers; one row per day.
+  date        DateTime @unique @db.Date
+  /// Number of tips recorded on this day.
+  totalTips   Int      @default(0)
+  /// Sum of tip amounts (in stroops) on this day.
+  totalVolume BigInt   @default(0)
+  /// Users that registered on this day.
+  newUsers    Int      @default(0)
+  /// Distinct users that sent or received a tip on this day.
+  activeUsers Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// Append-only audit trail of privileged / admin actions for accountability.
+/// Rows are written by the application whenever an actor performs a sensitive
+/// operation; they are never updated or deleted.
+model AuditLog {
+  id        String   @id @default(cuid())
+  /// Identifier of who performed the action (user id, api key id or "system").
+  actor     String
+  /// Machine-readable action name, e.g. "user.ban" or "tip.refund".
+  action    String
+  /// Identifier of the entity the action was performed on, when applicable.
+  target    String?
+  /// Arbitrary structured context for the action (before/after values, reason…).
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([actor])
+  @@index([action])
+  @@index([createdAt])
 }
