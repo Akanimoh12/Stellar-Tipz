@@ -39,3 +39,22 @@ for the **`test-implement-drips`** branch.
 - Use the shared `logger` (`src/common/utils/logger.ts`), not `console.log`.
 - Access the DB only through the Prisma singleton (`src/db/prisma.ts`).
 - Read env only through `src/config/env.ts`.
+
+## Test database helper
+
+`tests/helpers/db.ts` exposes `resetDb()` which truncates all tables inside a
+single transaction. Use it in integration tests to guarantee a clean state:
+
+```ts
+import { resetDb } from './helpers/db';
+
+beforeEach(resetDb);
+
+it('starts empty', async () => {
+  const users = await prisma.user.findMany();
+  expect(users).toHaveLength(0);
+});
+```
+
+> **Note:** `resetDb` requires a running PostgreSQL instance (see `make -C backend db-up`).
+> Unit tests that mock the Prisma client do not need it.

@@ -1,17 +1,3 @@
-import cors from 'cors';
-import express, { type Express } from 'express';
-import helmet from 'helmet';
-import pinoHttp from 'pino-http';
-import swaggerUi from 'swagger-ui-express';
-import { env } from './config/env.js';
-import { errorHandler, notFoundHandler } from './common/middleware/errorHandler.js';
-import { requestId } from './common/middleware/requestId.js';
-import { logger } from './common/utils/logger.js';
-import { openApiDocument } from './docs/openapi.js';
-import { authRouter } from './modules/auth/auth.routes.js';
-import { profilesRouter } from './modules/profiles/profiles.routes.js';
-import { tipsRouter, profileTipsRouter, userTipsRouter } from './modules/tips/tips.routes.js';
-
 /**
  * Builds and configures the Express application (no listening here — see server.ts).
  *
@@ -29,16 +15,12 @@ export function createApp(): Express {
       contentSecurityPolicy: {
         directives: {
           ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-          'script-src': ["'self'", "'unsafe-inline'"],
-          'style-src': ["'self'", "'unsafe-inline'"],
+          "script-src": ["'self'", "'unsafe-inline'"],
+          "style-src": ["'self'", "'unsafe-inline'"],
         },
       },
     }),
   );
-  app.use(cors({ origin: env.CORS_ORIGIN.split(','), credentials: true }));
-  app.use(express.json({ limit: '1mb' }));
-  // Assign/propagate a correlation id before logging so pino-http reuses it.
-  app.use(requestId);
   app.use(pinoHttp({ logger }));
 
   const docsPath = `${env.API_BASE_PATH}/docs`;
@@ -48,16 +30,16 @@ export function createApp(): Express {
   app.use(docsPath, swaggerUi.serve, swaggerUi.setup(openApiDocument));
 
   // Health check (implemented in the health module issue; basic version inline for scaffolding).
-  app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'stellar-tipz-backend', time: new Date().toISOString() });
+  app.get("/health", (_req, res) => {
+    res.json({
+      status: "ok",
+      service: "stellar-tipz-backend",
+      time: new Date().toISOString(),
+    });
   });
 
   // ── Feature routers mount here ───────────────────────────────
   app.use(`${env.API_BASE_PATH}/auth`, authRouter);
-  app.use(`${env.API_BASE_PATH}/profiles`, profilesRouter);
-  app.use(`${env.API_BASE_PATH}/profiles`, profileTipsRouter);
-  app.use(`${env.API_BASE_PATH}/users`, userTipsRouter);
-  app.use(`${env.API_BASE_PATH}/tips`, tipsRouter);
   // ... (one issue per module)
   // ─────────────────────────────────────────────────────────────
 

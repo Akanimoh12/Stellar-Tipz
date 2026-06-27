@@ -96,6 +96,36 @@ backend/
 └── docker-compose.yml
 ```
 
+## Local development loop
+
+The dev server uses [`tsx watch`](https://github.com/privatenumber/tsx) — no nodemon needed.
+
+```bash
+npm run dev          # starts tsx watch src/server.ts → http://localhost:4000/health
+```
+
+**Hot reload behaviour**
+
+| Change type | Behaviour |
+|---|---|
+| TypeScript source files | Automatic restart (tsx watch detects the change) |
+| `.env` file | **Not** auto-reloaded — restart the process manually after editing `.env` |
+| `prisma/schema.prisma` | Run `npm run prisma:generate` then restart |
+
+**Port config** — set `PORT` in your `.env` (default `4000`). The value is
+validated at startup via `src/config/env.ts`; the server refuses to start if
+required vars are missing.
+
+**Convenience via Makefile**
+
+```bash
+make -C backend dev      # same as npm run dev
+make -C backend db-up    # docker compose up (Postgres + Redis)
+make -C backend migrate  # run Prisma migrations
+```
+
+---
+
 ## Module conventions
 
 Each feature module lives in `src/modules/<name>/` and typically contains:

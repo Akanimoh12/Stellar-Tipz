@@ -18,7 +18,6 @@ model User {
   id             String   @id @default(cuid())
   stellarAddress String   @unique
   username       String?  @unique
-  profileImageCid String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   /// Soft-delete marker: non-null means the record is logically deleted.
@@ -54,15 +53,17 @@ model ApiKey {
 /// On-chain tip mirrored off-chain by the indexer.
 /// Fields and relations are expanded in the tips/indexer issues.
 model Tip {
-  id            String   @id @default(cuid())
-  txHash        String   @unique
+  id            String    @id @default(cuid())
+  txHash        String    @unique
   ledger        Int
   fromAddress   String
   toAddress     String
   amountStroops BigInt
+  networkFee    BigInt    @default(0)
+  tokenCode     String    @default("XLM")
+  isAnonymous   Boolean   @default(false)
+  status        TipStatus @default(PENDING)
   message       String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
   refund        Refund?
 
   @@index([toAddress, createdAt])
@@ -174,17 +175,16 @@ model Streak {
 /// Created when a wallet requests a sign-in nonce; deleted (or expired) after verification.
 /// TTL is enforced by the application layer via AUTH_CHALLENGE_TTL_SECONDS.
 model AuthChallenge {
-  id        String   @id @default(cuid())
+  id              String   @id @default(cuid())
   /// The wallet address this challenge was issued for.
-  address   String
+  stellarAddress  String
   /// Random nonce the wallet must sign to prove ownership.
-  nonce     String   @unique
+  challenge       String   @unique
+  /// Network this challenge is bound to (TESTNET, FUTURENET, MAINNET).
+  network         String
   /// UTC timestamp after which the challenge is no longer valid.
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  @@index([address])
+  @@index([stellarAddress])
   @@index([expiresAt])
 }
 
