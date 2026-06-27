@@ -6,6 +6,7 @@ import { mergeOpenApiPaths } from '../../docs/openapi.js';
 
 export const tipsRouter = Router();
 
+tipsRouter.get('/', tipsController.getTips);
 tipsRouter.post('/prepare', tipsController.prepare);
 tipsRouter.get('/:id', tipsController.getById);
 

@@ -5,6 +5,24 @@ import { prisma } from '../../db/prisma.js';
 import { BadRequestError, NotFoundError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
 
+export interface GetTipsParams {
+  cursor?: string;
+  limit: number;
+  address?: string;
+  direction?: string;
+}
+
+export interface TipResult {
+  id: string;
+  txHash: string;
+  ledger: number;
+  fromAddress: string;
+  toAddress: string;
+  amountStroops: string;
+  message: string | null;
+  createdAt: Date;
+}
+
 export interface PreparedTip {
   unsignedTxXdr: string;
   from: string;
@@ -12,6 +30,50 @@ export interface PreparedTip {
   amount: string;
   contractId: string;
   networkPassphrase: string;
+}
+
+export async function getPaginatedTips(
+  params: GetTipsParams,
+): Promise<{ data: TipResult[]; nextCursor: string | null }> {
+  const where: Record<string, unknown> = {};
+  if (params.address) {
+    if (params.direction === 'sent') {
+      where.fromAddress = { equals: params.address, mode: 'insensitive' };
+    } else if (params.direction === 'received') {
+      where.toAddress = { equals: params.address, mode: 'insensitive' };
+    } else {
+      where.OR = [
+        { fromAddress: { equals: params.address, mode: 'insensitive' } },
+        { toAddress: { equals: params.address, mode: 'insensitive' } },
+      ];
+    }
+  }
+
+  const findManyArgs: Parameters<typeof prisma.tip.findMany>[0] = {
+    where,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: params.limit + 1,
+  };
+
+  if (params.cursor) {
+    findManyArgs.cursor = { id: params.cursor };
+    findManyArgs.skip = 1;
+  }
+
+  const tips = await prisma.tip.findMany(findManyArgs);
+
+  const hasMore = tips.length > params.limit;
+  const results = hasMore ? tips.slice(0, params.limit) : tips;
+
+  const nextCursor = hasMore && results.length > 0 ? results[results.length - 1].id : null;
+
+  return {
+    data: results.map((t) => ({
+      ...t,
+      amountStroops: t.amountStroops.toString(),
+    })),
+    nextCursor,
+  };
 }
 
 export async function prepareTip(
