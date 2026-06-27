@@ -2,7 +2,9 @@ import request from 'supertest';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { createApp } from '../src/app.js';
 
-const mockAuthChallengeCreate = vi.fn();
+const { mockAuthChallengeCreate } = vi.hoisted(() => ({
+  mockAuthChallengeCreate: vi.fn(),
+}));
 
 vi.mock('../src/db/prisma.js', () => ({
   prisma: {
@@ -12,7 +14,7 @@ vi.mock('../src/db/prisma.js', () => ({
   },
 }));
 
-const validAddress = 'GCDUEW3G6B6G3WY5X6HJ6Z7O4X7K7Q5V5Z7O4X7K7Q5V5Z7O4X7K7Q';
+const validAddress = 'GF5YV3FQRHRMA7IQWCZKGRRJ5P7CEPIVBQLM4X2FEHS2IU57KF3U4CLN';
 
 function mockChallengeCreate(): void {
   mockAuthChallengeCreate.mockResolvedValue({

@@ -25,6 +25,12 @@ export default [
         exports: 'readonly',
         module: 'readonly',
         require: 'readonly',
+        fetch: 'readonly',
+        FormData: 'readonly',
+        Blob: 'readonly',
+        Headers: 'readonly',
+        Response: 'readonly',
+        Request: 'readonly',
       },
     },
     plugins: {

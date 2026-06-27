@@ -18,6 +18,7 @@ model User {
   id             String   @id @default(cuid())
   stellarAddress String   @unique
   username       String?  @unique
+  profileImageCid String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   /// Soft-delete marker: non-null means the record is logically deleted.

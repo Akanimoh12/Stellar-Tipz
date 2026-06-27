@@ -40,6 +40,7 @@ export type OpenApiDocument = {
   };
   paths: OpenApiPaths;
   tags?: OpenApiTag[];
+  components?: Record<string, unknown>;
 };
 
 /** Base OpenAPI document — extended by feature modules via `mergeOpenApiPaths`. */
@@ -54,7 +55,18 @@ export const openApiDocument: OpenApiDocument = {
   tags: [
     { name: 'Health', description: 'Service liveness' },
     { name: 'Auth', description: 'Wallet authentication' },
+    { name: 'Profiles', description: 'Creator profile management' },
+    { name: 'Tips', description: 'On-chain tipping operations' },
   ],
+  components: {
+    securitySchemes: {
+      bearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+      },
+    },
+  },
   paths: {
     '/health': {
       get: {
