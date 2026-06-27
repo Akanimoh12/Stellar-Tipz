@@ -2,8 +2,9 @@ import request from 'supertest';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { createApp } from '../../app.js';
 
-const { mockFindUnique, mockUpdate } = vi.hoisted(() => ({
+const { mockFindUnique, mockFindFirst, mockUpdate } = vi.hoisted(() => ({
   mockFindUnique: vi.fn(),
+  mockFindFirst: vi.fn(),
   mockUpdate: vi.fn(),
 }));
 
@@ -11,6 +12,7 @@ vi.mock('../../db/prisma.js', () => ({
   prisma: {
     user: {
       findUnique: mockFindUnique,
+      findFirst: mockFindFirst,
       update: mockUpdate,
     },
     $disconnect: vi.fn(),
@@ -193,5 +195,53 @@ describe('POST /api/v1/profiles/image', () => {
       .send({ dataUrl: 'data:image/png;base64,iVBORw0KGgo=' });
     expect(res.status).toBe(200);
     expect(res.body.data.profileImageCid).toBeDefined();
+  });
+});
+
+describe('GET /api/v1/profiles/check-username', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns available=true when username is free', async () => {
+    mockFindFirst.mockResolvedValue(null);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/profiles/check-username?username=newuser');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ available: true });
+  });
+
+  it('returns available=false when username is taken', async () => {
+    mockFindFirst.mockResolvedValue({
+      id: 'user-1',
+      stellarAddress: 'GF5YV3FQRHRMA7IQWCZKGRRJ5P7CEPIVBQLM4X2FEHS2IU57KF3U4CLN',
+      username: 'testuser',
+    });
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/profiles/check-username?username=testuser');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ available: false });
+  });
+
+  it('returns available=false when username taken with different case', async () => {
+    mockFindFirst.mockResolvedValue({
+      id: 'user-1',
+      stellarAddress: 'GF5YV3FQRHRMA7IQWCZKGRRJ5P7CEPIVBQLM4X2FEHS2IU57KF3U4CLN',
+      username: 'TestUser',
+    });
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/profiles/check-username?username=testuser');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ available: false });
+  });
+
+  it('returns validation error for invalid username', async () => {
+    const app = createApp();
+    const res = await request(app).get('/api/v1/profiles/check-username?username=ab');
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
 });

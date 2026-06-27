@@ -29,6 +29,16 @@ function toProfile(user: {
   };
 }
 
+export async function checkUsernameAvailability(username: string): Promise<{ available: boolean }> {
+  const user = await prisma.user.findFirst({
+    where: {
+      username: { equals: username, mode: 'insensitive' },
+      deletedAt: null,
+    },
+  });
+  return { available: !user };
+}
+
 export async function getProfileByAddress(address: string): Promise<ProfileResult> {
   const user = await prisma.user.findUnique({ where: { stellarAddress: address } });
   if (!user) throw new NotFoundError('Profile not found');
