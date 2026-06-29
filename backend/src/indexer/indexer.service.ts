@@ -89,7 +89,13 @@ export class IndexerService {
       return;
     }
 
-    await this.events.persist(events);
+    try {
+      await this.events.persist(events);
+    } catch (err) {
+      // Don't advance cursor on failure - allows replay safety
+      logger.error({ err, fromLedger }, 'Failed to persist events; cursor not advanced');
+      throw err;
+    }
 
     const maxLedger = Math.max(...events.map((e) => e.ledger));
     await this.cursors.advance('contract_events', maxLedger);

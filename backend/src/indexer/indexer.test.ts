@@ -1,16 +1,17 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { SorobanClient } from './soroban.client.js';
 import { CursorStore } from './cursor.store.js';
-import { EventLogStore } from './event-log.store.js';
 import { IndexerService } from './indexer.service.js';
 
-const { mockGetLatestLedger, mockGetEvents, mockIndexerCursorFindUnique, mockIndexerCursorUpsert, mockEventLogCreateMany, mockEventLogFindMany } = vi.hoisted(() => ({
+const { mockGetLatestLedger, mockGetEvents, mockIndexerCursorFindUnique, mockIndexerCursorUpsert, mockEventLogCreate, mockTipUpsert, mockTipFindUnique, mockTipUpdate } = vi.hoisted(() => ({
   mockGetLatestLedger: vi.fn(),
   mockGetEvents: vi.fn(),
   mockIndexerCursorFindUnique: vi.fn(),
   mockIndexerCursorUpsert: vi.fn(),
-  mockEventLogCreateMany: vi.fn(),
-  mockEventLogFindMany: vi.fn(),
+  mockEventLogCreate: vi.fn(),
+  mockTipUpsert: vi.fn(),
+  mockTipFindUnique: vi.fn(),
+  mockTipUpdate: vi.fn(),
 }));
 
 vi.mock('@stellar/stellar-sdk', () => ({
@@ -29,9 +30,15 @@ vi.mock('../db/prisma.js', () => ({
       upsert: mockIndexerCursorUpsert,
     },
     eventLog: {
-      createMany: mockEventLogCreateMany,
-      findMany: mockEventLogFindMany,
+      create: mockEventLogCreate,
+      createMany: vi.fn(),
+      findMany: vi.fn(),
       count: vi.fn(),
+    },
+    tip: {
+      upsert: mockTipUpsert,
+      findUnique: mockTipFindUnique,
+      update: mockTipUpdate,
     },
   },
 }));
@@ -184,56 +191,6 @@ describe('CursorStore', () => {
   });
 });
 
-describe('EventLogStore', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('persists events with deterministic IDs', async () => {
-    mockEventLogCreateMany.mockResolvedValue({ count: 2 });
-
-    const store = new EventLogStore();
-    const count = await store.persist([
-      { id: 'evt-1', txHash: '0xaaa', topic: 'tip_sent', ledger: 100, contractId: '0xccc', value: { type: 'scvMap' } },
-      { id: 'evt-2', txHash: '0xbbb', topic: 'tip_received', ledger: 101, contractId: '0xccc', value: { type: 'scvMap' } },
-    ]);
-
-    expect(count).toBe(2);
-    expect(mockEventLogCreateMany).toHaveBeenCalledOnce();
-    const call = mockEventLogCreateMany.mock.calls[0][0];
-    expect(call.data).toHaveLength(2);
-    expect(call.skipDuplicates).toBe(true);
-    expect(call.data[0].topic).toBe('tip_sent');
-    expect(call.data[0].ledger).toBe(100);
-  });
-
-  it('same events produce same IDs (idempotent)', async () => {
-    const store = new EventLogStore();
-
-    await store.persist([
-      { id: 'evt-1', txHash: '0xaaa', topic: 'tip_sent', ledger: 100, contractId: '0xccc', value: { type: 'scvMap' } },
-    ]);
-
-    const call1 = mockEventLogCreateMany.mock.calls[0][0].data[0].id;
-
-    mockEventLogCreateMany.mockClear();
-
-    await store.persist([
-      { id: 'evt-1', txHash: '0xaaa', topic: 'tip_sent', ledger: 100, contractId: '0xccc', value: { type: 'scvMap' } },
-    ]);
-
-    const call2 = mockEventLogCreateMany.mock.calls[0][0].data[0].id;
-    expect(call1).toBe(call2);
-  });
-
-  it('returns zero for empty input', async () => {
-    const store = new EventLogStore();
-    const count = await store.persist([]);
-    expect(count).toBe(0);
-    expect(mockEventLogCreateMany).not.toHaveBeenCalled();
-  });
-});
-
 describe('IndexerService', () => {
   let service: IndexerService | null = null;
 
@@ -271,7 +228,7 @@ describe('IndexerService', () => {
       events: [mockEvent({ ledger: 101 })],
       latestLedger: 300,
     });
-    mockEventLogCreateMany.mockResolvedValue({ count: 1 });
+    mockEventLogCreate.mockResolvedValue({});
     mockIndexerCursorUpsert.mockResolvedValue({});
 
     service = new IndexerService({
@@ -281,7 +238,7 @@ describe('IndexerService', () => {
     await service.start();
     await service.stop();
     expect(mockGetEvents).toHaveBeenCalled();
-    expect(mockEventLogCreateMany).toHaveBeenCalled();
+    expect(mockEventLogCreate).toHaveBeenCalled();
   });
 
   it('catch-up processes ledger range when cursor behind', async () => {
@@ -292,7 +249,7 @@ describe('IndexerService', () => {
         events: [mockEvent({ ledger: 60, id: 'evt-60' })],
         latestLedger: 200,
       });
-    mockEventLogCreateMany.mockResolvedValue({ count: 1 });
+    mockEventLogCreate.mockResolvedValue({});
     mockIndexerCursorUpsert.mockResolvedValue({});
 
     service = new IndexerService({

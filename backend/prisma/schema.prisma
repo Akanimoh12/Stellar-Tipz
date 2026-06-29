@@ -79,6 +79,7 @@ model IndexerCursor {
 }
 
 /// Raw decoded on-chain event persisted for audit and replay.
+/// Unique constraint on (txHash, topic, ledger) ensures idempotent processing.
 model EventLog {
   id        String   @id @default(cuid())
   /// Event topic (e.g. "tip_sent", "subscription_charged").
@@ -92,6 +93,7 @@ model EventLog {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([txHash, topic, ledger])
   @@index([topic])
   @@index([ledger])
   @@index([txHash])
@@ -183,6 +185,7 @@ model AuthChallenge {
   /// Network this challenge is bound to (TESTNET, FUTURENET, MAINNET).
   network         String
   /// UTC timestamp after which the challenge is no longer valid.
+  expiresAt       DateTime
 
   @@index([stellarAddress])
   @@index([expiresAt])
@@ -330,4 +333,11 @@ model AuditLog {
   @@index([actor])
   @@index([action])
   @@index([createdAt])
+}
+
+/// Lifecycle status of a tip.
+enum TipStatus {
+  PENDING
+  CONFIRMED
+  REFUNDED
 }

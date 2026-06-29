@@ -1,10 +1,12 @@
-import type { Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma.js';
 import { logger } from '../common/utils/logger.js';
 import type { DecodedEvent } from './sorobanClient.js';
 
 /** Event topics that represent an on-chain tip. */
 const TIP_TOPICS = new Set(['tip', 'tip_sent']);
+
+/** Event topics that represent an on-chain refund. */
+const REFUND_TOPICS = new Set(['refund', 'tip_refund']);
 
 /**
  * Project a decoded on-chain event into the off-chain store. Every projection is
@@ -14,6 +16,9 @@ export async function projectEvent(event: DecodedEvent): Promise<void> {
   await persistEventLog(event);
   if (TIP_TOPICS.has(event.topic)) {
     await projectTip(event);
+  }
+  if (REFUND_TOPICS.has(event.topic)) {
+    await projectRefund(event);
   }
 }
 
@@ -30,7 +35,7 @@ async function persistEventLog(event: DecodedEvent): Promise<void> {
       topic: event.topic,
       ledger: event.ledger,
       txHash: event.txHash,
-      data: (event.value ?? {}) as Prisma.InputJsonValue,
+      data: event.value as Record<string, unknown>,
     },
   });
 }
@@ -64,6 +69,48 @@ interface ParsedTip {
   message?: string;
 }
 
+interface ParsedRefund {
+  tipTxHash: string;
+  amount: bigint;
+  reason?: string;
+}
+
+async function projectRefund(event: DecodedEvent): Promise<void> {
+  const refund = parseRefund(event.value);
+  if (!refund) {
+    logger.warn({ txHash: event.txHash }, 'Skipping refund event with unparseable payload');
+    return;
+  }
+
+  const tip = await prisma.tip.findUnique({ where: { txHash: refund.tipTxHash } });
+  if (!tip) {
+    logger.warn({ tipTxHash: refund.tipTxHash }, 'Refund event references unknown tip, skipping');
+    return;
+  }
+
+  await prisma.refund.upsert({
+    where: { tipId: tip.id },
+    create: {
+      tipId: tip.id,
+      amount: refund.amount,
+      reason: refund.reason ?? '',
+      txHash: event.txHash,
+      status: 'completed',
+    },
+    update: {
+      amount: refund.amount,
+      reason: refund.reason ?? '',
+      txHash: event.txHash,
+      status: 'completed',
+    },
+  });
+
+  await prisma.tip.update({
+    where: { id: tip.id },
+    data: { status: 'REFUNDED' },
+  });
+}
+
 /**
  * Extract tip fields from a decoded event value, accepting either a struct
  * (`{ from, to, amount, message }`) or a positional tuple (`[from, to, amount, message]`).
@@ -93,6 +140,32 @@ function parseTip(value: unknown): ParsedTip | null {
     to,
     amount: amountStroops,
     message: typeof message === 'string' ? message : undefined,
+  };
+}
+
+function parseRefund(value: unknown): ParsedRefund | null {
+  let tipTxHash: unknown;
+  let amount: unknown;
+  let reason: unknown;
+
+  if (Array.isArray(value)) {
+    [tipTxHash, amount, reason] = value;
+  } else if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    ({ tipTxHash, amount, reason } = obj);
+  } else {
+    return null;
+  }
+
+  if (typeof tipTxHash !== 'string') return null;
+
+  const refundAmount = toBigInt(amount);
+  if (refundAmount === null) return null;
+
+  return {
+    tipTxHash,
+    amount: refundAmount,
+    reason: typeof reason === 'string' ? reason : undefined,
   };
 }
 
