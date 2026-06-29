@@ -63,13 +63,24 @@ export async function getEventsFrom(startLedger: number, pagingToken?: string): 
   };
 }
 
-/** First topic of an event, decoded to its symbol/string name. */
+/**
+ * Decode an event's full topic tuple into a single canonical name.
+ *
+ * Contract events use a two-symbol topic tuple — e.g. `("profile", "register")`
+ * or `("goal", "set")`. Joining every symbol with `_` (→ `profile_register`,
+ * `goal_set`) preserves the sub-type so projections can distinguish, for
+ * example, a profile registration from a profile update. A single-symbol topic
+ * decodes to just that symbol.
+ */
 function decodeTopic(topic: xdr.ScVal[]): string {
-  const first = topic[0];
-  if (!first) return 'unknown';
+  if (topic.length === 0) return 'unknown';
   try {
-    const native = scValToNative(first);
-    return typeof native === 'string' ? native : String(native);
+    return topic
+      .map((part) => {
+        const native = scValToNative(part);
+        return typeof native === 'string' ? native : String(native);
+      })
+      .join('_');
   } catch {
     return 'unknown';
   }
