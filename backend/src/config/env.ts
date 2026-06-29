@@ -6,6 +6,15 @@ import { z } from 'zod';
  * Every module should import `env` from here rather than reading process.env directly.
  * See backend/.env.example for the full list of variables.
  */
+
+/**
+ * Validates a duration string like "15m", "7d", "30s", "2h".
+ * Accepted units: s (seconds), m (minutes), h (hours), d (days).
+ */
+const durationString = z
+  .string()
+  .regex(/^\d+[smhd]$/, 'Must be a positive integer followed by s, m, h, or d (e.g. "15m", "7d")');
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
@@ -16,8 +25,10 @@ const envSchema = z.object({
   REDIS_URL: z.string().url(),
 
   JWT_SECRET: z.string().min(8),
-  JWT_EXPIRES_IN: z.string().default('15m'),
-  REFRESH_TOKEN_EXPIRES_IN: z.string().default('7d'),
+  /** Access token TTL — must be a duration string like "15m" or "1h". */
+  JWT_EXPIRES_IN: durationString.default('15m'),
+  /** Refresh token TTL — must be a duration string like "7d" or "30d". */
+  REFRESH_TOKEN_EXPIRES_IN: durationString.default('7d'),
   AUTH_CHALLENGE_TTL_SECONDS: z.coerce.number().default(300),
 
   STELLAR_NETWORK: z.enum(['TESTNET', 'FUTURENET', 'MAINNET']).default('TESTNET'),
