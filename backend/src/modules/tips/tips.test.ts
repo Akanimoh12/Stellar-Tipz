@@ -2,11 +2,22 @@ import request from 'supertest';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { createApp } from '../../app.js';
 
-const { mockGetAccount, mockSimulateTransaction, mockContractCall, mockFindMany } = vi.hoisted(() => ({
+const {
+  mockGetAccount,
+  mockSimulateTransaction,
+  mockContractCall,
+  mockFindMany,
+  mockSendTransaction,
+  mockGetTransaction,
+  mockTipCreate,
+} = vi.hoisted(() => ({
   mockGetAccount: vi.fn(),
   mockSimulateTransaction: vi.fn(),
   mockContractCall: vi.fn(),
   mockFindMany: vi.fn(),
+  mockSendTransaction: vi.fn(),
+  mockGetTransaction: vi.fn(),
+  mockTipCreate: vi.fn(),
 }));
 
 vi.mock('@stellar/stellar-sdk', () => {
@@ -14,7 +25,15 @@ vi.mock('@stellar/stellar-sdk', () => {
     build: vi.fn(() => ({
       toEnvelope: vi.fn(() => ({
         toXDR: vi.fn(() => 'AAAAAgAAAAA...mock-unsigned-xdr...'),
+        hash: vi.fn(() => Buffer.from('abcdef1234567890abcdef1234567890abcdef12', 'hex')),
       })),
+    })),
+  };
+
+  const mockTx = {
+    toEnvelope: vi.fn(() => ({
+      toXDR: vi.fn(() => 'AAAAAgAAAAA...mock-unsigned-xdr...'),
+      hash: vi.fn(() => Buffer.from('abcdef1234567890abcdef1234567890abcdef12', 'hex')),
     })),
   };
 
@@ -22,17 +41,22 @@ vi.mock('@stellar/stellar-sdk', () => {
     Keypair: {
       fromPublicKey: vi.fn(),
     },
-    TransactionBuilder: vi.fn(() => ({
-      addOperation: vi.fn(() => ({
-        setTimeout: vi.fn(() => ({
-          build: vi.fn(() => ({})),
+    TransactionBuilder: Object.assign(
+      vi.fn(() => ({
+        addOperation: vi.fn(() => ({
+          setTimeout: vi.fn(() => ({
+            build: vi.fn(() => ({})),
+          })),
         })),
       })),
-    })),
+      { fromXDR: vi.fn(() => mockTx) },
+    ),
     SorobanRpc: {
       Server: vi.fn(() => ({
         getAccount: mockGetAccount,
         simulateTransaction: mockSimulateTransaction,
+        sendTransaction: mockSendTransaction,
+        getTransaction: mockGetTransaction,
       })),
       assembleTransaction: vi.fn(() => mockPreparedTx),
       Api: {
@@ -44,8 +68,10 @@ vi.mock('@stellar/stellar-sdk', () => {
     })),
     nativeToScVal: vi.fn(() => ({ type: 'scval' })),
     xdr: {
-      ScVal: {
-        scvVoid: () => ({}),
+      TransactionEnvelope: {
+        fromXDR: vi.fn(() => ({
+          hash: vi.fn(() => Buffer.from('abcdef1234567890abcdef1234567890abcdef12', 'hex')),
+        })),
       },
     },
     Networks: {
@@ -58,10 +84,26 @@ vi.mock('../../db/prisma.js', () => ({
   prisma: {
     tip: {
       findMany: mockFindMany,
+      create: mockTipCreate,
     },
     $disconnect: vi.fn(),
   },
 }));
+
+vi.mock('jsonwebtoken', () => ({
+  default: {
+    verify: vi.fn(() => ({
+      sub: 'user-1',
+      stellarAddress: 'GABCDEF123456789012345678901234567890123456789012345678901234',
+    })),
+  },
+  verify: vi.fn(() => ({
+    sub: 'user-1',
+    stellarAddress: 'GABCDEF123456789012345678901234567890123456789012345678901234',
+  })),
+}));
+
+const address = 'GF5YV3FQRHRMA7IQWCZKGRRJ5P7CEPIVBQLM4X2FEHS2IU57KF3U4CLN';
 
 describe('POST /api/v1/tips/prepare', () => {
   beforeEach(() => {
@@ -88,7 +130,7 @@ describe('POST /api/v1/tips/prepare', () => {
 
   it('returns prepared transaction on success', async () => {
     mockGetAccount.mockResolvedValue({
-      accountId: () => 'GF5YV3FQRHRMA7IQWCZKGRRJ5P7CEPIVBQLM4X2FEHS2IU57KF3U4CLN',
+      accountId: () => address,
       sequenceNumber: () => '123',
       incrementSequenceNumber: () => {},
     });
@@ -98,8 +140,8 @@ describe('POST /api/v1/tips/prepare', () => {
     const res = await request(app)
       .post('/api/v1/tips/prepare')
       .send({
-        from: 'GF5YV3FQRHRMA7IQWCZKGRRJ5P7CEPIVBQLM4X2FEHS2IU57KF3U4CLN',
-        to: 'GF5YV3FQRHRMA7IQWCZKGRRJ5P7CEPIVBQLM4X2FEHS2IU57KF3U4CLN',
+        from: address,
+        to: address,
         amount: '100',
         message: 'Great content!',
       });
@@ -107,11 +149,134 @@ describe('POST /api/v1/tips/prepare', () => {
     expect(res.body.data.unsignedTxXdr).toBeDefined();
     expect(res.body.data.contractId).toBeDefined();
   });
+
+  it('sanitizes HTML-like characters in message', async () => {
+    mockGetAccount.mockResolvedValue({
+      accountId: () => address,
+      sequenceNumber: () => '123',
+      incrementSequenceNumber: () => {},
+    });
+    mockSimulateTransaction.mockResolvedValue({});
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/prepare')
+      .send({
+        from: address,
+        to: address,
+        amount: '100',
+        message: '<script>alert("xss")</script>',
+      });
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects message with invalid characters', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/prepare')
+      .send({
+        from: address,
+        to: address,
+        amount: '100',
+        message: 'message with \u0000 null byte',
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('rejects message longer than 280 characters', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/prepare')
+      .send({
+        from: address,
+        to: address,
+        amount: '100',
+        message: 'x'.repeat(281),
+      });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/v1/tips/submit', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns 400 when signedTxXdr is missing', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/submit')
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns 400 when signedTxXdr is empty', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/submit')
+      .send({ signedTxXdr: '' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('submits transaction, polls until confirmed, and records tip', async () => {
+    mockSendTransaction.mockResolvedValue({
+      status: 'PENDING',
+      hash: 'mock-tx-hash',
+    });
+    mockGetTransaction
+      .mockResolvedValueOnce({ status: 'NOT_FOUND' })
+      .mockResolvedValueOnce({ status: 'SUCCESS', ledger: 12345 });
+    mockTipCreate.mockResolvedValue({
+      id: 'tip-1',
+      txHash: 'mock-tx-hash',
+      ledger: 12345,
+      fromAddress: 'unknown',
+      toAddress: 'unknown',
+      amountStroops: BigInt(0),
+      status: 'CONFIRMED',
+    });
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/submit')
+      .send({ signedTxXdr: 'AAAAAgAAAAA...mock-signed-xdr...' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.txHash).toBeDefined();
+    expect(res.body.data.tipId).toBeDefined();
+    expect(res.body.data.status).toBe('CONFIRMED');
+  });
+
+  it('returns 400 when transaction submission fails', async () => {
+    mockSendTransaction.mockRejectedValue(new Error('Network error'));
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/submit')
+      .send({ signedTxXdr: 'AAAAAgAAAAA...mock-signed-xdr...' });
+    expect(res.status).toBe(400);
+  });
+
+  it('polls and returns error when tx fails', async () => {
+    mockSendTransaction.mockResolvedValue({
+      status: 'PENDING',
+      hash: 'mock-tx-hash',
+    });
+    mockGetTransaction
+      .mockResolvedValueOnce({ status: 'NOT_FOUND' })
+      .mockResolvedValueOnce({ status: 'FAILED' });
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/submit')
+      .send({ signedTxXdr: 'AAAAAgAAAAA...mock-signed-xdr...' });
+    expect(res.status).toBe(400);
+  });
 });
 
 describe('GET /api/v1/tips', () => {
-  const address = 'GF5YV3FQRHRMA7IQWCZKGRRJ5P7CEPIVBQLM4X2FEHS2IU57KF3U4CLN';
-
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -119,8 +284,28 @@ describe('GET /api/v1/tips', () => {
   it('returns paginated tips', async () => {
     const now = new Date();
     mockFindMany.mockResolvedValue([
-      { id: '1', txHash: 'hash-1', ledger: 100, fromAddress: address, toAddress: 'G' + 'X'.repeat(55), amountStroops: BigInt(100), message: 'Nice!', createdAt: now, updatedAt: now },
-      { id: '2', txHash: 'hash-2', ledger: 101, fromAddress: 'G' + 'Y'.repeat(55), toAddress: address, amountStroops: BigInt(200), message: null, createdAt: new Date(now.getTime() + 1000), updatedAt: new Date(now.getTime() + 1000) },
+      {
+        id: '1',
+        txHash: 'hash-1',
+        ledger: 100,
+        fromAddress: address,
+        toAddress: 'G' + 'X'.repeat(55),
+        amountStroops: BigInt(100),
+        message: 'Nice!',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: '2',
+        txHash: 'hash-2',
+        ledger: 101,
+        fromAddress: 'G' + 'Y'.repeat(55),
+        toAddress: address,
+        amountStroops: BigInt(200),
+        message: null,
+        createdAt: new Date(now.getTime() + 1000),
+        updatedAt: new Date(now.getTime() + 1000),
+      },
     ]);
 
     const app = createApp();
@@ -167,7 +352,17 @@ describe('GET /api/v1/tips', () => {
   it('filters by address', async () => {
     const now = new Date();
     mockFindMany.mockResolvedValue([
-      { id: '3', txHash: 'hash-3', ledger: 102, fromAddress: address, toAddress: 'G' + 'Z'.repeat(55), amountStroops: BigInt(50), message: null, createdAt: now, updatedAt: now },
+      {
+        id: '3',
+        txHash: 'hash-3',
+        ledger: 102,
+        fromAddress: address,
+        toAddress: 'G' + 'Z'.repeat(55),
+        amountStroops: BigInt(50),
+        message: null,
+        createdAt: now,
+        updatedAt: now,
+      },
     ]);
 
     const app = createApp();

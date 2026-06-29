@@ -18,6 +18,15 @@ model User {
   id             String   @id @default(cuid())
   stellarAddress String   @unique
   username       String?  @unique
+  displayName    String?
+  bio            String?
+  imageUrl       String?
+  avatarCid      String?
+  xHandle        String?
+  /// On-chain credit score (0-1000). Updated by the indexer.
+  creditScore    Int?
+  /// Human-readable tier derived from creditScore.
+  creditTier     String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   /// Soft-delete marker: non-null means the record is logically deleted.
@@ -33,6 +42,7 @@ model User {
   streak               Streak?
 
   @@index([createdAt])
+  @@index([creditScore])
 }
 
 /// API key for service/admin access and webhook integrations.
@@ -64,10 +74,19 @@ model Tip {
   isAnonymous   Boolean   @default(false)
   status        TipStatus @default(PENDING)
   message       String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   refund        Refund?
 
   @@index([toAddress, createdAt])
   @@index([fromAddress, createdAt])
+}
+
+enum TipStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  REFUNDED
 }
 
 /// Tracks indexer progress per event topic so it can resume after a restart.
@@ -183,6 +202,7 @@ model AuthChallenge {
   /// Network this challenge is bound to (TESTNET, FUTURENET, MAINNET).
   network         String
   /// UTC timestamp after which the challenge is no longer valid.
+  expiresAt       DateTime
 
   @@index([stellarAddress])
   @@index([expiresAt])
