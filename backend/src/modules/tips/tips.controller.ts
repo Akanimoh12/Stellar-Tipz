@@ -6,6 +6,7 @@ import {
   tipsListQuerySchema,
   getTipsQuerySchema,
   recordTipSchema,
+  confirmTipParamSchema,
 } from './tips.schema.js';
 import * as tipsService from './tips.service.js';
 
@@ -66,6 +67,17 @@ export async function record(req: Request, res: Response, next: NextFunction): P
   try {
     const input = recordTipSchema.parse(req.body);
     const tip = await tipsService.recordTip(input);
+    res.status(200).json({ data: tip });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** PATCH /tips/:txHash/confirm — transition tip to CONFIRMED, idempotent. */
+export async function confirm(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { txHash } = confirmTipParamSchema.parse(req.params);
+    const tip = await tipsService.confirmTip(txHash);
     res.status(200).json({ data: tip });
   } catch (err) {
     next(err);

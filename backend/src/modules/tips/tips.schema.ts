@@ -52,3 +52,10 @@ export const recordTipSchema = z.object({
 });
 
 export type RecordTipInput = z.infer<typeof recordTipSchema>;
+
+/** Path params for `PATCH /tips/:txHash/confirm`. */
+export const confirmTipParamSchema = z.object({
+  txHash: z.string().min(1, 'txHash is required'),
+});
+
+export type ConfirmTipParam = z.infer<typeof confirmTipParamSchema>;

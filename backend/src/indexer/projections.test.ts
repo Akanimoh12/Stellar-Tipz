@@ -42,12 +42,32 @@ const event = (topic: string, value: unknown, overrides: Partial<DecodedEvent> =
   ...overrides,
 });
 
-const ADDR_A = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
-const ADDR_B = 'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+const ADDR_A = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const ADDR_B = 'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+
+const tipEvent: DecodedEvent = {
+  ledger: 100,
+  txHash: 'aabbcc001122',
+  pagingToken: '100-0',
+  topic: 'tip_sent',
+  value: {
+    from: 'GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFGHIJKL',
+    to: 'GDEF1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFGHIJKL',
+    amount: '5000000',
+    message: 'Great content!',
+  },
+};
+
+const nonTipEvent: DecodedEvent = {
+  ledger: 101,
+  txHash: 'ddeeff334455',
+  pagingToken: '101-0',
+  topic: 'subscription_charged',
+  value: { subscriber: 'GABC', creator: 'GDEF' },
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // ensureUserId / profile upsert resolve a deterministic id per address.
   mockUserUpsert.mockImplementation(async (args: { where: { stellarAddress: string } }) => ({
     id: 'u_' + args.where.stellarAddress,
   }));
@@ -216,5 +236,78 @@ describe('projectEvent — subscriptions (#900)', () => {
   it('skips a sub_created with an unparseable amount', async () => {
     await projectEvent(event('sub_created', [ADDR_A, ADDR_B, 'nope', 7]));
     expect(mockSubUpsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('projectEvent — tip idempotency (#892)', () => {
+  it('persists a new tip event and upserts the Tip row', async () => {
+    mockEventLogFindFirst.mockResolvedValue(null);
+    mockEventLogCreate.mockResolvedValue({});
+    mockTipUpsert.mockResolvedValue({});
+
+    await projectEvent(tipEvent);
+
+    expect(mockEventLogCreate).toHaveBeenCalledOnce();
+    expect(mockTipUpsert).toHaveBeenCalledOnce();
+    expect(mockTipUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { txHash: tipEvent.txHash },
+        update: {},
+      }),
+    );
+  });
+
+  it('skips duplicate event log on re-run over the same ledger', async () => {
+    mockEventLogFindFirst.mockResolvedValue({ id: 'existing' });
+    mockTipUpsert.mockResolvedValue({});
+
+    await projectEvent(tipEvent);
+
+    expect(mockEventLogCreate).not.toHaveBeenCalled();
+    expect(mockTipUpsert).toHaveBeenCalledOnce();
+  });
+
+  it('produces no duplicate Tip rows when replayed over the same events', async () => {
+    mockEventLogFindFirst.mockResolvedValueOnce(null);
+    mockEventLogCreate.mockResolvedValueOnce({});
+    mockTipUpsert.mockResolvedValueOnce({});
+    await projectEvent(tipEvent);
+
+    mockEventLogFindFirst.mockResolvedValueOnce({ id: 'existing' });
+    mockTipUpsert.mockResolvedValueOnce({});
+    await projectEvent(tipEvent);
+
+    expect(mockEventLogCreate).toHaveBeenCalledTimes(1);
+    expect(mockTipUpsert).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not upsert a Tip for non-tip topics', async () => {
+    mockEventLogFindFirst.mockResolvedValue(null);
+    mockEventLogCreate.mockResolvedValue({});
+
+    await projectEvent(nonTipEvent);
+
+    expect(mockEventLogCreate).toHaveBeenCalledOnce();
+    expect(mockTipUpsert).not.toHaveBeenCalled();
+  });
+
+  it('logs a warning and skips Tip upsert when value is unparseable', async () => {
+    mockEventLogFindFirst.mockResolvedValue(null);
+    mockEventLogCreate.mockResolvedValue({});
+
+    const badEvent: DecodedEvent = { ...tipEvent, value: null };
+    await expect(projectEvent(badEvent)).resolves.not.toThrow();
+    expect(mockTipUpsert).not.toHaveBeenCalled();
+  });
+
+  it('handles tip topic alias "tip" the same as "tip_sent"', async () => {
+    mockEventLogFindFirst.mockResolvedValue(null);
+    mockEventLogCreate.mockResolvedValue({});
+    mockTipUpsert.mockResolvedValue({});
+
+    const aliasEvent: DecodedEvent = { ...tipEvent, topic: 'tip' };
+    await projectEvent(aliasEvent);
+
+    expect(mockTipUpsert).toHaveBeenCalledOnce();
   });
 });
