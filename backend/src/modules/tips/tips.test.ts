@@ -2,11 +2,13 @@ import request from 'supertest';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { createApp } from '../../app.js';
 
-const { mockGetAccount, mockSimulateTransaction, mockContractCall, mockFindMany } = vi.hoisted(() => ({
+const { mockGetAccount, mockSimulateTransaction, mockContractCall, mockFindMany, mockFindUnique, mockCreate } = vi.hoisted(() => ({
   mockGetAccount: vi.fn(),
   mockSimulateTransaction: vi.fn(),
   mockContractCall: vi.fn(),
   mockFindMany: vi.fn(),
+  mockFindUnique: vi.fn(),
+  mockCreate: vi.fn(),
 }));
 
 vi.mock('@stellar/stellar-sdk', () => {
@@ -58,6 +60,8 @@ vi.mock('../../db/prisma.js', () => ({
   prisma: {
     tip: {
       findMany: mockFindMany,
+      findUnique: mockFindUnique,
+      create: mockCreate,
     },
     $disconnect: vi.fn(),
   },
@@ -200,5 +204,63 @@ describe('GET /api/v1/tips', () => {
     const app = createApp();
     const res = await request(app).get('/api/v1/tips?address=not-valid');
     expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/v1/tips — dedupe by txHash', () => {
+  const from = 'GF5YV3FQRHRMA7IQWCZKGRRJ5P7CEPIVBQLM4X2FEHS2IU57KF3U4CLN';
+  const to   = 'GCEZWKCA5VLDNRLN3RPRJMRZOX3Z6G5CHCGBFMF5CKFHGZXABSZLAZP2';
+  const validBody = {
+    txHash: 'abc123txhash',
+    ledger: 100,
+    fromAddress: from,
+    toAddress: to,
+    amountStroops: '1000000',
+    message: 'Great work!',
+  };
+  const tipRow = {
+    id: 'clh1234567890',
+    txHash: 'abc123txhash',
+    ledger: 100,
+    fromAddress: from,
+    toAddress: to,
+    amountStroops: BigInt(1_000_000),
+    message: 'Great work!',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns 400 when required fields are missing', async () => {
+    const app = createApp();
+    const res = await request(app).post('/api/v1/tips').send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('creates and returns a new tip when txHash is unique', async () => {
+    mockFindUnique.mockResolvedValue(null);
+    mockCreate.mockResolvedValue(tipRow);
+
+    const app = createApp();
+    const res = await request(app).post('/api/v1/tips').send(validBody);
+    expect(res.status).toBe(200);
+    expect(res.body.data.txHash).toBe('abc123txhash');
+    expect(res.body.data.amountStroops).toBe('1000000');
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the existing tip and does NOT insert a duplicate when txHash already exists', async () => {
+    mockFindUnique.mockResolvedValue(tipRow);
+
+    const app = createApp();
+    const res = await request(app).post('/api/v1/tips').send(validBody);
+    expect(res.status).toBe(200);
+    expect(res.body.data.txHash).toBe('abc123txhash');
+    // create must not be called — the duplicate was caught by the pre-check
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });

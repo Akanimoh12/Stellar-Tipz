@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
-import type { Prisma } from '@prisma/client';
+import type { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { prisma } from '../db/prisma.js';
-import { logger } from '../common/utils/logger.js';
 
 function deterministicId(event: { txHash: string; ledger: number; topic: string }): string {
   return createHash('sha256')
@@ -26,21 +25,27 @@ export class EventLogStore {
       topic: e.topic,
       ledger: e.ledger,
       txHash: e.txHash,
-      data: { contractId: e.contractId, value: e.value, eventId: e.id } as Prisma.InputJsonValue,
+      data: { contractId: e.contractId, value: e.value, eventId: e.id } as Record<string, unknown>,
     }));
 
     if (rows.length === 0) return 0;
 
-    const result = await prisma.eventLog.createMany({
-      data: rows,
-      skipDuplicates: true,
-    });
-
-    if (result.count < rows.length) {
-      logger.debug({ skipped: rows.length - result.count }, 'Duplicate events skipped');
+    let count = 0;
+    for (const row of rows) {
+      try {
+        await prisma.eventLog.create({ data: row });
+        count++;
+      } catch (err) {
+        const error = err as PrismaClientKnownRequestError;
+        if (error.code === 'P2002') {
+          // Unique constraint violation - event already exists (idempotent)
+          continue;
+        }
+        throw err;
+      }
     }
 
-    return result.count;
+    return count;
   }
 
   async getEventsForLedger(ledger: number): Promise<Array<{ id: string; topic: string; txHash: string }>> {

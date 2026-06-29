@@ -4,8 +4,21 @@ import {
   tipIdParamSchema,
   usernameParamSchema,
   tipsListQuerySchema,
+  getTipsQuerySchema,
+  recordTipSchema,
 } from './tips.schema.js';
 import * as tipsService from './tips.service.js';
+
+/** GET /tips — filterable, cursor-paginated list of tips. */
+export async function getTips(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { limit, cursor, address, direction } = getTipsQuerySchema.parse(req.query);
+    const result = await tipsService.getPaginatedTips({ limit, cursor, address, direction });
+    res.status(200).json({ data: result.data, nextCursor: result.nextCursor });
+  } catch (err) {
+    next(err);
+  }
+}
 
 export async function prepare(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -43,6 +56,17 @@ export async function getSent(req: Request, res: Response, next: NextFunction): 
     const { limit, cursor } = tipsListQuerySchema.parse(req.query);
     const result = await tipsService.getTipsSentByAddress(req.user!.stellarAddress, limit, cursor);
     res.status(200).json({ data: result.data, nextCursor: result.nextCursor });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** POST /tips — record an on-chain tip, idempotent by txHash. */
+export async function record(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const input = recordTipSchema.parse(req.body);
+    const tip = await tipsService.recordTip(input);
+    res.status(200).json({ data: tip });
   } catch (err) {
     next(err);
   }

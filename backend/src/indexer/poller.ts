@@ -28,6 +28,7 @@ async function resolveStartLedger(): Promise<number> {
 /**
  * Run a single poll: read events from the cursor ledger forward, project each
  * idempotently, then advance the cursor to the ledgers we covered.
+ * On failure, throws without advancing cursor to ensure replay safety.
  */
 export async function pollOnce(): Promise<void> {
   const startLedger = await resolveStartLedger();
@@ -35,21 +36,31 @@ export async function pollOnce(): Promise<void> {
   let pagingToken: string | undefined;
   let latestLedger = startLedger;
   let processed = 0;
+  let anyFailed = false;
 
   for (let page = 0; page < MAX_PAGES_PER_TICK; page++) {
     const { events, latestLedger: head } = await getEventsFrom(startLedger, pagingToken);
     latestLedger = head;
 
     for (const event of events) {
-      await projectEvent(event);
-      pagingToken = event.pagingToken;
-      processed++;
+      try {
+        await projectEvent(event);
+        pagingToken = event.pagingToken;
+        processed++;
+      } catch (err) {
+        logger.error({ err, txHash: event.txHash, topic: event.topic }, 'Failed to project event');
+        anyFailed = true;
+      }
     }
 
     if (events.length === 0) break;
   }
 
-  // Advance the cursor so the next tick resumes after the ledgers we covered.
+  if (anyFailed) {
+    throw new Error('One or more events failed to project; cursor not advanced');
+  }
+
+  // Advance the cursor only after all events processed successfully.
   const nextCursor = Math.max(startLedger - 1, latestLedger);
   await setCursorLedger(CURSOR_TOPIC, nextCursor);
 
