@@ -1,7 +1,3 @@
-/**
- * Shared types for the profiles module.
- */
-
 export interface Profile {
   id: string;
   stellarAddress: string;
@@ -11,6 +7,8 @@ export interface Profile {
   imageUrl: string | null;
   avatarCid: string | null;
   xHandle: string | null;
+  creditScore: number | null;
+  creditTier: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,6 +22,8 @@ export interface ProfileResponse {
   imageUrl: string | null;
   avatarCid: string | null;
   xHandle: string | null;
+  creditScore: number | null;
+  creditTier: string | null;
   createdAt: string;
   updatedAt: string;
 }

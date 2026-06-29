@@ -1,3 +1,15 @@
+import express from 'express';
+import type { Express } from 'express';
+import helmet from 'helmet';
+import pinoHttp from 'pino-http';
+import swaggerUi from 'swagger-ui-express';
+import { env } from './config/env.js';
+import { openApiDocument } from './docs/openapi.js';
+import { logger } from './common/utils/logger.js';
+import { notFoundHandler, errorHandler } from './common/middleware/errorHandler.js';
+import { tipsRouter, profileTipsRouter, userTipsRouter } from './modules/tips/tips.routes.js';
+import { profilesRouter } from './modules/profiles/profiles.routes.js';
+
 /**
  * Builds and configures the Express application (no listening here — see server.ts).
  *
@@ -21,6 +33,7 @@ export function createApp(): Express {
       },
     }),
   );
+  app.use(express.json());
   app.use(pinoHttp({ logger }));
 
   const docsPath = `${env.API_BASE_PATH}/docs`;
@@ -39,8 +52,10 @@ export function createApp(): Express {
   });
 
   // ── Feature routers mount here ───────────────────────────────
-  app.use(`${env.API_BASE_PATH}/auth`, authRouter);
-  // ... (one issue per module)
+  app.use(`${env.API_BASE_PATH}/tips`, tipsRouter);
+  app.use(`${env.API_BASE_PATH}/profiles`, profileTipsRouter);
+  app.use(`${env.API_BASE_PATH}/profiles`, profilesRouter);
+  app.use(`${env.API_BASE_PATH}/users`, userTipsRouter);
   // ─────────────────────────────────────────────────────────────
 
   app.use(notFoundHandler);

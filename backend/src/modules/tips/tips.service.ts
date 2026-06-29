@@ -215,3 +215,90 @@ export async function getTipsSentByAddress(
 ): Promise<PaginatedTips> {
   return listTips({ fromAddress }, limit, cursor);
 }
+
+export function sanitizeTipMessage(message: string | undefined): string | undefined {
+  if (!message) return undefined;
+  const trimmed = message.trim().slice(0, 280);
+  const sanitized = trimmed.replace(/[<>]/g, '');
+  return sanitized || undefined;
+}
+
+export async function submitTip(signedTxXdr: string): Promise<{
+  txHash: string;
+  ledger: number;
+  tipId: string;
+  status: string;
+}> {
+  const server = new SorobanRpc.Server(config.stellar.rpcUrl, {
+    allowHttp: config.stellar.rpcUrl.startsWith('http://'),
+  });
+
+  const networkPassphrase = Networks[config.stellar.network as keyof typeof Networks] ?? config.stellar.networkPassphrase;
+  const tx = TransactionBuilder.fromXDR(signedTxXdr, networkPassphrase);
+
+  const sendResponse = await server.sendTransaction(tx).catch((err: Error) => {
+    logger.error({ err }, 'Failed to send transaction');
+    throw new BadRequestError('Failed to send transaction to the network');
+  });
+
+  if (sendResponse.status === 'PENDING' || sendResponse.status === 'DUPLICATE') {
+    const pollResult = await pollForTransaction(server, sendResponse.hash, 30, 1000);
+
+    if (pollResult.status === 'FAILED') {
+      throw new BadRequestError(`Transaction failed: ${pollResult.error ?? 'Unknown error'}`);
+    }
+
+    const tip = await prisma.tip.create({
+      data: {
+        txHash: sendResponse.hash,
+        ledger: pollResult.ledger ?? 0,
+        fromAddress: 'unknown',
+        toAddress: 'unknown',
+        amountStroops: BigInt(0),
+        status: 'CONFIRMED',
+      },
+    });
+
+    return {
+      txHash: sendResponse.hash,
+      ledger: pollResult.ledger ?? 0,
+      tipId: tip.id,
+      status: 'CONFIRMED',
+    };
+  }
+
+  if (sendResponse.status === 'ERROR' || sendResponse.errorResult) {
+    const errorMsg = sendResponse.errorResult
+      ? sendResponse.errorResult.result?.toString() ?? 'Unknown error'
+      : 'Transaction submission failed';
+    throw new BadRequestError(errorMsg);
+  }
+
+  throw new BadRequestError('Unexpected transaction submission response');
+}
+
+interface PollResult {
+  status: string;
+  ledger?: number;
+  error?: string;
+}
+
+async function pollForTransaction(
+  server: SorobanRpc.Server,
+  hash: string,
+  maxAttempts: number,
+  intervalMs: number,
+): Promise<PollResult> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const result = await server.getTransaction(hash);
+    if (result.status !== 'NOT_FOUND') {
+      return {
+        status: result.status,
+        ledger: 'ledger' in result ? (result.ledger as number) : undefined,
+        error: 'result' in result ? (result as Record<string, unknown>).result?.toString() : undefined,
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return { status: 'FAILED', error: 'Transaction not confirmed within poll timeout' };
+}
