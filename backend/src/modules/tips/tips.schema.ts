@@ -48,6 +48,9 @@ export type UsernameParam = z.infer<typeof usernameParamSchema>;
 export const tipsListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().cuid('Invalid cursor').optional(),
+  tokenCode: z.string().max(10).optional(),
+  startDate: z.string().datetime('Invalid start date (must be ISO 8601)').optional(),
+  endDate: z.string().datetime('Invalid end date (must be ISO 8601)').optional(),
 });
 
 export type TipsListQuery = z.infer<typeof tipsListQuerySchema>;

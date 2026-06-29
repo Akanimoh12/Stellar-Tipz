@@ -10,6 +10,9 @@ export interface GetTipsParams {
   limit: number;
   address?: string;
   direction?: string;
+  tokenCode?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface TipResult {
@@ -49,6 +52,21 @@ export async function getPaginatedTips(
     }
   }
 
+  if (params.tokenCode) {
+    where.tokenCode = params.tokenCode;
+  }
+
+  if (params.startDate || params.endDate) {
+    const createdAtFilter: Record<string, Date> = {};
+    if (params.startDate) {
+      createdAtFilter.gte = new Date(params.startDate);
+    }
+    if (params.endDate) {
+      createdAtFilter.lte = new Date(params.endDate);
+    }
+    where.createdAt = createdAtFilter;
+  }
+
   const findManyArgs: Parameters<typeof prisma.tip.findMany>[0] = {
     where,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -85,6 +103,22 @@ export async function prepareTip(
   const contractId = config.stellar.contractId;
   if (!contractId) {
     throw new BadRequestError('Contract ID is not configured');
+  }
+
+  let creator: { minTipAmount: bigint | null } | null = null;
+  try {
+    creator = await prisma.user.findUnique({ where: { stellarAddress: to } });
+  } catch {
+    // DB lookup failed, skip minimum check
+  }
+  if (creator?.minTipAmount) {
+    const minAmount = creator.minTipAmount;
+    const parsedAmount = BigInt(amount);
+    if (parsedAmount < minAmount) {
+      throw new BadRequestError(
+        `Tip amount (${amount} stroops) is below the creator's minimum (${minAmount.toString()} stroops)`,
+      );
+    }
   }
 
   const server = new SorobanRpc.Server(config.stellar.rpcUrl, {

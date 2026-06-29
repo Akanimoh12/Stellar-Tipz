@@ -1,9 +1,9 @@
 import type { User } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { redis } from '../../db/redis.js';
-import { BadRequestError, NotFoundError } from '../../common/errors/AppError.js';
+import { BadRequestError, NotFoundError, ConflictError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
-import type { Profile, ProfileResponse, UpdateProfileRequest } from './profiles.types.js';
+import type { Profile, ProfileResponse, UpdateProfileRequest, CreateProfileRequest } from './profiles.types.js';
 
 const RESERVED_USERNAMES = new Set(['admin', 'stellar', 'test', 'help', 'api', 'root']);
 const PROFILE_CACHE_TTL = 300; // 5 minutes
@@ -21,6 +21,7 @@ function toProfile(user: User): Profile {
     xHandle: user.xHandle,
     creditScore: user.creditScore,
     creditTier: user.creditTier,
+    minTipAmount: user.minTipAmount ? user.minTipAmount.toString() : null,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -90,6 +91,39 @@ export async function getProfileByUsername(username: string): Promise<ProfileRes
   return toProfileResponse(toProfile(user));
 }
 
+export async function createProfile(
+  userId: string,
+  stellarAddress: string,
+  data: CreateProfileRequest,
+): Promise<ProfileResponse> {
+  const existing = await prisma.user.findUnique({ where: { id: userId } });
+  if (existing) {
+    throw new ConflictError('Profile already exists for this user');
+  }
+
+  const usernameTaken = await prisma.user.findUnique({ where: { username: data.username } });
+  if (usernameTaken) {
+    throw new BadRequestError('Username already taken');
+  }
+
+  const user = await prisma.user.create({
+    data: {
+      id: userId,
+      stellarAddress,
+      username: data.username,
+      displayName: data.displayName ?? null,
+      bio: data.bio ?? null,
+      imageUrl: data.imageUrl ?? null,
+      avatarCid: data.avatarCid ?? null,
+      xHandle: data.xHandle ?? null,
+    },
+  });
+
+  const profile = toProfileResponse(toProfile(user));
+  await setCachedProfile(stellarAddress, profile);
+  return profile;
+}
+
 export async function updateProfile(
   userId: string,
   data: UpdateProfileRequest,
@@ -106,9 +140,14 @@ export async function updateProfile(
     }
   }
 
+  const prismaData: Record<string, unknown> = { ...data };
+  if (data.minTipAmount !== undefined) {
+    prismaData.minTipAmount = BigInt(data.minTipAmount);
+  }
+
   const updated = await prisma.user.update({
     where: { id: userId },
-    data,
+    data: prismaData,
   });
 
   await invalidateCache(updated.stellarAddress);

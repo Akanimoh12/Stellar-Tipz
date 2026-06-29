@@ -27,6 +27,8 @@ model User {
   creditScore    Int?
   /// Human-readable tier derived from creditScore.
   creditTier     String?
+  /// Minimum tip amount in stroops that this creator accepts.
+  minTipAmount   BigInt?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   /// Soft-delete marker: non-null means the record is logically deleted.

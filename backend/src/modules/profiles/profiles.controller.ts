@@ -4,6 +4,7 @@ import {
   usernameQuerySchema,
   updateProfileSchema,
   uploadImageSchema,
+  createProfileSchema,
 } from './profiles.schema.js';
 import * as profilesService from './profiles.service.js';
 
@@ -30,6 +31,20 @@ export async function getByUsername(
     const { username } = usernameQuerySchema.parse({ username: req.params.username });
     const profile = await profilesService.getProfileByUsername(username);
     res.status(200).json({ data: profile });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function create(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const data = createProfileSchema.parse(req.body);
+    const profile = await profilesService.createProfile(
+      req.user!.id,
+      req.user!.stellarAddress,
+      data,
+    );
+    res.status(201).json({ data: profile });
   } catch (err) {
     next(err);
   }

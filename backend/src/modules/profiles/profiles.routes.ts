@@ -6,6 +6,7 @@ import { mergeOpenApiPaths } from '../../docs/openapi.js';
 
 export const profilesRouter = Router();
 
+profilesRouter.post('/', requireAuth, profilesController.create);
 profilesRouter.get('/by-address/:address', profilesController.getByAddress);
 profilesRouter.get('/by-username/:username', profilesController.getByUsername);
 profilesRouter.patch('/me', requireAuth, profilesController.update);
@@ -16,6 +17,39 @@ profilesRouter.get('/check-username', profilesController.checkUsername);
 const base = `${env.API_BASE_PATH}/profiles`;
 
 mergeOpenApiPaths({
+  [`${base}`]: {
+    post: {
+      tags: ['Profiles'],
+      summary: 'Create a new profile',
+      description: 'Create/initialize a profile when a user registers a username. Requires authentication.',
+      security: [{ bearerAuth: [] }],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                username: { type: 'string', description: 'Unique username (lowercase, numbers, underscores)' },
+                displayName: { type: 'string', description: 'Display name' },
+                bio: { type: 'string', description: 'Short bio' },
+                imageUrl: { type: 'string', format: 'uri', description: 'Profile image URL' },
+                avatarCid: { type: 'string', description: 'IPFS CID for avatar' },
+                xHandle: { type: 'string', description: 'X (Twitter) handle' },
+              },
+              required: ['username'],
+            },
+          },
+        },
+      },
+      responses: {
+        '201': { description: 'Profile created' },
+        '400': { description: 'Validation error or username taken' },
+        '401': { description: 'Unauthorized' },
+        '409': { description: 'Profile already exists' },
+      },
+    },
+  },
   [`${base}/by-address/{address}`]: {
     get: {
       tags: ['Profiles'],
@@ -72,6 +106,7 @@ mergeOpenApiPaths({
                 imageUrl: { type: 'string' },
                 avatarCid: { type: 'string' },
                 xHandle: { type: 'string' },
+                minTipAmount: { type: 'string', description: 'Minimum tip amount in stroops' },
               },
             },
           },

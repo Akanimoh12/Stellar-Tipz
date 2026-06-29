@@ -23,6 +23,24 @@ export const usernameQuerySchema = z.object({
 
 export type UsernameQuery = z.infer<typeof usernameQuerySchema>;
 
+export const createProfileSchema = z.object({
+  username: z
+    .string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(32, 'Username must be at most 32 characters')
+    .regex(usernameRegex, 'Username can only contain lowercase letters, numbers, and underscores')
+    .refine((u) => !RESERVED_USERNAMES.has(u), {
+      message: 'Username is reserved',
+    }),
+  displayName: z.string().max(100).optional(),
+  bio: z.string().max(500).optional(),
+  imageUrl: z.string().url().max(2048).optional(),
+  avatarCid: z.string().max(255).optional(),
+  xHandle: z.string().max(50).optional(),
+});
+
+export type CreateProfileInput = z.infer<typeof createProfileSchema>;
+
 export const updateProfileSchema = z.object({
   username: z
     .string()
@@ -36,6 +54,7 @@ export const updateProfileSchema = z.object({
   imageUrl: z.string().url().max(2048).optional(),
   avatarCid: z.string().max(255).optional(),
   xHandle: z.string().max(50).optional(),
+  minTipAmount: z.string().regex(/^\d+$/, 'minTipAmount must be a string of digits (stroops)').optional(),
 });
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
