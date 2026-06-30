@@ -23,6 +23,7 @@ const PROJECTIONS: Record<string, (event: DecodedEvent) => Promise<void>> = {
   sub_created: projectSubscriptionCreated,
   sub_exec: projectSubscriptionCharged,
   sub_cancel: projectSubscriptionCancelled,
+  credit_updated: projectCreditScoreUpdated,
 };
 
 /**
@@ -198,6 +199,18 @@ function toBigInt(value: unknown): bigint | null {
     if (typeof value === 'bigint') return value;
     if (typeof value === 'number' && Number.isInteger(value)) return BigInt(value);
     if (typeof value === 'string' && /^\d+$/.test(value)) return BigInt(value);
+  } catch {
+    /* fall through */
+  }
+  return null;
+}
+
+/** Convert Soroban numeric values to a JS number, treating invalid values as null. */
+function toNumber(value: unknown): number | null {
+  try {
+    if (typeof value === 'number') return value;
+    if (typeof value === 'bigint') return Number(value);
+    if (typeof value === 'string' && /^\d+$/.test(value)) return parseInt(value, 10);
   } catch {
     /* fall through */
   }
@@ -383,6 +396,59 @@ async function projectSubscriptionCancelled(event: DecodedEvent): Promise<void> 
   await prisma.subscription.updateMany({
     where: { id: subscriptionId(tipperId, creatorId) },
     data: { status: 'CANCELLED' },
+  });
+}
+
+// ── Credit score projections (issue #898) ─────────────────────────────────────
+
+/**
+ * Project a `("credit", "updated")` event — data `(creator, old_score, new_score)`.
+ * Updates the user's current credit score and appends an entry to the history table.
+ * Idempotent: replays on the same (creator, new_score, ledger) produce no duplicate
+ * history rows.
+ */
+async function projectCreditScoreUpdated(event: DecodedEvent): Promise<void> {
+  const args = tupleArgs(event.value);
+  const creator = args[0];
+  const newScore = args[2]; // Skip old_score (args[1]) as it's not used off-chain
+  
+  if (typeof creator !== 'string') {
+    return warnUnparseable(event, 'credit_updated');
+  }
+
+  const newScoreValue = toNumber(newScore);
+  if (newScoreValue === null) {
+    return warnUnparseable(event, 'credit_updated');
+  }
+
+  const userId = await ensureUserId(creator);
+
+  // Upsert the current credit score
+  await prisma.creditScore.upsert({
+    where: { userId },
+    create: {
+      userId,
+      value: newScoreValue,
+      computedAt: new Date(),
+    },
+    update: {
+      value: newScoreValue,
+      computedAt: new Date(),
+    },
+  });
+
+  // Append to history only if a row with the same (userId, value, ledger) doesn't exist.
+  // Use a deterministic id to ensure idempotency on replay.
+  const historyId = `credit_history_${userId}_${event.ledger}`;
+  await prisma.creditScoreHistory.upsert({
+    where: { id: historyId },
+    create: {
+      id: historyId,
+      userId,
+      value: newScoreValue,
+      computedAt: new Date(),
+    },
+    update: {},
   });
 }
 
