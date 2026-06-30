@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma.js';
 import { logger } from '../common/utils/logger.js';
 import type { DecodedEvent } from './sorobanClient.js';
+import { publishProjection } from './realtime-publisher.js';
 
 /** Event topics that represent an on-chain tip. */
 const TIP_TOPICS = new Set(['tip', 'tip_sent']);
@@ -29,12 +30,19 @@ const PROJECTIONS: Record<string, (event: DecodedEvent) => Promise<void>> = {
 /**
  * Project a decoded on-chain event into the off-chain store. Every projection is
  * idempotent: re-running over the same ledgers never produces duplicate rows.
+ *
+ * Once the projection has been written, the event is published to the realtime
+ * layer (see `realtime-publisher.ts`) — but only the first time it's seen, so
+ * replaying the same ledgers never re-broadcasts.
  */
 export async function projectEvent(event: DecodedEvent): Promise<void> {
-  await persistEventLog(event);
+  const isNewEvent = await persistEventLog(event);
 
   if (TIP_TOPICS.has(event.topic)) {
     await projectTip(event);
+    if (isNewEvent) {
+      await publishProjection(event);
+    }
     return;
   }
 
@@ -45,15 +53,23 @@ export async function projectEvent(event: DecodedEvent): Promise<void> {
   if (REFUND_TOPICS.has(event.topic)) {
     await projectRefund(event);
   }
+
+  if (isNewEvent) {
+    await publishProjection(event);
+  }
 }
 
-/** Store the raw decoded event for audit/replay, skipping if already stored. */
-async function persistEventLog(event: DecodedEvent): Promise<void> {
+/**
+ * Store the raw decoded event for audit/replay, skipping if already stored.
+ * Returns `true` if this is the first time the event has been seen (i.e. a new
+ * row was inserted), `false` if it was already persisted (a replay).
+ */
+async function persistEventLog(event: DecodedEvent): Promise<boolean> {
   const existing = await prisma.eventLog.findFirst({
     where: { txHash: event.txHash, topic: event.topic, ledger: event.ledger },
     select: { id: true },
   });
-  if (existing) return;
+  if (existing) return false;
 
   await prisma.eventLog.create({
     data: {
@@ -63,6 +79,7 @@ async function persistEventLog(event: DecodedEvent): Promise<void> {
       data: (event.value ?? {}) as Prisma.InputJsonValue,
     },
   });
+  return true;
 }
 
 /** Upsert the Tip row. txHash is unique, so replays are no-ops. */
