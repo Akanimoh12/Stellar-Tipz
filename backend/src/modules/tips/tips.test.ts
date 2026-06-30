@@ -25,7 +25,15 @@ vi.mock('@stellar/stellar-sdk', () => {
     build: vi.fn(() => ({
       toEnvelope: vi.fn(() => ({
         toXDR: vi.fn(() => 'AAAAAgAAAAA...mock-unsigned-xdr...'),
+        hash: vi.fn(() => Buffer.from('abcdef1234567890abcdef1234567890abcdef12', 'hex')),
       })),
+    })),
+  };
+
+  const mockTx = {
+    toEnvelope: vi.fn(() => ({
+      toXDR: vi.fn(() => 'AAAAAgAAAAA...mock-unsigned-xdr...'),
+      hash: vi.fn(() => Buffer.from('abcdef1234567890abcdef1234567890abcdef12', 'hex')),
     })),
   };
 
@@ -33,17 +41,22 @@ vi.mock('@stellar/stellar-sdk', () => {
     Keypair: {
       fromPublicKey: vi.fn(),
     },
-    TransactionBuilder: vi.fn(() => ({
-      addOperation: vi.fn(() => ({
-        setTimeout: vi.fn(() => ({
-          build: vi.fn(() => ({})),
+    TransactionBuilder: Object.assign(
+      vi.fn(() => ({
+        addOperation: vi.fn(() => ({
+          setTimeout: vi.fn(() => ({
+            build: vi.fn(() => ({})),
+          })),
         })),
       })),
-    })),
+      { fromXDR: vi.fn(() => mockTx) },
+    ),
     SorobanRpc: {
       Server: vi.fn(() => ({
         getAccount: mockGetAccount,
         simulateTransaction: mockSimulateTransaction,
+        sendTransaction: mockSendTransaction,
+        getTransaction: mockGetTransaction,
       })),
       assembleTransaction: vi.fn(() => mockPreparedTx),
       Api: {
@@ -55,8 +68,10 @@ vi.mock('@stellar/stellar-sdk', () => {
     })),
     nativeToScVal: vi.fn(() => ({ type: 'scval' })),
     xdr: {
-      ScVal: {
-        scvVoid: () => ({}),
+      TransactionEnvelope: {
+        fromXDR: vi.fn(() => ({
+          hash: vi.fn(() => Buffer.from('abcdef1234567890abcdef1234567890abcdef12', 'hex')),
+        })),
       },
     },
     Networks: {
@@ -144,6 +159,53 @@ describe('POST /api/v1/tips/prepare', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.unsignedTxXdr).toBeDefined();
     expect(res.body.data.contractId).toBeDefined();
+  });
+
+  it('sanitizes HTML-like characters in message', async () => {
+    mockGetAccount.mockResolvedValue({
+      accountId: () => address,
+      sequenceNumber: () => '123',
+      incrementSequenceNumber: () => {},
+    });
+    mockSimulateTransaction.mockResolvedValue({});
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/prepare')
+      .send({
+        from: address,
+        to: address,
+        amount: '100',
+        message: '<script>alert("xss")</script>',
+      });
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects message with invalid characters', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/prepare')
+      .send({
+        from: address,
+        to: address,
+        amount: '100',
+        message: 'message with \u0000 null byte',
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('rejects message longer than 280 characters', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/prepare')
+      .send({
+        from: address,
+        to: address,
+        amount: '100',
+        message: 'x'.repeat(281),
+      });
+    expect(res.status).toBe(400);
   });
 });
 

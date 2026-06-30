@@ -4,11 +4,15 @@ import { createApp } from '../../app.js';
 
 const PROFILE_UPDATE_RATE_LIMIT_MAX = 5;
 
-const { mockFindUnique, mockFindFirst, mockUpdate } = vi.hoisted(() => ({
-  mockFindUnique: vi.fn(),
-  mockFindFirst: vi.fn(),
-  mockUpdate: vi.fn(),
-}));
+const { mockFindUnique, mockFindFirst, mockUpdate, mockRedisGet, mockRedisSetex, mockRedisDel } =
+  vi.hoisted(() => ({
+    mockFindUnique: vi.fn(),
+    mockFindFirst: vi.fn(),
+    mockUpdate: vi.fn(),
+    mockRedisGet: vi.fn(),
+    mockRedisSetex: vi.fn(),
+    mockRedisDel: vi.fn(),
+  }));
 
 vi.mock('../../db/prisma.js', () => ({
   prisma: {
@@ -21,9 +25,25 @@ vi.mock('../../db/prisma.js', () => ({
   },
 }));
 
+vi.mock('../../db/redis.js', () => ({
+  redis: {
+    get: mockRedisGet,
+    setex: mockRedisSetex,
+    del: mockRedisDel,
+  },
+}));
+
 vi.mock('jsonwebtoken', () => ({
-  default: { verify: vi.fn(() => ({ sub: 'user-1', stellarAddress: 'GABCDEF123456789012345678901234567890123456789012345678901234' })) },
-  verify: vi.fn(() => ({ sub: 'user-1', stellarAddress: 'GABCDEF123456789012345678901234567890123456789012345678901234' })),
+  default: {
+    verify: vi.fn(() => ({
+      sub: 'user-1',
+      stellarAddress: 'GABCDEF123456789012345678901234567890123456789012345678901234',
+    })),
+  },
+  verify: vi.fn(() => ({
+    sub: 'user-1',
+    stellarAddress: 'GABCDEF123456789012345678901234567890123456789012345678901234',
+  })),
 }));
 
 vi.mock('node:crypto', () => ({
@@ -38,6 +58,25 @@ vi.mock('node:crypto', () => ({
 const validAddress = 'GF5YV3FQRHRMA7IQWCZKGRRJ5P7CEPIVBQLM4X2FEHS2IU57KF3U4CLN';
 const authHeader = 'Bearer mock-token';
 
+function makeUser(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'user-1',
+    stellarAddress: validAddress,
+    username: 'testuser',
+    displayName: null,
+    bio: null,
+    imageUrl: null,
+    avatarCid: null,
+    xHandle: null,
+    creditScore: null,
+    creditTier: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deletedAt: null,
+    ...overrides,
+  };
+}
+
 describe('GET /api/v1/profiles/by-address/:address', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -45,6 +84,7 @@ describe('GET /api/v1/profiles/by-address/:address', () => {
 
   it('returns 404 when profile is not found', async () => {
     mockFindUnique.mockResolvedValue(null);
+    mockRedisGet.mockResolvedValue(null);
 
     const app = createApp();
     const res = await request(app).get(`/api/v1/profiles/by-address/${validAddress}`);
@@ -53,39 +93,108 @@ describe('GET /api/v1/profiles/by-address/:address', () => {
   });
 
   it('returns 404 when profile is soft-deleted', async () => {
-    mockFindUnique.mockResolvedValue({
-      id: 'user-1',
-      stellarAddress: validAddress,
-      username: 'olduser',
-      profileImageCid: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      deletedAt: new Date(),
-    });
+    mockRedisGet.mockResolvedValue(null);
+    mockFindUnique.mockResolvedValue(makeUser({ deletedAt: new Date() }));
 
     const app = createApp();
     const res = await request(app).get(`/api/v1/profiles/by-address/${validAddress}`);
     expect(res.status).toBe(404);
-    expect(res.body.error.message).toBe('Profile has been deactivated');
+    expect(res.body.error.code).toBe('NOT_FOUND');
   });
 
   it('returns the profile when found and active', async () => {
-    const now = new Date();
-    mockFindUnique.mockResolvedValue({
-      id: 'user-1',
-      stellarAddress: validAddress,
-      username: 'testuser',
-      profileImageCid: null,
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-    });
+    mockRedisGet.mockResolvedValue(null);
+    mockFindUnique.mockResolvedValue(makeUser());
 
     const app = createApp();
     const res = await request(app).get(`/api/v1/profiles/by-address/${validAddress}`);
     expect(res.status).toBe(200);
     expect(res.body.data.stellarAddress).toBe(validAddress);
     expect(res.body.data.username).toBe('testuser');
+  });
+
+  it('includes creditScore and creditTier in response', async () => {
+    mockRedisGet.mockResolvedValue(null);
+    mockFindUnique.mockResolvedValue(makeUser({ creditScore: 750, creditTier: 'silver' }));
+
+    const app = createApp();
+    const res = await request(app).get(`/api/v1/profiles/by-address/${validAddress}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.creditScore).toBe(750);
+    expect(res.body.data.creditTier).toBe('silver');
+  });
+
+  it('returns creditScore as null when not set', async () => {
+    mockRedisGet.mockResolvedValue(null);
+    mockFindUnique.mockResolvedValue(makeUser({ creditScore: null, creditTier: null }));
+
+    const app = createApp();
+    const res = await request(app).get(`/api/v1/profiles/by-address/${validAddress}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.creditScore).toBeNull();
+    expect(res.body.data.creditTier).toBeNull();
+  });
+
+  it('returns cached profile on subsequent requests', async () => {
+    const cachedProfile = {
+      id: 'user-1',
+      stellarAddress: validAddress,
+      username: 'cacheduser',
+      displayName: null,
+      bio: null,
+      imageUrl: null,
+      avatarCid: null,
+      xHandle: null,
+      creditScore: 800,
+      creditTier: 'gold',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    mockRedisGet.mockResolvedValue(JSON.stringify(cachedProfile));
+
+    const app = createApp();
+    const res = await request(app).get(`/api/v1/profiles/by-address/${validAddress}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.username).toBe('cacheduser');
+    expect(res.body.data.creditScore).toBe(800);
+    expect(mockFindUnique).not.toHaveBeenCalled();
+  });
+
+  it('caches profile after first DB read', async () => {
+    mockRedisGet.mockResolvedValue(null);
+    mockRedisSetex.mockResolvedValue('OK');
+    mockFindUnique.mockResolvedValue(makeUser({ creditScore: 650, creditTier: 'bronze' }));
+
+    const app = createApp();
+    await request(app).get(`/api/v1/profiles/by-address/${validAddress}`);
+    expect(mockRedisSetex).toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/v1/profiles/by-username/:username', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns 404 when profile not found', async () => {
+    mockFindUnique.mockResolvedValue(null);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/profiles/by-username/nonexistent');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns profile when found', async () => {
+    mockFindUnique.mockResolvedValue(
+      makeUser({ username: 'testuser', creditScore: 850, creditTier: 'platinum' }),
+    );
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/profiles/by-username/testuser');
+    expect(res.status).toBe(200);
+    expect(res.body.data.username).toBe('testuser');
+    expect(res.body.data.creditScore).toBe(850);
+    expect(res.body.data.creditTier).toBe('platinum');
   });
 });
 
@@ -101,15 +210,7 @@ describe('PATCH /api/v1/profiles/reactivate', () => {
   });
 
   it('returns 400 when profile is not deactivated', async () => {
-    mockFindUnique.mockResolvedValue({
-      id: 'user-1',
-      stellarAddress: validAddress,
-      username: 'testuser',
-      profileImageCid: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      deletedAt: null,
-    });
+    mockFindUnique.mockResolvedValue(makeUser({ deletedAt: null }));
 
     const app = createApp();
     const res = await request(app)
@@ -121,25 +222,8 @@ describe('PATCH /api/v1/profiles/reactivate', () => {
   });
 
   it('reactivates a soft-deleted profile', async () => {
-    const now = new Date();
-    mockFindUnique.mockResolvedValue({
-      id: 'user-1',
-      stellarAddress: validAddress,
-      username: 'testuser',
-      profileImageCid: null,
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: now,
-    });
-    mockUpdate.mockResolvedValue({
-      id: 'user-1',
-      stellarAddress: validAddress,
-      username: 'testuser',
-      profileImageCid: null,
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-    });
+    mockFindUnique.mockResolvedValue(makeUser({ deletedAt: new Date() }));
+    mockUpdate.mockResolvedValue(makeUser({ deletedAt: null }));
 
     const app = createApp();
     const res = await request(app)
@@ -148,6 +232,18 @@ describe('PATCH /api/v1/profiles/reactivate', () => {
       .send({});
     expect(res.status).toBe(200);
     expect(res.body.data.stellarAddress).toBe(validAddress);
+  });
+
+  it('invalidates cache on reactivation', async () => {
+    mockFindUnique.mockResolvedValue(makeUser({ deletedAt: new Date() }));
+    mockUpdate.mockResolvedValue(makeUser({ deletedAt: null }));
+
+    const app = createApp();
+    await request(app)
+      .patch('/api/v1/profiles/reactivate')
+      .set('Authorization', authHeader)
+      .send({});
+    expect(mockRedisDel).toHaveBeenCalled();
   });
 });
 
@@ -175,24 +271,8 @@ describe('POST /api/v1/profiles/image', () => {
   });
 
   it('uploads image and stores CID', async () => {
-    mockFindUnique.mockResolvedValue({
-      id: 'user-1',
-      stellarAddress: validAddress,
-      username: 'testuser',
-      profileImageCid: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      deletedAt: null,
-    });
-    mockUpdate.mockResolvedValue({
-      id: 'user-1',
-      stellarAddress: validAddress,
-      username: 'testuser',
-      profileImageCid: 'sim-abcdef123456',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      deletedAt: null,
-    });
+    mockFindUnique.mockResolvedValue(makeUser());
+    mockUpdate.mockResolvedValue(makeUser({ avatarCid: 'sim-abcdef123456' }));
 
     const app = createApp();
     const res = await request(app)
@@ -219,11 +299,7 @@ describe('GET /api/v1/profiles/check-username', () => {
   });
 
   it('returns available=false when username is taken', async () => {
-    mockFindFirst.mockResolvedValue({
-      id: 'user-1',
-      stellarAddress: 'GF5YV3FQRHRMA7IQWCZKGRRJ5P7CEPIVBQLM4X2FEHS2IU57KF3U4CLN',
-      username: 'testuser',
-    });
+    mockFindFirst.mockResolvedValue(makeUser({ username: 'testuser' }));
 
     const app = createApp();
     const res = await request(app).get('/api/v1/profiles/check-username?username=testuser');
@@ -232,11 +308,7 @@ describe('GET /api/v1/profiles/check-username', () => {
   });
 
   it('returns available=false when username taken with different case', async () => {
-    mockFindFirst.mockResolvedValue({
-      id: 'user-1',
-      stellarAddress: 'GF5YV3FQRHRMA7IQWCZKGRRJ5P7CEPIVBQLM4X2FEHS2IU57KF3U4CLN',
-      username: 'TestUser',
-    });
+    mockFindFirst.mockResolvedValue(makeUser({ username: 'TestUser' }));
 
     const app = createApp();
     const res = await request(app).get('/api/v1/profiles/check-username?username=testuser');

@@ -9,6 +9,7 @@ export const tipsRouter = Router();
 tipsRouter.get('/', tipsController.getTips);
 tipsRouter.post('/', tipsController.record);
 tipsRouter.post('/prepare', tipsController.prepare);
+tipsRouter.post('/submit', tipsController.submit);
 tipsRouter.get('/:id', tipsController.getById);
 tipsRouter.patch('/:txHash/confirm', tipsController.confirm);
 
@@ -39,6 +40,31 @@ const paginationParameters = [
   },
 ];
 mergeOpenApiPaths({
+  [`${base}/submit`]: {
+    post: {
+      tags: ['Tips'],
+      summary: 'Submit a signed Soroban tip transaction',
+      description: 'Submits a wallet-signed Soroban transaction to the Stellar network, polls for confirmation, and records the tip in the database.',
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                signedTxXdr: { type: 'string', description: 'Base64-encoded signed transaction envelope XDR' },
+              },
+              required: ['signedTxXdr'],
+            },
+          },
+        },
+      },
+      responses: {
+        '200': { description: 'Tip submitted and confirmed' },
+        '400': { description: 'Validation or submission error' },
+      },
+    },
+  },
   [`${base}/prepare`]: {
     post: {
       tags: ['Tips'],

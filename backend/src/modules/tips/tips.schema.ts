@@ -1,10 +1,31 @@
 import { z } from 'zod';
 
+const tipMessageRegex = /^[\w\s.,!?'"@#$%&*()\-+=[\]{}:;<>/\\|`~\u00C0-\u024F]*$/u;
+
+export const tipMessageSchema = z
+  .string()
+  .max(280, 'Message must be at most 280 characters')
+  .regex(tipMessageRegex, 'Message contains disallowed characters')
+  .optional();
+
+export const submitTipSchema = z.object({
+  signedTxXdr: z.string().min(1, 'Signed transaction XDR is required'),
+});
+
+export type SubmitTipInput = z.infer<typeof submitTipSchema>;
+
+export interface SubmitTipResult {
+  txHash: string;
+  ledger: number;
+  tipId: string;
+  status: string;
+}
+
 export const prepareTipSchema = z.object({
   from: z.string().regex(/^G[A-Z2-7]{55}$/, 'Invalid sender Stellar address'),
   to: z.string().regex(/^G[A-Z2-7]{55}$/, 'Invalid recipient Stellar address'),
   amount: z.string().regex(/^\d+$/, 'Amount must be a string of digits (stroops)'),
-  message: z.string().max(280).optional(),
+  message: tipMessageSchema,
 });
 
 export type PrepareTipInput = z.infer<typeof prepareTipSchema>;

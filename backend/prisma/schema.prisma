@@ -45,6 +45,7 @@ model User {
   streak               Streak?
 
   @@index([createdAt])
+  @@index([creditScore])
 }
 
 /// API key for service/admin access and webhook integrations.
@@ -76,6 +77,8 @@ model Tip {
   isAnonymous   Boolean   @default(false)
   status        TipStatus @default(PENDING)
   message       String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   refund        Refund?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -85,6 +88,13 @@ model Tip {
 
   @@index([toAddress, createdAt])
   @@index([fromAddress, createdAt])
+}
+
+enum TipStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  REFUNDED
 }
 
 /// Tracks indexer progress per event topic so it can resume after a restart.
