@@ -4,12 +4,11 @@ import { createApp } from '../../app.js';
 
 const PROFILE_UPDATE_RATE_LIMIT_MAX = 5;
 
-const { mockFindUnique, mockFindFirst, mockUpdate, mockCreate, mockRedisGet, mockRedisSetex, mockRedisDel } =
+const { mockFindUnique, mockFindFirst, mockUpdate, mockRedisGet, mockRedisSetex, mockRedisDel } =
   vi.hoisted(() => ({
     mockFindUnique: vi.fn(),
     mockFindFirst: vi.fn(),
     mockUpdate: vi.fn(),
-    mockCreate: vi.fn(),
     mockRedisGet: vi.fn(),
     mockRedisSetex: vi.fn(),
     mockRedisDel: vi.fn(),
@@ -72,7 +71,6 @@ function makeUser(overrides: Record<string, unknown> = {}) {
     xHandle: null,
     creditScore: null,
     creditTier: null,
-    minTipAmount: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
@@ -247,99 +245,6 @@ describe('PATCH /api/v1/profiles/reactivate', () => {
       .set('Authorization', authHeader)
       .send({});
     expect(mockRedisDel).toHaveBeenCalled();
-  });
-});
-
-describe('POST /api/v1/profiles', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('returns 401 without auth', async () => {
-    const app = createApp();
-    const res = await request(app)
-      .post('/api/v1/profiles')
-      .send({ username: 'newuser' });
-    expect(res.status).toBe(401);
-  });
-
-  it('returns 201 when profile is created', async () => {
-    mockFindUnique.mockResolvedValueOnce(null); // no existing profile
-    mockFindUnique.mockResolvedValueOnce(null); // no username conflict
-    mockCreate.mockResolvedValue(makeUser({ username: 'newuser' }));
-    mockRedisSetex.mockResolvedValue('OK');
-
-    const app = createApp();
-    const res = await request(app)
-      .post('/api/v1/profiles')
-      .set('Authorization', authHeader)
-      .send({ username: 'newuser', displayName: 'New User' });
-    expect(res.status).toBe(201);
-    expect(res.body.data.username).toBe('newuser');
-    expect(res.body.data.stellarAddress).toBe(validAddress);
-  });
-
-  it('returns 409 when profile already exists', async () => {
-    mockFindUnique.mockResolvedValueOnce(makeUser());
-
-    const app = createApp();
-    const res = await request(app)
-      .post('/api/v1/profiles')
-      .set('Authorization', authHeader)
-      .send({ username: 'anotheruser' });
-    expect(res.status).toBe(409);
-    expect(res.body.error.code).toBe('CONFLICT');
-  });
-
-  it('returns 400 when username is already taken', async () => {
-    mockFindUnique.mockResolvedValueOnce(null); // no existing profile
-    mockFindUnique.mockResolvedValueOnce(makeUser()); // username conflict
-
-    const app = createApp();
-    const res = await request(app)
-      .post('/api/v1/profiles')
-      .set('Authorization', authHeader)
-      .send({ username: 'testuser' });
-    expect(res.status).toBe(400);
-  });
-
-  it('returns 400 for invalid username', async () => {
-    const app = createApp();
-    const res = await request(app)
-      .post('/api/v1/profiles')
-      .set('Authorization', authHeader)
-      .send({ username: 'ab' });
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
-  });
-});
-
-describe('PATCH /api/v1/profiles/me with minTipAmount', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('updates minTipAmount on profile', async () => {
-    mockFindUnique.mockResolvedValue(makeUser());
-    mockUpdate.mockResolvedValue(makeUser({ minTipAmount: BigInt(100) }));
-
-    const app = createApp();
-    const res = await request(app)
-      .patch('/api/v1/profiles/me')
-      .set('Authorization', authHeader)
-      .send({ minTipAmount: '100' });
-    expect(res.status).toBe(200);
-    expect(mockUpdate).toHaveBeenCalled();
-  });
-
-  it('returns 400 for invalid minTipAmount format', async () => {
-    const app = createApp();
-    const res = await request(app)
-      .patch('/api/v1/profiles/me')
-      .set('Authorization', authHeader)
-      .send({ minTipAmount: 'not-a-number' });
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
 });
 

@@ -9,7 +9,6 @@ export interface Profile {
   xHandle: string | null;
   creditScore: number | null;
   creditTier: string | null;
-  minTipAmount: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -25,7 +24,6 @@ export interface ProfileResponse {
   xHandle: string | null;
   creditScore: number | null;
   creditTier: string | null;
-  minTipAmount: string | null;
   createdAt: string;
   updatedAt: string;
   tipsCount: number;

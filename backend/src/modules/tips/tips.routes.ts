@@ -65,34 +65,6 @@ const filterParameters = [
   },
 ];
 mergeOpenApiPaths({
-  [`${base}`]: {
-    get: {
-      tags: ['Tips'],
-      summary: 'List tips with filtering and pagination',
-      description: 'Returns a paginated list of tips, optionally filtered by address, direction, token code, or date range.',
-      parameters: [
-        ...filterParameters,
-        {
-          name: 'address',
-          in: 'query',
-          required: false,
-          schema: { type: 'string' },
-          description: 'Stellar address to filter by',
-        },
-        {
-          name: 'direction',
-          in: 'query',
-          required: false,
-          schema: { type: 'string', enum: ['sent', 'received'] },
-          description: 'Filter direction relative to the address param',
-        },
-      ],
-      responses: {
-        '200': { description: 'Paginated list of tips' },
-        '400': { description: 'Validation error' },
-      },
-    },
-  },
   [`${base}/submit`]: {
     post: {
       tags: ['Tips'],

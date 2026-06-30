@@ -46,15 +46,13 @@ export async function submit(req: Request, res: Response, next: NextFunction): P
 
 export async function getTips(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { limit, cursor, address, direction, tokenCode, startDate, endDate } = tipsListQuerySchema
+    const { limit, cursor, address, direction } = tipsListQuerySchema
       .extend({
         address: z.string().regex(/^G[A-Z2-7]{55}$/, 'Invalid Stellar address').optional(),
         direction: z.enum(['sent', 'received']).optional(),
       })
       .parse(req.query);
-    const result = await tipsService.getPaginatedTips({
-      limit, cursor, address, direction, tokenCode, startDate, endDate,
-    });
+    const result = await tipsService.getPaginatedTips({ limit, cursor, address, direction });
     res.status(200).json({ data: result.data, nextCursor: result.nextCursor });
   } catch (err) {
     next(err);
