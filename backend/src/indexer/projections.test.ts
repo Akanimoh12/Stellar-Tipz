@@ -13,6 +13,7 @@ const {
   mockEventLogCreate,
   mockCreditScoreUpsert,
   mockCreditScoreHistoryUpsert,
+  mockPublishProjection,
 } = vi.hoisted(() => ({
   mockUserUpsert: vi.fn(),
   mockGoalUpsert: vi.fn(),
@@ -24,6 +25,7 @@ const {
   mockEventLogCreate: vi.fn(),
   mockCreditScoreUpsert: vi.fn(),
   mockCreditScoreHistoryUpsert: vi.fn(),
+  mockPublishProjection: vi.fn(),
 }));
 
 vi.mock('../db/prisma.js', () => ({
@@ -36,6 +38,10 @@ vi.mock('../db/prisma.js', () => ({
     creditScore: { upsert: mockCreditScoreUpsert },
     creditScoreHistory: { upsert: mockCreditScoreHistoryUpsert },
   },
+}));
+
+vi.mock('./realtime-publisher.js', () => ({
+  publishProjection: mockPublishProjection,
 }));
 
 /** Build a decoded event; `value` is the positional payload tuple. */
@@ -85,6 +91,7 @@ beforeEach(() => {
   mockSubUpdateMany.mockResolvedValue({ count: 1 });
   mockCreditScoreUpsert.mockResolvedValue({});
   mockCreditScoreHistoryUpsert.mockResolvedValue({});
+  mockPublishProjection.mockResolvedValue(undefined);
 });
 
 describe('projectEvent — raw event log', () => {
@@ -104,6 +111,41 @@ describe('projectEvent — raw event log', () => {
     expect(mockUserUpsert).not.toHaveBeenCalled();
     expect(mockGoalUpsert).not.toHaveBeenCalled();
     expect(mockSubUpsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('projectEvent — realtime publish', () => {
+  it('publishes to the realtime layer after a new event is projected', async () => {
+    const e = event('profile_register', [ADDR_A, 'alice']);
+    await projectEvent(e);
+    expect(mockPublishProjection).toHaveBeenCalledTimes(1);
+    expect(mockPublishProjection).toHaveBeenCalledWith(e);
+  });
+
+  it('does not publish when replaying an already-stored event (idempotent)', async () => {
+    mockEventLogFindFirst.mockResolvedValue({ id: 'existing' });
+    await projectEvent(event('profile_register', [ADDR_A, 'alice']));
+    expect(mockPublishProjection).not.toHaveBeenCalled();
+  });
+
+  it('publishes exactly once per unique event across repeated runs over the same ledgers', async () => {
+    const e = event('tip_sent', tipEvent.value, { txHash: tipEvent.txHash, ledger: tipEvent.ledger });
+
+    // First run: event log is empty, so the event is new.
+    mockEventLogFindFirst.mockResolvedValueOnce(null);
+    await projectEvent(e);
+
+    // Re-run over the same ledger range: event log now has the row.
+    mockEventLogFindFirst.mockResolvedValueOnce({ id: 'existing' });
+    await projectEvent(e);
+
+    expect(mockPublishProjection).toHaveBeenCalledTimes(1);
+  });
+
+  it('still projects and publishes the tip event even on the early-return tip branch', async () => {
+    await projectEvent(tipEvent);
+    expect(mockTipUpsert).toHaveBeenCalledOnce();
+    expect(mockPublishProjection).toHaveBeenCalledWith(tipEvent);
   });
 });
 
@@ -397,4 +439,3 @@ describe('projectEvent — credit score (#898)', () => {
     );
   });
 });
-
