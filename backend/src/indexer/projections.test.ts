@@ -11,6 +11,8 @@ const {
   mockTipUpsert,
   mockEventLogFindFirst,
   mockEventLogCreate,
+  mockCreditScoreUpsert,
+  mockCreditScoreHistoryUpsert,
 } = vi.hoisted(() => ({
   mockUserUpsert: vi.fn(),
   mockGoalUpsert: vi.fn(),
@@ -20,6 +22,8 @@ const {
   mockTipUpsert: vi.fn(),
   mockEventLogFindFirst: vi.fn(),
   mockEventLogCreate: vi.fn(),
+  mockCreditScoreUpsert: vi.fn(),
+  mockCreditScoreHistoryUpsert: vi.fn(),
 }));
 
 vi.mock('../db/prisma.js', () => ({
@@ -29,6 +33,8 @@ vi.mock('../db/prisma.js', () => ({
     subscription: { upsert: mockSubUpsert, updateMany: mockSubUpdateMany },
     tip: { upsert: mockTipUpsert },
     eventLog: { findFirst: mockEventLogFindFirst, create: mockEventLogCreate },
+    creditScore: { upsert: mockCreditScoreUpsert },
+    creditScoreHistory: { upsert: mockCreditScoreHistoryUpsert },
   },
 }));
 
@@ -77,6 +83,8 @@ beforeEach(() => {
   mockGoalUpdateMany.mockResolvedValue({ count: 1 });
   mockSubUpsert.mockResolvedValue({});
   mockSubUpdateMany.mockResolvedValue({ count: 1 });
+  mockCreditScoreUpsert.mockResolvedValue({});
+  mockCreditScoreHistoryUpsert.mockResolvedValue({});
 });
 
 describe('projectEvent — raw event log', () => {
@@ -311,3 +319,82 @@ describe('projectEvent — tip idempotency (#892)', () => {
     expect(mockTipUpsert).toHaveBeenCalledOnce();
   });
 });
+
+describe('projectEvent — credit score (#898)', () => {
+  it('upserts the current credit score and appends to history', async () => {
+    await projectEvent(event('credit_updated', [ADDR_A, 40, 65], { ledger: 200 }));
+
+    expect(mockCreditScoreUpsert).toHaveBeenCalledWith({
+      where: { userId: 'u_' + ADDR_A },
+      create: expect.objectContaining({
+        userId: 'u_' + ADDR_A,
+        value: 65,
+      }),
+      update: expect.objectContaining({
+        value: 65,
+      }),
+    });
+
+    expect(mockCreditScoreHistoryUpsert).toHaveBeenCalledWith({
+      where: { id: 'credit_history_u_' + ADDR_A + '_200' },
+      create: expect.objectContaining({
+        id: 'credit_history_u_' + ADDR_A + '_200',
+        userId: 'u_' + ADDR_A,
+        value: 65,
+      }),
+      update: {},
+    });
+  });
+
+  it('is idempotent — replaying the same event produces no duplicates', async () => {
+    await projectEvent(event('credit_updated', [ADDR_A, 40, 65], { ledger: 200 }));
+    await projectEvent(event('credit_updated', [ADDR_A, 40, 65], { ledger: 200 }));
+
+    expect(mockCreditScoreUpsert).toHaveBeenCalledTimes(2);
+    expect(mockCreditScoreHistoryUpsert).toHaveBeenCalledTimes(2);
+
+    const historyIds = mockCreditScoreHistoryUpsert.mock.calls.map((c) => c[0].where.id);
+    expect(historyIds[0]).toEqual(historyIds[1]);
+  });
+
+  it('handles different score updates on different ledgers', async () => {
+    await projectEvent(event('credit_updated', [ADDR_A, 40, 65], { ledger: 200 }));
+    await projectEvent(event('credit_updated', [ADDR_A, 65, 75], { ledger: 300 }));
+
+    expect(mockCreditScoreUpsert).toHaveBeenCalledTimes(2);
+    expect(mockCreditScoreHistoryUpsert).toHaveBeenCalledTimes(2);
+
+    const historyIds = mockCreditScoreHistoryUpsert.mock.calls.map((c) => c[0].where.id);
+    expect(historyIds[0]).toEqual('credit_history_u_' + ADDR_A + '_200');
+    expect(historyIds[1]).toEqual('credit_history_u_' + ADDR_A + '_300');
+  });
+
+  it('accepts numeric types for score values', async () => {
+    await projectEvent(event('credit_updated', [ADDR_A, 40, 65], { ledger: 200 }));
+    await projectEvent(event('credit_updated', [ADDR_A, '65', '75'], { ledger: 201 }));
+    await projectEvent(event('credit_updated', [ADDR_A, BigInt(75), BigInt(80)], { ledger: 202 }));
+
+    expect(mockCreditScoreUpsert).toHaveBeenCalledTimes(3);
+    expect(mockCreditScoreHistoryUpsert).toHaveBeenCalledTimes(3);
+  });
+
+  it('skips an event with an unparseable creator address', async () => {
+    await projectEvent(event('credit_updated', [123, 40, 65]));
+    expect(mockCreditScoreUpsert).not.toHaveBeenCalled();
+    expect(mockCreditScoreHistoryUpsert).not.toHaveBeenCalled();
+  });
+
+  it('skips an event with an unparseable new score', async () => {
+    await projectEvent(event('credit_updated', [ADDR_A, 40, 'not-a-number']));
+    expect(mockCreditScoreUpsert).not.toHaveBeenCalled();
+    expect(mockCreditScoreHistoryUpsert).not.toHaveBeenCalled();
+  });
+
+  it('ensures the user exists before recording the score', async () => {
+    await projectEvent(event('credit_updated', [ADDR_A, 40, 65]));
+    expect(mockUserUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { stellarAddress: ADDR_A } }),
+    );
+  });
+});
+
