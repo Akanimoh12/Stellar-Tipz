@@ -1,3 +1,14 @@
+import tsParser from '@typescript-eslint/parser';
+import tsPlugin from '@typescript-eslint/eslint-plugin';
+
+export default [
+  {
+    files: ['**/*.ts'],
+    plugins: {
+      '@typescript-eslint': tsPlugin,
+    },
+    languageOptions: {
+      parser: tsParser,
 import tseslint from '@typescript-eslint/eslint-plugin';
 import tsparser from '@typescript-eslint/parser';
 
@@ -12,6 +23,8 @@ export default [
       },
       globals: {
         process: 'readonly',
+      },
+    },
         console: 'readonly',
         setTimeout: 'readonly',
         setInterval: 'readonly',
@@ -25,10 +38,21 @@ export default [
     rules: {
       ...tseslint.configs.recommended.rules,
       '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_' },
+      ],
     },
   },
   {
+    ignores: [
+      'dist/',
+      'node_modules/',
+      'coverage/',
+      'build/',
+      '*.js',
+      '*.d.ts',
+    ],
     ignores: ['dist/', 'node_modules/', 'coverage/', 'tests/**/*.ts', 'vitest.config.ts*'],
   },
 ];

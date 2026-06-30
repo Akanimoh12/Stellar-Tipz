@@ -1,5 +1,4 @@
 #!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh" 2>/dev/null || true
 
 # Block staged .env files (not .env.example)
 if git diff --cached --name-only | grep -E "(^|/)\.env$" > /dev/null 2>&1; then
@@ -22,4 +21,7 @@ if [ -n "$STAGED_RS" ]; then
 fi
 
 # Run lint-staged in frontend-scaffold
-cd frontend-scaffold && npx lint-staged
+(cd frontend-scaffold && npx lint-staged)
+
+# Run lint + format on staged backend files
+(cd backend && npx lint-staged)
