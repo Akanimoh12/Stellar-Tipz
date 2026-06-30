@@ -37,4 +37,14 @@ export interface UpdateProfileRequest {
   imageUrl?: string;
   avatarCid?: string;
   xHandle?: string;
+  minTipAmount?: string;
+}
+
+export interface CreateProfileRequest {
+  username: string;
+  displayName?: string;
+  bio?: string;
+  imageUrl?: string;
+  avatarCid?: string;
+  xHandle?: string;
 }

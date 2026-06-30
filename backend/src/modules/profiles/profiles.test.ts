@@ -20,6 +20,7 @@ vi.mock('../../db/prisma.js', () => ({
       findUnique: mockFindUnique,
       findFirst: mockFindFirst,
       update: mockUpdate,
+      create: mockCreate,
     },
     $disconnect: vi.fn(),
   },

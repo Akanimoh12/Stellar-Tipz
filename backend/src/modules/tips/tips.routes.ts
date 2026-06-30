@@ -39,6 +39,31 @@ const paginationParameters = [
     description: 'Id of the last item from the previous page',
   },
 ];
+
+const filterParameters = [
+  ...paginationParameters,
+  {
+    name: 'tokenCode',
+    in: 'query',
+    required: false,
+    schema: { type: 'string', maxLength: 10 },
+    description: 'Filter by token code (e.g. XLM, USDC)',
+  },
+  {
+    name: 'startDate',
+    in: 'query',
+    required: false,
+    schema: { type: 'string', format: 'date-time' },
+    description: 'Filter tips created on or after this ISO 8601 date',
+  },
+  {
+    name: 'endDate',
+    in: 'query',
+    required: false,
+    schema: { type: 'string', format: 'date-time' },
+    description: 'Filter tips created on or before this ISO 8601 date',
+  },
+];
 mergeOpenApiPaths({
   [`${base}/submit`]: {
     post: {
