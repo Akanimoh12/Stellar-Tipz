@@ -9,3 +9,9 @@ export interface TipResponseDto {
   message: string | null;
   createdAt: string;
 }
+
+export interface TipAggregateByCreatorDto {
+  toAddress: string;
+  totalAmountStroops: string;
+  tipCount: number;
+}

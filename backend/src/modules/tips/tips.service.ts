@@ -7,9 +7,9 @@ import { logger } from '../../common/utils/logger.js';
 import { TipStatus } from '../../types/enums.js';
 import type { RecordTipInput } from './tips.schema.js';
 import { serializeTip } from './tips.serializer.js';
-import type { TipResponseDto } from './tips.dto.js';
+import type { TipResponseDto, TipAggregateByCreatorDto } from './tips.dto.js';
 
-export type { TipResponseDto };
+export type { TipResponseDto, TipAggregateByCreatorDto };
 
 export interface GetTipsParams {
   cursor?: string;
@@ -227,4 +227,32 @@ export async function confirmTip(txHash: string): Promise<TipResponseDto> {
     data: { status: TipStatus.CONFIRMED },
   });
   return serializeTip(updated);
+}
+
+/**
+ * GET /tips?aggregate=creator — aggregate tips by recipient address.
+ * Returns total amount received and tip count per creator.
+ */
+export async function aggregateTipsByCreator(): Promise<TipAggregateByCreatorDto[]> {
+  const results = await prisma.tip.groupBy({
+    by: ['toAddress'],
+    where: { status: TipStatus.CONFIRMED },
+    _sum: {
+      amountStroops: true,
+    },
+    _count: {
+      _all: true,
+    },
+    orderBy: {
+      _sum: {
+        amountStroops: 'desc',
+      },
+    },
+  });
+
+  return results.map((row) => ({
+    toAddress: row.toAddress,
+    totalAmountStroops: row._sum.amountStroops?.toString() ?? '0',
+    tipCount: row._count._all,
+  }));
 }

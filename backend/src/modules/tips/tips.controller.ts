@@ -13,9 +13,14 @@ import * as tipsService from './tips.service.js';
 /** GET /tips — filterable, cursor-paginated list of tips. */
 export async function getTips(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { limit, cursor, address, direction } = getTipsQuerySchema.parse(req.query);
-    const result = await tipsService.getPaginatedTips({ limit, cursor, address, direction });
-    res.status(200).json({ data: result.data, nextCursor: result.nextCursor });
+    const { limit, cursor, address, direction, aggregate } = getTipsQuerySchema.parse(req.query);
+    if (aggregate === 'creator') {
+      const result = await tipsService.aggregateTipsByCreator();
+      res.status(200).json({ data: result });
+    } else {
+      const result = await tipsService.getPaginatedTips({ limit, cursor, address, direction });
+      res.status(200).json({ data: result.data, nextCursor: result.nextCursor });
+    }
   } catch (err) {
     next(err);
   }

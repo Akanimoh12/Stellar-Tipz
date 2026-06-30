@@ -37,6 +37,7 @@ export const getTipsQuerySchema = z.object({
   cursor: z.string().cuid('Invalid cursor').optional(),
   address: z.string().regex(/^G[A-Z2-7]{55}$/, 'Invalid Stellar address').optional(),
   direction: z.enum(['sent', 'received']).optional(),
+  aggregate: z.enum(['creator']).optional(),
 });
 
 export type GetTipsQuery = z.infer<typeof getTipsQuerySchema>;

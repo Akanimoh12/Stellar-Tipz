@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { createApp } from '../../app.js';
+import { openApiDocument } from '../../docs/openapi.js';
 
 const {
   mockGetAccount,
@@ -10,6 +11,7 @@ const {
   mockFindUnique,
   mockCreate,
   mockUpdate,
+  mockGroupBy,
 } = vi.hoisted(() => ({
   mockGetAccount: vi.fn(),
   mockSimulateTransaction: vi.fn(),
@@ -18,6 +20,7 @@ const {
   mockFindUnique: vi.fn(),
   mockCreate: vi.fn(),
   mockUpdate: vi.fn(),
+  mockGroupBy: vi.fn(),
 }));
 
 vi.mock('@stellar/stellar-sdk', () => {
@@ -72,6 +75,7 @@ vi.mock('../../db/prisma.js', () => ({
       findUnique: mockFindUnique,
       create: mockCreate,
       update: mockUpdate,
+      groupBy: mockGroupBy,
     },
     $disconnect: vi.fn(),
   },
@@ -224,9 +228,70 @@ describe('GET /api/v1/tips', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 for invalid address', async () => {
+it('returns 400 for invalid address', async () => {
     const app = createApp();
     const res = await request(app).get('/api/v1/tips?address=not-valid');
+    expect(res.status).toBe(400);
+  });
+});
+
+// ── GET /api/v1/tips?aggregate=creator — tip totals per creator (#883) ────────────
+
+describe('GET /api/v1/tips?aggregate=creator', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns aggregated tip totals per creator', async () => {
+    const addr1 = 'GA123456789012345678901234567890123456789012345678901234';
+    const addr2 = 'GB123456789012345678901234567890123456789012345678901234';
+    mockGroupBy.mockResolvedValue([
+      { toAddress: addr1, _sum: { amountStroops: BigInt(5000000) }, _count: { _all: 5 } },
+      { toAddress: addr2, _sum: { amountStroops: BigInt(3000000) }, _count: { _all: 3 } },
+    ]);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/tips?aggregate=creator');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(2);
+    expect(res.body.data[0]).toEqual({
+      toAddress: addr1,
+      totalAmountStroops: '5000000',
+      tipCount: 5,
+    });
+    expect(res.body.data[1]).toEqual({
+      toAddress: addr2,
+      totalAmountStroops: '3000000',
+      tipCount: 3,
+    });
+  });
+
+  it('returns zero total when no tips exist', async () => {
+    mockGroupBy.mockResolvedValue([]);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/tips?aggregate=creator');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(0);
+  });
+
+  it('orders results by total amount descending', async () => {
+    const addr1 = 'GA123456789012345678901234567890123456789012345678901234';
+    const addr2 = 'GB123456789012345678901234567890123456789012345678901234';
+    mockGroupBy.mockResolvedValue([
+      { toAddress: addr1, _sum: { amountStroops: BigInt(100) }, _count: { _all: 1 } },
+      { toAddress: addr2, _sum: { amountStroops: BigInt(500) }, _count: { _all: 1 } },
+    ]);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/tips?aggregate=creator');
+    expect(res.status).toBe(200);
+    expect(res.body.data[0].toAddress).toBe(addr2);
+  });
+
+  it('returns 400 for invalid aggregate value', async () => {
+    const app = createApp();
+    const res = await request(app).get('/api/v1/tips?aggregate=invalid');
     expect(res.status).toBe(400);
   });
 });
@@ -383,5 +448,67 @@ describe('PATCH /api/v1/tips/:txHash/confirm', () => {
     const app = createApp();
     const res = await request(app).patch('/api/v1/tips//confirm');
     expect(res.status).toBe(404);
+  });
+});
+
+// ── OpenAPI docs registration ───────────────────────────────────────────────
+
+describe('OpenAPI docs - Tips module', () => {
+  it('registers GET /api/v1/tips endpoint', () => {
+    expect(openApiDocument.paths['/api/v1/tips'].get).toBeDefined();
+    expect(openApiDocument.paths['/api/v1/tips'].get?.tags).toContain('Tips');
+    expect(openApiDocument.paths['/api/v1/tips'].get?.summary).toBe('List tips with optional filtering');
+  });
+
+  it('registers POST /api/v1/tips endpoint', () => {
+    expect(openApiDocument.paths['/api/v1/tips'].post).toBeDefined();
+    expect(openApiDocument.paths['/api/v1/tips'].post?.tags).toContain('Tips');
+    expect(openApiDocument.paths['/api/v1/tips'].post?.summary).toBe('Record an on-chain tip');
+  });
+
+  it('registers POST /api/v1/tips/prepare endpoint', () => {
+    expect(openApiDocument.paths['/api/v1/tips/prepare'].post).toBeDefined();
+    expect(openApiDocument.paths['/api/v1/tips/prepare'].post?.tags).toContain('Tips');
+    expect(openApiDocument.paths['/api/v1/tips/prepare'].post?.summary).toBe('Prepare an unsigned Soroban tip transaction');
+  });
+
+  it('registers GET /api/v1/tips/:id endpoint', () => {
+    expect(openApiDocument.paths['/api/v1/tips/{id}'].get).toBeDefined();
+    expect(openApiDocument.paths['/api/v1/tips/{id}'].get?.tags).toContain('Tips');
+    expect(openApiDocument.paths['/api/v1/tips/{id}'].get?.summary).toBe('Get a single tip by id');
+  });
+
+  it('registers PATCH /api/v1/tips/:txHash/confirm endpoint', () => {
+    expect(openApiDocument.paths['/api/v1/tips/{txHash}/confirm'].patch).toBeDefined();
+    expect(openApiDocument.paths['/api/v1/tips/{txHash}/confirm'].patch?.tags).toContain('Tips');
+    expect(openApiDocument.paths['/api/v1/tips/{txHash}/confirm'].patch?.summary).toBe('Confirm a pending tip');
+  });
+
+  it('registers profile tips endpoint at /api/v1/profiles/:username/tips', () => {
+    expect(openApiDocument.paths['/api/v1/profiles/{username}/tips'].get).toBeDefined();
+    expect(openApiDocument.paths['/api/v1/profiles/{username}/tips'].get?.tags).toContain('Tips');
+    expect(openApiDocument.paths['/api/v1/profiles/{username}/tips'].get?.summary).toBe('List tips received by a profile');
+  });
+
+  it('registers user-sent tips endpoint at /api/v1/users/me/tips/sent', () => {
+    expect(openApiDocument.paths['/api/v1/users/me/tips/sent'].get).toBeDefined();
+    expect(openApiDocument.paths['/api/v1/users/me/tips/sent'].get?.tags).toContain('Tips');
+    expect(openApiDocument.paths['/api/v1/users/me/tips/sent'].get?.security).toEqual([{ bearerAuth: [] }]);
+  });
+
+  it('defines tip response schema with all required fields', () => {
+    const getTip = openApiDocument.paths['/api/v1/tips/{id}'].get as Record<string, unknown>;
+    const response200 = (getTip.responses as Record<string, unknown>)['200'] as Record<string, unknown>;
+    const schema = (response200.content as Record<string, unknown>)['application/json'].schema as Record<string, unknown>;
+    const dataSchema = (schema.properties as Record<string, unknown>).data as Record<string, unknown>;
+
+    expect(dataSchema.properties).toHaveProperty('id');
+    expect(dataSchema.properties).toHaveProperty('txHash');
+    expect(dataSchema.properties).toHaveProperty('ledger');
+    expect(dataSchema.properties).toHaveProperty('fromAddress');
+    expect(dataSchema.properties).toHaveProperty('toAddress');
+    expect(dataSchema.properties).toHaveProperty('amountStroops');
+    expect(dataSchema.properties).toHaveProperty('status');
+    expect(dataSchema.properties).toHaveProperty('createdAt');
   });
 });
