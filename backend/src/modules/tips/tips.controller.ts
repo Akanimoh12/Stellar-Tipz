@@ -1,6 +1,8 @@
+import { z } from 'zod';
 import type { Request, Response, NextFunction } from 'express';
 import {
   prepareTipSchema,
+  submitTipSchema,
   tipIdParamSchema,
   usernameParamSchema,
   tipsListQuerySchema,
@@ -29,8 +31,34 @@ export async function getTips(req: Request, res: Response, next: NextFunction): 
 export async function prepare(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { from, to, amount, message } = prepareTipSchema.parse(req.body);
-    const prepared = await tipsService.prepareTip(from, to, amount, message);
+    const sanitizedMessage = tipsService.sanitizeTipMessage(message);
+    const prepared = await tipsService.prepareTip(from, to, amount, sanitizedMessage);
     res.status(200).json({ data: prepared });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function submit(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { signedTxXdr } = submitTipSchema.parse(req.body);
+    const result = await tipsService.submitTip(signedTxXdr);
+    res.status(200).json({ data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getTips(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { limit, cursor, address, direction } = tipsListQuerySchema
+      .extend({
+        address: z.string().regex(/^G[A-Z2-7]{55}$/, 'Invalid Stellar address').optional(),
+        direction: z.enum(['sent', 'received']).optional(),
+      })
+      .parse(req.query);
+    const result = await tipsService.getPaginatedTips({ limit, cursor, address, direction });
+    res.status(200).json({ data: result.data, nextCursor: result.nextCursor });
   } catch (err) {
     next(err);
   }

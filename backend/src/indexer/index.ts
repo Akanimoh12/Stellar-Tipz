@@ -1,3 +1,4 @@
+export { bootstrapIndexer } from './main.js';
 export { startIndexer, pollOnce } from './poller.js';
 export type { IndexerHandle } from './poller.js';
 export { projectEvent } from './projections.js';

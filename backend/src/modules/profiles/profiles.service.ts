@@ -6,9 +6,10 @@ import {
   ConflictError,
 } from "../../common/errors/AppError.js";
 import type {
-  ProfileResponse,
   UpdateProfileRequest,
 } from "./profiles.types.js";
+import type { ProfileResponseDto, PaginatedProfilesDto } from "./profiles.dto.js";
+import { serializeProfile } from "./profiles.serializer.js";
 
 /**
  * Helper to fetch aggregate tip stats for a user.
@@ -42,7 +43,7 @@ async function getTipStats(userId: string): Promise<{ tipsCount: number; totalRe
 /**
  * Gets a profile by user ID.
  */
-export async function getProfileById(userId: string): Promise<ProfileResponse> {
+export async function getProfileById(userId: string): Promise<ProfileResponseDto> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -65,20 +66,7 @@ export async function getProfileById(userId: string): Promise<ProfileResponse> {
   }
 
   const stats = await getTipStats(user.id);
-
-  return {
-    id: user.id,
-    stellarAddress: user.stellarAddress,
-    username: user.username,
-    displayName: user.displayName,
-    bio: user.bio,
-    imageUrl: user.imageUrl,
-    avatarCid: user.avatarCid,
-    xHandle: user.xHandle,
-    createdAt: user.createdAt.toISOString(),
-    updatedAt: user.updatedAt.toISOString(),
-    ...stats,
-  };
+  return serializeProfile(user, stats);
 }
 
 /**
@@ -86,7 +74,7 @@ export async function getProfileById(userId: string): Promise<ProfileResponse> {
  */
 export async function getProfileByUsername(
   username: string,
-): Promise<ProfileResponse> {
+): Promise<ProfileResponseDto> {
   const user = await prisma.user.findUnique({
     where: { username },
     select: {
@@ -109,20 +97,7 @@ export async function getProfileByUsername(
   }
 
   const stats = await getTipStats(user.id);
-
-  return {
-    id: user.id,
-    stellarAddress: user.stellarAddress,
-    username: user.username,
-    displayName: user.displayName,
-    bio: user.bio,
-    imageUrl: user.imageUrl,
-    avatarCid: user.avatarCid,
-    xHandle: user.xHandle,
-    createdAt: user.createdAt.toISOString(),
-    updatedAt: user.updatedAt.toISOString(),
-    ...stats,
-  };
+  return serializeProfile(user, stats);
 }
 
 /**
@@ -130,7 +105,7 @@ export async function getProfileByUsername(
  */
 export async function getProfileByAddress(
   stellarAddress: string,
-): Promise<ProfileResponse> {
+): Promise<ProfileResponseDto> {
   const user = await prisma.user.findUnique({
     where: { stellarAddress },
     select: {
@@ -153,20 +128,7 @@ export async function getProfileByAddress(
   }
 
   const stats = await getTipStats(user.id);
-
-  return {
-    id: user.id,
-    stellarAddress: user.stellarAddress,
-    username: user.username,
-    displayName: user.displayName,
-    bio: user.bio,
-    imageUrl: user.imageUrl,
-    avatarCid: user.avatarCid,
-    xHandle: user.xHandle,
-    createdAt: user.createdAt.toISOString(),
-    updatedAt: user.updatedAt.toISOString(),
-    ...stats,
-  };
+  return serializeProfile(user, stats);
 }
 
 /**
@@ -175,7 +137,7 @@ export async function getProfileByAddress(
 export async function updateProfile(
   userId: string,
   data: UpdateProfileRequest,
-): Promise<ProfileResponse> {
+): Promise<ProfileResponseDto> {
   // Check if profile exists and is active
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -215,22 +177,8 @@ export async function updateProfile(
     });
 
     logger.info({ userId }, "Profile updated successfully");
-
     const stats = await getTipStats(updatedUser.id);
-
-    return {
-      id: updatedUser.id,
-      stellarAddress: updatedUser.stellarAddress,
-      username: updatedUser.username,
-      displayName: updatedUser.displayName,
-      bio: updatedUser.bio,
-      imageUrl: updatedUser.imageUrl,
-      avatarCid: updatedUser.avatarCid,
-      xHandle: updatedUser.xHandle,
-      createdAt: updatedUser.createdAt.toISOString(),
-      updatedAt: updatedUser.updatedAt.toISOString(),
-      ...stats,
-    };
+    return serializeProfile(updatedUser, stats);
   } catch (error) {
     logger.error({ userId, error }, "Failed to update profile");
     throw new BadRequestError("Failed to update profile");
@@ -243,12 +191,7 @@ export async function updateProfile(
 export async function listProfiles(
   page = 1,
   limit = 20,
-): Promise<{
-  profiles: ProfileResponse[];
-  total: number;
-  page: number;
-  limit: number;
-}> {
+): Promise<PaginatedProfilesDto> {
   const skip = (page - 1) * limit;
 
   const [users, total] = await Promise.all([
@@ -278,19 +221,7 @@ export async function listProfiles(
   const profiles = await Promise.all(
     users.map(async (user) => {
       const stats = await getTipStats(user.id);
-      return {
-        id: user.id,
-        stellarAddress: user.stellarAddress,
-        username: user.username,
-        displayName: user.displayName,
-        bio: user.bio,
-        imageUrl: user.imageUrl,
-        avatarCid: user.avatarCid,
-        xHandle: user.xHandle,
-        createdAt: user.createdAt.toISOString(),
-        updatedAt: user.updatedAt.toISOString(),
-        ...stats,
-      };
+      return serializeProfile(user, stats);
     })
   );
 

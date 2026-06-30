@@ -9,6 +9,7 @@ export const tipsRouter = Router();
 tipsRouter.get('/', tipsController.getTips);
 tipsRouter.post('/', tipsController.record);
 tipsRouter.post('/prepare', tipsController.prepare);
+tipsRouter.post('/submit', tipsController.submit);
 tipsRouter.get('/:id', tipsController.getById);
 tipsRouter.patch('/:txHash/confirm', tipsController.confirm);
 

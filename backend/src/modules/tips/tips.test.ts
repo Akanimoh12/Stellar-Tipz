@@ -28,7 +28,15 @@ vi.mock('@stellar/stellar-sdk', () => {
     build: vi.fn(() => ({
       toEnvelope: vi.fn(() => ({
         toXDR: vi.fn(() => 'AAAAAgAAAAA...mock-unsigned-xdr...'),
+        hash: vi.fn(() => Buffer.from('abcdef1234567890abcdef1234567890abcdef12', 'hex')),
       })),
+    })),
+  };
+
+  const mockTx = {
+    toEnvelope: vi.fn(() => ({
+      toXDR: vi.fn(() => 'AAAAAgAAAAA...mock-unsigned-xdr...'),
+      hash: vi.fn(() => Buffer.from('abcdef1234567890abcdef1234567890abcdef12', 'hex')),
     })),
   };
 
@@ -36,17 +44,22 @@ vi.mock('@stellar/stellar-sdk', () => {
     Keypair: {
       fromPublicKey: vi.fn(),
     },
-    TransactionBuilder: vi.fn(() => ({
-      addOperation: vi.fn(() => ({
-        setTimeout: vi.fn(() => ({
-          build: vi.fn(() => ({})),
+    TransactionBuilder: Object.assign(
+      vi.fn(() => ({
+        addOperation: vi.fn(() => ({
+          setTimeout: vi.fn(() => ({
+            build: vi.fn(() => ({})),
+          })),
         })),
       })),
-    })),
+      { fromXDR: vi.fn(() => mockTx) },
+    ),
     SorobanRpc: {
       Server: vi.fn(() => ({
         getAccount: mockGetAccount,
         simulateTransaction: mockSimulateTransaction,
+        sendTransaction: mockSendTransaction,
+        getTransaction: mockGetTransaction,
       })),
       assembleTransaction: vi.fn(() => mockPreparedTx),
       Api: {
@@ -58,8 +71,10 @@ vi.mock('@stellar/stellar-sdk', () => {
     })),
     nativeToScVal: vi.fn(() => ({ type: 'scval' })),
     xdr: {
-      ScVal: {
-        scvVoid: () => ({}),
+      TransactionEnvelope: {
+        fromXDR: vi.fn(() => ({
+          hash: vi.fn(() => Buffer.from('abcdef1234567890abcdef1234567890abcdef12', 'hex')),
+        })),
       },
     },
     Networks: {
@@ -134,6 +149,7 @@ describe('POST /api/v1/tips/prepare', () => {
   });
 
   it('returns prepared transaction on success', async () => {
+    mockFindUnique.mockResolvedValue(null);
     mockGetAccount.mockResolvedValue({
       accountId: () => from,
       sequenceNumber: () => '123',
@@ -148,6 +164,53 @@ describe('POST /api/v1/tips/prepare', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.unsignedTxXdr).toBeDefined();
     expect(res.body.data.contractId).toBeDefined();
+  });
+
+  it('sanitizes HTML-like characters in message', async () => {
+    mockGetAccount.mockResolvedValue({
+      accountId: () => address,
+      sequenceNumber: () => '123',
+      incrementSequenceNumber: () => {},
+    });
+    mockSimulateTransaction.mockResolvedValue({});
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/prepare')
+      .send({
+        from: address,
+        to: address,
+        amount: '100',
+        message: '<script>alert("xss")</script>',
+      });
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects message with invalid characters', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/prepare')
+      .send({
+        from: address,
+        to: address,
+        amount: '100',
+        message: 'message with \u0000 null byte',
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('rejects message longer than 280 characters', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/prepare')
+      .send({
+        from: address,
+        to: address,
+        amount: '100',
+        message: 'x'.repeat(281),
+      });
+    expect(res.status).toBe(400);
   });
 });
 
@@ -232,6 +295,153 @@ it('returns 400 for invalid address', async () => {
     const app = createApp();
     const res = await request(app).get('/api/v1/tips?address=not-valid');
     expect(res.status).toBe(400);
+  });
+
+  it('filters by tokenCode', async () => {
+    mockFindMany.mockResolvedValue([
+      {
+        id: '4',
+        txHash: 'hash-4',
+        ledger: 103,
+        fromAddress: address,
+        toAddress: 'G' + 'Z'.repeat(55),
+        amountStroops: BigInt(75),
+        tokenCode: 'USDC',
+        message: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/tips?tokenCode=USDC');
+    expect(res.status).toBe(200);
+    expect(mockFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ tokenCode: 'USDC' }),
+      }),
+    );
+  });
+
+  it('filters by startDate', async () => {
+    mockFindMany.mockResolvedValue([]);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/tips?startDate=2026-01-01T00:00:00Z');
+    expect(res.status).toBe(200);
+    expect(mockFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          createdAt: expect.objectContaining({ gte: expect.any(Date) }),
+        }),
+      }),
+    );
+  });
+
+  it('filters by endDate', async () => {
+    mockFindMany.mockResolvedValue([]);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/tips?endDate=2026-06-30T23:59:59Z');
+    expect(res.status).toBe(200);
+    expect(mockFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          createdAt: expect.objectContaining({ lte: expect.any(Date) }),
+        }),
+      }),
+    );
+  });
+
+  it('filters by both startDate and endDate', async () => {
+    mockFindMany.mockResolvedValue([]);
+
+    const app = createApp();
+    const res = await request(app).get(
+      '/api/v1/tips?startDate=2026-01-01T00:00:00Z&endDate=2026-06-30T23:59:59Z',
+    );
+    expect(res.status).toBe(200);
+    expect(mockFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          createdAt: expect.objectContaining({
+            gte: expect.any(Date),
+            lte: expect.any(Date),
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('returns 400 for invalid startDate format', async () => {
+    const app = createApp();
+    const res = await request(app).get('/api/v1/tips?startDate=not-a-date');
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('POST /api/v1/tips/prepare — minimum tip enforcement', () => {
+  function mockCreator(minTipAmount: bigint | null) {
+    mockFindUnique.mockResolvedValue({
+      id: 'creator-1',
+      stellarAddress: address,
+      minTipAmount,
+      username: 'creator',
+      displayName: null,
+      bio: null,
+      imageUrl: null,
+      avatarCid: null,
+      xHandle: null,
+      creditScore: null,
+      creditTier: null,
+      deletedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+  }
+
+  function mockStellar() {
+    mockGetAccount.mockResolvedValue({
+      accountId: () => address,
+      sequenceNumber: () => '123',
+      incrementSequenceNumber: () => {},
+    });
+    mockSimulateTransaction.mockResolvedValue({});
+  }
+
+  it('returns 400 when tip is below creator minimum', async () => {
+    mockStellar();
+    mockCreator(BigInt(500));
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/prepare')
+      .send({ from: address, to: address, amount: '100' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toContain('below the creator\'s minimum');
+  });
+
+  it('allows tip when creator has no minimum set', async () => {
+    mockStellar();
+    mockCreator(null);
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/prepare')
+      .send({ from: address, to: address, amount: '100' });
+    expect(res.status).toBe(200);
+  });
+
+  it('allows tip when creator does not exist in off-chain DB', async () => {
+    mockStellar();
+    mockFindUnique.mockResolvedValue(null);
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips/prepare')
+      .send({ from: address, to: address, amount: '100' });
+    expect(res.status).toBe(200);
   });
 });
 
