@@ -28,6 +28,8 @@ export interface ProfileResponse {
   minTipAmount: string | null;
   createdAt: string;
   updatedAt: string;
+  tipsCount: number;
+  totalReceived: string;
 }
 
 export interface UpdateProfileRequest {
