@@ -1,26 +1,21 @@
 import { Contract, TransactionBuilder, SorobanRpc, nativeToScVal, Networks } from '@stellar/stellar-sdk';
-import type { Prisma, Tip } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { config } from '../../config/index.js';
 import { prisma } from '../../db/prisma.js';
 import { BadRequestError, NotFoundError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
+import { TipStatus } from '../../types/enums.js';
+import type { RecordTipInput } from './tips.schema.js';
+import { serializeTip } from './tips.serializer.js';
+import type { TipResponseDto } from './tips.dto.js';
+
+export type { TipResponseDto };
 
 export interface GetTipsParams {
   cursor?: string;
   limit: number;
   address?: string;
   direction?: string;
-}
-
-export interface TipResult {
-  id: string;
-  txHash: string;
-  ledger: number;
-  fromAddress: string;
-  toAddress: string;
-  amountStroops: string;
-  message: string | null;
-  createdAt: Date;
 }
 
 export interface PreparedTip {
@@ -32,9 +27,14 @@ export interface PreparedTip {
   networkPassphrase: string;
 }
 
+export interface PaginatedTips {
+  data: TipResponseDto[];
+  nextCursor: string | null;
+}
+
 export async function getPaginatedTips(
   params: GetTipsParams,
-): Promise<{ data: TipResult[]; nextCursor: string | null }> {
+): Promise<PaginatedTips> {
   const where: Record<string, unknown> = {};
   if (params.address) {
     if (params.direction === 'sent') {
@@ -68,10 +68,7 @@ export async function getPaginatedTips(
   const nextCursor = hasMore && results.length > 0 ? results[results.length - 1].id : null;
 
   return {
-    data: results.map((t) => ({
-      ...t,
-      amountStroops: t.amountStroops.toString(),
-    })),
+    data: results.map(serializeTip),
     nextCursor,
   };
 }
@@ -137,41 +134,11 @@ export async function prepareTip(
   };
 }
 
-/** API-safe view of a Tip (BigInt amount serialized to a decimal string). */
-export interface TipResult {
-  id: string;
-  txHash: string;
-  ledger: number;
-  fromAddress: string;
-  toAddress: string;
-  amountStroops: string;
-  message: string | null;
-  createdAt: Date;
-}
-
-export interface PaginatedTips {
-  data: TipResult[];
-  nextCursor: string | null;
-}
-
-function toTipResult(tip: Tip): TipResult {
-  return {
-    id: tip.id,
-    txHash: tip.txHash,
-    ledger: tip.ledger,
-    fromAddress: tip.fromAddress,
-    toAddress: tip.toAddress,
-    amountStroops: tip.amountStroops.toString(),
-    message: tip.message,
-    createdAt: tip.createdAt,
-  };
-}
-
 /** GET /tips/:id — fetch a single tip by its id. */
-export async function getTipById(id: string): Promise<TipResult> {
+export async function getTipById(id: string): Promise<TipResponseDto> {
   const tip = await prisma.tip.findUnique({ where: { id } });
   if (!tip) throw new NotFoundError('Tip not found');
-  return toTipResult(tip);
+  return serializeTip(tip);
 }
 
 /** Shared cursor-paginated list query, newest first. */
@@ -191,7 +158,7 @@ async function listTips(
   const page = hasMore ? rows.slice(0, limit) : rows;
 
   return {
-    data: page.map(toTipResult),
+    data: page.map(serializeTip),
     nextCursor: hasMore ? page[page.length - 1].id : null,
   };
 }
@@ -216,89 +183,48 @@ export async function getTipsSentByAddress(
   return listTips({ fromAddress }, limit, cursor);
 }
 
-export function sanitizeTipMessage(message: string | undefined): string | undefined {
-  if (!message) return undefined;
-  const trimmed = message.trim().slice(0, 280);
-  const sanitized = trimmed.replace(/[<>]/g, '');
-  return sanitized || undefined;
-}
+/**
+ * POST /tips — record an on-chain tip, idempotent by txHash.
+ * If a tip with the given txHash already exists the existing record is returned
+ * instead of inserting a duplicate. A Prisma P2002 unique-constraint violation
+ * (from a concurrent insert) is handled the same way.
+ */
+export async function recordTip(input: RecordTipInput): Promise<TipResponseDto> {
+  const existing = await prisma.tip.findUnique({ where: { txHash: input.txHash } });
+  if (existing) return serializeTip(existing);
 
-export async function submitTip(signedTxXdr: string): Promise<{
-  txHash: string;
-  ledger: number;
-  tipId: string;
-  status: string;
-}> {
-  const server = new SorobanRpc.Server(config.stellar.rpcUrl, {
-    allowHttp: config.stellar.rpcUrl.startsWith('http://'),
-  });
-
-  const networkPassphrase = Networks[config.stellar.network as keyof typeof Networks] ?? config.stellar.networkPassphrase;
-  const tx = TransactionBuilder.fromXDR(signedTxXdr, networkPassphrase);
-
-  const sendResponse = await server.sendTransaction(tx).catch((err: Error) => {
-    logger.error({ err }, 'Failed to send transaction');
-    throw new BadRequestError('Failed to send transaction to the network');
-  });
-
-  if (sendResponse.status === 'PENDING' || sendResponse.status === 'DUPLICATE') {
-    const pollResult = await pollForTransaction(server, sendResponse.hash, 30, 1000);
-
-    if (pollResult.status === 'FAILED') {
-      throw new BadRequestError(`Transaction failed: ${pollResult.error ?? 'Unknown error'}`);
-    }
-
+  try {
     const tip = await prisma.tip.create({
       data: {
-        txHash: sendResponse.hash,
-        ledger: pollResult.ledger ?? 0,
-        fromAddress: 'unknown',
-        toAddress: 'unknown',
-        amountStroops: BigInt(0),
-        status: 'CONFIRMED',
+        txHash: input.txHash,
+        ledger: input.ledger,
+        fromAddress: input.fromAddress,
+        toAddress: input.toAddress,
+        amountStroops: BigInt(input.amountStroops),
+        message: input.message,
       },
     });
-
-    return {
-      txHash: sendResponse.hash,
-      ledger: pollResult.ledger ?? 0,
-      tipId: tip.id,
-      status: 'CONFIRMED',
-    };
-  }
-
-  if (sendResponse.status === 'ERROR' || sendResponse.errorResult) {
-    const errorMsg = sendResponse.errorResult
-      ? sendResponse.errorResult.result?.toString() ?? 'Unknown error'
-      : 'Transaction submission failed';
-    throw new BadRequestError(errorMsg);
-  }
-
-  throw new BadRequestError('Unexpected transaction submission response');
-}
-
-interface PollResult {
-  status: string;
-  ledger?: number;
-  error?: string;
-}
-
-async function pollForTransaction(
-  server: SorobanRpc.Server,
-  hash: string,
-  maxAttempts: number,
-  intervalMs: number,
-): Promise<PollResult> {
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const result = await server.getTransaction(hash);
-    if (result.status !== 'NOT_FOUND') {
-      return {
-        status: result.status,
-        ledger: 'ledger' in result ? (result.ledger as number) : undefined,
-        error: 'result' in result ? (result as Record<string, unknown>).result?.toString() : undefined,
-      };
+    return serializeTip(tip);
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      const tip = await prisma.tip.findUnique({ where: { txHash: input.txHash } });
+      if (tip) return serializeTip(tip);
     }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    throw err;
   }
-  return { status: 'FAILED', error: 'Transaction not confirmed within poll timeout' };
+}
+
+/**
+ * PATCH /tips/:txHash/confirm — transition a tip from PENDING to CONFIRMED.
+ * Idempotent: calling on an already-CONFIRMED tip is a no-op.
+ */
+export async function confirmTip(txHash: string): Promise<TipResponseDto> {
+  const tip = await prisma.tip.findUnique({ where: { txHash } });
+  if (!tip) throw new NotFoundError('Tip not found');
+  if (tip.status === TipStatus.CONFIRMED) return serializeTip(tip);
+  const updated = await prisma.tip.update({
+    where: { txHash },
+    data: { status: TipStatus.CONFIRMED },
+  });
+  return serializeTip(updated);
 }

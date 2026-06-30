@@ -7,9 +7,11 @@ import { mergeOpenApiPaths } from '../../docs/openapi.js';
 export const tipsRouter = Router();
 
 tipsRouter.get('/', tipsController.getTips);
+tipsRouter.post('/', tipsController.record);
 tipsRouter.post('/prepare', tipsController.prepare);
 tipsRouter.post('/submit', tipsController.submit);
 tipsRouter.get('/:id', tipsController.getById);
+tipsRouter.patch('/:txHash/confirm', tipsController.confirm);
 
 /** Mounted under `${API_BASE_PATH}/profiles` — tips received by a profile. */
 export const profileTipsRouter = Router();
@@ -107,6 +109,26 @@ mergeOpenApiPaths({
       responses: {
         '200': { description: 'Tip found' },
         '400': { description: 'Validation error' },
+        '404': { description: 'Tip not found' },
+      },
+    },
+  },
+  [`${base}/{txHash}/confirm`]: {
+    patch: {
+      tags: ['Tips'],
+      summary: 'Confirm a pending tip',
+      description: 'Transitions a tip from PENDING to CONFIRMED. Idempotent — calling on an already-CONFIRMED tip is a no-op.',
+      parameters: [
+        {
+          name: 'txHash',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+          description: 'Transaction hash of the tip to confirm',
+        },
+      ],
+      responses: {
+        '200': { description: 'Tip confirmed (or already confirmed)' },
         '404': { description: 'Tip not found' },
       },
     },

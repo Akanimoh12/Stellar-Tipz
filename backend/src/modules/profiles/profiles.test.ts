@@ -1,7 +1,8 @@
 import request from 'supertest';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { createApp } from '../../app.js';
-import { validateUsername } from './profiles.service.js';
+
+const PROFILE_UPDATE_RATE_LIMIT_MAX = 5;
 
 const { mockFindUnique, mockFindFirst, mockUpdate, mockRedisGet, mockRedisSetex, mockRedisDel } =
   vi.hoisted(() => ({
@@ -46,8 +47,12 @@ vi.mock('jsonwebtoken', () => ({
 }));
 
 vi.mock('node:crypto', () => ({
-  default: { randomBytes: vi.fn(() => Buffer.from('abcdef1234567890abcdef1234567890')) },
+  default: {
+    randomBytes: vi.fn(() => Buffer.from('abcdef1234567890abcdef1234567890')),
+    randomUUID: vi.fn(() => 'test-uuid-1234'),
+  },
   randomBytes: vi.fn(() => Buffer.from('abcdef1234567890abcdef1234567890')),
+  randomUUID: vi.fn(() => 'test-uuid-1234'),
 }));
 
 const validAddress = 'GF5YV3FQRHRMA7IQWCZKGRRJ5P7CEPIVBQLM4X2FEHS2IU57KF3U4CLN';
@@ -242,54 +247,6 @@ describe('PATCH /api/v1/profiles/reactivate', () => {
   });
 });
 
-describe('validateUsername', () => {
-  it('accepts a valid lowercase username', () => {
-    expect(() => validateUsername('john_doe')).not.toThrow();
-  });
-
-  it('accepts a username with numbers', () => {
-    expect(() => validateUsername('user123')).not.toThrow();
-  });
-
-  it('rejects a username shorter than 3 characters', () => {
-    expect(() => validateUsername('ab')).toThrow('Username must be at least 3 characters');
-  });
-
-  it('rejects a username longer than 32 characters', () => {
-    expect(() => validateUsername('a'.repeat(33))).toThrow(
-      'Username must be at most 32 characters',
-    );
-  });
-
-  it('rejects a username with uppercase letters', () => {
-    expect(() => validateUsername('JohnDoe')).toThrow(
-      'Username can only contain lowercase letters, numbers, and underscores',
-    );
-  });
-
-  it('rejects a username with special characters', () => {
-    expect(() => validateUsername('john-doe')).toThrow(
-      'Username can only contain lowercase letters, numbers, and underscores',
-    );
-  });
-
-  it('rejects a reserved username', () => {
-    expect(() => validateUsername('admin')).toThrow('Username "admin" is reserved');
-  });
-
-  it('rejects another reserved username', () => {
-    expect(() => validateUsername('stellar')).toThrow('Username "stellar" is reserved');
-  });
-
-  it('rejects the test reserved username', () => {
-    expect(() => validateUsername('test')).toThrow('Username "test" is reserved');
-  });
-
-  it('rejects the help reserved username', () => {
-    expect(() => validateUsername('help')).toThrow('Username "help" is reserved');
-  });
-});
-
 describe('POST /api/v1/profiles/image', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -364,5 +321,98 @@ describe('GET /api/v1/profiles/check-username', () => {
     const res = await request(app).get('/api/v1/profiles/check-username?username=ab');
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('PATCH /api/v1/profiles/me', () => {
+  const now = new Date();
+  const activeUser = {
+    id: 'user-1',
+    stellarAddress: validAddress,
+    username: 'oldname',
+    profileImageCid: null,
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns 401 without auth', async () => {
+    const app = createApp();
+    const res = await request(app).patch('/api/v1/profiles/me').send({ username: 'newname' });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 for an invalid username (too short)', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .patch('/api/v1/profiles/me')
+      .set('Authorization', authHeader)
+      .send({ username: 'ab' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('updates the profile username', async () => {
+    mockFindUnique.mockResolvedValue(activeUser);
+    mockFindFirst.mockResolvedValue(null);
+    mockUpdate.mockResolvedValue({ ...activeUser, username: 'newname' });
+
+    const app = createApp();
+    const res = await request(app)
+      .patch('/api/v1/profiles/me')
+      .set('Authorization', authHeader)
+      .send({ username: 'newname' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.username).toBe('newname');
+  });
+
+  it('returns 409 when the new username is already taken', async () => {
+    mockFindUnique.mockResolvedValue(activeUser);
+    mockFindFirst.mockResolvedValue({ id: 'user-2', username: 'newname' });
+
+    const app = createApp();
+    const res = await request(app)
+      .patch('/api/v1/profiles/me')
+      .set('Authorization', authHeader)
+      .send({ username: 'newname' });
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('CONFLICT');
+  });
+});
+
+describe('PATCH /api/v1/profiles/me — rate limiting', () => {
+  it('returns 429 after exceeding the rate limit', async () => {
+    const now = new Date();
+    const activeUser = {
+      id: 'user-1',
+      stellarAddress: validAddress,
+      username: 'testuser',
+      profileImageCid: null,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    };
+
+    mockFindUnique.mockResolvedValue(activeUser);
+    mockFindFirst.mockResolvedValue(null);
+    mockUpdate.mockResolvedValue({ ...activeUser, username: 'updated' });
+
+    const app = createApp();
+    const statuses: number[] = [];
+
+    // Send more requests than the limit allows to guarantee hitting 429
+    for (let i = 0; i < PROFILE_UPDATE_RATE_LIMIT_MAX + 1; i++) {
+      const res = await request(app)
+        .patch('/api/v1/profiles/me')
+        .set('Authorization', authHeader)
+        .send({ username: `user${i}` });
+      statuses.push(res.status);
+    }
+
+    expect(statuses).toContain(429);
   });
 });
