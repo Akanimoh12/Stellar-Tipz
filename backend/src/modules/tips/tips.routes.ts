@@ -40,36 +40,111 @@ const paginationParameters = [
   },
 ];
 
-const filterParameters = [
-  ...paginationParameters,
-  {
-    name: 'tokenCode',
-    in: 'query',
-    required: false,
-    schema: { type: 'string', maxLength: 10 },
-    description: 'Filter by token code (e.g. XLM, USDC)',
+const tipResponseSchema = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    txHash: { type: 'string' },
+    ledger: { type: 'integer' },
+    fromAddress: { type: 'string' },
+    toAddress: { type: 'string' },
+    amountStroops: { type: 'string', description: 'Tip amount in stroops' },
+    status: { type: 'string', enum: ['PENDING', 'CONFIRMED'] },
+    message: { type: 'string', nullable: true },
+    createdAt: { type: 'string', format: 'date-time' },
   },
-  {
-    name: 'startDate',
-    in: 'query',
-    required: false,
-    schema: { type: 'string', format: 'date-time' },
-    description: 'Filter tips created on or after this ISO 8601 date',
+  required: ['id', 'txHash', 'ledger', 'fromAddress', 'toAddress', 'amountStroops', 'status', 'createdAt'],
+};
+
+const tipAggregateSchema = {
+  type: 'object',
+  properties: {
+    toAddress: { type: 'string' },
+    totalAmountStroops: { type: 'string', description: 'Total tip amount received in stroops' },
+    tipCount: { type: 'integer', description: 'Number of tips received' },
   },
-  {
-    name: 'endDate',
-    in: 'query',
-    required: false,
-    schema: { type: 'string', format: 'date-time' },
-    description: 'Filter tips created on or before this ISO 8601 date',
+  required: ['toAddress', 'totalAmountStroops', 'tipCount'],
+};
+
+const tipListResponseSchema = {
+  type: 'object',
+  properties: {
+    data: {
+      type: 'array',
+      items: tipResponseSchema,
+    },
+    nextCursor: { type: 'string', nullable: true },
   },
-];
+  required: ['data'],
+};
+
+const tipAggregateResponseSchema = {
+  type: 'object',
+  properties: {
+    data: {
+      type: 'array',
+      items: tipAggregateSchema,
+    },
+  },
+  required: ['data'],
+};
+
 mergeOpenApiPaths({
-  [`${base}/submit`]: {
+  [`${base}`]: {
+    get: {
+      tags: ['Tips'],
+      summary: 'List tips with optional filtering',
+      description: 'Returns a cursor-paginated list of tips. Optionally filter by address and direction (sent/received). Use aggregate=creator to get tip totals per creator.',
+      parameters: [
+        ...paginationParameters,
+        {
+          name: 'address',
+          in: 'query',
+          required: false,
+          schema: { type: 'string', pattern: '^G[A-Z2-7]{55}$' },
+          description: 'Filter tips by Stellar address',
+        },
+        {
+          name: 'direction',
+          in: 'query',
+          required: false,
+          schema: { type: 'string', enum: ['sent', 'received'] },
+          description: 'Filter direction when address is provided',
+        },
+        {
+          name: 'aggregate',
+          in: 'query',
+          required: false,
+          schema: { type: 'string', enum: ['creator'] },
+          description: 'Aggregate tips by creator (returns totals per toAddress)',
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'Paginated list of tips or aggregated totals',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: {
+                    type: 'array',
+                    items: tipResponseSchema,
+                  },
+                  nextCursor: { type: 'string', nullable: true },
+                },
+                required: ['data'],
+              },
+            },
+          },
+        },
+        '400': { description: 'Validation error' },
+      },
+    },
     post: {
       tags: ['Tips'],
-      summary: 'Submit a signed Soroban tip transaction',
-      description: 'Submits a wallet-signed Soroban transaction to the Stellar network, polls for confirmation, and records the tip in the database.',
+      summary: 'Record an on-chain tip',
+      description: 'Records a tip that was submitted on-chain. Idempotent by txHash — if a tip with the given txHash already exists, returns the existing record.',
       requestBody: {
         required: true,
         content: {
@@ -77,16 +152,34 @@ mergeOpenApiPaths({
             schema: {
               type: 'object',
               properties: {
-                signedTxXdr: { type: 'string', description: 'Base64-encoded signed transaction envelope XDR' },
+                txHash: { type: 'string', description: 'Transaction hash of the tip' },
+                ledger: { type: 'integer', description: 'Ledger number when the tip was recorded' },
+                fromAddress: { type: 'string', description: 'Sender Stellar address' },
+                toAddress: { type: 'string', description: 'Recipient Stellar address' },
+                amountStroops: { type: 'string', description: 'Tip amount in stroops' },
+                message: { type: 'string', description: 'Optional tip message', nullable: true },
               },
-              required: ['signedTxXdr'],
+              required: ['txHash', 'ledger', 'fromAddress', 'toAddress', 'amountStroops'],
             },
           },
         },
       },
       responses: {
-        '200': { description: 'Tip submitted and confirmed' },
-        '400': { description: 'Validation or submission error' },
+        '200': {
+          description: 'Tip recorded',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: tipResponseSchema,
+                },
+                required: ['data'],
+              },
+            },
+          },
+        },
+        '400': { description: 'Validation error' },
       },
     },
   },
@@ -113,7 +206,31 @@ mergeOpenApiPaths({
         },
       },
       responses: {
-        '200': { description: 'Unsigned transaction prepared' },
+        '200': {
+          description: 'Unsigned transaction prepared',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: {
+                    type: 'object',
+                    properties: {
+                      unsignedTxXdr: { type: 'string', description: 'Unsigned transaction XDR for wallet signing' },
+                      from: { type: 'string' },
+                      to: { type: 'string' },
+                      amount: { type: 'string' },
+                      contractId: { type: 'string' },
+                      networkPassphrase: { type: 'string' },
+                    },
+                    required: ['unsignedTxXdr', 'from', 'to', 'amount', 'contractId', 'networkPassphrase'],
+                  },
+                },
+                required: ['data'],
+              },
+            },
+          },
+        },
         '400': { description: 'Validation or simulation error' },
       },
     },
@@ -127,12 +244,24 @@ mergeOpenApiPaths({
           name: 'id',
           in: 'path',
           required: true,
-          schema: { type: 'string' },
-          description: 'Tip id',
+          schema: { type: 'string', pattern: '^[a-z0-9]+$', description: 'Tip id (cuid format)' },
         },
       ],
       responses: {
-        '200': { description: 'Tip found' },
+        '200': {
+          description: 'Tip found',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: tipResponseSchema,
+                },
+                required: ['data'],
+              },
+            },
+          },
+        },
         '400': { description: 'Validation error' },
         '404': { description: 'Tip not found' },
       },
@@ -153,7 +282,20 @@ mergeOpenApiPaths({
         },
       ],
       responses: {
-        '200': { description: 'Tip confirmed (or already confirmed)' },
+        '200': {
+          description: 'Tip confirmed (or already confirmed)',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: tipResponseSchema,
+                },
+                required: ['data'],
+              },
+            },
+          },
+        },
         '404': { description: 'Tip not found' },
       },
     },
@@ -173,7 +315,24 @@ mergeOpenApiPaths({
         ...paginationParameters,
       ],
       responses: {
-        '200': { description: 'Tips received' },
+        '200': {
+          description: 'Tips received',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: {
+                    type: 'array',
+                    items: tipResponseSchema,
+                  },
+                  nextCursor: { type: 'string', nullable: true },
+                },
+                required: ['data', 'nextCursor'],
+              },
+            },
+          },
+        },
         '400': { description: 'Validation error' },
         '404': { description: 'Profile not found' },
       },
@@ -186,7 +345,24 @@ mergeOpenApiPaths({
       security: [{ bearerAuth: [] }],
       parameters: paginationParameters,
       responses: {
-        '200': { description: 'Tips sent' },
+        '200': {
+          description: 'Tips sent',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: {
+                    type: 'array',
+                    items: tipResponseSchema,
+                  },
+                  nextCursor: { type: 'string', nullable: true },
+                },
+                required: ['data', 'nextCursor'],
+              },
+            },
+          },
+        },
         '401': { description: 'Unauthorized' },
       },
     },
