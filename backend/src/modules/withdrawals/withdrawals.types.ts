@@ -7,3 +7,10 @@ export interface WithdrawalResponse {
   requestedAt: string;
   confirmedAt: string | null;
 }
+
+export interface WithdrawableBalanceResponse {
+  stellarAddress: string;
+  totalReceived: string;
+  totalWithdrawn: string;
+  withdrawableBalance: string;
+}
