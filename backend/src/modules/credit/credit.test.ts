@@ -147,11 +147,12 @@ describe('computeCreditScore (pure formula)', () => {
   });
 });
 
-const { mockFindUnique, mockAggregate, mockUpsert, mockCreate } = vi.hoisted(() => ({
+const { mockFindUnique, mockAggregate, mockUpsert, mockCreate, mockHistoryFindMany } = vi.hoisted(() => ({
   mockFindUnique: vi.fn(),
   mockAggregate: vi.fn(),
   mockUpsert: vi.fn(),
   mockCreate: vi.fn(),
+  mockHistoryFindMany: vi.fn(),
 }));
 
 vi.mock('../../db/prisma.js', () => ({
@@ -167,6 +168,7 @@ vi.mock('../../db/prisma.js', () => ({
     },
     creditScoreHistory: {
       create: mockCreate,
+      findMany: mockHistoryFindMany,
     },
     $disconnect: vi.fn(),
   },
@@ -218,5 +220,42 @@ describe('GET /api/v1/credit/:userId', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.score).toBe(75);
     expect(res.body.data.tier).toBe('Gold');
+  });
+});
+
+describe('GET /api/v1/credit/:userId/history', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns 404 when user not found', async () => {
+    mockFindUnique.mockResolvedValue(null);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/credit/nonexistent/history');
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('returns the time series of a creator\'s score', async () => {
+    mockFindUnique.mockResolvedValue({ id: 'user-1', deletedAt: null });
+    mockHistoryFindMany.mockResolvedValue([
+      { value: 42, computedAt: new Date('2024-01-01T00:00:00.000Z') },
+      { value: 55, computedAt: new Date('2024-02-01T00:00:00.000Z') },
+    ]);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/credit/user-1/history');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([
+      { value: 42, computedAt: '2024-01-01T00:00:00.000Z' },
+      { value: 55, computedAt: '2024-02-01T00:00:00.000Z' },
+    ]);
+    expect(mockHistoryFindMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+      orderBy: { computedAt: 'asc' },
+      skip: 0,
+      take: 20,
+    });
   });
 });
