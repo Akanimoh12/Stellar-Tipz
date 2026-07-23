@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const leaderboardQuerySchema = z.object({
-  period: z.enum(['WEEKLY', 'MONTHLY', 'ALL_TIME']).default('ALL_TIME'),
+  window: z.enum(['24h', '7d', 'all']).default('all'),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -12,3 +12,4 @@ export const userIdParamSchema = z.object({
 
 export type LeaderboardQuery = z.infer<typeof leaderboardQuerySchema>;
 export type UserIdParam = z.infer<typeof userIdParamSchema>;
+export type TimeWindow = '24h' | '7d' | 'all';

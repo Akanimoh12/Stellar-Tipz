@@ -1,3 +1,5 @@
+import type { TimeWindow } from './leaderboard.schema.js';
+
 export interface LeaderboardEntry {
   rank: number;
   userId: string;
@@ -8,5 +10,5 @@ export interface LeaderboardEntry {
 
 export interface LeaderboardResponse {
   data: LeaderboardEntry[];
-  period: string;
+  window: TimeWindow;
 }

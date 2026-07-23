@@ -8,8 +8,8 @@ export async function getLeaderboard(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { period, limit, offset } = leaderboardQuerySchema.parse(req.query);
-    const result = await leaderboardService.getLeaderboard(period, limit, offset);
+    const { window, limit, offset } = leaderboardQuerySchema.parse(req.query);
+    const result = await leaderboardService.getLeaderboard(window, limit, offset);
     res.status(200).json(result);
   } catch (err) {
     next(err);
@@ -23,8 +23,8 @@ export async function getUserRank(
 ): Promise<void> {
   try {
     const { userId } = userIdParamSchema.parse(req.params);
-    const period = (req.query.period as 'WEEKLY' | 'MONTHLY' | 'ALL_TIME') || 'ALL_TIME';
-    const result = await leaderboardService.getUserRank(userId, period);
+    const { window } = leaderboardQuerySchema.parse(req.query);
+    const result = await leaderboardService.getUserRank(userId, window);
     res.status(200).json({ data: result });
   } catch (err) {
     next(err);
