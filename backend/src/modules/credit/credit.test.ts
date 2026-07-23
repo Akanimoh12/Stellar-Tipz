@@ -147,8 +147,10 @@ describe('computeCreditScore (pure formula)', () => {
   });
 });
 
-const { mockFindUnique, mockAggregate, mockUpsert, mockCreate } = vi.hoisted(() => ({
+const { mockFindUnique, mockFindMany, mockCount, mockAggregate, mockUpsert, mockCreate } = vi.hoisted(() => ({
   mockFindUnique: vi.fn(),
+  mockFindMany: vi.fn(),
+  mockCount: vi.fn(),
   mockAggregate: vi.fn(),
   mockUpsert: vi.fn(),
   mockCreate: vi.fn(),
@@ -158,6 +160,8 @@ vi.mock('../../db/prisma.js', () => ({
   prisma: {
     user: {
       findUnique: mockFindUnique,
+      findMany: mockFindMany,
+      count: mockCount,
     },
     tip: {
       aggregate: mockAggregate,
@@ -273,5 +277,88 @@ describe('GET /api/v1/credit/:username', () => {
       accountAge: 0,
       streakBonus: 0,
     });
+  });
+});
+
+describe('backfillCreditScores', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('processes users in batches and upserts credit scores', async () => {
+    const now = new Date();
+    mockCount.mockResolvedValue(2);
+    mockFindMany
+      .mockResolvedValueOnce([
+        { id: 'user-1', stellarAddress: 'GA...1', createdAt: now, deletedAt: null, streak: { currentStreak: 14 } },
+        { id: 'user-2', stellarAddress: 'GA...2', createdAt: now, deletedAt: null, streak: null },
+      ])
+      .mockResolvedValueOnce([]);
+    mockAggregate.mockResolvedValue({ _sum: { amountStroops: BigInt(100_000_000) } });
+
+    const { backfillCreditScores } = await import('./credit.backfill.js');
+    const result = await backfillCreditScores();
+
+    expect(result.totalUsers).toBe(2);
+    expect(result.processed).toBe(2);
+    expect(result.errors).toBe(0);
+
+    expect(mockUpsert).toHaveBeenCalledTimes(2);
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips soft-deleted users', async () => {
+    mockCount.mockResolvedValue(0);
+    mockFindMany.mockResolvedValue([]);
+
+    const { backfillCreditScores } = await import('./credit.backfill.js');
+    const result = await backfillCreditScores();
+
+    expect(result.totalUsers).toBe(0);
+    expect(result.processed).toBe(0);
+  });
+
+  it('handles batch iteration with cursor pagination', async () => {
+    const now = new Date();
+    mockCount.mockResolvedValue(3);
+    mockFindMany
+      .mockResolvedValueOnce([
+        { id: 'user-1', stellarAddress: 'GA...1', createdAt: now, deletedAt: null, streak: null },
+        { id: 'user-2', stellarAddress: 'GA...2', createdAt: now, deletedAt: null, streak: null },
+      ])
+      .mockResolvedValueOnce([
+        { id: 'user-3', stellarAddress: 'GA...3', createdAt: now, deletedAt: null, streak: null },
+      ])
+      .mockResolvedValueOnce([]);
+    mockAggregate.mockResolvedValue({ _sum: { amountStroops: BigInt(0) } });
+
+    const { backfillCreditScores } = await import('./credit.backfill.js');
+    const result = await backfillCreditScores();
+
+    expect(result.totalUsers).toBe(3);
+    expect(result.processed).toBe(3);
+    expect(mockFindMany).toHaveBeenCalledTimes(3);
+  });
+
+  it('continues processing when a single user fails', async () => {
+    const now = new Date();
+    mockCount.mockResolvedValue(2);
+    mockFindMany
+      .mockResolvedValueOnce([
+        { id: 'user-1', stellarAddress: 'GA...1', createdAt: now, deletedAt: null, streak: null },
+        { id: 'user-2', stellarAddress: 'GA...2', createdAt: now, deletedAt: null, streak: null },
+      ])
+      .mockResolvedValueOnce([]);
+
+    mockAggregate
+      .mockRejectedValueOnce(new Error('DB error'))
+      .mockResolvedValue({ _sum: { amountStroops: BigInt(0) } });
+
+    const { backfillCreditScores } = await import('./credit.backfill.js');
+    const result = await backfillCreditScores();
+
+    expect(result.totalUsers).toBe(2);
+    expect(result.processed).toBe(1);
+    expect(result.errors).toBe(1);
   });
 });
