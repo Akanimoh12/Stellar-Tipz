@@ -61,9 +61,9 @@ describe('Profiles Flow', () => {
         .send({ displayName: 'John New', bio: 'Updated bio' });
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveProperty('id', userId);
-      expect(res.body).toHaveProperty('tipsCount', 5);
-      expect(res.body).toHaveProperty('totalReceived', '5000000');
+      expect(res.body.data).toHaveProperty('id', userId);
+      expect(res.body.data).toHaveProperty('tipsCount', 5);
+      expect(res.body.data).toHaveProperty('totalReceived', '5000000');
     });
 
     it('returns 404 if profile is soft-deleted', async () => {
@@ -128,9 +128,9 @@ describe('Profiles Flow', () => {
       const res = await request(app).get('/api/v1/profiles/user_target');
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveProperty('id', 'user_target');
-      expect(res.body).toHaveProperty('tipsCount', 10);
-      expect(res.body).toHaveProperty('totalReceived', '1234567890');
+      expect(res.body.data).toHaveProperty('id', 'user_target');
+      expect(res.body.data).toHaveProperty('tipsCount', 10);
+      expect(res.body.data).toHaveProperty('totalReceived', '1234567890');
     });
 
     it('returns 404 for a soft-deleted profile', async () => {

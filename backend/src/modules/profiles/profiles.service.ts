@@ -1,4 +1,5 @@
 import { prisma } from "../../db/prisma.js";
+import { redis } from "../../db/redis.js";
 import { logger } from "../../common/utils/logger.js";
 import {
   BadRequestError,
@@ -58,6 +59,9 @@ export async function getProfileById(userId: string): Promise<ProfileResponseDto
       deletedAt: true,
       createdAt: true,
       updatedAt: true,
+      creditScore: {
+        select: { value: true, computedAt: true },
+      },
     },
   });
 
@@ -89,6 +93,9 @@ export async function getProfileByUsername(
       deletedAt: true,
       createdAt: true,
       updatedAt: true,
+      creditScore: {
+        select: { value: true, computedAt: true },
+      },
     },
   });
 
@@ -100,12 +107,24 @@ export async function getProfileByUsername(
   return serializeProfile(user, stats);
 }
 
+const CACHE_PREFIX = "profile:";
+const CACHE_TTL_SEC = 300;
+
+function cacheKey(address: string): string {
+  return `${CACHE_PREFIX}${address}`;
+}
+
 /**
  * Gets a profile by Stellar address.
  */
 export async function getProfileByAddress(
   stellarAddress: string,
 ): Promise<ProfileResponseDto> {
+  const cached = await redis.get(cacheKey(stellarAddress));
+  if (cached) {
+    return JSON.parse(cached) as ProfileResponseDto;
+  }
+
   const user = await prisma.user.findUnique({
     where: { stellarAddress },
     select: {
@@ -120,6 +139,9 @@ export async function getProfileByAddress(
       deletedAt: true,
       createdAt: true,
       updatedAt: true,
+      creditScore: {
+        select: { value: true, computedAt: true },
+      },
     },
   });
 
@@ -128,7 +150,9 @@ export async function getProfileByAddress(
   }
 
   const stats = await getTipStats(user.id);
-  return serializeProfile(user, stats);
+  const profile = serializeProfile(user, stats);
+  await redis.setex(cacheKey(stellarAddress), CACHE_TTL_SEC, JSON.stringify(profile));
+  return profile;
 }
 
 /**
@@ -173,8 +197,13 @@ export async function updateProfile(
         xHandle: true,
         createdAt: true,
         updatedAt: true,
+        creditScore: {
+          select: { value: true, computedAt: true },
+        },
       },
     });
+
+    await redis.del(cacheKey(user.stellarAddress));
 
     logger.info({ userId }, "Profile updated successfully");
     const stats = await getTipStats(updatedUser.id);
@@ -210,6 +239,9 @@ export async function listProfiles(
         xHandle: true,
         createdAt: true,
         updatedAt: true,
+        creditScore: {
+          select: { value: true, computedAt: true },
+        },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -251,4 +283,72 @@ export async function deactivateProfile(userId: string): Promise<void> {
   });
 
   logger.info({ userId }, "Profile deactivated successfully");
+}
+
+export async function checkUsernameAvailability(username: string): Promise<{ available: boolean }> {
+  const user = await prisma.user.findFirst({
+    where: { username: { equals: username, mode: "insensitive" } },
+  });
+  return { available: !user };
+}
+
+export async function reactivateProfile(userId: string): Promise<ProfileResponseDto> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  if (!user) {
+    throw new NotFoundError("Profile not found");
+  }
+
+  if (user.deletedAt === null) {
+    throw new BadRequestError("Profile is not deactivated");
+  }
+
+  const updatedUser = await prisma.user.update({
+    where: { id: userId },
+    data: { deletedAt: null },
+    select: {
+      id: true,
+      stellarAddress: true,
+      username: true,
+      displayName: true,
+      bio: true,
+      imageUrl: true,
+      avatarCid: true,
+      xHandle: true,
+      createdAt: true,
+      updatedAt: true,
+      creditScore: {
+        select: { value: true, computedAt: true },
+      },
+    },
+  });
+
+  await redis.del(cacheKey(user.stellarAddress));
+
+  const stats = await getTipStats(updatedUser.id);
+  return serializeProfile(updatedUser, stats);
+}
+
+export async function uploadProfileImage(
+  userId: string,
+  dataUrl: string,
+): Promise<{ profileImageCid: string }> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  if (!user || user.deletedAt !== null) {
+    throw new NotFoundError("Profile not found");
+  }
+
+  const simulatedCid = "sim-" + Buffer.from(dataUrl).toString("hex").slice(0, 12);
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { avatarCid: simulatedCid },
+  });
+
+  return { profileImageCid: simulatedCid };
 }

@@ -4,11 +4,12 @@ import { createApp } from '../../app.js';
 
 const PROFILE_UPDATE_RATE_LIMIT_MAX = 5;
 
-const { mockFindUnique, mockFindFirst, mockUpdate, mockRedisGet, mockRedisSetex, mockRedisDel } =
+const { mockFindUnique, mockFindFirst, mockUpdate, mockCreate, mockRedisGet, mockRedisSetex, mockRedisDel } =
   vi.hoisted(() => ({
     mockFindUnique: vi.fn(),
     mockFindFirst: vi.fn(),
     mockUpdate: vi.fn(),
+    mockCreate: vi.fn(),
     mockRedisGet: vi.fn(),
     mockRedisSetex: vi.fn(),
     mockRedisDel: vi.fn(),
@@ -21,6 +22,10 @@ vi.mock('../../db/prisma.js', () => ({
       findFirst: mockFindFirst,
       update: mockUpdate,
       create: mockCreate,
+    },
+    tip: {
+      count: vi.fn().mockResolvedValue(0),
+      aggregate: vi.fn().mockResolvedValue({ _sum: { amount: null } }),
     },
     $disconnect: vi.fn(),
   },
@@ -37,13 +42,17 @@ vi.mock('../../db/redis.js', () => ({
 vi.mock('jsonwebtoken', () => ({
   default: {
     verify: vi.fn(() => ({
-      sub: 'user-1',
+      userId: 'user-1',
       stellarAddress: 'GABCDEF123456789012345678901234567890123456789012345678901234',
+      role: 'user',
+      scopes: [],
     })),
   },
   verify: vi.fn(() => ({
-    sub: 'user-1',
+    userId: 'user-1',
     stellarAddress: 'GABCDEF123456789012345678901234567890123456789012345678901234',
+    role: 'user',
+    scopes: [],
   })),
 }));
 
@@ -70,7 +79,6 @@ function makeUser(overrides: Record<string, unknown> = {}) {
     avatarCid: null,
     xHandle: null,
     creditScore: null,
-    creditTier: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
@@ -116,24 +124,24 @@ describe('GET /api/v1/profiles/by-address/:address', () => {
 
   it('includes creditScore and creditTier in response', async () => {
     mockRedisGet.mockResolvedValue(null);
-    mockFindUnique.mockResolvedValue(makeUser({ creditScore: 750, creditTier: 'silver' }));
+    mockFindUnique.mockResolvedValue(makeUser({ creditScore: { value: 750 } }));
 
     const app = createApp();
     const res = await request(app).get(`/api/v1/profiles/by-address/${validAddress}`);
     expect(res.status).toBe(200);
     expect(res.body.data.creditScore).toBe(750);
-    expect(res.body.data.creditTier).toBe('silver');
+    expect(res.body.data.creditTier).toBe('Gold');
   });
 
   it('returns creditScore as null when not set', async () => {
     mockRedisGet.mockResolvedValue(null);
-    mockFindUnique.mockResolvedValue(makeUser({ creditScore: null, creditTier: null }));
+    mockFindUnique.mockResolvedValue(makeUser({ creditScore: null }));
 
     const app = createApp();
     const res = await request(app).get(`/api/v1/profiles/by-address/${validAddress}`);
     expect(res.status).toBe(200);
     expect(res.body.data.creditScore).toBeNull();
-    expect(res.body.data.creditTier).toBeNull();
+    expect(res.body.data.creditTier).toBe('New');
   });
 
   it('returns cached profile on subsequent requests', async () => {
@@ -147,7 +155,7 @@ describe('GET /api/v1/profiles/by-address/:address', () => {
       avatarCid: null,
       xHandle: null,
       creditScore: 800,
-      creditTier: 'gold',
+      creditTier: 'Gold',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -164,7 +172,7 @@ describe('GET /api/v1/profiles/by-address/:address', () => {
   it('caches profile after first DB read', async () => {
     mockRedisGet.mockResolvedValue(null);
     mockRedisSetex.mockResolvedValue('OK');
-    mockFindUnique.mockResolvedValue(makeUser({ creditScore: 650, creditTier: 'bronze' }));
+    mockFindUnique.mockResolvedValue(makeUser({ creditScore: { value: 650 } }));
 
     const app = createApp();
     await request(app).get(`/api/v1/profiles/by-address/${validAddress}`);
@@ -187,7 +195,7 @@ describe('GET /api/v1/profiles/by-username/:username', () => {
 
   it('returns profile when found', async () => {
     mockFindUnique.mockResolvedValue(
-      makeUser({ username: 'testuser', creditScore: 850, creditTier: 'platinum' }),
+      makeUser({ username: 'testuser', creditScore: { value: 850 } }),
     );
 
     const app = createApp();
@@ -195,7 +203,7 @@ describe('GET /api/v1/profiles/by-username/:username', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.username).toBe('testuser');
     expect(res.body.data.creditScore).toBe(850);
-    expect(res.body.data.creditTier).toBe('platinum');
+    expect(res.body.data.creditTier).toBe('Platinum');
   });
 });
 
@@ -268,7 +276,7 @@ describe('POST /api/v1/profiles/image', () => {
       .set('Authorization', authHeader)
       .send({ dataUrl: 'not-a-data-url' });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.code).toBe('BAD_REQUEST');
   });
 
   it('uploads image and stores CID', async () => {
@@ -321,7 +329,7 @@ describe('GET /api/v1/profiles/check-username', () => {
     const app = createApp();
     const res = await request(app).get('/api/v1/profiles/check-username?username=ab');
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.code).toBe('BAD_REQUEST');
   });
 });
 
@@ -354,7 +362,7 @@ describe('PATCH /api/v1/profiles/me', () => {
       .set('Authorization', authHeader)
       .send({ username: 'ab' });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.code).toBe('BAD_REQUEST');
   });
 
   it('updates the profile username', async () => {
@@ -372,8 +380,8 @@ describe('PATCH /api/v1/profiles/me', () => {
   });
 
   it('returns 409 when the new username is already taken', async () => {
-    mockFindUnique.mockResolvedValue(activeUser);
-    mockFindFirst.mockResolvedValue({ id: 'user-2', username: 'newname' });
+    mockFindUnique.mockResolvedValueOnce(activeUser);
+    mockFindUnique.mockResolvedValueOnce({ id: 'user-2', username: 'newname' });
 
     const app = createApp();
     const res = await request(app)

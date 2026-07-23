@@ -39,6 +39,8 @@ describe('withRetry', () => {
 
     const promise = withRetry(fn, { maxAttempts: 3, initialDelayMs: 50 });
 
+    await vi.runAllTimersAsync();
+
     await expect(promise).rejects.toThrow('Service unavailable');
     expect(fn).toHaveBeenCalledTimes(3);
   });

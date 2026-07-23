@@ -88,21 +88,6 @@ async function projectPage(events: DecodedEvent[]): Promise<void> {
   }
 }
 
-/**
- * Set up the eventLog mock to return `null` on every findFirst call (new event).
- * After the first page, switch to returning `{ id: 'existing' }` to simulate
- * the second pass over the same ledger range.
- */
-function firstPassNewSecondPassSeen(): void {
-  let pass = 0;
-  mockEventLogFindFirst.mockImplementation(async () => {
-    // Increment after every call (one findFirst per projectEvent call)
-    const current = pass;
-    pass++;
-    return current === 0 ? null : { id: 'existing' };
-  });
-}
-
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {

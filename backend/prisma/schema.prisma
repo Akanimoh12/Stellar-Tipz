@@ -45,7 +45,6 @@ model User {
   streak               Streak?
 
   @@index([createdAt])
-  @@index([creditScore])
 }
 
 /// API key for service/admin access and webhook integrations.
@@ -80,8 +79,6 @@ model Tip {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   refund        Refund?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
 
   sender        User?     @relation("SentTips", fields: [fromAddress], references: [stellarAddress])
   receiver      User?     @relation("ReceivedTips", fields: [toAddress], references: [stellarAddress])
@@ -401,9 +398,4 @@ model AuditLog {
   @@index([createdAt])
 }
 
-/// Lifecycle status of a tip.
-enum TipStatus {
-  PENDING
-  CONFIRMED
-  REFUNDED
-}
+
