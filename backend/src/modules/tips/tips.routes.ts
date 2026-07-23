@@ -9,7 +9,6 @@ export const tipsRouter = Router();
 tipsRouter.get('/', tipsController.getTips);
 tipsRouter.post('/', tipsController.record);
 tipsRouter.post('/prepare', tipsController.prepare);
-tipsRouter.post('/submit', tipsController.submit);
 tipsRouter.get('/:id', tipsController.getById);
 tipsRouter.patch('/:txHash/confirm', tipsController.confirm);
 
@@ -54,39 +53,6 @@ const tipResponseSchema = {
     createdAt: { type: 'string', format: 'date-time' },
   },
   required: ['id', 'txHash', 'ledger', 'fromAddress', 'toAddress', 'amountStroops', 'status', 'createdAt'],
-};
-
-const tipAggregateSchema = {
-  type: 'object',
-  properties: {
-    toAddress: { type: 'string' },
-    totalAmountStroops: { type: 'string', description: 'Total tip amount received in stroops' },
-    tipCount: { type: 'integer', description: 'Number of tips received' },
-  },
-  required: ['toAddress', 'totalAmountStroops', 'tipCount'],
-};
-
-const tipListResponseSchema = {
-  type: 'object',
-  properties: {
-    data: {
-      type: 'array',
-      items: tipResponseSchema,
-    },
-    nextCursor: { type: 'string', nullable: true },
-  },
-  required: ['data'],
-};
-
-const tipAggregateResponseSchema = {
-  type: 'object',
-  properties: {
-    data: {
-      type: 'array',
-      items: tipAggregateSchema,
-    },
-  },
-  required: ['data'],
 };
 
 mergeOpenApiPaths({

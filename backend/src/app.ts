@@ -10,9 +10,12 @@ import {
 } from "./common/middleware/errorHandler.js";
 import { logger } from "./common/utils/logger.js";
 import { openApiDocument } from "./docs/openapi.js";
+import { requestId } from "./common/middleware/requestId.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { profilesRouter } from "./modules/profiles/profiles.routes.js";
 import { tipsRouter } from "./modules/tips/tips.routes.js";
+import { leaderboardRouter } from "./modules/leaderboard/leaderboard.routes.js";
+import { creditRouter } from "./modules/credit/credit.routes.js";
 
 /**
  * Builds and configures the Express application (no listening here — see server.ts).
@@ -38,6 +41,7 @@ export function createApp(): Express {
     }),
   );
   app.use(cors({ origin: env.CORS_ORIGIN.split(","), credentials: true }));
+  app.use(requestId);
   app.use(express.json({ limit: "1mb" }));
   app.use(pinoHttp({ logger }));
 
@@ -60,7 +64,8 @@ export function createApp(): Express {
   app.use(`${env.API_BASE_PATH}/auth`, authRouter);
   app.use(`${env.API_BASE_PATH}/profiles`, profilesRouter);
   app.use(`${env.API_BASE_PATH}/tips`, tipsRouter);
-  // ... (one issue per module)
+  app.use(`${env.API_BASE_PATH}/leaderboard`, leaderboardRouter);
+  app.use(`${env.API_BASE_PATH}/credit`, creditRouter);
   // ─────────────────────────────────────────────────────────────
 
   app.use(notFoundHandler);

@@ -12,6 +12,8 @@ export interface ProfileResponseDto {
   bio: string | null;
   imageUrl: string | null;
   avatarCid: string | null;
+  creditScore: number | null;
+  creditTier: string | null;
   xHandle: string | null;
   createdAt: string;
   updatedAt: string;

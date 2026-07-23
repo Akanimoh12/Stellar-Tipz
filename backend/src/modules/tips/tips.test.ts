@@ -6,6 +6,8 @@ import { openApiDocument } from '../../docs/openapi.js';
 const {
   mockGetAccount,
   mockSimulateTransaction,
+  mockSendTransaction,
+  mockGetTransaction,
   mockContractCall,
   mockFindMany,
   mockFindUnique,
@@ -15,6 +17,8 @@ const {
 } = vi.hoisted(() => ({
   mockGetAccount: vi.fn(),
   mockSimulateTransaction: vi.fn(),
+  mockSendTransaction: vi.fn(),
+  mockGetTransaction: vi.fn(),
   mockContractCall: vi.fn(),
   mockFindMany: vi.fn(),
   mockFindUnique: vi.fn(),
@@ -101,6 +105,7 @@ vi.mock('../../db/prisma.js', () => ({
 const now = new Date('2026-06-29T00:00:00.000Z');
 const from = 'GF5YV3FQRHRMA7IQWCZKGRRJ5P7CEPIVBQLM4X2FEHS2IU57KF3U4CLN';
 const to   = 'GCEZWKCA5VLDNRLN3RPRJMRZOX3Z6G5CHCGBFMF5CKFHGZXABSZLAZP2';
+const address = from;
 
 function makeTipRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -665,60 +670,69 @@ describe('PATCH /api/v1/tips/:txHash/confirm', () => {
 
 describe('OpenAPI docs - Tips module', () => {
   it('registers GET /api/v1/tips endpoint', () => {
-    expect(openApiDocument.paths['/api/v1/tips'].get).toBeDefined();
-    expect(openApiDocument.paths['/api/v1/tips'].get?.tags).toContain('Tips');
-    expect(openApiDocument.paths['/api/v1/tips'].get?.summary).toBe('List tips with optional filtering');
+    const getOp = openApiDocument.paths['/api/v1/tips']?.get as Record<string, unknown> | undefined;
+    expect(getOp).toBeDefined();
+    expect((getOp?.tags as string[]) ?? []).toContain('Tips');
+    expect(getOp?.summary).toBe('List tips with optional filtering');
   });
 
   it('registers POST /api/v1/tips endpoint', () => {
-    expect(openApiDocument.paths['/api/v1/tips'].post).toBeDefined();
-    expect(openApiDocument.paths['/api/v1/tips'].post?.tags).toContain('Tips');
-    expect(openApiDocument.paths['/api/v1/tips'].post?.summary).toBe('Record an on-chain tip');
+    const postOp = openApiDocument.paths['/api/v1/tips']?.post as Record<string, unknown> | undefined;
+    expect(postOp).toBeDefined();
+    expect((postOp?.tags as string[]) ?? []).toContain('Tips');
+    expect(postOp?.summary).toBe('Record an on-chain tip');
   });
 
   it('registers POST /api/v1/tips/prepare endpoint', () => {
-    expect(openApiDocument.paths['/api/v1/tips/prepare'].post).toBeDefined();
-    expect(openApiDocument.paths['/api/v1/tips/prepare'].post?.tags).toContain('Tips');
-    expect(openApiDocument.paths['/api/v1/tips/prepare'].post?.summary).toBe('Prepare an unsigned Soroban tip transaction');
+    const postOp = openApiDocument.paths['/api/v1/tips/prepare']?.post as Record<string, unknown> | undefined;
+    expect(postOp).toBeDefined();
+    expect((postOp?.tags as string[]) ?? []).toContain('Tips');
+    expect(postOp?.summary).toBe('Prepare an unsigned Soroban tip transaction');
   });
 
   it('registers GET /api/v1/tips/:id endpoint', () => {
-    expect(openApiDocument.paths['/api/v1/tips/{id}'].get).toBeDefined();
-    expect(openApiDocument.paths['/api/v1/tips/{id}'].get?.tags).toContain('Tips');
-    expect(openApiDocument.paths['/api/v1/tips/{id}'].get?.summary).toBe('Get a single tip by id');
+    const getOp = openApiDocument.paths['/api/v1/tips/{id}']?.get as Record<string, unknown> | undefined;
+    expect(getOp).toBeDefined();
+    expect((getOp?.tags as string[]) ?? []).toContain('Tips');
+    expect(getOp?.summary).toBe('Get a single tip by id');
   });
 
   it('registers PATCH /api/v1/tips/:txHash/confirm endpoint', () => {
-    expect(openApiDocument.paths['/api/v1/tips/{txHash}/confirm'].patch).toBeDefined();
-    expect(openApiDocument.paths['/api/v1/tips/{txHash}/confirm'].patch?.tags).toContain('Tips');
-    expect(openApiDocument.paths['/api/v1/tips/{txHash}/confirm'].patch?.summary).toBe('Confirm a pending tip');
+    const patchOp = openApiDocument.paths['/api/v1/tips/{txHash}/confirm']?.patch as Record<string, unknown> | undefined;
+    expect(patchOp).toBeDefined();
+    expect((patchOp?.tags as string[]) ?? []).toContain('Tips');
+    expect(patchOp?.summary).toBe('Confirm a pending tip');
   });
 
   it('registers profile tips endpoint at /api/v1/profiles/:username/tips', () => {
-    expect(openApiDocument.paths['/api/v1/profiles/{username}/tips'].get).toBeDefined();
-    expect(openApiDocument.paths['/api/v1/profiles/{username}/tips'].get?.tags).toContain('Tips');
-    expect(openApiDocument.paths['/api/v1/profiles/{username}/tips'].get?.summary).toBe('List tips received by a profile');
+    const getOp = openApiDocument.paths['/api/v1/profiles/{username}/tips']?.get as Record<string, unknown> | undefined;
+    expect(getOp).toBeDefined();
+    expect((getOp?.tags as string[]) ?? []).toContain('Tips');
+    expect(getOp?.summary).toBe('List tips received by a profile');
   });
 
   it('registers user-sent tips endpoint at /api/v1/users/me/tips/sent', () => {
-    expect(openApiDocument.paths['/api/v1/users/me/tips/sent'].get).toBeDefined();
-    expect(openApiDocument.paths['/api/v1/users/me/tips/sent'].get?.tags).toContain('Tips');
-    expect(openApiDocument.paths['/api/v1/users/me/tips/sent'].get?.security).toEqual([{ bearerAuth: [] }]);
+    const getOp = openApiDocument.paths['/api/v1/users/me/tips/sent']?.get as Record<string, unknown> | undefined;
+    expect(getOp).toBeDefined();
+    expect((getOp?.tags as string[]) ?? []).toContain('Tips');
+    expect((getOp?.security as Record<string, string[]>[]) ?? []).toEqual([{ bearerAuth: [] }]);
   });
 
   it('defines tip response schema with all required fields', () => {
-    const getTip = openApiDocument.paths['/api/v1/tips/{id}'].get as Record<string, unknown>;
-    const response200 = (getTip.responses as Record<string, unknown>)['200'] as Record<string, unknown>;
-    const schema = (response200.content as Record<string, unknown>)['application/json'].schema as Record<string, unknown>;
-    const dataSchema = (schema.properties as Record<string, unknown>).data as Record<string, unknown>;
+    const getTip = openApiDocument.paths['/api/v1/tips/{id}'].get as Record<string, unknown> | undefined;
+    const responses = getTip?.responses as Record<string, unknown> | undefined;
+    const response200 = responses?.['200'] as Record<string, unknown> | undefined;
+    const content = response200?.content as Record<string, unknown> | undefined;
+    const schema = content?.['application/json'] as Record<string, unknown> | undefined;
+    const dataSchema = (schema as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
 
-    expect(dataSchema.properties).toHaveProperty('id');
-    expect(dataSchema.properties).toHaveProperty('txHash');
-    expect(dataSchema.properties).toHaveProperty('ledger');
-    expect(dataSchema.properties).toHaveProperty('fromAddress');
-    expect(dataSchema.properties).toHaveProperty('toAddress');
-    expect(dataSchema.properties).toHaveProperty('amountStroops');
-    expect(dataSchema.properties).toHaveProperty('status');
-    expect(dataSchema.properties).toHaveProperty('createdAt');
+    expect((dataSchema as Record<string, unknown>)?.properties).toHaveProperty('id');
+    expect((dataSchema as Record<string, unknown>)?.properties).toHaveProperty('txHash');
+    expect((dataSchema as Record<string, unknown>)?.properties).toHaveProperty('ledger');
+    expect((dataSchema as Record<string, unknown>)?.properties).toHaveProperty('fromAddress');
+    expect((dataSchema as Record<string, unknown>)?.properties).toHaveProperty('toAddress');
+    expect((dataSchema as Record<string, unknown>)?.properties).toHaveProperty('amountStroops');
+    expect((dataSchema as Record<string, unknown>)?.properties).toHaveProperty('status');
+    expect((dataSchema as Record<string, unknown>)?.properties).toHaveProperty('createdAt');
   });
 });

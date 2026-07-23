@@ -102,20 +102,10 @@ export async function prepareTip(
     throw new BadRequestError('Contract ID is not configured');
   }
 
-  let creator: { minTipAmount: bigint | null } | null = null;
   try {
-    creator = await prisma.user.findUnique({ where: { stellarAddress: to } });
+    await prisma.user.findUniqueOrThrow({ where: { stellarAddress: to } });
   } catch {
-    // DB lookup failed, skip minimum check
-  }
-  if (creator?.minTipAmount) {
-    const minAmount = creator.minTipAmount;
-    const parsedAmount = BigInt(amount);
-    if (parsedAmount < minAmount) {
-      throw new BadRequestError(
-        `Tip amount (${amount} stroops) is below the creator's minimum (${minAmount.toString()} stroops)`,
-      );
-    }
+    throw new BadRequestError('Recipient not found');
   }
 
   const server = new SorobanRpc.Server(config.stellar.rpcUrl, {
