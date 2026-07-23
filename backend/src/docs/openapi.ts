@@ -57,6 +57,7 @@ export const openApiDocument: OpenApiDocument = {
     { name: 'Auth', description: 'Wallet authentication' },
     { name: 'Profiles', description: 'Creator profile management' },
     { name: 'Tips', description: 'On-chain tipping operations' },
+    { name: 'Leaderboard', description: 'Creator tip leaderboard with time windows' },
   ],
   components: {
     securitySchemes: {
