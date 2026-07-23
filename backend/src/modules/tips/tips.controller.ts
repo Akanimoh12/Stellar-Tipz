@@ -9,6 +9,7 @@ import {
   confirmTipParamSchema,
 } from './tips.schema.js';
 import * as tipsService from './tips.service.js';
+import { emitTipCreated } from '../../realtime/index.js';
 
 /** GET /tips — filterable, cursor-paginated list of tips. */
 export async function getTips(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -72,6 +73,7 @@ export async function record(req: Request, res: Response, next: NextFunction): P
   try {
     const input = recordTipSchema.parse(req.body);
     const tip = await tipsService.recordTip(input);
+    emitTipCreated(tip);
     res.status(200).json({ data: tip });
   } catch (err) {
     next(err);

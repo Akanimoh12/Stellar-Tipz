@@ -6,3 +6,9 @@ export const withdrawalHistoryQuerySchema = z.object({
 });
 
 export type WithdrawalHistoryQuery = z.infer<typeof withdrawalHistoryQuerySchema>;
+
+export const prepareWithdrawalSchema = z.object({
+  amount: z.string().regex(/^\d+$/, 'Amount must be a string of digits (stroops)'),
+});
+
+export type PrepareWithdrawalInput = z.infer<typeof prepareWithdrawalSchema>;
