@@ -1,6 +1,11 @@
 import { prisma } from '../../db/prisma.js';
 import { NotFoundError } from '../../common/errors/AppError.js';
-import type { CreditScoreResponse, CreditScoreComponents, ComputeCreditScoreInput } from './credit.types.js';
+import type {
+  CreditScoreResponse,
+  CreditScoreComponents,
+  ComputeCreditScoreInput,
+  CreditScoreHistoryPoint,
+} from './credit.types.js';
 
 const BASE_SCORE = 40;
 const MAX_SCORE = 100;
@@ -117,6 +122,30 @@ export async function getCreditScore(userId: string): Promise<CreditScoreRespons
     },
     computedAt: user.creditScore.computedAt.toISOString(),
   };
+}
+
+export async function getCreditScoreHistory(
+  userId: string,
+  limit: number,
+  offset: number,
+): Promise<CreditScoreHistoryPoint[]> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+
+  if (!user || user.deletedAt) {
+    throw new NotFoundError('User not found');
+  }
+
+  const history = await prisma.creditScoreHistory.findMany({
+    where: { userId },
+    orderBy: { computedAt: 'asc' },
+    skip: offset,
+    take: limit,
+  });
+
+  return history.map((h) => ({
+    value: h.value,
+    computedAt: h.computedAt.toISOString(),
+  }));
 }
 
 export async function recalculateCreditScore(userId: string): Promise<CreditScoreResponse> {
