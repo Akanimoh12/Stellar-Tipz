@@ -172,16 +172,33 @@ vi.mock('../../db/prisma.js', () => ({
   },
 }));
 
-describe('GET /api/v1/credit/:userId', () => {
+describe('GET /api/v1/credit/:username', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('returns 404 when user not found', async () => {
+  it('returns 404 when username not found', async () => {
     mockFindUnique.mockResolvedValue(null);
 
     const app = createApp();
     const res = await request(app).get('/api/v1/credit/nonexistent');
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+    expect(mockFindUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { username: 'nonexistent' } }),
+    );
+  });
+
+  it('returns 404 for soft-deleted user', async () => {
+    mockFindUnique.mockResolvedValue({
+      id: 'user-1',
+      username: 'deleted-user',
+      deletedAt: new Date(),
+      creditScore: null,
+    });
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/credit/deleted-user');
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('NOT_FOUND');
   });
@@ -189,21 +206,28 @@ describe('GET /api/v1/credit/:userId', () => {
   it('returns base score when user has no credit score', async () => {
     mockFindUnique.mockResolvedValue({
       id: 'user-1',
+      username: 'alice',
       deletedAt: null,
       creditScore: null,
     });
 
     const app = createApp();
-    const res = await request(app).get('/api/v1/credit/user-1');
+    const res = await request(app).get('/api/v1/credit/alice');
     expect(res.status).toBe(200);
     expect(res.body.data.score).toBe(40);
     expect(res.body.data.tier).toBe('Silver');
+    expect(res.body.data.components.base).toBe(40);
+    expect(res.body.data.computedAt).toBeDefined();
+    expect(mockFindUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { username: 'alice' } }),
+    );
   });
 
   it('returns stored credit score when available', async () => {
     const computedAt = new Date();
     mockFindUnique.mockResolvedValue({
       id: 'user-1',
+      username: 'bob',
       deletedAt: null,
       creditScore: {
         id: 'cs-1',
@@ -214,9 +238,40 @@ describe('GET /api/v1/credit/:userId', () => {
     });
 
     const app = createApp();
-    const res = await request(app).get('/api/v1/credit/user-1');
+    const res = await request(app).get('/api/v1/credit/bob');
     expect(res.status).toBe(200);
     expect(res.body.data.score).toBe(75);
     expect(res.body.data.tier).toBe('Gold');
+    expect(res.body.data.components.base).toBe(40);
+    expect(res.body.data.computedAt).toBe(computedAt.toISOString());
+    expect(mockFindUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { username: 'bob' } }),
+    );
+  });
+
+  it('returns score breakdown with components', async () => {
+    const computedAt = new Date();
+    mockFindUnique.mockResolvedValue({
+      id: 'user-1',
+      username: 'charlie',
+      deletedAt: null,
+      creditScore: {
+        id: 'cs-1',
+        userId: 'user-1',
+        value: 85,
+        computedAt,
+      },
+    });
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/credit/charlie');
+    expect(res.status).toBe(200);
+    expect(res.body.data.components).toEqual({
+      base: 40,
+      tipVolume: 0,
+      xMetrics: 0,
+      accountAge: 0,
+      streakBonus: 0,
+    });
   });
 });

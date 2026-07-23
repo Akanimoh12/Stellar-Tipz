@@ -86,6 +86,27 @@ export async function getCreditScore(userId: string): Promise<CreditScoreRespons
     throw new NotFoundError('User not found');
   }
 
+  return formatCreditScoreResponse(user);
+}
+
+export async function getCreditScoreByUsername(username: string): Promise<CreditScoreResponse> {
+  const user = await prisma.user.findUnique({
+    where: { username },
+    include: { creditScore: true },
+  });
+
+  if (!user || user.deletedAt) {
+    throw new NotFoundError('User not found');
+  }
+
+  return formatCreditScoreResponse(user);
+}
+
+function formatCreditScoreResponse(user: {
+  id: string;
+  deletedAt: Date | null;
+  creditScore: { value: number; computedAt: Date } | null;
+}): CreditScoreResponse {
   if (!user.creditScore) {
     return {
       userId: user.id,
