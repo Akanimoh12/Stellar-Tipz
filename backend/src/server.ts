@@ -6,6 +6,10 @@ import { prisma } from './db/prisma.js';
 import { redis } from './db/redis.js';
 import { registerClosable, closeAll } from './common/utils/lifecycle.js';
 import { startIndexer } from './indexer/index.js';
+import {
+  createCreditRecomputeWorker,
+  scheduleCreditRecompute,
+} from './jobs/index.js';
 
 /** Process entry point: starts the HTTP server (and, later, the WebSocket + indexer). */
 async function bootstrap(): Promise<void> {
@@ -32,6 +36,16 @@ async function bootstrap(): Promise<void> {
       indexer.stop();
     },
   });
+
+  // Start the credit score recompute worker and schedule the recurring job.
+  const creditWorker = createCreditRecomputeWorker();
+  registerClosable({
+    name: 'CreditRecomputeWorker',
+    close: async () => {
+      await creditWorker.close();
+    },
+  });
+  await scheduleCreditRecompute();
 
   // The realtime gateway (Socket.IO) attaches to this httpServer — see the realtime issues.
   // initRealtime(httpServer);

@@ -54,6 +54,10 @@ export const config = {
     gatewayUrl: env.IPFS_GATEWAY_URL,
   },
 
+  credit: {
+    recomputeCron: env.CREDIT_RECOMPUTE_CRON,
+  },
+
   logging: {
     level: env.LOG_LEVEL,
     sentryDsn: env.SENTRY_DSN,

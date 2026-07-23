@@ -40,6 +40,8 @@ const envSchema = z.object({
   INDEXER_POLL_INTERVAL_MS: z.coerce.number().default(5000),
   INDEXER_START_LEDGER: z.coerce.number().optional(),
 
+  CREDIT_RECOMPUTE_CRON: z.string().default('0 */6 * * *'),
+
   X_API_BEARER_TOKEN: z.string().optional(),
   X_API_BASE_URL: z.string().default('https://api.twitter.com/2'),
 
