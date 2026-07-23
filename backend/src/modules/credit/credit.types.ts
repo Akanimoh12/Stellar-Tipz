@@ -21,3 +21,8 @@ export interface ComputeCreditScoreInput {
   accountAgeDays: number;
   streakBonus: number;
 }
+
+export interface CreditScoreHistoryPoint {
+  value: number;
+  computedAt: string;
+}

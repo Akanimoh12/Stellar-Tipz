@@ -147,17 +147,23 @@ describe('computeCreditScore (pure formula)', () => {
   });
 });
 
-const { mockFindUnique, mockAggregate, mockUpsert, mockCreate } = vi.hoisted(() => ({
+const { mockFindUnique, mockFindMany, mockCount, mockAggregate, mockUpsert, mockCreate } = vi.hoisted(() => ({
+const { mockFindUnique, mockAggregate, mockUpsert, mockCreate, mockHistoryFindMany } = vi.hoisted(() => ({
   mockFindUnique: vi.fn(),
+  mockFindMany: vi.fn(),
+  mockCount: vi.fn(),
   mockAggregate: vi.fn(),
   mockUpsert: vi.fn(),
   mockCreate: vi.fn(),
+  mockHistoryFindMany: vi.fn(),
 }));
 
 vi.mock('../../db/prisma.js', () => ({
   prisma: {
     user: {
       findUnique: mockFindUnique,
+      findMany: mockFindMany,
+      count: mockCount,
     },
     tip: {
       aggregate: mockAggregate,
@@ -167,21 +173,39 @@ vi.mock('../../db/prisma.js', () => ({
     },
     creditScoreHistory: {
       create: mockCreate,
+      findMany: mockHistoryFindMany,
     },
     $disconnect: vi.fn(),
   },
 }));
 
-describe('GET /api/v1/credit/:userId', () => {
+describe('GET /api/v1/credit/:username', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('returns 404 when user not found', async () => {
+  it('returns 404 when username not found', async () => {
     mockFindUnique.mockResolvedValue(null);
 
     const app = createApp();
     const res = await request(app).get('/api/v1/credit/nonexistent');
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+    expect(mockFindUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { username: 'nonexistent' } }),
+    );
+  });
+
+  it('returns 404 for soft-deleted user', async () => {
+    mockFindUnique.mockResolvedValue({
+      id: 'user-1',
+      username: 'deleted-user',
+      deletedAt: new Date(),
+      creditScore: null,
+    });
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/credit/deleted-user');
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('NOT_FOUND');
   });
@@ -189,21 +213,28 @@ describe('GET /api/v1/credit/:userId', () => {
   it('returns base score when user has no credit score', async () => {
     mockFindUnique.mockResolvedValue({
       id: 'user-1',
+      username: 'alice',
       deletedAt: null,
       creditScore: null,
     });
 
     const app = createApp();
-    const res = await request(app).get('/api/v1/credit/user-1');
+    const res = await request(app).get('/api/v1/credit/alice');
     expect(res.status).toBe(200);
     expect(res.body.data.score).toBe(40);
     expect(res.body.data.tier).toBe('Silver');
+    expect(res.body.data.components.base).toBe(40);
+    expect(res.body.data.computedAt).toBeDefined();
+    expect(mockFindUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { username: 'alice' } }),
+    );
   });
 
   it('returns stored credit score when available', async () => {
     const computedAt = new Date();
     mockFindUnique.mockResolvedValue({
       id: 'user-1',
+      username: 'bob',
       deletedAt: null,
       creditScore: {
         id: 'cs-1',
@@ -214,9 +245,160 @@ describe('GET /api/v1/credit/:userId', () => {
     });
 
     const app = createApp();
-    const res = await request(app).get('/api/v1/credit/user-1');
+    const res = await request(app).get('/api/v1/credit/bob');
     expect(res.status).toBe(200);
     expect(res.body.data.score).toBe(75);
     expect(res.body.data.tier).toBe('Gold');
+    expect(res.body.data.components.base).toBe(40);
+    expect(res.body.data.computedAt).toBe(computedAt.toISOString());
+    expect(mockFindUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { username: 'bob' } }),
+    );
+  });
+
+  it('returns score breakdown with components', async () => {
+    const computedAt = new Date();
+    mockFindUnique.mockResolvedValue({
+      id: 'user-1',
+      username: 'charlie',
+      deletedAt: null,
+      creditScore: {
+        id: 'cs-1',
+        userId: 'user-1',
+        value: 85,
+        computedAt,
+      },
+    });
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/credit/charlie');
+    expect(res.status).toBe(200);
+    expect(res.body.data.components).toEqual({
+      base: 40,
+      tipVolume: 0,
+      xMetrics: 0,
+      accountAge: 0,
+      streakBonus: 0,
+    });
+  });
+});
+
+describe('backfillCreditScores', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('processes users in batches and upserts credit scores', async () => {
+    const now = new Date();
+    mockCount.mockResolvedValue(2);
+    mockFindMany
+      .mockResolvedValueOnce([
+        { id: 'user-1', stellarAddress: 'GA...1', createdAt: now, deletedAt: null, streak: { currentStreak: 14 } },
+        { id: 'user-2', stellarAddress: 'GA...2', createdAt: now, deletedAt: null, streak: null },
+      ])
+      .mockResolvedValueOnce([]);
+    mockAggregate.mockResolvedValue({ _sum: { amountStroops: BigInt(100_000_000) } });
+
+    const { backfillCreditScores } = await import('./credit.backfill.js');
+    const result = await backfillCreditScores();
+
+    expect(result.totalUsers).toBe(2);
+    expect(result.processed).toBe(2);
+    expect(result.errors).toBe(0);
+
+    expect(mockUpsert).toHaveBeenCalledTimes(2);
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips soft-deleted users', async () => {
+    mockCount.mockResolvedValue(0);
+    mockFindMany.mockResolvedValue([]);
+
+    const { backfillCreditScores } = await import('./credit.backfill.js');
+    const result = await backfillCreditScores();
+
+    expect(result.totalUsers).toBe(0);
+    expect(result.processed).toBe(0);
+  });
+
+  it('handles batch iteration with cursor pagination', async () => {
+    const now = new Date();
+    mockCount.mockResolvedValue(3);
+    mockFindMany
+      .mockResolvedValueOnce([
+        { id: 'user-1', stellarAddress: 'GA...1', createdAt: now, deletedAt: null, streak: null },
+        { id: 'user-2', stellarAddress: 'GA...2', createdAt: now, deletedAt: null, streak: null },
+      ])
+      .mockResolvedValueOnce([
+        { id: 'user-3', stellarAddress: 'GA...3', createdAt: now, deletedAt: null, streak: null },
+      ])
+      .mockResolvedValueOnce([]);
+    mockAggregate.mockResolvedValue({ _sum: { amountStroops: BigInt(0) } });
+
+    const { backfillCreditScores } = await import('./credit.backfill.js');
+    const result = await backfillCreditScores();
+
+    expect(result.totalUsers).toBe(3);
+    expect(result.processed).toBe(3);
+    expect(mockFindMany).toHaveBeenCalledTimes(3);
+  });
+
+  it('continues processing when a single user fails', async () => {
+    const now = new Date();
+    mockCount.mockResolvedValue(2);
+    mockFindMany
+      .mockResolvedValueOnce([
+        { id: 'user-1', stellarAddress: 'GA...1', createdAt: now, deletedAt: null, streak: null },
+        { id: 'user-2', stellarAddress: 'GA...2', createdAt: now, deletedAt: null, streak: null },
+      ])
+      .mockResolvedValueOnce([]);
+
+    mockAggregate
+      .mockRejectedValueOnce(new Error('DB error'))
+      .mockResolvedValue({ _sum: { amountStroops: BigInt(0) } });
+
+    const { backfillCreditScores } = await import('./credit.backfill.js');
+    const result = await backfillCreditScores();
+
+    expect(result.totalUsers).toBe(2);
+    expect(result.processed).toBe(1);
+    expect(result.errors).toBe(1);
+  });
+});
+
+describe('GET /api/v1/credit/:userId/history', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns 404 when user not found', async () => {
+    mockFindUnique.mockResolvedValue(null);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/credit/nonexistent/history');
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('returns the time series of a creator\'s score', async () => {
+    mockFindUnique.mockResolvedValue({ id: 'user-1', deletedAt: null });
+    mockHistoryFindMany.mockResolvedValue([
+      { value: 42, computedAt: new Date('2024-01-01T00:00:00.000Z') },
+      { value: 55, computedAt: new Date('2024-02-01T00:00:00.000Z') },
+    ]);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/credit/user-1/history');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([
+      { value: 42, computedAt: '2024-01-01T00:00:00.000Z' },
+      { value: 55, computedAt: '2024-02-01T00:00:00.000Z' },
+    ]);
+    expect(mockHistoryFindMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+      orderBy: { computedAt: 'asc' },
+      skip: 0,
+      take: 20,
+    });
   });
 });
