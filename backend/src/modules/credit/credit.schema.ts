@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+export const usernameParamSchema = z.object({
+  username: z.string().min(1, 'Username is required').max(50),
+});
+
 export const userIdParamSchema = z.object({
   userId: z.string().min(1),
 });
