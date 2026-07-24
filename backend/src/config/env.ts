@@ -40,6 +40,9 @@ const envSchema = z.object({
   INDEXER_POLL_INTERVAL_MS: z.coerce.number().default(5000),
   INDEXER_START_LEDGER: z.coerce.number().optional(),
 
+  /** Minimum withdrawal amount, in stroops (1 XLM = 10,000,000 stroops). */
+  WITHDRAWAL_MIN_AMOUNT_STROOPS: z.coerce.number().int().positive().default(10_000_000),
+
   X_API_BEARER_TOKEN: z.string().optional(),
   X_API_BASE_URL: z.string().default('https://api.twitter.com/2'),
 

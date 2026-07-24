@@ -32,6 +32,13 @@ model User {
   apiKeys        ApiKey[]
   refreshTokens  RefreshToken[]
   goals          Goal[]
+  withdrawals    Withdrawal[]
+  notifications  Notification[]
+  leaderboardSnapshots LeaderboardSnapshot[]
+  streak         Streak?
+
+  sentTips     Tip[] @relation("SentTips")
+  receivedTips Tip[] @relation("ReceivedTips")
 
   tipperSubscriptions  Subscription[] @relation("SubscriptionTipper")
   creatorSubscriptions Subscription[] @relation("SubscriptionCreator")
@@ -60,6 +67,13 @@ model ApiKey {
   deletedAt   DateTime?
 
   @@index([createdById])
+}
+
+/// Lifecycle status of an on-chain tip, mirrored by the indexer.
+enum TipStatus {
+  PENDING
+  CONFIRMED
+  REFUNDED
 }
 
 /// On-chain tip mirrored off-chain by the indexer.
@@ -102,6 +116,29 @@ model IndexerCursor {
   updatedAt  DateTime @updatedAt
 }
 
+/// Lifecycle status of a withdrawal. Set to CONFIRMED/FAILED by the indexer
+/// once the submitted Stellar transaction lands on-chain (see #943).
+enum WithdrawalStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+/// A user-initiated withdrawal of accrued tip balance to their own Stellar
+/// wallet. `amount`/`fee` are in stroops. Status transitions PENDING ->
+/// CONFIRMED/FAILED are driven by the indexer watching `txHash` on-chain.
+model Withdrawal {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      BigInt
+  fee         BigInt
+  txHash      String?          @unique
+  status      WithdrawalStatus @default(PENDING)
+  requestedAt DateTime         @default(now())
+  confirmedAt DateTime?
+
+  @@index([userId])
 /// Raw decoded on-chain event persisted for audit and replay.
 /// Unique constraint on (txHash, topic, ledger) ensures idempotent processing.
 model EventLog {
