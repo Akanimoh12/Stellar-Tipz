@@ -67,6 +67,7 @@
     "lint-staged": "^16.4.0",
     "prettier": "^3.3.3",
     "prisma": "^5.20.0",
+    "socket.io-client": "^4.8.3",
     "supertest": "^7.0.0",
     "tsx": "^4.16.0",
     "typescript": "^5.5.4",
