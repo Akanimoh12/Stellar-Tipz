@@ -18,3 +18,11 @@ creditRouter.get("/:userId", requireAuth, getCreditScoreController);
 
 /** Internal – called by the X-metrics refresh job (issue #919). */
 creditRouter.post("/:userId/recompute", requireAuth, recomputeCreditScoreController);
+import { Router } from 'express';
+import * as creditController from './credit.controller.js';
+
+export const creditRouter = Router();
+
+creditRouter.get('/:userId', creditController.getCreditScore);
+creditRouter.get('/:userId/history', creditController.getCreditScoreHistory);
+creditRouter.post('/recalculate', creditController.recalculate);
