@@ -30,6 +30,11 @@ model User {
   apiKeys        ApiKey[]
   refreshTokens  RefreshToken[]
   goals          Goal[]
+  sentTips       Tip[]                @relation("SentTips")
+  receivedTips   Tip[]                @relation("ReceivedTips")
+  leaderboardSnapshots LeaderboardSnapshot[]
+  streak         Streak?
+  notifications  Notification[]
 
   tipperSubscriptions  Subscription[] @relation("SubscriptionTipper")
   creatorSubscriptions Subscription[] @relation("SubscriptionCreator")
@@ -111,6 +116,13 @@ model XAccount {
   followers  Int      @default(0)
   engagement Float?
   fetchedAt  DateTime @default(now())
+}
+
+/// Status of a tip transaction.
+enum TipStatus {
+  CONFIRMED
+  PENDING
+  REFUNDED
 }
 
 /// Leaderboard period tracked by snapshots.
