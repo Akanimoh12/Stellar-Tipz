@@ -29,21 +29,13 @@ model User {
   updatedAt      DateTime @updatedAt
   /// Soft-delete marker: non-null means the record is logically deleted.
   deletedAt      DateTime?
-  apiKeys        ApiKey[]
-  refreshTokens  RefreshToken[]
-  goals          Goal[]
-  withdrawals    Withdrawal[]
-  notifications  Notification[]
-  leaderboardSnapshots LeaderboardSnapshot[]
-  streak         Streak?
-
-  sentTips     Tip[] @relation("SentTips")
-  receivedTips Tip[] @relation("ReceivedTips")
-
-  tipperSubscriptions  Subscription[] @relation("SubscriptionTipper")
-  creatorSubscriptions Subscription[] @relation("SubscriptionCreator")
+  apiKeys              ApiKey[]
+  refreshTokens        RefreshToken[]
+  goals                Goal[]
   sentTips             Tip[]                @relation("SentTips")
   receivedTips         Tip[]                @relation("ReceivedTips")
+  tipperSubscriptions  Subscription[]       @relation("SubscriptionTipper")
+  creatorSubscriptions Subscription[]       @relation("SubscriptionCreator")
   creditScore          CreditScore?
   creditScoreHistory   CreditScoreHistory[]
   withdrawals          Withdrawal[]
@@ -73,6 +65,7 @@ model ApiKey {
 enum TipStatus {
   PENDING
   CONFIRMED
+  FAILED
   REFUNDED
 }
 
@@ -99,13 +92,6 @@ model Tip {
 
   @@index([toAddress, createdAt])
   @@index([fromAddress, createdAt])
-}
-
-enum TipStatus {
-  PENDING
-  CONFIRMED
-  FAILED
-  REFUNDED
 }
 
 /// Tracks indexer progress per event topic so it can resume after a restart.
@@ -139,6 +125,8 @@ model Withdrawal {
   confirmedAt DateTime?
 
   @@index([userId])
+}
+
 /// Raw decoded on-chain event persisted for audit and replay.
 /// Unique constraint on (txHash, topic, ledger) ensures idempotent processing.
 model EventLog {
@@ -357,12 +345,6 @@ model WebhookDelivery {
   @@index([status, nextAttemptAt])
 }
 
-enum WithdrawalStatus {
-  PENDING
-  CONFIRMED
-  FAILED
-}
-
 model CreditScore {
   id         String   @id @default(cuid())
   userId     String   @unique
@@ -377,20 +359,6 @@ model CreditScoreHistory {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   value      Int
   computedAt DateTime @default(now())
-
-  @@index([userId])
-}
-
-model Withdrawal {
-  id          String           @id @default(cuid())
-  userId      String
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  amount      BigInt
-  fee         BigInt
-  txHash      String?          @unique
-  status      WithdrawalStatus @default(PENDING)
-  requestedAt DateTime         @default(now())
-  confirmedAt DateTime?
 
   @@index([userId])
 }
