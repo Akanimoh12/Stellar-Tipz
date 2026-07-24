@@ -15,6 +15,7 @@ import { authRouter } from "./modules/auth/auth.routes.js";
 import { profilesRouter } from "./modules/profiles/profiles.routes.js";
 import { creditRouter } from "./modules/credit/credit.routes.js";
 import { leaderboardRouter } from "./modules/leaderboard/leaderboard.routes.js";
+import { withdrawalsRouter } from "./modules/withdrawals/withdrawals.routes.js";
 import { tipsRouter } from "./modules/tips/tips.routes.js";
 import { leaderboardRouter } from "./modules/leaderboard/leaderboard.routes.js";
 import { creditRouter } from "./modules/credit/credit.routes.js";
@@ -68,6 +69,7 @@ export function createApp(): Express {
   app.use(`${env.API_BASE_PATH}/profiles`, profilesRouter);
   app.use(`${env.API_BASE_PATH}/credit`, creditRouter);
   app.use(`${env.API_BASE_PATH}/leaderboard`, leaderboardRouter);
+  app.use(`${env.API_BASE_PATH}/withdrawals`, withdrawalsRouter);
   // app.use(`${env.API_BASE_PATH}/tips`, tipsRouter);
   // ... (one issue per module)
   app.use(`${env.API_BASE_PATH}/tips`, tipsRouter);
