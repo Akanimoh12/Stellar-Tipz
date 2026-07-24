@@ -27,12 +27,31 @@ model User {
   scopes         String[] @default([])
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt      DateTime?
   apiKeys        ApiKey[]
   refreshTokens  RefreshToken[]
   goals          Goal[]
+  withdrawals    Withdrawal[]
+  notifications  Notification[]
+  leaderboardSnapshots LeaderboardSnapshot[]
+  streak         Streak?
+
+  sentTips     Tip[] @relation("SentTips")
+  receivedTips Tip[] @relation("ReceivedTips")
 
   tipperSubscriptions  Subscription[] @relation("SubscriptionTipper")
   creatorSubscriptions Subscription[] @relation("SubscriptionCreator")
+  sentTips             Tip[]                @relation("SentTips")
+  receivedTips         Tip[]                @relation("ReceivedTips")
+  creditScore          CreditScore?
+  creditScoreHistory   CreditScoreHistory[]
+  withdrawals          Withdrawal[]
+  notifications        Notification[]
+  leaderboardSnapshots LeaderboardSnapshot[]
+  streak               Streak?
+
+  @@index([createdAt])
 }
 
 /// API key for service/admin access and webhook integrations.
@@ -44,8 +63,17 @@ model ApiKey {
   createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt   DateTime?
 
   @@index([createdById])
+}
+
+/// Lifecycle status of an on-chain tip, mirrored by the indexer.
+enum TipStatus {
+  PENDING
+  CONFIRMED
+  REFUNDED
 }
 
 /// On-chain tip mirrored off-chain by the indexer.
@@ -63,20 +91,73 @@ model Tip {
   status        TipStatus @default(PENDING)
   message       String?
   createdAt     DateTime  @default(now())
-
-  senderId      String?
-  sender        User?     @relation("SentTips", fields: [senderId], references: [id])
-  recipientId   String?
-  recipient     User?     @relation("ReceivedTips", fields: [recipientId], references: [id])
-
+  updatedAt     DateTime  @updatedAt
   refund        Refund?
+
+  sender        User?     @relation("SentTips", fields: [fromAddress], references: [stellarAddress])
+  receiver      User?     @relation("ReceivedTips", fields: [toAddress], references: [stellarAddress])
+
+  @@index([toAddress, createdAt])
+  @@index([fromAddress, createdAt])
+}
+
+enum TipStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  REFUNDED
 }
 
 /// Tracks indexer progress per event topic so it can resume after a restart.
 model IndexerCursor {
   topic      String   @id
   lastLedger Int
+  createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+}
+
+/// Lifecycle status of a withdrawal. Set to CONFIRMED/FAILED by the indexer
+/// once the submitted Stellar transaction lands on-chain (see #943).
+enum WithdrawalStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+/// A user-initiated withdrawal of accrued tip balance to their own Stellar
+/// wallet. `amount`/`fee` are in stroops. Status transitions PENDING ->
+/// CONFIRMED/FAILED are driven by the indexer watching `txHash` on-chain.
+model Withdrawal {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      BigInt
+  fee         BigInt
+  txHash      String?          @unique
+  status      WithdrawalStatus @default(PENDING)
+  requestedAt DateTime         @default(now())
+  confirmedAt DateTime?
+
+  @@index([userId])
+/// Raw decoded on-chain event persisted for audit and replay.
+/// Unique constraint on (txHash, topic, ledger) ensures idempotent processing.
+model EventLog {
+  id        String   @id @default(cuid())
+  /// Event topic (e.g. "tip_sent", "subscription_charged").
+  topic     String
+  /// Ledger sequence number where the event was emitted.
+  ledger    Int
+  /// Transaction hash that emitted the event.
+  txHash    String
+  /// Decoded event payload as JSON.
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([txHash, topic, ledger])
+  @@index([topic])
+  @@index([ledger])
+  @@index([txHash])
 }
 
 /// Refund requests tied to a specific tip.
@@ -89,6 +170,7 @@ model Refund {
   status    String   @default("pending")
   txHash    String?
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 /// In-app notification for a user.
@@ -100,8 +182,12 @@ model Notification {
   payload   Json
   readAt    DateTime?
   createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt DateTime?
 
   @@index([userId, readAt])
+  @@index([createdAt])
 }
 
 /// Cached X (Twitter) account metrics.
@@ -111,6 +197,8 @@ model XAccount {
   followers  Int      @default(0)
   engagement Float?
   fetchedAt  DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 /// Leaderboard period tracked by snapshots.
@@ -129,6 +217,9 @@ model LeaderboardSnapshot {
   user      User     @relation(fields: [userId], references: [id])
   totalTips BigInt
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([period, rank])
 }
 
 /// Per-user tipping streak tracking. One row per user (userId is unique).
@@ -156,9 +247,7 @@ model AuthChallenge {
   network         String
   /// UTC timestamp after which the challenge is no longer valid.
   expiresAt       DateTime
-  /// UTC timestamp when the challenge was successfully used (null if unused).
   usedAt          DateTime?
-  createdAt       DateTime @default(now())
 
   @@index([stellarAddress])
   @@index([expiresAt])
@@ -174,6 +263,7 @@ model RefreshToken {
   expiresAt   DateTime
   revokedAt   DateTime?
   createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([userId])
 }
@@ -198,8 +288,11 @@ model Goal {
   status        GoalStatus @default(ACTIVE)
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt     DateTime?
 
   @@index([userId])
+  @@index([status])
 }
 
 /// Billing cadence for a recurring tip subscription.
@@ -230,6 +323,8 @@ model Subscription {
   status        SubscriptionStatus   @default(ACTIVE)
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt     DateTime?
 
   webhookDeliveries WebhookDelivery[]
 
@@ -261,3 +356,83 @@ model WebhookDelivery {
   @@index([subscriptionId])
   @@index([status, nextAttemptAt])
 }
+
+enum WithdrawalStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+model CreditScore {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  value      Int
+  computedAt DateTime @default(now())
+}
+
+model CreditScoreHistory {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  value      Int
+  computedAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Withdrawal {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      BigInt
+  fee         BigInt
+  txHash      String?          @unique
+  status      WithdrawalStatus @default(PENDING)
+  requestedAt DateTime         @default(now())
+  confirmedAt DateTime?
+
+  @@index([userId])
+}
+
+/// Pre-aggregated daily platform analytics, one row per calendar day (UTC).
+/// Populated by a scheduled job so dashboards can read trends without scanning
+/// the raw Tip/User tables.
+model AnalyticsDaily {
+  id          String   @id @default(cuid())
+  /// Calendar day (UTC) this aggregate covers; one row per day.
+  date        DateTime @unique @db.Date
+  /// Number of tips recorded on this day.
+  totalTips   Int      @default(0)
+  /// Sum of tip amounts (in stroops) on this day.
+  totalVolume BigInt   @default(0)
+  /// Users that registered on this day.
+  newUsers    Int      @default(0)
+  /// Distinct users that sent or received a tip on this day.
+  activeUsers Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// Append-only audit trail of privileged / admin actions for accountability.
+/// Rows are written by the application whenever an actor performs a sensitive
+/// operation; they are never updated or deleted.
+model AuditLog {
+  id        String   @id @default(cuid())
+  /// Identifier of who performed the action (user id, api key id or "system").
+  actor     String
+  /// Machine-readable action name, e.g. "user.ban" or "tip.refund".
+  action    String
+  /// Identifier of the entity the action was performed on, when applicable.
+  target    String?
+  /// Arbitrary structured context for the action (before/after values, reason…).
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([actor])
+  @@index([action])
+  @@index([createdAt])
+}
+
+

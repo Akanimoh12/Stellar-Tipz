@@ -37,3 +37,5 @@ issue.md
 pr.md
 
 ...
+.npm_cache/
+
