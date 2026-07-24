@@ -40,3 +40,16 @@ export class ConflictError extends AppError {
     super(409, message, 'CONFLICT');
   }
 }
+
+export class BadGatewayError extends AppError {
+  constructor(message = 'Bad gateway', details?: unknown) {
+    super(502, message, 'BAD_GATEWAY', details);
+  }
+}
+
+export class ServiceUnavailableError extends AppError {
+  constructor(message = 'Service unavailable', details?: unknown) {
+    super(503, message, 'SERVICE_UNAVAILABLE', details);
+  }
+}
+

@@ -17,6 +17,7 @@ import { creditRouter } from './modules/credit/credit.routes.js';
 import { leaderboardRouter } from './modules/leaderboard/leaderboard.routes.js';
 import { tipsRouter } from './modules/tips/tips.routes.js';
 import { balancesRouter, withdrawalsRouter } from './modules/withdrawals/withdrawals.routes.js';
+import { ipfsRouter } from './modules/ipfs/ipfs.routes.js';
 
 /** Builds and configures the Express application without starting a listener. */
 export function createApp(): Express {
@@ -56,6 +57,7 @@ export function createApp(): Express {
   app.use(`${env.API_BASE_PATH}/profiles`, profilesRouter);
   app.use(`${env.API_BASE_PATH}/credit`, creditRouter);
   app.use(`${env.API_BASE_PATH}/leaderboard`, leaderboardRouter);
+  app.use(`${env.API_BASE_PATH}/ipfs`, ipfsRouter);
   app.use(`${env.API_BASE_PATH}/tips`, tipsRouter);
   app.use(`${env.API_BASE_PATH}/withdrawals`, withdrawalsRouter);
   app.use(`${env.API_BASE_PATH}/balances`, balancesRouter);

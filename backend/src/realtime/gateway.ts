@@ -27,7 +27,7 @@ export function initRealtime(httpServer: HttpServer): SocketIOServer<ClientToSer
 
     socket.on('subscribe:creator', (creatorAddress: string) => {
       if (!socket.authUser) {
-        socket.emit('error' as never, { message: 'Not authenticated' } as never);
+        (socket as any).emit('error', { message: 'Not authenticated' });
         return;
       }
       const room = `creator:${creatorAddress}`;
@@ -37,11 +37,11 @@ export function initRealtime(httpServer: HttpServer): SocketIOServer<ClientToSer
 
     socket.on('subscribe:notifications', (userId: string) => {
       if (!socket.authUser) {
-        socket.emit('error' as never, { message: 'Not authenticated' } as never);
+        (socket as any).emit('error', { message: 'Not authenticated' });
         return;
       }
       if (socket.authUser.id !== userId) {
-        socket.emit('error' as never, { message: 'Forbidden' } as never);
+        (socket as any).emit('error', { message: 'Forbidden' });
         return;
       }
       const room = `user:${userId}`;
