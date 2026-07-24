@@ -1,35 +1,24 @@
-import cors from "cors";
-import express, { type Express } from "express";
-import helmet from "helmet";
-import pinoHttp from "pino-http";
-import swaggerUi from "swagger-ui-express";
-import { env } from "./config/env.js";
+import cors from 'cors';
+import express, { type Express } from 'express';
+import helmet from 'helmet';
+import pinoHttp from 'pino-http';
+import swaggerUi from 'swagger-ui-express';
+import { env } from './config/env.js';
 import {
   errorHandler,
   notFoundHandler,
-} from "./common/middleware/errorHandler.js";
-import { logger } from "./common/utils/logger.js";
-import { openApiDocument } from "./docs/openapi.js";
-import { requestId } from "./common/middleware/requestId.js";
-import { authRouter } from "./modules/auth/auth.routes.js";
-import { profilesRouter } from "./modules/profiles/profiles.routes.js";
-import { creditRouter } from "./modules/credit/credit.routes.js";
-import { leaderboardRouter } from "./modules/leaderboard/leaderboard.routes.js";
-import { withdrawalsRouter } from "./modules/withdrawals/withdrawals.routes.js";
-import { tipsRouter } from "./modules/tips/tips.routes.js";
-import { leaderboardRouter } from "./modules/leaderboard/leaderboard.routes.js";
-import { creditRouter } from "./modules/credit/credit.routes.js";
-import { withdrawalsRouter, balancesRouter } from "./modules/withdrawals/withdrawals.routes.js";
+} from './common/middleware/errorHandler.js';
+import { logger } from './common/utils/logger.js';
+import { openApiDocument } from './docs/openapi.js';
+import { requestId } from './common/middleware/requestId.js';
+import { authRouter } from './modules/auth/auth.routes.js';
+import { profilesRouter } from './modules/profiles/profiles.routes.js';
+import { creditRouter } from './modules/credit/credit.routes.js';
+import { leaderboardRouter } from './modules/leaderboard/leaderboard.routes.js';
+import { tipsRouter } from './modules/tips/tips.routes.js';
+import { balancesRouter, withdrawalsRouter } from './modules/withdrawals/withdrawals.routes.js';
 
-/**
- * Builds and configures the Express application (no listening here — see server.ts).
- *
- * Feature modules register their routers below. As you implement a module
- * (see the GitHub issues), import its router and mount it under env.API_BASE_PATH.
- * Example:
- *   import { tipsRouter } from './modules/tips/tips.routes.js';
- *   app.use(`${env.API_BASE_PATH}/tips`, tipsRouter);
- */
+/** Builds and configures the Express application without starting a listener. */
 export function createApp(): Express {
   const app = express();
 
@@ -38,15 +27,15 @@ export function createApp(): Express {
       contentSecurityPolicy: {
         directives: {
           ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-          "script-src": ["'self'", "'unsafe-inline'"],
-          "style-src": ["'self'", "'unsafe-inline'"],
+          'script-src': ["'self'", "'unsafe-inline'"],
+          'style-src': ["'self'", "'unsafe-inline'"],
         },
       },
     }),
   );
-  app.use(cors({ origin: env.CORS_ORIGIN.split(","), credentials: true }));
+  app.use(cors({ origin: env.CORS_ORIGIN.split(','), credentials: true }));
   app.use(requestId);
-  app.use(express.json({ limit: "1mb" }));
+  app.use(express.json({ limit: '1mb' }));
   app.use(pinoHttp({ logger }));
 
   const docsPath = `${env.API_BASE_PATH}/docs`;
@@ -55,29 +44,21 @@ export function createApp(): Express {
   });
   app.use(docsPath, swaggerUi.serve, swaggerUi.setup(openApiDocument));
 
-  // Health check (implemented in the health module issue; basic version inline for scaffolding).
-  app.get("/health", (_req, res) => {
+  app.get('/health', (_req, res) => {
     res.json({
-      status: "ok",
-      service: "stellar-tipz-backend",
+      status: 'ok',
+      service: 'stellar-tipz-backend',
       time: new Date().toISOString(),
     });
   });
 
-  // ── Feature routers mount here ───────────────────────────────
   app.use(`${env.API_BASE_PATH}/auth`, authRouter);
   app.use(`${env.API_BASE_PATH}/profiles`, profilesRouter);
   app.use(`${env.API_BASE_PATH}/credit`, creditRouter);
   app.use(`${env.API_BASE_PATH}/leaderboard`, leaderboardRouter);
-  app.use(`${env.API_BASE_PATH}/withdrawals`, withdrawalsRouter);
-  // app.use(`${env.API_BASE_PATH}/tips`, tipsRouter);
-  // ... (one issue per module)
   app.use(`${env.API_BASE_PATH}/tips`, tipsRouter);
-  app.use(`${env.API_BASE_PATH}/leaderboard`, leaderboardRouter);
-  app.use(`${env.API_BASE_PATH}/credit`, creditRouter);
   app.use(`${env.API_BASE_PATH}/withdrawals`, withdrawalsRouter);
   app.use(`${env.API_BASE_PATH}/balances`, balancesRouter);
-  // ─────────────────────────────────────────────────────────────
 
   app.use(notFoundHandler);
   app.use(errorHandler);
