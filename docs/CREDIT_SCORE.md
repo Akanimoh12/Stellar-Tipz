@@ -148,9 +148,11 @@ The streak bonus is added after all other components and is also capped at 100 t
 
 ---
 
-## Implementation (Rust)
+## Implementation
 
-See [`contracts/tipz/src/credit.rs`](../contracts/tipz/src/credit.rs) for the canonical implementation.
+### Rust (on-chain)
+
+See [`contracts/tipz/src/credit.rs`](../contracts/tipz/src/credit.rs) for the canonical on-chain implementation.
 
 Key constants:
 
@@ -195,6 +197,47 @@ let total = (BASE_SCORE
     + streak_score)
     .min(MAX_SCORE);
 ```
+
+### TypeScript (off-chain backend)
+
+See [`backend/src/modules/credit/credit.service.ts`](../backend/src/modules/credit/credit.service.ts) for the backend implementation, which mirrors the on-chain formula exactly. This is used by REST API endpoints under `/api/v1/credit` for off-chain lookups without a contract call.
+
+Key constants:
+
+```typescript
+const BASE_SCORE = 40;
+const MAX_SCORE = 100;
+const TIP_WEIGHT = 20;
+const X_WEIGHT = 30;
+const AGE_WEIGHT = 10;
+const TIP_DIVISOR = 10_000_000;
+const FOLLOWER_DIVISOR = 50;
+const ENGAGEMENT_DIVISOR = 10;
+const AGE_DIVISOR = 10;
+const X_SUB_CAP = 50;
+const AGE_CAP = 100;
+const TIP_CAP = 100;
+```
+
+Core calculation:
+
+```typescript
+function computeCreditScore(input: ComputeCreditScoreInput) {
+  const tipSub = Math.min(Math.floor(Number(input.totalTipsReceived) / TIP_DIVISOR), TIP_CAP);
+  const xSub = computeXSubScore(input.xFollowers, input.xEngagementAvg);
+  const ageSub = computeAgeSubScore(input.accountAgeDays);
+
+  const tipScore = Math.floor((tipSub * TIP_WEIGHT) / MAX_SCORE);
+  const xScore = Math.floor((xSub * X_WEIGHT) / MAX_SCORE);
+  const ageScore = Math.floor((ageSub * AGE_WEIGHT) / MAX_SCORE);
+  const streakBonus = clamp(input.streakBonus, 0, MAX_SCORE);
+
+  const total = clamp(BASE_SCORE + tipScore + xScore + ageScore + streakBonus, 0, MAX_SCORE);
+  return { score: total, tier: computeTier(total), components: { base: BASE_SCORE, tipVolume: tipScore, xMetrics: xScore, accountAge: ageScore, streakBonus } };
+}
+```
+
+Both implementations produce identical results for the same inputs, ensuring consistency between on-chain and off-chain credit lookups.
 
 ---
 

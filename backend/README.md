@@ -36,17 +36,17 @@ It covers the definition of done, module conventions, and local verification ste
 
 ## Tech stack
 
-| Concern        | Choice                                   |
-| -------------- | ---------------------------------------- |
-| Language       | TypeScript (Node.js ≥ 20, ESM)           |
-| HTTP framework | Express                                  |
-| ORM / DB       | Prisma + PostgreSQL                      |
-| Cache / queues | Redis + BullMQ                           |
-| Realtime       | Socket.IO                                |
-| Chain access   | `@stellar/stellar-sdk` (Soroban RPC)     |
-| Validation     | Zod                                      |
-| Logging        | Pino                                     |
-| Tests          | Vitest + Supertest                       |
+| Concern        | Choice                               |
+| -------------- | ------------------------------------ |
+| Language       | TypeScript (Node.js ≥ 20, ESM)       |
+| HTTP framework | Express                              |
+| ORM / DB       | Prisma + PostgreSQL                  |
+| Cache / queues | Redis + BullMQ                       |
+| Realtime       | Socket.IO                            |
+| Chain access   | `@stellar/stellar-sdk` (Soroban RPC) |
+| Validation     | Zod                                  |
+| Logging        | Pino                                 |
+| Tests          | Vitest + Supertest                   |
 
 ---
 
@@ -104,13 +104,27 @@ The dev server uses [`tsx watch`](https://github.com/privatenumber/tsx) — no n
 npm run dev          # starts tsx watch src/server.ts → http://localhost:4000/health
 ```
 
+**Git hooks**
+
+After `npm install`, Husky installs a `pre-commit` hook that runs `lint-staged` on
+staged `backend/**/*.ts` files. It will auto-fix lint issues (ESLint) and apply
+Prettier formatting where possible; if a file cannot be fixed automatically the
+commit is blocked so you can fix it manually.
+
+```bash
+cd backend
+npm install          # runs `husky` via the prepare script and installs the hook
+```
+
+To skip the hook in an emergency: `git commit --no-verify`.
+
 **Hot reload behaviour**
 
-| Change type | Behaviour |
-|---|---|
-| TypeScript source files | Automatic restart (tsx watch detects the change) |
-| `.env` file | **Not** auto-reloaded — restart the process manually after editing `.env` |
-| `prisma/schema.prisma` | Run `npm run prisma:generate` then restart |
+| Change type             | Behaviour                                                                 |
+| ----------------------- | ------------------------------------------------------------------------- |
+| TypeScript source files | Automatic restart (tsx watch detects the change)                          |
+| `.env` file             | **Not** auto-reloaded — restart the process manually after editing `.env` |
+| `prisma/schema.prisma`  | Run `npm run prisma:generate` then restart                                |
 
 **Port config** — set `PORT` in your `.env` (default `4000`). The value is
 validated at startup via `src/config/env.ts`; the server refuses to start if

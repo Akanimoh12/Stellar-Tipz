@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import { randomBytes } from "crypto";
+import { randomBytes, createHash } from "crypto";
 import { prisma } from "../../db/prisma.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../common/utils/logger.js";
@@ -14,6 +14,13 @@ import type {
   ChallengeResponse,
 } from "./auth.types.js";
 import { verifyEd25519Signature } from "./signature.js";
+
+/**
+ * Helper to hash a refresh token.
+ */
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
 
 /**
  * Generates a random challenge string for wallet signature verification.
@@ -43,7 +50,7 @@ async function generateRefreshToken(userId: string): Promise<string> {
   await prisma.refreshToken.create({
     data: {
       userId,
-      token,
+      hashedToken: hashToken(token),
       expiresAt,
     },
   });
@@ -236,7 +243,7 @@ export async function verifyChallenge(
 export async function refreshToken(refreshToken: string): Promise<TokenPair> {
   // Find the refresh token
   const tokenRecord = await prisma.refreshToken.findUnique({
-    where: { token: refreshToken },
+    where: { hashedToken: hashToken(refreshToken) },
     include: { user: true },
   });
 
@@ -282,7 +289,7 @@ export async function refreshToken(refreshToken: string): Promise<TokenPair> {
  */
 export async function revokeRefreshToken(refreshToken: string): Promise<void> {
   const tokenRecord = await prisma.refreshToken.findUnique({
-    where: { token: refreshToken },
+    where: { hashedToken: hashToken(refreshToken) },
   });
 
   if (!tokenRecord) {
