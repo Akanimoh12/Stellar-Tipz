@@ -1,195 +1,215 @@
-import { prisma } from '../../db/prisma.js';
-import { redis } from '../../db/redis.js';
-import { NotFoundError, BadGatewayError } from '../../common/errors/AppError.js';
-import { logger } from '../../common/utils/logger.js';
-import { xApiClient } from './x.client.js';
-import type { XMetricsResponse } from './x.types.js';
+import { prisma } from "../../db/prisma.js";
+import { env } from "../../config/env.js";
+import { logger } from "../../common/utils/logger.js";
+import {
+  BadRequestError,
+  NotFoundError,
+  ServiceUnavailableError,
+} from "../../common/errors/AppError.js";
+import type {
+  XAccountMetrics,
+  XApiUserResponse,
+  FetchXMetricsOptions,
+} from "./x.types.js";
 
-export const X_METRICS_CACHE_TTL_SECONDS = 5 * 60;
+/**
+ * X API client for fetching user metrics.
+ */
+class XApiClient {
+  private baseUrl: string;
+  private bearerToken?: string;
 
-export const X_METRICS_FRESHNESS_TTL_MS = 30 * 60 * 1000;
+  constructor() {
+    this.baseUrl = env.X_API_BASE_URL;
+    this.bearerToken = env.X_API_BEARER_TOKEN;
+  }
 
-function cacheKeyForHandle(handle: string): string {
-  return `x:metrics:handle:${handle.toLowerCase()}`;
+  /**
+   * Fetches user data from X API by handle.
+   * @param handle - X handle (without @ symbol)
+   * @returns X API user response
+   * @throws {ServiceUnavailableError} if API is unavailable or token is missing
+   */
+  async fetchUserByHandle(handle: string): Promise<XApiUserResponse> {
+    if (!this.bearerToken) {
+      throw new ServiceUnavailableError("X API bearer token not configured");
+    }
+
+    const url = `${this.baseUrl}/users/by/username/${handle}?user.fields=public_metrics`;
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${this.bearerToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new NotFoundError(`X user @${handle} not found`);
+        }
+        if (response.status === 429) {
+          throw new ServiceUnavailableError("X API rate limit exceeded");
+        }
+        if (response.status >= 500) {
+          throw new ServiceUnavailableError("X API is currently unavailable");
+        }
+        throw new BadRequestError(`X API error: ${response.statusText}`);
+      }
+
+      const data = (await response.json()) as XApiUserResponse;
+      return data;
+    } catch (error) {
+      if (
+        error instanceof NotFoundError ||
+        error instanceof ServiceUnavailableError ||
+        error instanceof BadRequestError
+      ) {
+        throw error;
+      }
+      logger.error({ error, handle }, "Failed to fetch X user data");
+      throw new ServiceUnavailableError("Failed to connect to X API");
+    }
+  }
 }
 
-async function readCachedMetrics(handle: string): Promise<XMetricsResponse | null> {
+const xApiClient = new XApiClient();
+
+/**
+ * Normalizes X API response to internal metrics format.
+ * Calculates engagement score based on followers and tweet activity.
+ */
+function normalizeXMetrics(
+  handle: string,
+  apiResponse: XApiUserResponse,
+): XAccountMetrics {
+  const { public_metrics } = apiResponse.data;
+
+  // Calculate engagement as a simple ratio of tweet_count to followers
+  // This is a basic metric - can be enhanced with more sophisticated algorithms
+  const engagement =
+    public_metrics.followers_count > 0
+      ? public_metrics.tweet_count / public_metrics.followers_count
+      : 0;
+
+  return {
+    handle,
+    followers: public_metrics.followers_count,
+    engagement: parseFloat(engagement.toFixed(4)),
+    fetchedAt: new Date(),
+  };
+}
+
+/**
+ * Fetches X account metrics with graceful degradation.
+ * Falls back to cached data if API is unavailable.
+ */
+export async function fetchXMetrics(
+  handle: string,
+  options: FetchXMetricsOptions = {},
+): Promise<XAccountMetrics> {
+  const { useFallback = true, maxCacheAge = 24 * 60 * 60 * 1000 } = options;
+
   try {
-    const key = cacheKeyForHandle(handle);
-    const cached = await redis.get(key);
-    return cached ? (JSON.parse(cached) as XMetricsResponse) : null;
-  } catch (err) {
-    logger.warn({ err, handle }, 'X metrics cache read failed');
+    // Try to fetch fresh data from X API
+    const apiResponse = await xApiClient.fetchUserByHandle(handle);
+    const metrics = normalizeXMetrics(handle, apiResponse);
+
+    // Cache the result in database
+    await prisma.xAccount.upsert({
+      where: { handle },
+      update: {
+        followers: metrics.followers,
+        engagement: metrics.engagement,
+        fetchedAt: metrics.fetchedAt,
+      },
+      create: {
+        handle,
+        followers: metrics.followers,
+        engagement: metrics.engagement,
+        fetchedAt: metrics.fetchedAt,
+      },
+    });
+
+    logger.info(
+      { handle, followers: metrics.followers },
+      "Fetched fresh X metrics",
+    );
+    return metrics;
+  } catch (error) {
+    // If API is unavailable and fallback is enabled, try to use cached data
+    if (error instanceof ServiceUnavailableError && useFallback) {
+      logger.warn(
+        { handle, error: (error as Error).message },
+        "X API unavailable, attempting fallback",
+      );
+
+      const cached = await prisma.xAccount.findUnique({
+        where: { handle },
+      });
+
+      if (cached) {
+        const cacheAge = Date.now() - cached.fetchedAt.getTime();
+
+        if (cacheAge <= maxCacheAge) {
+          logger.info(
+            { handle, cacheAge: Math.round(cacheAge / 1000 / 60) },
+            "Using cached X metrics",
+          );
+
+          return {
+            handle: cached.handle,
+            followers: cached.followers,
+            engagement: cached.engagement ?? undefined,
+            fetchedAt: cached.fetchedAt,
+          };
+        }
+
+        logger.warn(
+          { handle, cacheAge },
+          "Cached data too old, cannot use fallback",
+        );
+      } else {
+        logger.warn({ handle }, "No cached data available for fallback");
+      }
+    }
+
+    // Re-throw the error if no fallback or fallback failed
+    throw error;
+  }
+}
+
+/**
+ * Gets cached X metrics from database without calling API.
+ * Useful for displaying last-known data.
+ */
+export async function getCachedXMetrics(
+  handle: string,
+): Promise<XAccountMetrics | null> {
+  const cached = await prisma.xAccount.findUnique({
+    where: { handle },
+  });
+
+  if (!cached) {
     return null;
   }
-}
 
-async function writeCachedMetrics(
-  handle: string,
-  metrics: XMetricsResponse,
-): Promise<void> {
-  try {
-    const key = cacheKeyForHandle(handle);
-    await redis.set(key, JSON.stringify(metrics), 'EX', X_METRICS_CACHE_TTL_SECONDS);
-  } catch (err) {
-    logger.warn({ err, handle }, 'X metrics cache write failed');
-  }
-}
-
-function isStale(fetchedAt: Date): boolean {
-  return Date.now() - fetchedAt.getTime() > X_METRICS_FRESHNESS_TTL_MS;
-}
-
-function computeEngagement(metrics: {
-  followers_count: number;
-  tweet_count: number;
-}): number | null {
-  if (metrics.followers_count === 0) return null;
-  return Math.round((metrics.tweet_count / metrics.followers_count) * 1000) / 1000;
+  return {
+    handle: cached.handle,
+    followers: cached.followers,
+    engagement: cached.engagement ?? undefined,
+    fetchedAt: cached.fetchedAt,
+  };
 }
 
 /**
- * Returns cached X (Twitter) metrics for a handle.
- * Checks Redis first; on miss it reads from the database and populates the cache.
+ * Clears cached X metrics for a specific handle.
+ * Useful for testing or when forcing a fresh fetch.
  */
-export async function getCachedXMetrics(handle: string): Promise<XMetricsResponse> {
-  const cached = await readCachedMetrics(handle);
-  if (cached) return cached;
-
-  const account = await prisma.xAccount.findUnique({
+export async function clearCachedXMetrics(handle: string): Promise<void> {
+  await prisma.xAccount.deleteMany({
     where: { handle },
   });
-
-  if (!account) {
-    throw new NotFoundError(`X handle "${handle}" not found`);
-  }
-
-  const result: XMetricsResponse = {
-    handle: account.handle,
-    followers: account.followers,
-    engagement: account.engagement,
-    fetchedAt: account.fetchedAt.toISOString(),
-  };
-
-  await writeCachedMetrics(handle, result);
-  return result;
-}
-
-/**
- * Fetches fresh X metrics from the X API v2, persists them to the database,
- * and caches them in Redis.
- *
- * Skips the API call if the database record is still fresh
- * (within X_METRICS_FRESHNESS_TTL_MS).
- */
-export async function fetchAndRefreshXMetrics(handle: string): Promise<XMetricsResponse> {
-  const cached = await readCachedMetrics(handle);
-  if (cached) return cached;
-
-  const existing = await prisma.xAccount.findUnique({ where: { handle } });
-
-  if (existing && !isStale(existing.fetchedAt)) {
-    const result: XMetricsResponse = {
-      handle: existing.handle,
-      followers: existing.followers,
-      engagement: existing.engagement,
-      fetchedAt: existing.fetchedAt.toISOString(),
-    };
-    await writeCachedMetrics(handle, result);
-    return result;
-  }
-
-  let apiData;
-  try {
-    apiData = await xApiClient.getUserByHandle(handle);
-  } catch (err) {
-    logger.error({ err, handle }, 'Failed to fetch X metrics from API');
-    if (existing) {
-      const result: XMetricsResponse = {
-        handle: existing.handle,
-        followers: existing.followers,
-        engagement: existing.engagement,
-        fetchedAt: existing.fetchedAt.toISOString(),
-      };
-      await writeCachedMetrics(handle, result);
-      return result;
-    }
-    throw new BadGatewayError(`Failed to fetch X metrics for "${handle}"`);
-  }
-
-  const user = apiData.data;
-  const followers = user.public_metrics.followers_count;
-  const engagement = computeEngagement({
-    followers_count: user.public_metrics.followers_count,
-    tweet_count: user.public_metrics.tweet_count,
-  });
-  const now = new Date();
-
-  await prisma.xAccount.upsert({
-    where: { handle },
-    update: { followers, engagement, fetchedAt: now },
-    create: { handle, followers, engagement, fetchedAt: now },
-  });
-
-  const result: XMetricsResponse = {
-    handle,
-    followers,
-    engagement,
-    fetchedAt: now.toISOString(),
-  };
-
-  await writeCachedMetrics(handle, result);
-  return result;
-}
-
-/**
- * Validates whether a user controls the given X handle by checking if a provided
- * signed code is present in their bio.
- */
-export async function verifyXOwnership(handle: string, signedCode: string): Promise<boolean> {
-  if (!handle || !signedCode) {
-    throw new Error('Handle and signed code are required');
-  }
-
-  if (signedCode === `tipz-${handle}`) {
-    return true;
-  }
-  return false;
-}
-
-/**
- * Scheduled job to refresh metrics for active creators.
- * Fetches the latest engagement metrics for linked X handles.
- */
-export async function refreshXMetrics(): Promise<void> {
-  logger.info('Refreshing X metrics for active creators...');
-  const creators = await prisma.user.findMany({
-    where: { xHandle: { not: null }, deletedAt: null },
-    select: { xHandle: true },
-  });
-
-  const handles = creators
-    .map((c) => c.xHandle)
-    .filter((h): h is string => h !== null);
-
-  if (handles.length === 0) {
-    logger.info('No linked X handles to refresh');
-    return;
-  }
-
-  const results = await Promise.allSettled(
-    handles.map((handle) => fetchAndRefreshXMetrics(handle)),
-  );
-
-  const succeeded = results.filter((r) => r.status === 'fulfilled').length;
-  const failed = results.filter((r) => r.status === 'rejected').length;
-
-  logger.info({ total: handles.length, succeeded, failed }, 'X metrics refresh complete');
-
-  for (let i = 0; i < results.length; i++) {
-    const result = results[i];
-    if (result.status === 'rejected') {
-      logger.warn({ handle: handles[i], err: result.reason }, 'X metrics refresh failed');
-    }
-  }
+  logger.info({ handle }, "Cleared cached X metrics");
 }
