@@ -10,6 +10,7 @@ import {
   createCreditRecomputeWorker,
   scheduleCreditRecompute,
 } from './jobs/index.js';
+import { initRealtime } from './realtime/index.js';
 
 /** Process entry point: starts the HTTP server (and, later, the WebSocket + indexer). */
 async function bootstrap(): Promise<void> {
@@ -47,8 +48,8 @@ async function bootstrap(): Promise<void> {
   });
   await scheduleCreditRecompute();
 
-  // The realtime gateway (Socket.IO) attaches to this httpServer — see the realtime issues.
-  // initRealtime(httpServer);
+  // The realtime gateway (Socket.IO) attaches to this httpServer.
+  initRealtime(httpServer);
 
   httpServer.listen(env.PORT, () => {
     logger.info(`🚀 Stellar Tipz backend listening on http://localhost:${env.PORT}`);

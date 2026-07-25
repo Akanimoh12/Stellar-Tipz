@@ -7,14 +7,6 @@ import { env } from './config/env.js';
 import {
   errorHandler,
   notFoundHandler,
-} from "./common/middleware/errorHandler.js";
-import { logger } from "./common/utils/logger.js";
-import { openApiDocument } from "./docs/openapi.js";
-import { authRouter } from "./modules/auth/auth.routes.js";
-import { profilesRouter } from "./modules/profiles/profiles.routes.js";
-import { creditRouter } from "./modules/credit/credit.routes.js";
-import { leaderboardRouter } from "./modules/leaderboard/leaderboard.routes.js";
-import { xRouter } from "./modules/x/x.routes.js";
 } from './common/middleware/errorHandler.js';
 import { logger } from './common/utils/logger.js';
 import { openApiDocument } from './docs/openapi.js';

@@ -27,32 +27,21 @@ model User {
   scopes         String[] @default([])
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  apiKeys        ApiKey[]
-  refreshTokens  RefreshToken[]
-  goals          Goal[]
-  sentTips       Tip[]                @relation("SentTips")
-  receivedTips   Tip[]                @relation("ReceivedTips")
-  leaderboardSnapshots LeaderboardSnapshot[]
-  streak         Streak?
-  notifications  Notification[]
-
-  tipperSubscriptions  Subscription[] @relation("SubscriptionTipper")
-  creatorSubscriptions Subscription[] @relation("SubscriptionCreator")
-  /// Soft-delete marker: non-null means the record is logically deleted.
-  deletedAt      DateTime?
   apiKeys              ApiKey[]
   refreshTokens        RefreshToken[]
   goals                Goal[]
   sentTips             Tip[]                @relation("SentTips")
   receivedTips         Tip[]                @relation("ReceivedTips")
+  leaderboardSnapshots LeaderboardSnapshot[]
+  streak               Streak?
+  notifications        Notification[]
   tipperSubscriptions  Subscription[]       @relation("SubscriptionTipper")
   creatorSubscriptions Subscription[]       @relation("SubscriptionCreator")
   creditScore          CreditScore?
   creditScoreHistory   CreditScoreHistory[]
   withdrawals          Withdrawal[]
-  notifications        Notification[]
-  leaderboardSnapshots LeaderboardSnapshot[]
-  streak               Streak?
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt            DateTime?
 
   @@index([createdAt])
 }
@@ -198,13 +187,6 @@ model XAccount {
   fetchedAt  DateTime @default(now())
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-}
-
-/// Status of a tip transaction.
-enum TipStatus {
-  CONFIRMED
-  PENDING
-  REFUNDED
 }
 
 /// Leaderboard period tracked by snapshots.
