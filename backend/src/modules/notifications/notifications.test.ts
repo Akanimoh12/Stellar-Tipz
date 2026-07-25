@@ -6,17 +6,33 @@ import {
   getNotification,
   markAsRead,
   markAllAsRead,
+  getUnreadCount,
+  getPreferences,
+  updatePreferences,
+  createNotification,
 } from './notifications.service.js';
 
-const { mockFindMany, mockCount, mockFindFirst, mockUpdate, mockUpdateMany } = vi.hoisted(
-  () => ({
-    mockFindMany: vi.fn(),
-    mockCount: vi.fn(),
-    mockFindFirst: vi.fn(),
-    mockUpdate: vi.fn(),
-    mockUpdateMany: vi.fn(),
-  }),
-);
+const {
+  mockFindMany,
+  mockCount,
+  mockFindFirst,
+  mockUpdate,
+  mockUpdateMany,
+  mockCreate,
+  mockPrefFindUnique,
+  mockPrefUpsert,
+  mockEmitNotificationCreated,
+} = vi.hoisted(() => ({
+  mockFindMany: vi.fn(),
+  mockCount: vi.fn(),
+  mockFindFirst: vi.fn(),
+  mockUpdate: vi.fn(),
+  mockUpdateMany: vi.fn(),
+  mockCreate: vi.fn(),
+  mockPrefFindUnique: vi.fn(),
+  mockPrefUpsert: vi.fn(),
+  mockEmitNotificationCreated: vi.fn(),
+}));
 
 vi.mock('../../db/prisma.js', () => ({
   prisma: {
@@ -26,6 +42,11 @@ vi.mock('../../db/prisma.js', () => ({
       findFirst: mockFindFirst,
       update: mockUpdate,
       updateMany: mockUpdateMany,
+      create: mockCreate,
+    },
+    notificationPreference: {
+      findUnique: mockPrefFindUnique,
+      upsert: mockPrefUpsert,
     },
     $disconnect: vi.fn(),
   },
@@ -35,6 +56,10 @@ vi.mock('../../db/redis.js', () => ({
   redis: {
     on: vi.fn(),
   },
+}));
+
+vi.mock('../../realtime/index.js', () => ({
+  emitNotificationCreated: mockEmitNotificationCreated,
 }));
 
 function mockAuth() {
@@ -336,6 +361,222 @@ describe('POST /api/v1/notifications/read-all', () => {
   it('returns 401 without auth', async () => {
     const app = createApp();
     const res = await request(app).post('/api/v1/notifications/read-all');
+
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('getUnreadCount', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns the unread, non-deleted count for the user', async () => {
+    mockCount.mockResolvedValue(4);
+
+    const result = await getUnreadCount('user-1');
+
+    expect(result).toEqual({ count: 4 });
+    expect(mockCount).toHaveBeenCalledWith({
+      where: { userId: 'user-1', readAt: null, deletedAt: null },
+    });
+  });
+});
+
+describe('getPreferences', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('defaults to all-enabled when no preference row exists', async () => {
+    mockPrefFindUnique.mockResolvedValue(null);
+
+    const result = await getPreferences('user-1');
+
+    expect(result.tipReceived).toBe(true);
+    expect(result.goalReached).toBe(true);
+  });
+
+  it('returns the stored preference row when it exists', async () => {
+    const updatedAt = new Date('2026-07-24T12:00:00.000Z');
+    mockPrefFindUnique.mockResolvedValue({
+      tipReceived: false,
+      goalReached: true,
+      updatedAt,
+    });
+
+    const result = await getPreferences('user-1');
+
+    expect(result).toEqual({
+      tipReceived: false,
+      goalReached: true,
+      updatedAt: updatedAt.toISOString(),
+    });
+  });
+});
+
+describe('updatePreferences', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('upserts the preference row with the given patch', async () => {
+    const updatedAt = new Date('2026-07-25T12:00:00.000Z');
+    mockPrefUpsert.mockResolvedValue({ tipReceived: false, goalReached: true, updatedAt });
+
+    const result = await updatePreferences('user-1', { tipReceived: false });
+
+    expect(result.tipReceived).toBe(false);
+    expect(mockPrefUpsert).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+      create: { userId: 'user-1', tipReceived: false },
+      update: { tipReceived: false },
+    });
+  });
+});
+
+describe('createNotification', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('creates and emits a notification when no preference row exists', async () => {
+    mockPrefFindUnique.mockResolvedValue(null);
+    const createdAt = new Date('2026-07-25T12:00:00.000Z');
+    mockCreate.mockResolvedValue({
+      id: 'notif-1',
+      type: 'tip_received',
+      payload: { amount: '100' },
+      readAt: null,
+      createdAt,
+    });
+
+    const result = await createNotification('user-1', 'tip_received', { amount: '100' });
+
+    expect(result).not.toBeNull();
+    expect(mockCreate).toHaveBeenCalledWith({
+      data: { userId: 'user-1', type: 'tip_received', payload: { amount: '100' } },
+    });
+    expect(mockEmitNotificationCreated).toHaveBeenCalledWith({
+      id: 'notif-1',
+      userId: 'user-1',
+      type: 'tip_received',
+      payload: { amount: '100' },
+      createdAt: createdAt.toISOString(),
+    });
+  });
+
+  it('skips creation when the user disabled this notification type', async () => {
+    mockPrefFindUnique.mockResolvedValue({ tipReceived: false, goalReached: true });
+
+    const result = await createNotification('user-1', 'tip_received', { amount: '100' });
+
+    expect(result).toBeNull();
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockEmitNotificationCreated).not.toHaveBeenCalled();
+  });
+
+  it('creates when the notification type is still enabled', async () => {
+    mockPrefFindUnique.mockResolvedValue({ tipReceived: false, goalReached: true });
+    const createdAt = new Date('2026-07-25T12:00:00.000Z');
+    mockCreate.mockResolvedValue({
+      id: 'notif-2',
+      type: 'goal_reached',
+      payload: {},
+      readAt: null,
+      createdAt,
+    });
+
+    const result = await createNotification('user-1', 'goal_reached', {});
+
+    expect(result).not.toBeNull();
+    expect(mockCreate).toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/v1/notifications/unread-count', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns the unread count for the authenticated user', async () => {
+    mockCount.mockResolvedValue(2);
+
+    const app = createApp();
+    const token = mockAuth();
+    const res = await request(app)
+      .get('/api/v1/notifications/unread-count')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.count).toBe(2);
+  });
+
+  it('returns 401 without auth', async () => {
+    const app = createApp();
+    const res = await request(app).get('/api/v1/notifications/unread-count');
+
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('GET /api/v1/notifications/preferences', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns default preferences when none are stored', async () => {
+    mockPrefFindUnique.mockResolvedValue(null);
+
+    const app = createApp();
+    const token = mockAuth();
+    const res = await request(app)
+      .get('/api/v1/notifications/preferences')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual(
+      expect.objectContaining({ tipReceived: true, goalReached: true }),
+    );
+  });
+});
+
+describe('PATCH /api/v1/notifications/preferences', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('updates preferences for the authenticated user', async () => {
+    const updatedAt = new Date('2026-07-25T12:00:00.000Z');
+    mockPrefUpsert.mockResolvedValue({ tipReceived: false, goalReached: true, updatedAt });
+
+    const app = createApp();
+    const token = mockAuth();
+    const res = await request(app)
+      .patch('/api/v1/notifications/preferences')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ tipReceived: false });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.tipReceived).toBe(false);
+  });
+
+  it('returns 400 for an empty request body', async () => {
+    const app = createApp();
+    const token = mockAuth();
+    const res = await request(app)
+      .patch('/api/v1/notifications/preferences')
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 401 without auth', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .patch('/api/v1/notifications/preferences')
+      .send({ tipReceived: false });
 
     expect(res.status).toBe(401);
   });
