@@ -41,7 +41,7 @@ const mockXApiResponseLowActivity = {
 
 // Mock global fetch
 const mockFetch = vi.fn();
-(globalThis as { fetch: typeof mockFetch }).fetch = mockFetch;
+(globalThis as unknown as { fetch: typeof mockFetch }).fetch = mockFetch;
 
 describe("X Integration Service", () => {
   beforeEach(() => {
