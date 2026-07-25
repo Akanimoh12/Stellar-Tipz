@@ -16,7 +16,7 @@ const REFUND_TOPICS = new Set(['refund', 'tip_refund']);
  * the same event never produces a duplicate row. Topics are the canonical
  * `_`-joined names decoded from the contract's topic tuples (see `decodeTopic`).
  */
-const PROJECTIONS: Record<string, (event: DecodedEvent) => Promise<void>> = {
+const PROJECTIONS: Record<string, (event: DecodedEvent, isNewEvent: boolean) => Promise<void>> = {
   profile_register: projectProfileRegistered,
   profile_updated: projectProfileUpdated,
   goal_set: projectGoalSet,
@@ -49,7 +49,7 @@ export async function projectEvent(event: DecodedEvent): Promise<void> {
 
   const handler = PROJECTIONS[event.topic];
   if (handler) {
-    await handler(event);
+    await handler(event, isNewEvent);
   }
   if (REFUND_TOPICS.has(event.topic)) {
     await projectRefund(event);
@@ -392,8 +392,12 @@ async function projectSubscriptionCreated(event: DecodedEvent): Promise<void> {
  * Project a `("sub", "exec")` event — data `(subscriber, creator, amount)`. This
  * confirms a successful recurring charge; the subscription is ensured ACTIVE and
  * its charged amount recorded. Per-charge history is out of scope (no table).
+ *
+ * Notifies the creator of the charge, but only for genuinely new events —
+ * `isNewEvent` (from the event log) gates this, since the upsert itself is
+ * idempotent and would otherwise re-notify on every replay of the same ledgers.
  */
-async function projectSubscriptionCharged(event: DecodedEvent): Promise<void> {
+async function projectSubscriptionCharged(event: DecodedEvent, isNewEvent: boolean): Promise<void> {
   const [subscriber, creator, amount] = tupleArgs(event.value);
   const amountStroops = toBigInt(amount);
   if (typeof subscriber !== 'string' || typeof creator !== 'string' || amountStroops === null) {
@@ -416,6 +420,17 @@ async function projectSubscriptionCharged(event: DecodedEvent): Promise<void> {
     },
     update: { amountStroops, status: 'ACTIVE' },
   });
+
+  if (isNewEvent) {
+    try {
+      await notificationsService.createNotification(creatorId, 'subscription_charged', {
+        tipperId,
+        amountStroops: amountStroops.toString(),
+      });
+    } catch (err) {
+      logger.error({ err, creatorId }, 'Failed to notify creator of subscription charge');
+    }
+  }
 }
 
 /** Project a `("sub", "cancel")` event — data `(subscriber, creator)`. */

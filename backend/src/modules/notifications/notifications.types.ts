@@ -17,7 +17,7 @@ export interface NotificationListResponse {
 }
 
 /** Notification type discriminators used by the createNotification triggers. */
-export type NotificationType = 'tip_received' | 'goal_reached';
+export type NotificationType = 'tip_received' | 'goal_reached' | 'subscription_charged';
 
 export interface UnreadCountResponse {
   count: number;
@@ -26,5 +26,6 @@ export interface UnreadCountResponse {
 export interface NotificationPreferenceResponse {
   tipReceived: boolean;
   goalReached: boolean;
+  subscriptionCharged: boolean;
   updatedAt: string;
 }
