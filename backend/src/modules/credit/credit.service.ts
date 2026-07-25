@@ -2,26 +2,17 @@ import { prisma } from '../../db/prisma.js';
 import { redis } from '../../db/redis.js';
 import { NotFoundError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
+import { creditScoreConfig } from './credit.config.js';
+import {
+  computeCreditScore as computeCreditScoreFormula,
+  type CreditScoreComputeInput,
+} from './credit.formula.js';
 import type {
   CreditScoreResponse,
   CreditScoreComponents,
   ComputeCreditScoreInput,
   CreditScoreHistoryPoint,
 } from './credit.types.js';
-
-const BASE_SCORE = 40;
-const MAX_SCORE = 100;
-const TIP_WEIGHT = 20;
-const X_WEIGHT = 30;
-const AGE_WEIGHT = 10;
-const TIP_DIVISOR = 10_000_000;
-const FOLLOWER_DIVISOR = 50;
-const ENGAGEMENT_DIVISOR = 10;
-const AGE_DIVISOR = 10;
-const X_SUB_CAP = 50;
-const AGE_CAP = 100;
-const TIP_CAP = 100;
-const CREDIT_SCORE_CACHE_TTL_SECONDS = 5 * 60;
 
 const TIERS: { min: number; max: number; label: string }[] = [
   { min: 80, max: 100, label: 'Diamond' },
@@ -31,9 +22,9 @@ const TIERS: { min: number; max: number; label: string }[] = [
   { min: 0, max: 19, label: 'New' },
 ];
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
+// Debounce map for recomputation requests per user
+const recomputeDebounceMap = new Map<string, NodeJS.Timeout>();
+const RECOMPUTE_DEBOUNCE_MS = 5000; // 5 seconds
 
 function cacheKeyForUser(userId: string): string {
   return `credit:score:user:${userId}`;
@@ -41,23 +32,6 @@ function cacheKeyForUser(userId: string): string {
 
 function cacheKeyForUsername(username: string): string {
   return `credit:score:username:${username.toLowerCase()}`;
-}
-
-function computeTipSubScore(totalTipsReceived: bigint): number {
-  const clamped = clamp(Number(totalTipsReceived), 0, 1_000_000_000);
-  return Math.min(Math.floor(clamped / TIP_DIVISOR), TIP_CAP);
-}
-
-function computeXSubScore(xFollowers: number, xEngagementAvg: number): number {
-  if (xFollowers === 0 && xEngagementAvg === 0) return 0;
-  const followerPart = Math.min(Math.floor(xFollowers / FOLLOWER_DIVISOR), X_SUB_CAP);
-  const engagementPart = Math.min(Math.floor(xEngagementAvg / ENGAGEMENT_DIVISOR), X_SUB_CAP);
-  return followerPart + engagementPart;
-}
-
-function computeAgeSubScore(accountAgeDays: number): number {
-  if (accountAgeDays < 1) return 0;
-  return Math.min(Math.floor(accountAgeDays / AGE_DIVISOR), AGE_CAP);
 }
 
 async function readCachedScore(key: string): Promise<CreditScoreResponse | null> {
@@ -74,7 +48,9 @@ async function writeCachedScore(keys: string[], score: CreditScoreResponse): Pro
   try {
     const payload = JSON.stringify(score);
     await Promise.all(
-      keys.map((key) => redis.set(key, payload, 'EX', CREDIT_SCORE_CACHE_TTL_SECONDS)),
+      keys.map((key) =>
+        redis.set(key, payload, 'EX', creditScoreConfig.cacheTtlSeconds),
+      ),
     );
   } catch (err) {
     logger.warn({ err, keys }, 'Credit score cache write failed');
@@ -87,27 +63,20 @@ export function computeCreditScore(input: ComputeCreditScoreInput): {
   components: CreditScoreComponents;
   tier: string;
 } {
-  const tipSub = computeTipSubScore(input.totalTipsReceived);
-  const xSub = computeXSubScore(input.xFollowers, input.xEngagementAvg);
-  const ageSub = computeAgeSubScore(input.accountAgeDays);
+  const formulaInput: CreditScoreComputeInput = {
+    totalTipsReceived: input.totalTipsReceived,
+    xFollowers: input.xFollowers,
+    xEngagementAvg: input.xEngagementAvg,
+    accountAgeDays: input.accountAgeDays,
+    streakBonus: input.streakBonus,
+  };
 
-  const tipScore = Math.floor((tipSub * TIP_WEIGHT) / MAX_SCORE);
-  const xScore = Math.floor((xSub * X_WEIGHT) / MAX_SCORE);
-  const ageScore = Math.floor((ageSub * AGE_WEIGHT) / MAX_SCORE);
-  const streakBonus = clamp(input.streakBonus, 0, MAX_SCORE);
-  const total = clamp(BASE_SCORE + tipScore + xScore + ageScore + streakBonus, 0, MAX_SCORE);
-  const tier = TIERS.find((item) => total >= item.min && total <= item.max)?.label ?? 'New';
+  const result = computeCreditScoreFormula(formulaInput, creditScoreConfig, TIERS);
 
   return {
-    score: total,
-    components: {
-      base: BASE_SCORE,
-      tipVolume: tipScore,
-      xMetrics: xScore,
-      accountAge: ageScore,
-      streakBonus,
-    },
-    tier,
+    score: result.score,
+    components: result.components,
+    tier: result.tier,
   };
 }
 
@@ -270,4 +239,31 @@ export async function recalculateCreditScore(userId: string): Promise<CreditScor
   await writeCachedScore(keys, response);
 
   return response;
+}
+
+/**
+ * Debounced credit score recomputation triggered by tip events.
+ * Multiple rapid tip events to the same creator will result in a single recomputation.
+ * This prevents excessive database writes and recalculations.
+ */
+export async function scheduleRecomputeCreditScore(userId: string): Promise<void> {
+  // Clear any pending timeout for this user
+  const pendingTimeout = recomputeDebounceMap.get(userId);
+  if (pendingTimeout) {
+    clearTimeout(pendingTimeout);
+  }
+
+  // Schedule a new recomputation after the debounce delay
+  const newTimeout = setTimeout(async () => {
+    try {
+      await recalculateCreditScore(userId);
+      logger.info({ userId }, 'Credit score recomputed after tip');
+    } catch (err) {
+      logger.error({ err, userId }, 'Failed to recompute credit score');
+    } finally {
+      recomputeDebounceMap.delete(userId);
+    }
+  }, RECOMPUTE_DEBOUNCE_MS);
+
+  recomputeDebounceMap.set(userId, newTimeout);
 }

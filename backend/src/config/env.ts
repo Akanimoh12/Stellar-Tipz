@@ -41,6 +41,24 @@ const envSchema = z.object({
   INDEXER_START_LEDGER: z.coerce.number().optional(),
 
   CREDIT_RECOMPUTE_CRON: z.string().default('0 */6 * * *'),
+  /** Credit score weights (must sum to <= 100) */
+  CREDIT_SCORE_WEIGHT_BASE: z.coerce.number().int().min(0).max(100).optional(),
+  CREDIT_SCORE_WEIGHT_TIP: z.coerce.number().int().min(0).max(100).optional(),
+  CREDIT_SCORE_WEIGHT_X: z.coerce.number().int().min(0).max(100).optional(),
+  CREDIT_SCORE_WEIGHT_AGE: z.coerce.number().int().min(0).max(100).optional(),
+  /** Credit score divisors */
+  CREDIT_SCORE_DIVISOR_TIP: z.coerce.number().int().positive().optional(),
+  CREDIT_SCORE_DIVISOR_FOLLOWER: z.coerce.number().int().positive().optional(),
+  CREDIT_SCORE_DIVISOR_ENGAGEMENT: z.coerce.number().int().positive().optional(),
+  CREDIT_SCORE_DIVISOR_AGE: z.coerce.number().int().positive().optional(),
+  /** Credit score caps */
+  CREDIT_SCORE_CAP_BASE: z.coerce.number().int().min(0).optional(),
+  CREDIT_SCORE_CAP_MAX: z.coerce.number().int().min(0).optional(),
+  CREDIT_SCORE_CAP_X_SUB: z.coerce.number().int().min(0).optional(),
+  CREDIT_SCORE_CAP_AGE_SUB: z.coerce.number().int().min(0).optional(),
+  CREDIT_SCORE_CAP_TIP_SUB: z.coerce.number().int().min(0).optional(),
+  /** Credit score cache TTL in seconds */
+  CREDIT_SCORE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional(),
   /** Minimum withdrawal amount, in stroops (1 XLM = 10,000,000 stroops). */
   WITHDRAWAL_MIN_AMOUNT_STROOPS: z.coerce.number().int().positive().default(10_000_000),
 
