@@ -13,5 +13,17 @@ export const notificationIdParamSchema = z.object({
   id: z.string().min(1),
 });
 
+export const updateNotificationPreferencesSchema = z
+  .object({
+    tipReceived: z.boolean().optional(),
+    goalReached: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'At least one preference must be provided',
+  });
+
 export type NotificationsQuery = z.infer<typeof notificationsQuerySchema>;
 export type NotificationIdParam = z.infer<typeof notificationIdParamSchema>;
+export type UpdateNotificationPreferencesInput = z.infer<
+  typeof updateNotificationPreferencesSchema
+>;

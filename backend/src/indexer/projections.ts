@@ -3,6 +3,7 @@ import { prisma } from '../db/prisma.js';
 import { logger } from '../common/utils/logger.js';
 import type { DecodedEvent } from './sorobanClient.js';
 import { publishProjection } from './realtime-publisher.js';
+import * as notificationsService from '../modules/notifications/notifications.service.js';
 
 /** Event topics that represent an on-chain tip. */
 const TIP_TOPICS = new Set(['tip', 'tip_sent']);
@@ -314,6 +315,8 @@ async function projectGoalReached(event: DecodedEvent): Promise<void> {
 
   const userId = await ensureUserId(creator);
 
+  const existing = await prisma.goal.findUnique({ where: { id: goalId(userId) } });
+
   await prisma.goal.upsert({
     where: { id: goalId(userId) },
     create: {
@@ -326,6 +329,19 @@ async function projectGoalReached(event: DecodedEvent): Promise<void> {
     },
     update: { targetStroops, raisedStroops, status: 'COMPLETED' },
   });
+
+  // Only notify on the transition into COMPLETED, so replaying this event never
+  // creates duplicate notifications.
+  if (!existing || existing.status !== 'COMPLETED') {
+    try {
+      await notificationsService.createNotification(userId, 'goal_reached', {
+        targetStroops: targetStroops.toString(),
+        raisedStroops: raisedStroops.toString(),
+      });
+    } catch (err) {
+      logger.error({ err, userId }, 'Failed to notify creator of goal reached');
+    }
+  }
 }
 
 /** Project a `("goal", "cancel")` event — data `(creator,)`. */

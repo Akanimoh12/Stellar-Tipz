@@ -5,6 +5,7 @@ import { prisma } from '../../db/prisma.js';
 import { BadRequestError, NotFoundError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
 import { TipStatus } from '../../types/enums.js';
+import * as notificationsService from '../notifications/notifications.service.js';
 import type { RecordTipInput } from './tips.schema.js';
 import { serializeTip } from './tips.serializer.js';
 import type { TipResponseDto, TipAggregateByCreatorDto } from './tips.dto.js';
@@ -228,6 +229,7 @@ export async function recordTip(input: RecordTipInput): Promise<TipResponseDto> 
         message: input.message,
       },
     });
+    await notifyCreatorOfTip(tip);
     return serializeTip(tip);
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -235,6 +237,35 @@ export async function recordTip(input: RecordTipInput): Promise<TipResponseDto> 
       if (tip) return serializeTip(tip);
     }
     throw err;
+  }
+}
+
+/**
+ * Notify the receiving creator that they got a new tip. Best-effort: only fires
+ * for creators with an off-chain User row, skips self-tips, and never lets a
+ * notification failure block the tip recording itself.
+ */
+async function notifyCreatorOfTip(tip: {
+  id: string;
+  fromAddress: string;
+  toAddress: string;
+  amountStroops: bigint;
+  message: string | null;
+}): Promise<void> {
+  if (tip.fromAddress === tip.toAddress) return;
+
+  try {
+    const receiver = await prisma.user.findUnique({ where: { stellarAddress: tip.toAddress } });
+    if (!receiver) return;
+
+    await notificationsService.createNotification(receiver.id, 'tip_received', {
+      tipId: tip.id,
+      from: tip.fromAddress,
+      amountStroops: tip.amountStroops.toString(),
+      message: tip.message,
+    });
+  } catch (err) {
+    logger.error({ err, tipId: tip.id }, 'Failed to notify creator of new tip');
   }
 }
 
