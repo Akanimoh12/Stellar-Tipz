@@ -61,6 +61,8 @@ const envSchema = z.object({
   CREDIT_SCORE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional(),
   /** Minimum withdrawal amount, in stroops (1 XLM = 10,000,000 stroops). */
   WITHDRAWAL_MIN_AMOUNT_STROOPS: z.coerce.number().int().positive().default(10_000_000),
+  /** Withdrawal fee, in basis points (1/100th of a percent). 200 = 2%. */
+  WITHDRAWAL_FEE_BPS: z.coerce.number().int().min(0).max(10_000).default(200),
 
   X_API_BEARER_TOKEN: z.string().optional(),
   X_API_BASE_URL: z.string().default('https://api.twitter.com/2'),

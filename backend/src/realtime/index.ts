@@ -1,8 +1,7 @@
-export { initRealtime, emitTipCreated, emitNotificationCreated, getIO } from './gateway.js';
+export { initRealtime, emitTipCreated, emitNotificationCreated, emitBalanceUpdated, getIO } from "./gateway.js";
 export type {
   ServerToClientEvents,
   ClientToServerEvents,
-  InterServerEvents,
-  SocketData,
   NotificationPayload,
-} from './types.js';
+  BalanceUpdatedPayload,
+} from "./types.js";

@@ -14,6 +14,7 @@ export interface ServerToClientEvents {
   error: (payload: { code: string; message: string }) => void;
   'tip.created': (tip: TipResponseDto) => void;
   'notification.created': (notification: NotificationPayload) => void;
+  'balance.updated': (balance: BalanceUpdatedPayload) => void;
 }
 
 /** Events a client may emit to the server. */
@@ -38,4 +39,12 @@ export interface NotificationPayload {
   type: string;
   payload: unknown;
   createdAt: string;
+}
+
+export interface BalanceUpdatedPayload {
+  userId: string;
+  stellarAddress: string;
+  totalReceived: string;
+  totalWithdrawn: string;
+  withdrawableBalance: string;
 }

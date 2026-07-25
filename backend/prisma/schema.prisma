@@ -15,18 +15,18 @@ datasource db {
 /// A creator/user identified by their Stellar wallet address.
 /// Extended by credit, tips and other modules in later issues.
 model User {
-  id                     String                  @id @default(cuid())
-  stellarAddress         String                  @unique
-  username               String?                 @unique
-  displayName            String?
-  bio                    String?
-  imageUrl               String?
-  avatarCid              String?
-  xHandle                String?
-  role                   String                  @default("user")
-  scopes                 String[]                @default([])
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
+  id             String   @id @default(cuid())
+  stellarAddress String   @unique
+  username       String?  @unique
+  displayName    String?
+  bio            String?
+  imageUrl       String?
+  avatarCid      String?
+  xHandle        String?
+  role           String   @default("user")
+  scopes         String[] @default([])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
   /// Soft-delete marker: non-null means the record is logically deleted.
   deletedAt              DateTime?
   apiKeys                ApiKey[]

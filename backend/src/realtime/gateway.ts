@@ -11,6 +11,7 @@ import type {
   InterServerEvents,
   SocketData,
   NotificationPayload,
+  BalanceUpdatedPayload,
 } from './types.js';
 import type { TipResponseDto } from '../modules/tips/tips.dto.js';
 
@@ -118,6 +119,16 @@ export function emitNotificationCreated(notification: NotificationPayload): void
   );
 }
 
-export function getIO(): RealtimeServer | null {
+/** Notifies a user's authenticated sockets (the `user:<id>` room) that their balance changed. */
+export function emitBalanceUpdated(balance: BalanceUpdatedPayload): void {
+  if (!io) return;
+  io.to(`user:${balance.userId}`).emit('balance.updated', balance);
+  logger.debug(
+    { userId: balance.userId, room: `user:${balance.userId}` },
+    'Emitted balance.updated',
+  );
+}
+
+export function getIO(): SocketIOServer<ClientToServerEvents, ServerToClientEvents> | null {
   return io;
 }
