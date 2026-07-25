@@ -1,5 +1,9 @@
 import type { Request, Response, NextFunction } from 'express';
-import { notificationsQuerySchema, notificationIdParamSchema } from './notifications.schema.js';
+import {
+  notificationsQuerySchema,
+  notificationIdParamSchema,
+  updateNotificationPreferencesSchema,
+} from './notifications.schema.js';
 import * as notificationsService from './notifications.service.js';
 
 export async function list(
@@ -55,6 +59,49 @@ export async function markAllRead(
   try {
     const userId = req.auth!.userId;
     const result = await notificationsService.markAllAsRead(userId);
+    res.status(200).json({ data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getUnreadCount(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const userId = req.auth!.userId;
+    const result = await notificationsService.getUnreadCount(userId);
+    res.status(200).json({ data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getPreferences(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const userId = req.auth!.userId;
+    const result = await notificationsService.getPreferences(userId);
+    res.status(200).json({ data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updatePreferences(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const userId = req.auth!.userId;
+    const patch = updateNotificationPreferencesSchema.parse(req.body);
+    const result = await notificationsService.updatePreferences(userId, patch);
     res.status(200).json({ data: result });
   } catch (err) {
     next(err);

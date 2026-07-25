@@ -9,6 +9,9 @@ export const notificationsRouter = Router();
 notificationsRouter.use(requireAuth);
 
 notificationsRouter.get('/', notificationsController.list);
+notificationsRouter.get('/unread-count', notificationsController.getUnreadCount);
+notificationsRouter.get('/preferences', notificationsController.getPreferences);
+notificationsRouter.patch('/preferences', notificationsController.updatePreferences);
 notificationsRouter.get('/:id', notificationsController.getById);
 notificationsRouter.patch('/:id/read', notificationsController.markRead);
 notificationsRouter.post('/read-all', notificationsController.markAllRead);
@@ -25,6 +28,16 @@ const notificationSchema = {
     createdAt: { type: 'string', format: 'date-time' },
   },
   required: ['id', 'type', 'payload', 'readAt', 'createdAt'],
+};
+
+const notificationPreferenceSchema = {
+  type: 'object',
+  properties: {
+    tipReceived: { type: 'boolean', example: true },
+    goalReached: { type: 'boolean', example: true },
+    updatedAt: { type: 'string', format: 'date-time' },
+  },
+  required: ['tipReceived', 'goalReached', 'updatedAt'],
 };
 
 mergeOpenApiPaths({
@@ -79,6 +92,93 @@ mergeOpenApiPaths({
             },
           },
         },
+        '401': { description: 'Unauthorized' },
+      },
+    },
+  },
+  [`${base}/unread-count`]: {
+    get: {
+      tags: ['Notifications'],
+      summary: 'Get unread notification count',
+      description: 'Returns the number of unread, non-deleted notifications for the authenticated user.',
+      security: [{ bearerAuth: [] }],
+      responses: {
+        '200': {
+          description: 'Unread count',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: {
+                    type: 'object',
+                    properties: { count: { type: 'integer' } },
+                    required: ['count'],
+                  },
+                },
+                required: ['data'],
+              },
+            },
+          },
+        },
+        '401': { description: 'Unauthorized' },
+      },
+    },
+  },
+  [`${base}/preferences`]: {
+    get: {
+      tags: ['Notifications'],
+      summary: 'Get notification preferences',
+      description: 'Returns the authenticated user\'s notification type toggles, defaulting to all-enabled.',
+      security: [{ bearerAuth: [] }],
+      responses: {
+        '200': {
+          description: 'Notification preferences',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { data: notificationPreferenceSchema },
+                required: ['data'],
+              },
+            },
+          },
+        },
+        '401': { description: 'Unauthorized' },
+      },
+    },
+    patch: {
+      tags: ['Notifications'],
+      summary: 'Update notification preferences',
+      security: [{ bearerAuth: [] }],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                tipReceived: { type: 'boolean' },
+                goalReached: { type: 'boolean' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        '200': {
+          description: 'Updated notification preferences',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { data: notificationPreferenceSchema },
+                required: ['data'],
+              },
+            },
+          },
+        },
+        '400': { description: 'Invalid request body' },
         '401': { description: 'Unauthorized' },
       },
     },

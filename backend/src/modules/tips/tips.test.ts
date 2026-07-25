@@ -14,6 +14,8 @@ const {
   mockCreate,
   mockUpdate,
   mockGroupBy,
+  mockUserFindUnique,
+  mockCreateNotification,
 } = vi.hoisted(() => ({
   mockGetAccount: vi.fn(),
   mockSimulateTransaction: vi.fn(),
@@ -25,6 +27,8 @@ const {
   mockCreate: vi.fn(),
   mockUpdate: vi.fn(),
   mockGroupBy: vi.fn(),
+  mockUserFindUnique: vi.fn(),
+  mockCreateNotification: vi.fn(),
 }));
 
 vi.mock('@stellar/stellar-sdk', () => {
@@ -96,8 +100,15 @@ vi.mock('../../db/prisma.js', () => ({
       update: mockUpdate,
       groupBy: mockGroupBy,
     },
+    user: {
+      findUnique: mockUserFindUnique,
+    },
     $disconnect: vi.fn(),
   },
+}));
+
+vi.mock('../notifications/notifications.service.js', () => ({
+  createNotification: mockCreateNotification,
 }));
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -605,6 +616,62 @@ describe('POST /api/v1/tips — dedupe by txHash', () => {
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
+  it('notifies the receiving creator when they have an off-chain account', async () => {
+    mockFindUnique.mockResolvedValue(null);
+    mockCreate.mockResolvedValue(tipRow);
+    mockUserFindUnique.mockResolvedValue({ id: 'user-to' });
+
+    const app = createApp();
+    const res = await request(app).post('/api/v1/tips').send(validBody);
+
+    expect(res.status).toBe(200);
+    expect(mockUserFindUnique).toHaveBeenCalledWith({ where: { stellarAddress: to } });
+    expect(mockCreateNotification).toHaveBeenCalledWith(
+      'user-to',
+      'tip_received',
+      expect.objectContaining({ tipId: tipRow.id, from, amountStroops: '1000000' }),
+    );
+  });
+
+  it('skips notifying when the recipient has no off-chain account', async () => {
+    mockFindUnique.mockResolvedValue(null);
+    mockCreate.mockResolvedValue(tipRow);
+    mockUserFindUnique.mockResolvedValue(null);
+
+    const app = createApp();
+    const res = await request(app).post('/api/v1/tips').send(validBody);
+
+    expect(res.status).toBe(200);
+    expect(mockCreateNotification).not.toHaveBeenCalled();
+  });
+
+  it('skips notifying for a self-tip', async () => {
+    mockFindUnique.mockResolvedValue(null);
+    mockCreate.mockResolvedValue(makeTipRow({ fromAddress: to }));
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips')
+      .send({ ...validBody, fromAddress: to });
+
+    expect(res.status).toBe(200);
+    expect(mockUserFindUnique).not.toHaveBeenCalled();
+    expect(mockCreateNotification).not.toHaveBeenCalled();
+  });
+
+  it('does not fail the request when notifying the creator throws', async () => {
+    mockFindUnique.mockResolvedValue(null);
+    mockCreate.mockResolvedValue(tipRow);
+    mockUserFindUnique.mockResolvedValue({ id: 'user-to' });
+    mockCreateNotification.mockRejectedValue(new Error('boom'));
+
+    const app = createApp();
+    const res = await request(app).post('/api/v1/tips').send(validBody);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.txHash).toBe('abc123txhash');
+  });
+
   it('returns the existing tip without a duplicate insert when txHash already exists', async () => {
     mockFindUnique.mockResolvedValue(tipRow);
 
@@ -613,6 +680,7 @@ describe('POST /api/v1/tips — dedupe by txHash', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.txHash).toBe('abc123txhash');
     expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockCreateNotification).not.toHaveBeenCalled();
   });
 });
 

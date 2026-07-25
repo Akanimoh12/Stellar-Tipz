@@ -6,6 +6,7 @@ const {
   mockUserUpsert,
   mockGoalUpsert,
   mockGoalUpdateMany,
+  mockGoalFindUnique,
   mockSubUpsert,
   mockSubUpdateMany,
   mockTipUpsert,
@@ -14,10 +15,12 @@ const {
   mockCreditScoreUpsert,
   mockCreditScoreHistoryUpsert,
   mockPublishProjection,
+  mockCreateNotification,
 } = vi.hoisted(() => ({
   mockUserUpsert: vi.fn(),
   mockGoalUpsert: vi.fn(),
   mockGoalUpdateMany: vi.fn(),
+  mockGoalFindUnique: vi.fn(),
   mockSubUpsert: vi.fn(),
   mockSubUpdateMany: vi.fn(),
   mockTipUpsert: vi.fn(),
@@ -26,12 +29,13 @@ const {
   mockCreditScoreUpsert: vi.fn(),
   mockCreditScoreHistoryUpsert: vi.fn(),
   mockPublishProjection: vi.fn(),
+  mockCreateNotification: vi.fn(),
 }));
 
 vi.mock('../db/prisma.js', () => ({
   prisma: {
     user: { upsert: mockUserUpsert },
-    goal: { upsert: mockGoalUpsert, updateMany: mockGoalUpdateMany },
+    goal: { upsert: mockGoalUpsert, updateMany: mockGoalUpdateMany, findUnique: mockGoalFindUnique },
     subscription: { upsert: mockSubUpsert, updateMany: mockSubUpdateMany },
     tip: { upsert: mockTipUpsert },
     eventLog: { findFirst: mockEventLogFindFirst, create: mockEventLogCreate },
@@ -42,6 +46,10 @@ vi.mock('../db/prisma.js', () => ({
 
 vi.mock('./realtime-publisher.js', () => ({
   publishProjection: mockPublishProjection,
+}));
+
+vi.mock('../modules/notifications/notifications.service.js', () => ({
+  createNotification: mockCreateNotification,
 }));
 
 /** Build a decoded event; `value` is the positional payload tuple. */
@@ -87,6 +95,8 @@ beforeEach(() => {
   mockEventLogCreate.mockResolvedValue({});
   mockGoalUpsert.mockResolvedValue({});
   mockGoalUpdateMany.mockResolvedValue({ count: 1 });
+  mockGoalFindUnique.mockResolvedValue(null);
+  mockCreateNotification.mockResolvedValue(null);
   mockSubUpsert.mockResolvedValue({});
   mockSubUpdateMany.mockResolvedValue({ count: 1 });
   mockCreditScoreUpsert.mockResolvedValue({});
@@ -225,6 +235,23 @@ describe('projectEvent — goals (#899)', () => {
     await projectEvent(event('goal_reached', [ADDR_A, '1000', '1000']));
     await projectEvent(event('goal_reached', [ADDR_A, '1000', '1000']));
     expect(mockGoalUpsert.mock.calls[0][0].update).toEqual(mockGoalUpsert.mock.calls[1][0].update);
+  });
+
+  it('notifies the creator when the goal transitions into COMPLETED (#964)', async () => {
+    mockGoalFindUnique.mockResolvedValue(null);
+    await projectEvent(event('goal_reached', [ADDR_A, '1000', '1000']));
+    expect(mockCreateNotification).toHaveBeenCalledWith(
+      'u_' + ADDR_A,
+      'goal_reached',
+      expect.objectContaining({ targetStroops: '1000', raisedStroops: '1000' }),
+    );
+  });
+
+  it('does not re-notify when replaying an already-COMPLETED goal', async () => {
+    mockGoalFindUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ status: 'COMPLETED' });
+    await projectEvent(event('goal_reached', [ADDR_A, '1000', '1000']));
+    await projectEvent(event('goal_reached', [ADDR_A, '1000', '1000']));
+    expect(mockCreateNotification).toHaveBeenCalledTimes(1);
   });
 
   it('cancels a goal via updateMany (no-op when absent)', async () => {
