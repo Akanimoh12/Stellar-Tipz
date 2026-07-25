@@ -36,6 +36,7 @@ const {
   mockUserUpsert,
   mockGoalUpsert,
   mockGoalUpdateMany,
+  mockGoalFindUnique,
   mockSubUpsert,
   mockSubUpdateMany,
   mockTipUpsert,
@@ -44,10 +45,12 @@ const {
   mockCreditScoreUpsert,
   mockCreditScoreHistoryUpsert,
   mockPublishProjection,
+  mockCreateNotification,
 } = vi.hoisted(() => ({
   mockUserUpsert: vi.fn(),
   mockGoalUpsert: vi.fn(),
   mockGoalUpdateMany: vi.fn(),
+  mockGoalFindUnique: vi.fn(),
   mockSubUpsert: vi.fn(),
   mockSubUpdateMany: vi.fn(),
   mockTipUpsert: vi.fn(),
@@ -56,12 +59,13 @@ const {
   mockCreditScoreUpsert: vi.fn(),
   mockCreditScoreHistoryUpsert: vi.fn(),
   mockPublishProjection: vi.fn(),
+  mockCreateNotification: vi.fn(),
 }));
 
 vi.mock('../db/prisma.js', () => ({
   prisma: {
     user: { upsert: mockUserUpsert },
-    goal: { upsert: mockGoalUpsert, updateMany: mockGoalUpdateMany },
+    goal: { upsert: mockGoalUpsert, updateMany: mockGoalUpdateMany, findUnique: mockGoalFindUnique },
     subscription: { upsert: mockSubUpsert, updateMany: mockSubUpdateMany },
     tip: { upsert: mockTipUpsert },
     eventLog: { findFirst: mockEventLogFindFirst, create: mockEventLogCreate },
@@ -72,6 +76,10 @@ vi.mock('../db/prisma.js', () => ({
 
 vi.mock('./realtime-publisher.js', () => ({
   publishProjection: mockPublishProjection,
+}));
+
+vi.mock('../modules/notifications/notifications.service.js', () => ({
+  createNotification: mockCreateNotification,
 }));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -105,11 +113,13 @@ beforeEach(() => {
   mockTipUpsert.mockResolvedValue({});
   mockGoalUpsert.mockResolvedValue({});
   mockGoalUpdateMany.mockResolvedValue({ count: 1 });
+  mockGoalFindUnique.mockResolvedValue(null);
   mockSubUpsert.mockResolvedValue({});
   mockSubUpdateMany.mockResolvedValue({ count: 1 });
   mockCreditScoreUpsert.mockResolvedValue({});
   mockCreditScoreHistoryUpsert.mockResolvedValue({});
   mockPublishProjection.mockResolvedValue(undefined);
+  mockCreateNotification.mockResolvedValue(null);
 });
 
 // ── Fixture event page ────────────────────────────────────────────────────────
