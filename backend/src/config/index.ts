@@ -58,6 +58,11 @@ export const config = {
     recomputeCron: env.CREDIT_RECOMPUTE_CRON,
   },
 
+  withdrawals: {
+    minAmountStroops: env.WITHDRAWAL_MIN_AMOUNT_STROOPS,
+    feeBps: env.WITHDRAWAL_FEE_BPS,
+  },
+
   logging: {
     level: env.LOG_LEVEL,
     sentryDsn: env.SENTRY_DSN,

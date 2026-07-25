@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../app.js';
+import { calculateWithdrawalFee } from './withdrawals.service.js';
 
 const { mockFindMany, mockFindUnique, mockAggregate, mockGetAccount, mockSimulateTransaction } =
   vi.hoisted(() => ({
@@ -179,6 +180,36 @@ describe('POST /api/v1/withdrawals/prepare', () => {
       unsignedTxXdr: 'AAAAAgAAAAA...mock-unsigned-xdr...',
       destination: address,
       amount: '1000000',
+      fee: '20000',
+      netAmount: '980000',
     });
+  });
+});
+
+describe('calculateWithdrawalFee', () => {
+  it('charges a 2% fee (the default rate) rounded down', () => {
+    expect(calculateWithdrawalFee(BigInt(1_000_000), 200)).toEqual({
+      fee: BigInt(20_000),
+      netAmount: BigInt(980_000),
+    });
+  });
+
+  it('floors the fee instead of rounding up', () => {
+    expect(calculateWithdrawalFee(BigInt(999), 200)).toEqual({
+      fee: BigInt(19),
+      netAmount: BigInt(980),
+    });
+  });
+
+  it('supports a zero fee rate', () => {
+    expect(calculateWithdrawalFee(BigInt(1_000_000), 0)).toEqual({
+      fee: BigInt(0),
+      netAmount: BigInt(1_000_000),
+    });
+  });
+
+  it('throws for a zero or negative amount', () => {
+    expect(() => calculateWithdrawalFee(BigInt(0), 200)).toThrow('Withdrawal amount must be positive');
+    expect(() => calculateWithdrawalFee(BigInt(-1), 200)).toThrow('Withdrawal amount must be positive');
   });
 });

@@ -3,6 +3,7 @@ import type { TipResponseDto } from '../modules/tips/tips.dto.js';
 export interface ServerToClientEvents {
   'tip.created': (tip: TipResponseDto) => void;
   'notification.created': (notification: NotificationPayload) => void;
+  'balance.updated': (balance: BalanceUpdatedPayload) => void;
 }
 
 export interface ClientToServerEvents {
@@ -18,4 +19,12 @@ export interface NotificationPayload {
   type: string;
   payload: unknown;
   createdAt: string;
+}
+
+export interface BalanceUpdatedPayload {
+  userId: string;
+  stellarAddress: string;
+  totalReceived: string;
+  totalWithdrawn: string;
+  withdrawableBalance: string;
 }

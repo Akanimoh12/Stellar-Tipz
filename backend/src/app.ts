@@ -4,18 +4,7 @@ import helmet from 'helmet';
 import pinoHttp from 'pino-http';
 import swaggerUi from 'swagger-ui-express';
 import { env } from './config/env.js';
-import {
-  errorHandler,
-  notFoundHandler,
-} from "./common/middleware/errorHandler.js";
-import { logger } from "./common/utils/logger.js";
-import { openApiDocument } from "./docs/openapi.js";
-import { authRouter } from "./modules/auth/auth.routes.js";
-import { profilesRouter } from "./modules/profiles/profiles.routes.js";
-import { creditRouter } from "./modules/credit/credit.routes.js";
-import { leaderboardRouter } from "./modules/leaderboard/leaderboard.routes.js";
-import { xRouter } from "./modules/x/x.routes.js";
-} from './common/middleware/errorHandler.js';
+import { errorHandler, notFoundHandler } from './common/middleware/errorHandler.js';
 import { logger } from './common/utils/logger.js';
 import { openApiDocument } from './docs/openapi.js';
 import { requestId } from './common/middleware/requestId.js';
@@ -67,10 +56,6 @@ export function createApp(): Express {
   app.use(`${env.API_BASE_PATH}/profiles`, profilesRouter);
   app.use(`${env.API_BASE_PATH}/credit`, creditRouter);
   app.use(`${env.API_BASE_PATH}/leaderboard`, leaderboardRouter);
-  app.use(`${env.API_BASE_PATH}/x`, xRouter);
-  // app.use(`${env.API_BASE_PATH}/tips`, tipsRouter);
-  // ... (one issue per module)
-  // ─────────────────────────────────────────────────────────────
   app.use(`${env.API_BASE_PATH}/ipfs`, ipfsRouter);
   app.use(`${env.API_BASE_PATH}/tips`, tipsRouter);
   app.use(`${env.API_BASE_PATH}/withdrawals`, withdrawalsRouter);

@@ -56,10 +56,35 @@ export async function getWithdrawableBalance(userId: string): Promise<Withdrawab
   };
 }
 
+const BPS_DIVISOR = BigInt(10_000);
+
+export interface WithdrawalFee {
+  fee: bigint;
+  netAmount: bigint;
+}
+
+/**
+ * Pure function: split a gross withdrawal amount into the platform fee and
+ * the net amount the user receives. Fee is floored so the platform never
+ * rounds in its own favour beyond the configured rate.
+ */
+export function calculateWithdrawalFee(
+  amount: bigint,
+  feeBps: number = config.withdrawals.feeBps,
+): WithdrawalFee {
+  if (amount <= BigInt(0)) {
+    throw new BadRequestError('Withdrawal amount must be positive');
+  }
+  const fee = (amount * BigInt(feeBps)) / BPS_DIVISOR;
+  return { fee, netAmount: amount - fee };
+}
+
 export interface PreparedWithdrawal {
   unsignedTxXdr: string;
   destination: string;
   amount: string;
+  fee: string;
+  netAmount: string;
   contractId: string;
   networkPassphrase: string;
 }
@@ -85,6 +110,8 @@ export async function prepareWithdrawal(
     throw new BadRequestError('Insufficient balance');
   }
 
+  const { fee, netAmount } = calculateWithdrawalFee(parsedAmount);
+
   const server = new SorobanRpc.Server(config.stellar.rpcUrl, {
     allowHttp: config.stellar.rpcUrl.startsWith('http://'),
   });
@@ -104,7 +131,7 @@ export async function prepareWithdrawal(
       contract.call(
         'withdraw',
         nativeToScVal(user.stellarAddress, { type: 'address' }),
-        nativeToScVal(amount, { type: 'i128' }),
+        nativeToScVal(netAmount.toString(), { type: 'i128' }),
       ),
     )
     .setTimeout(30)
@@ -125,6 +152,8 @@ export async function prepareWithdrawal(
     unsignedTxXdr: prepared.build().toEnvelope().toXDR('base64'),
     destination: user.stellarAddress,
     amount,
+    fee: fee.toString(),
+    netAmount: netAmount.toString(),
     contractId,
     networkPassphrase,
   };

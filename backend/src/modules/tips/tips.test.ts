@@ -14,6 +14,9 @@ const {
   mockCreate,
   mockUpdate,
   mockGroupBy,
+  mockFindUniqueUser,
+  mockEmitBalanceUpdated,
+  mockGetWithdrawableBalance,
 } = vi.hoisted(() => ({
   mockGetAccount: vi.fn(),
   mockSimulateTransaction: vi.fn(),
@@ -25,6 +28,18 @@ const {
   mockCreate: vi.fn(),
   mockUpdate: vi.fn(),
   mockGroupBy: vi.fn(),
+  mockFindUniqueUser: vi.fn(),
+  mockEmitBalanceUpdated: vi.fn(),
+  mockGetWithdrawableBalance: vi.fn(),
+}));
+
+vi.mock('../../realtime/index.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../realtime/index.js')>();
+  return { ...actual, emitBalanceUpdated: mockEmitBalanceUpdated };
+});
+
+vi.mock('../withdrawals/withdrawals.service.js', () => ({
+  getWithdrawableBalance: mockGetWithdrawableBalance,
 }));
 
 vi.mock('@stellar/stellar-sdk', () => {
@@ -95,6 +110,9 @@ vi.mock('../../db/prisma.js', () => ({
       create: mockCreate,
       update: mockUpdate,
       groupBy: mockGroupBy,
+    },
+    user: {
+      findUnique: mockFindUniqueUser,
     },
     $disconnect: vi.fn(),
   },
@@ -663,6 +681,45 @@ describe('PATCH /api/v1/tips/:txHash/confirm', () => {
     const app = createApp();
     const res = await request(app).patch('/api/v1/tips//confirm');
     expect(res.status).toBe(404);
+  });
+
+  it('emits balance.updated for the recipient after confirming (#951)', async () => {
+    mockFindUnique.mockResolvedValue(pendingRow);
+    mockUpdate.mockResolvedValue(confirmedRow);
+    mockFindUniqueUser.mockResolvedValue({ id: 'user-1', stellarAddress: to });
+    mockGetWithdrawableBalance.mockResolvedValue({
+      stellarAddress: to,
+      totalReceived: '1000000',
+      totalWithdrawn: '0',
+      withdrawableBalance: '1000000',
+    });
+
+    const app = createApp();
+    const res = await request(app).patch(`/api/v1/tips/${txHash}/confirm`);
+
+    expect(res.status).toBe(200);
+    expect(mockFindUniqueUser).toHaveBeenCalledWith({ where: { stellarAddress: to } });
+    expect(mockGetWithdrawableBalance).toHaveBeenCalledWith('user-1');
+    expect(mockEmitBalanceUpdated).toHaveBeenCalledWith({
+      userId: 'user-1',
+      stellarAddress: to,
+      totalReceived: '1000000',
+      totalWithdrawn: '0',
+      withdrawableBalance: '1000000',
+    });
+  });
+
+  it('does not emit balance.updated when the recipient has no account', async () => {
+    mockFindUnique.mockResolvedValue(pendingRow);
+    mockUpdate.mockResolvedValue(confirmedRow);
+    mockFindUniqueUser.mockResolvedValue(null);
+
+    const app = createApp();
+    const res = await request(app).patch(`/api/v1/tips/${txHash}/confirm`);
+
+    expect(res.status).toBe(200);
+    expect(mockGetWithdrawableBalance).not.toHaveBeenCalled();
+    expect(mockEmitBalanceUpdated).not.toHaveBeenCalled();
   });
 });
 
