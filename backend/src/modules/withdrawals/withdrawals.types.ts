@@ -14,3 +14,12 @@ export interface WithdrawableBalanceResponse {
   totalWithdrawn: string;
   withdrawableBalance: string;
 }
+
+export interface SubmitWithdrawalResult {
+  id: string;
+  txHash: string;
+  status: 'PENDING' | 'CONFIRMED' | 'FAILED';
+  amount: string;
+  fee: string;
+  netAmount: string;
+}

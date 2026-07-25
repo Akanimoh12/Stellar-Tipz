@@ -9,9 +9,10 @@ import {
   confirmTipParamSchema,
 } from './tips.schema.js';
 import * as tipsService from './tips.service.js';
-import { emitTipCreated, emitBalanceUpdated } from '../../realtime/index.js';
+import { emitTipCreated, emitBalanceUpdated, emitLeaderboardUpdated } from '../../realtime/index.js';
 import { prisma } from '../../db/prisma.js';
 import { getWithdrawableBalance } from '../withdrawals/withdrawals.service.js';
+import { getUserRank } from '../leaderboard/leaderboard.service.js';
 import { logger } from '../../common/utils/logger.js';
 
 /** GET /tips — filterable, cursor-paginated list of tips. */
@@ -89,14 +90,29 @@ export async function confirm(req: Request, res: Response, next: NextFunction): 
     const { txHash } = confirmTipParamSchema.parse(req.params);
     const tip = await tipsService.confirmTip(txHash);
 
-    // Confirming a tip changes the recipient's withdrawable balance; notify
-    // their sockets. Best-effort — a failure here must not turn an already
-    // successful confirmation into an error response.
+    // Confirming a tip changes the recipient's withdrawable balance and their
+    // leaderboard rank; notify sockets. Best-effort — a failure here must not
+    // turn an already successful confirmation into an error response.
     try {
       const recipient = await prisma.user.findUnique({ where: { stellarAddress: tip.toAddress } });
       if (recipient) {
         const balance = await getWithdrawableBalance(recipient.id);
         emitBalanceUpdated({ userId: recipient.id, ...balance });
+
+        try {
+          const rank = await getUserRank(recipient.id, 'all');
+          emitLeaderboardUpdated({
+            window: rank.window,
+            entry: {
+              rank: rank.rank,
+              userId: recipient.id,
+              stellarAddress: tip.toAddress,
+              totalTips: rank.totalTips,
+            },
+          });
+        } catch (err) {
+          logger.error({ err, txHash }, 'Failed to emit leaderboard.updated after tip confirmation');
+        }
       }
     } catch (err) {
       logger.error({ err, txHash }, 'Failed to emit balance.updated after tip confirmation');

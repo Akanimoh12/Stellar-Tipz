@@ -17,6 +17,9 @@ const {
   mockFindUniqueUser,
   mockEmitBalanceUpdated,
   mockGetWithdrawableBalance,
+  mockCreateNotification,
+  mockEmitLeaderboardUpdated,
+  mockGetUserRank,
 } = vi.hoisted(() => ({
   mockGetAccount: vi.fn(),
   mockSimulateTransaction: vi.fn(),
@@ -31,15 +34,26 @@ const {
   mockFindUniqueUser: vi.fn(),
   mockEmitBalanceUpdated: vi.fn(),
   mockGetWithdrawableBalance: vi.fn(),
+  mockCreateNotification: vi.fn(),
+  mockEmitLeaderboardUpdated: vi.fn(),
+  mockGetUserRank: vi.fn(),
 }));
 
 vi.mock('../../realtime/index.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../realtime/index.js')>();
-  return { ...actual, emitBalanceUpdated: mockEmitBalanceUpdated };
+  return {
+    ...actual,
+    emitBalanceUpdated: mockEmitBalanceUpdated,
+    emitLeaderboardUpdated: mockEmitLeaderboardUpdated,
+  };
 });
 
 vi.mock('../withdrawals/withdrawals.service.js', () => ({
   getWithdrawableBalance: mockGetWithdrawableBalance,
+}));
+
+vi.mock('../leaderboard/leaderboard.service.js', () => ({
+  getUserRank: mockGetUserRank,
 }));
 
 vi.mock('@stellar/stellar-sdk', () => {
@@ -630,13 +644,13 @@ describe('POST /api/v1/tips — dedupe by txHash', () => {
   it('notifies the receiving creator when they have an off-chain account', async () => {
     mockFindUnique.mockResolvedValue(null);
     mockCreate.mockResolvedValue(tipRow);
-    mockUserFindUnique.mockResolvedValue({ id: 'user-to' });
+    mockFindUniqueUser.mockResolvedValue({ id: 'user-to' });
 
     const app = createApp();
     const res = await request(app).post('/api/v1/tips').send(validBody);
 
     expect(res.status).toBe(200);
-    expect(mockUserFindUnique).toHaveBeenCalledWith({ where: { stellarAddress: to } });
+    expect(mockFindUniqueUser).toHaveBeenCalledWith({ where: { stellarAddress: to } });
     expect(mockCreateNotification).toHaveBeenCalledWith(
       'user-to',
       'tip_received',
@@ -647,7 +661,7 @@ describe('POST /api/v1/tips — dedupe by txHash', () => {
   it('skips notifying when the recipient has no off-chain account', async () => {
     mockFindUnique.mockResolvedValue(null);
     mockCreate.mockResolvedValue(tipRow);
-    mockUserFindUnique.mockResolvedValue(null);
+    mockFindUniqueUser.mockResolvedValue(null);
 
     const app = createApp();
     const res = await request(app).post('/api/v1/tips').send(validBody);
@@ -666,14 +680,14 @@ describe('POST /api/v1/tips — dedupe by txHash', () => {
       .send({ ...validBody, fromAddress: to });
 
     expect(res.status).toBe(200);
-    expect(mockUserFindUnique).not.toHaveBeenCalled();
+    expect(mockFindUniqueUser).not.toHaveBeenCalled();
     expect(mockCreateNotification).not.toHaveBeenCalled();
   });
 
   it('does not fail the request when notifying the creator throws', async () => {
     mockFindUnique.mockResolvedValue(null);
     mockCreate.mockResolvedValue(tipRow);
-    mockUserFindUnique.mockResolvedValue({ id: 'user-to' });
+    mockFindUniqueUser.mockResolvedValue({ id: 'user-to' });
     mockCreateNotification.mockRejectedValue(new Error('boom'));
 
     const app = createApp();
@@ -781,6 +795,55 @@ describe('PATCH /api/v1/tips/:txHash/confirm', () => {
     expect(res.status).toBe(200);
     expect(mockGetWithdrawableBalance).not.toHaveBeenCalled();
     expect(mockEmitBalanceUpdated).not.toHaveBeenCalled();
+  });
+
+  it('emits leaderboard.updated for the recipient after confirming (#952)', async () => {
+    mockFindUnique.mockResolvedValue(pendingRow);
+    mockUpdate.mockResolvedValue(confirmedRow);
+    mockFindUniqueUser.mockResolvedValue({ id: 'user-1', stellarAddress: to });
+    mockGetWithdrawableBalance.mockResolvedValue({
+      stellarAddress: to,
+      totalReceived: '1000000',
+      totalWithdrawn: '0',
+      withdrawableBalance: '1000000',
+    });
+    mockGetUserRank.mockResolvedValue({ rank: 3, totalTips: '1000000', window: 'all' });
+
+    const app = createApp();
+    const res = await request(app).patch(`/api/v1/tips/${txHash}/confirm`);
+
+    expect(res.status).toBe(200);
+    expect(mockGetUserRank).toHaveBeenCalledWith('user-1', 'all');
+    expect(mockEmitLeaderboardUpdated).toHaveBeenCalledWith({
+      window: 'all',
+      entry: {
+        rank: 3,
+        userId: 'user-1',
+        stellarAddress: to,
+        totalTips: '1000000',
+      },
+    });
+  });
+
+  it('does not fail the request when getUserRank throws', async () => {
+    mockFindUnique.mockResolvedValue(pendingRow);
+    mockUpdate.mockResolvedValue(confirmedRow);
+    mockFindUniqueUser.mockResolvedValue({ id: 'user-1', stellarAddress: to });
+    mockGetWithdrawableBalance.mockResolvedValue({
+      stellarAddress: to,
+      totalReceived: '1000000',
+      totalWithdrawn: '0',
+      withdrawableBalance: '1000000',
+    });
+    mockGetUserRank.mockRejectedValue(new Error('not ranked yet'));
+
+    const app = createApp();
+    const res = await request(app).patch(`/api/v1/tips/${txHash}/confirm`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('CONFIRMED');
+    expect(mockEmitLeaderboardUpdated).not.toHaveBeenCalled();
+    expect(mockEmitBalanceUpdated).toHaveBeenCalledTimes(1);
   });
 });
 

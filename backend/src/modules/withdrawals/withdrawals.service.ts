@@ -1,9 +1,14 @@
 import { Contract, TransactionBuilder, SorobanRpc, nativeToScVal, Networks } from '@stellar/stellar-sdk';
+import { Prisma } from '@prisma/client';
 import { config } from '../../config/index.js';
 import { prisma } from '../../db/prisma.js';
 import { BadRequestError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
-import type { WithdrawalResponse, WithdrawableBalanceResponse } from './withdrawals.types.js';
+import type {
+  WithdrawalResponse,
+  WithdrawableBalanceResponse,
+  SubmitWithdrawalResult,
+} from './withdrawals.types.js';
 
 export async function getWithdrawalHistory(
   userId: string,
@@ -157,4 +162,86 @@ export async function prepareWithdrawal(
     contractId,
     networkPassphrase,
   };
+}
+
+function serializeSubmittedWithdrawal(
+  withdrawal: { id: string; txHash: string | null; status: string; amount: bigint; fee: bigint },
+  netAmount: bigint,
+): SubmitWithdrawalResult {
+  return {
+    id: withdrawal.id,
+    txHash: withdrawal.txHash ?? '',
+    status: withdrawal.status as SubmitWithdrawalResult['status'],
+    amount: withdrawal.amount.toString(),
+    fee: withdrawal.fee.toString(),
+    netAmount: netAmount.toString(),
+  };
+}
+
+/**
+ * POST /withdrawals/submit — broadcast a wallet-signed withdrawal transaction and
+ * record it as a PENDING withdrawal, idempotent by the resulting txHash.
+ */
+export async function submitWithdrawal(
+  userId: string,
+  amount: string,
+  signedTxXdr: string,
+): Promise<SubmitWithdrawalResult> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new BadRequestError('User not found');
+
+  const balance = await getWithdrawableBalance(userId);
+  const parsedAmount = BigInt(amount);
+  if (parsedAmount <= 0) {
+    throw new BadRequestError('Withdrawal amount must be positive');
+  }
+  if (parsedAmount > BigInt(balance.withdrawableBalance)) {
+    throw new BadRequestError('Insufficient balance');
+  }
+
+  const { fee, netAmount } = calculateWithdrawalFee(parsedAmount);
+
+  const networkPassphrase =
+    Networks[config.stellar.network as keyof typeof Networks] ?? config.stellar.networkPassphrase;
+  const tx = TransactionBuilder.fromXDR(signedTxXdr, networkPassphrase);
+
+  const server = new SorobanRpc.Server(config.stellar.rpcUrl, {
+    allowHttp: config.stellar.rpcUrl.startsWith('http://'),
+  });
+
+  const sendResponse = await server.sendTransaction(tx).catch((err: Error) => {
+    logger.error({ err }, 'Withdrawal transaction submission failed');
+    throw new BadRequestError('Failed to submit withdrawal transaction');
+  });
+
+  if (sendResponse.status === 'ERROR') {
+    logger.error({ hash: sendResponse.hash }, 'Withdrawal transaction rejected by the network');
+    throw new BadRequestError('Withdrawal transaction rejected by the network');
+  }
+
+  const txHash = sendResponse.hash;
+
+  const existing = await prisma.withdrawal.findUnique({ where: { txHash } });
+  if (existing) {
+    return serializeSubmittedWithdrawal(existing, netAmount);
+  }
+
+  try {
+    const withdrawal = await prisma.withdrawal.create({
+      data: {
+        userId,
+        amount: parsedAmount,
+        fee,
+        txHash,
+        status: 'PENDING',
+      },
+    });
+    return serializeSubmittedWithdrawal(withdrawal, netAmount);
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      const withdrawal = await prisma.withdrawal.findUnique({ where: { txHash } });
+      if (withdrawal) return serializeSubmittedWithdrawal(withdrawal, netAmount);
+    }
+    throw err;
+  }
 }
