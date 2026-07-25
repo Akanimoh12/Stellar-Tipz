@@ -395,6 +395,7 @@ describe('getPreferences', () => {
 
     expect(result.tipReceived).toBe(true);
     expect(result.goalReached).toBe(true);
+    expect(result.subscriptionCharged).toBe(true);
   });
 
   it('returns the stored preference row when it exists', async () => {
@@ -402,6 +403,7 @@ describe('getPreferences', () => {
     mockPrefFindUnique.mockResolvedValue({
       tipReceived: false,
       goalReached: true,
+      subscriptionCharged: false,
       updatedAt,
     });
 
@@ -410,6 +412,7 @@ describe('getPreferences', () => {
     expect(result).toEqual({
       tipReceived: false,
       goalReached: true,
+      subscriptionCharged: false,
       updatedAt: updatedAt.toISOString(),
     });
   });
@@ -422,7 +425,12 @@ describe('updatePreferences', () => {
 
   it('upserts the preference row with the given patch', async () => {
     const updatedAt = new Date('2026-07-25T12:00:00.000Z');
-    mockPrefUpsert.mockResolvedValue({ tipReceived: false, goalReached: true, updatedAt });
+    mockPrefUpsert.mockResolvedValue({
+      tipReceived: false,
+      goalReached: true,
+      subscriptionCharged: true,
+      updatedAt,
+    });
 
     const result = await updatePreferences('user-1', { tipReceived: false });
 
@@ -431,6 +439,25 @@ describe('updatePreferences', () => {
       where: { userId: 'user-1' },
       create: { userId: 'user-1', tipReceived: false },
       update: { tipReceived: false },
+    });
+  });
+
+  it('upserts the subscriptionCharged preference', async () => {
+    const updatedAt = new Date('2026-07-25T12:00:00.000Z');
+    mockPrefUpsert.mockResolvedValue({
+      tipReceived: true,
+      goalReached: true,
+      subscriptionCharged: false,
+      updatedAt,
+    });
+
+    const result = await updatePreferences('user-1', { subscriptionCharged: false });
+
+    expect(result.subscriptionCharged).toBe(false);
+    expect(mockPrefUpsert).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+      create: { userId: 'user-1', subscriptionCharged: false },
+      update: { subscriptionCharged: false },
     });
   });
 });
@@ -491,6 +518,51 @@ describe('createNotification', () => {
 
     expect(result).not.toBeNull();
     expect(mockCreate).toHaveBeenCalled();
+  });
+
+  it('creates and emits a subscription_charged notification (#965)', async () => {
+    mockPrefFindUnique.mockResolvedValue(null);
+    const createdAt = new Date('2026-07-25T12:00:00.000Z');
+    mockCreate.mockResolvedValue({
+      id: 'notif-3',
+      type: 'subscription_charged',
+      payload: { tipperId: 'user-2', amountStroops: '500' },
+      readAt: null,
+      createdAt,
+    });
+
+    const result = await createNotification('user-1', 'subscription_charged', {
+      tipperId: 'user-2',
+      amountStroops: '500',
+    });
+
+    expect(result).not.toBeNull();
+    expect(mockCreate).toHaveBeenCalledWith({
+      data: {
+        userId: 'user-1',
+        type: 'subscription_charged',
+        payload: { tipperId: 'user-2', amountStroops: '500' },
+      },
+    });
+    expect(mockEmitNotificationCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'notif-3', type: 'subscription_charged' }),
+    );
+  });
+
+  it('skips creation when the user disabled subscription_charged notifications', async () => {
+    mockPrefFindUnique.mockResolvedValue({
+      tipReceived: true,
+      goalReached: true,
+      subscriptionCharged: false,
+    });
+
+    const result = await createNotification('user-1', 'subscription_charged', {
+      tipperId: 'user-2',
+      amountStroops: '500',
+    });
+
+    expect(result).toBeNull();
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });
 

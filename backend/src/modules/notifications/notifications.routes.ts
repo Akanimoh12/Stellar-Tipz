@@ -35,9 +35,10 @@ const notificationPreferenceSchema = {
   properties: {
     tipReceived: { type: 'boolean', example: true },
     goalReached: { type: 'boolean', example: true },
+    subscriptionCharged: { type: 'boolean', example: true },
     updatedAt: { type: 'string', format: 'date-time' },
   },
-  required: ['tipReceived', 'goalReached', 'updatedAt'],
+  required: ['tipReceived', 'goalReached', 'subscriptionCharged', 'updatedAt'],
 };
 
 mergeOpenApiPaths({
@@ -160,6 +161,7 @@ mergeOpenApiPaths({
               properties: {
                 tipReceived: { type: 'boolean' },
                 goalReached: { type: 'boolean' },
+                subscriptionCharged: { type: 'boolean' },
               },
             },
           },

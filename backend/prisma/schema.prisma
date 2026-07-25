@@ -182,13 +182,14 @@ model Notification {
 /// Per-user toggles controlling which notification types are created for them.
 /// Missing rows are treated as all-enabled (see notifications module defaults).
 model NotificationPreference {
-  id          String   @id @default(cuid())
-  userId      String   @unique
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tipReceived Boolean  @default(true)
-  goalReached Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tipReceived         Boolean  @default(true)
+  goalReached         Boolean  @default(true)
+  subscriptionCharged Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }
 
 /// Cached X (Twitter) account metrics.

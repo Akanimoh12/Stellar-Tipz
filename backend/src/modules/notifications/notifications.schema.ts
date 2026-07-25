@@ -17,6 +17,7 @@ export const updateNotificationPreferencesSchema = z
   .object({
     tipReceived: z.boolean().optional(),
     goalReached: z.boolean().optional(),
+    subscriptionCharged: z.boolean().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: 'At least one preference must be provided',
