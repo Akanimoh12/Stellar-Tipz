@@ -7,6 +7,8 @@ export const analyticsRouter = Router();
 
 analyticsRouter.get('/daily', analyticsController.getDailyAnalytics);
 analyticsRouter.get('/summary', analyticsController.getAnalyticsSummary);
+analyticsRouter.get('/volume', analyticsController.getTipVolumeController);
+analyticsRouter.get('/top-tippers', analyticsController.getTopTippersController);
 
 const base = `${env.API_BASE_PATH}/analytics`;
 

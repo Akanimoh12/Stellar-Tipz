@@ -18,6 +18,7 @@ import { ipfsRouter } from './modules/ipfs/ipfs.routes.js';
 import { xRouter } from './modules/x/x.routes.js';
 import { notificationsRouter } from './modules/notifications/notifications.routes.js';
 import { searchRouter } from './modules/search/search.routes.js';
+import { webhooksRouter } from './modules/webhooks/webhooks.routes.js';
 import { analyticsRouter } from './modules/analytics/analytics.routes.js';
 
 /** Builds and configures the Express application without starting a listener. */
@@ -65,6 +66,7 @@ export function createApp(): Express {
   app.use(`${env.API_BASE_PATH}/x`, xRouter);
   app.use(`${env.API_BASE_PATH}/balances`, balancesRouter);
   app.use(`${env.API_BASE_PATH}/search`, searchRouter);
+  app.use(`${env.API_BASE_PATH}/webhooks`, webhooksRouter);
   app.use(`${env.API_BASE_PATH}/analytics`, analyticsRouter);
 
   app.use(notFoundHandler);

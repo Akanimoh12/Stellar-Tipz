@@ -1,6 +1,9 @@
 import type { Request, Response, NextFunction } from 'express';
-import { analyticsDailyQuerySchema } from './analytics.schema.js';
+import { z } from 'zod';
+import { BadRequestError } from '../../common/errors/AppError.js';
+import { analyticsDailyQuerySchema, volumeQuerySchema, topTippersQuerySchema } from './analytics.schema.js';
 import * as analyticsService from './analytics.service.js';
+import { getTipVolume, getTopTippers } from './analytics.service.js';
 
 /** GET /analytics/daily — paginated daily analytics with optional date range. */
 export async function getDailyAnalytics(
@@ -29,5 +32,47 @@ export async function getAnalyticsSummary(
     res.status(200).json({ data: result });
   } catch (err) {
     next(err);
+  }
+}
+
+/** GET /analytics/volume — tip volume time-series with granularity (issue #1008). */
+export async function getTipVolumeController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const query = volumeQuerySchema.parse(req.query);
+    const result = await getTipVolume(
+      query.granularity,
+      query.startDate,
+      query.endDate,
+    );
+    res.json({ data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(new BadRequestError('Invalid query parameters', error.issues));
+    } else {
+      next(error);
+    }
+  }
+}
+
+/** GET /analytics/top-tippers — top tippers ranked by total stroops (issue #1009). */
+export async function getTopTippersController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const query = topTippersQuerySchema.parse(req.query);
+    const result = await getTopTippers(query.page, query.limit);
+    res.json({ data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(new BadRequestError('Invalid query parameters', error.issues));
+    } else {
+      next(error);
+    }
   }
 }
