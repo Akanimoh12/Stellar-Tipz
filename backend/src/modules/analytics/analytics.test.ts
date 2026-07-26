@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../app.js';
-import { getDailyAnalytics, getAnalyticsSummary } from './analytics.service.js';
+import { getDailyAnalytics } from './analytics.service.js';
 
 const { mockFindMany, mockCount } = vi.hoisted(() => ({
   mockFindMany: vi.fn(),
