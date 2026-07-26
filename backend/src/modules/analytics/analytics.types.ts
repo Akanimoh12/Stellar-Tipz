@@ -29,3 +29,36 @@ export interface AnalyticsSummary {
     end: string | null;
   };
 }
+
+/** Tip volume time-series entry (issue #1008). */
+export interface TipVolumeEntry {
+  date: string;
+  totalTips: string;
+  count: number;
+}
+
+/** Tip volume time-series response (issue #1008). */
+export interface TipVolumeResponse {
+  entries: TipVolumeEntry[];
+  granularity: string;
+  startDate: string;
+  endDate: string;
+}
+
+/** Top tipper entry (issue #1009). */
+export interface TopTipperEntry {
+  userId: string;
+  stellarAddress: string;
+  username: string | null;
+  displayName: string | null;
+  totalTipsStroops: string;
+  tipCount: number;
+}
+
+/** Top tippers response (issue #1009). */
+export interface TopTippersResponse {
+  entries: TopTipperEntry[];
+  total: number;
+  page: number;
+  limit: number;
+}
