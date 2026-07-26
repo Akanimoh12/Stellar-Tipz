@@ -26,3 +26,12 @@ export const topTippersQuerySchema = z.object({
 });
 
 export type TopTippersQuery = z.infer<typeof topTippersQuerySchema>;
+
+/** Query parameters for GET /analytics/active-users (issue #1010). */
+export const activeUsersQuerySchema = z.object({
+  granularity: z.enum(['day', 'week', 'month']).default('day'),
+  startDate: z.string().datetime({ offset: true }).optional(),
+  endDate: z.string().datetime({ offset: true }).optional(),
+});
+
+export type ActiveUsersQuery = z.infer<typeof activeUsersQuerySchema>;

@@ -11,6 +11,8 @@ const { mockFindMany, mockCount } = vi.hoisted(() => ({
 vi.mock('../../db/prisma.js', () => ({
   prisma: {
     analyticsDaily: { findMany: mockFindMany, count: mockCount },
+    tip: { findMany: vi.fn(), groupBy: vi.fn() },
+    user: { findUnique: vi.fn(), findMany: vi.fn() },
     $disconnect: vi.fn(),
   },
 }));
@@ -159,5 +161,53 @@ describe('getDailyAnalytics service', () => {
 
     expect(result.pagination.hasMore).toBe(true);
     expect(result.pagination.total).toBe(10);
+  });
+});
+
+describe('GET /api/v1/analytics/active-users', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns 200 with empty entries by default', async () => {
+    mockFindMany.mockResolvedValue([]);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/analytics/active-users');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.entries).toEqual([]);
+    expect(res.body.data.granularity).toBe('day');
+  });
+
+  it('returns active users time-series with day granularity', async () => {
+    mockFindMany.mockResolvedValue([
+      { date: new Date('2026-07-24'), activeUsers: 18 },
+      { date: new Date('2026-07-25'), activeUsers: 25 },
+    ]);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/analytics/active-users');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.entries).toHaveLength(2);
+    expect(res.body.data.entries[0]).toEqual({ date: '2026-07-24', activeUsers: 18 });
+    expect(res.body.data.entries[1]).toEqual({ date: '2026-07-25', activeUsers: 25 });
+  });
+
+  it('returns 400 for invalid granularity', async () => {
+    const app = createApp();
+    const res = await request(app).get('/api/v1/analytics/active-users?granularity=year');
+
+    expect(res.status).toBe(400);
+  });
+
+  it('accepts granularity week', async () => {
+    mockFindMany.mockResolvedValue([]);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/analytics/active-users?granularity=week');
+
+    expect(res.status).toBe(200);
   });
 });

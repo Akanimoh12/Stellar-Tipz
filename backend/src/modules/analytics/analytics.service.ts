@@ -2,6 +2,7 @@ import { prisma } from '../../db/prisma.js';
 import { logger } from '../../common/utils/logger.js';
 import type { AnalyticsDailyResponse, AnalyticsSummary } from './analytics.types.js';
 import type { TipVolumeResponse, TopTipperEntry, TopTippersResponse } from './analytics.types.js';
+import type { ActiveUsersResponse } from './analytics.types.js';
 
 /**
  * Returns paginated daily analytics rows, optionally filtered by date range.
@@ -200,4 +201,68 @@ export async function getTopTippers(
   );
 
   return { entries, total, page, limit };
+}
+
+/**
+ * Returns active users time-series bucketed by granularity (issue #1010).
+ */
+export async function getActiveUsers(
+  granularity: string,
+  startDate?: string,
+  endDate?: string,
+): Promise<ActiveUsersResponse> {
+  logger.info({ granularity, startDate, endDate }, 'Fetching active users time-series');
+
+  const now = new Date();
+  const start = startDate ? new Date(startDate) : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const end = endDate ? new Date(endDate) : now;
+
+  const rows = await prisma.analyticsDaily.findMany({
+    where: {
+      date: { gte: start, lte: end },
+    },
+    select: { date: true, activeUsers: true },
+    orderBy: { date: 'asc' },
+  });
+
+  const buckets = new Map<string, number>();
+
+  for (const row of rows) {
+    let key: string;
+    const d = new Date(row.date);
+
+    switch (granularity) {
+      case 'week': {
+        const startOfWeek = new Date(d);
+        startOfWeek.setDate(d.getDate() - d.getDay());
+        key = startOfWeek.toISOString().slice(0, 10);
+        break;
+      }
+      case 'month':
+        key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        break;
+      default:
+        key = d.toISOString().slice(0, 10);
+        break;
+    }
+
+    const existing = buckets.get(key);
+    if (existing !== undefined) {
+      buckets.set(key, existing + row.activeUsers);
+    } else {
+      buckets.set(key, row.activeUsers);
+    }
+  }
+
+  const entries = Array.from(buckets.entries()).map(([date, activeUsers]) => ({
+    date,
+    activeUsers,
+  }));
+
+  return {
+    entries,
+    granularity,
+    startDate: start.toISOString(),
+    endDate: end.toISOString(),
+  };
 }

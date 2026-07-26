@@ -62,3 +62,17 @@ export interface TopTippersResponse {
   page: number;
   limit: number;
 }
+
+/** Active users time-series entry (issue #1010). */
+export interface ActiveUsersEntry {
+  date: string;
+  activeUsers: number;
+}
+
+/** Active users time-series response (issue #1010). */
+export interface ActiveUsersResponse {
+  entries: ActiveUsersEntry[];
+  granularity: string;
+  startDate: string;
+  endDate: string;
+}
