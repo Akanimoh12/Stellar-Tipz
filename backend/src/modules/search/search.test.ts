@@ -3,14 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../app.js';
 import { searchCreators } from './search.service.js';
 
-const { mockFindMany, mockCount } = vi.hoisted(() => ({
+const { mockFindMany, mockCount, mockQueryRaw } = vi.hoisted(() => ({
   mockFindMany: vi.fn(),
   mockCount: vi.fn(),
+  mockQueryRaw: vi.fn(),
 }));
 
 vi.mock('../../db/prisma.js', () => ({
   prisma: {
     user: { findMany: mockFindMany, count: mockCount },
+    $queryRaw: mockQueryRaw,
     $disconnect: vi.fn(),
   },
 }));
@@ -20,6 +22,7 @@ describe('GET /api/v1/search/creators', () => {
     vi.clearAllMocks();
     mockFindMany.mockResolvedValue([]);
     mockCount.mockResolvedValue(0);
+    mockQueryRaw.mockResolvedValue([]);
   });
 
   it('returns 400 when q is missing', async () => {
@@ -35,8 +38,8 @@ describe('GET /api/v1/search/creators', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns matching creators', async () => {
-    mockFindMany.mockResolvedValue([
+  it('returns matching creators with relevance sort (default)', async () => {
+    mockQueryRaw.mockResolvedValue([
       {
         id: 'user-1',
         username: 'alice',
@@ -67,7 +70,7 @@ describe('GET /api/v1/search/creators', () => {
     mockCount.mockResolvedValue(10);
 
     const app = createApp();
-    const res = await request(app).get('/api/v1/search/creators?q=test&limit=5&offset=5');
+    const res = await request(app).get('/api/v1/search/creators?q=test&limit=5&offset=5&sort=recent');
 
     expect(res.status).toBe(200);
     expect(res.body.pagination).toEqual({
@@ -89,6 +92,47 @@ describe('GET /api/v1/search/creators', () => {
     const res = await request(app).get('/api/v1/search/creators?q=test&limit=100');
     expect(res.status).toBe(400);
   });
+
+  it('returns 400 for invalid sort value', async () => {
+    const app = createApp();
+    const res = await request(app).get('/api/v1/search/creators?q=alice&sort=invalid');
+    expect(res.status).toBe(400);
+  });
+
+  it('uses relevance ranking when sort=relevance', async () => {
+    mockQueryRaw.mockResolvedValue([
+      {
+        id: 'user-1',
+        username: 'alice',
+        displayName: 'Alice Star',
+        stellarAddress: 'GA1',
+        imageUrl: null,
+        bio: 'Alice bio',
+      },
+    ]);
+    mockCount.mockResolvedValue(1);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/search/creators?q=alice&sort=relevance');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(mockQueryRaw).toHaveBeenCalled();
+  });
+
+  it('uses recent sort when sort=recent', async () => {
+    mockFindMany.mockResolvedValue([]);
+    mockCount.mockResolvedValue(0);
+
+    const app = createApp();
+    await request(app).get('/api/v1/search/creators?q=test&sort=recent');
+
+    expect(mockFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ createdAt: 'desc' }],
+      }),
+    );
+  });
 });
 
 describe('searchCreators service', () => {
@@ -96,11 +140,11 @@ describe('searchCreators service', () => {
     vi.clearAllMocks();
   });
 
-  it('queries with correct where clause', async () => {
+  it('queries with correct where clause for recent sort', async () => {
     mockFindMany.mockResolvedValue([]);
     mockCount.mockResolvedValue(0);
 
-    await searchCreators('bob', 20, 0);
+    await searchCreators('bob', 20, 0, 'recent');
 
     expect(mockFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -111,6 +155,7 @@ describe('searchCreators service', () => {
             { displayName: { contains: 'bob', mode: 'insensitive' } },
           ],
         }),
+        orderBy: [{ createdAt: 'desc' }],
         take: 20,
         skip: 0,
       }),
