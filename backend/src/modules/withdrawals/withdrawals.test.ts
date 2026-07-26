@@ -132,6 +132,61 @@ describe('GET /api/v1/withdrawals/me', () => {
       take: 20,
     });
   });
+
+  it('returns an empty array when the user has no withdrawals', async () => {
+    mockAuth();
+    mockFindMany.mockResolvedValue([]);
+
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/v1/withdrawals/me')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([]);
+  });
+
+  it('applies custom limit and offset from query params', async () => {
+    mockAuth();
+    mockFindMany.mockResolvedValue([]);
+
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/v1/withdrawals/me?limit=5&offset=10')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(200);
+    expect(mockFindMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+      orderBy: { requestedAt: 'desc' },
+      skip: 10,
+      take: 5,
+    });
+  });
+
+  it('serializes null confirmedAt as null', async () => {
+    mockAuth();
+    mockFindMany.mockResolvedValue([
+      {
+        id: 'wd-2',
+        amount: BigInt(500_000),
+        fee: BigInt(10_000),
+        txHash: null,
+        status: 'PENDING',
+        requestedAt: new Date('2024-06-01T00:00:00.000Z'),
+        confirmedAt: null,
+      },
+    ]);
+
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/v1/withdrawals/me')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data[0].confirmedAt).toBeNull();
+    expect(res.body.data[0].txHash).toBeNull();
+  });
 });
 
 describe('GET /api/v1/balances/me', () => {
@@ -159,6 +214,28 @@ describe('GET /api/v1/balances/me', () => {
       withdrawableBalance: '4000000',
     });
   });
+
+  it('returns 401 without an Authorization header', async () => {
+    const app = createApp();
+    const res = await request(app).get('/api/v1/balances/me');
+    expect(res.status).toBe(401);
+  });
+
+  it('returns zero balance when no tips received', async () => {
+    mockAuth();
+    mockFindUnique.mockResolvedValue({ id: 'user-1', stellarAddress: address });
+    mockAggregate
+      .mockResolvedValueOnce({ _sum: { amountStroops: null } })
+      .mockResolvedValueOnce({ _sum: { amount: null } });
+
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/v1/balances/me')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.withdrawableBalance).toBe('0');
+  });
 });
 
 describe('POST /api/v1/withdrawals/prepare', () => {
@@ -177,6 +254,28 @@ describe('POST /api/v1/withdrawals/prepare', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns 400 for empty body', async () => {
+    mockAuth();
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/withdrawals/prepare')
+      .set('Authorization', 'Bearer valid-token')
+      .send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns 401 without an Authorization header', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/withdrawals/prepare')
+      .send({ amount: '1000000' });
+
+    expect(res.status).toBe(401);
   });
 
   it('returns prepared transaction on success', async () => {
@@ -202,6 +301,22 @@ describe('POST /api/v1/withdrawals/prepare', () => {
       fee: '20000',
       netAmount: '980000',
     });
+  });
+
+  it('returns 400 when amount exceeds withdrawable balance', async () => {
+    mockAuth();
+    mockFindUnique.mockResolvedValue({ id: 'user-1', stellarAddress: address });
+    mockAggregate
+      .mockResolvedValueOnce({ _sum: { amountStroops: BigInt(500_000) } })
+      .mockResolvedValueOnce({ _sum: { amount: BigInt(0) } });
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/withdrawals/prepare')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ amount: '1000000' });
+
+    expect(res.status).toBe(400);
   });
 });
 

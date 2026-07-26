@@ -14,6 +14,7 @@ notificationsRouter.get('/preferences', notificationsController.getPreferences);
 notificationsRouter.patch('/preferences', notificationsController.updatePreferences);
 notificationsRouter.get('/:id', notificationsController.getById);
 notificationsRouter.patch('/:id/read', notificationsController.markRead);
+notificationsRouter.post('/:id/read', notificationsController.markRead);
 notificationsRouter.post('/read-all', notificationsController.markAllRead);
 
 const base = `${env.API_BASE_PATH}/notifications`;
@@ -220,6 +221,36 @@ mergeOpenApiPaths({
     patch: {
       tags: ['Notifications'],
       summary: 'Mark a notification as read',
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        {
+          name: 'id',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'Notification marked as read',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { data: notificationSchema },
+                required: ['data'],
+              },
+            },
+          },
+        },
+        '401': { description: 'Unauthorized' },
+        '404': { description: 'Notification not found' },
+      },
+    },
+    post: {
+      tags: ['Notifications'],
+      summary: 'Mark a notification as read (POST)',
+      description: 'POST alias for PATCH /notifications/:id/read.',
       security: [{ bearerAuth: [] }],
       parameters: [
         {

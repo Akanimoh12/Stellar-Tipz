@@ -58,6 +58,7 @@ export const openApiDocument: OpenApiDocument = {
     { name: 'Profiles', description: 'Creator profile management' },
     { name: 'Tips', description: 'On-chain tipping operations' },
     { name: 'Leaderboard', description: 'Creator tip leaderboard with time windows' },
+    { name: 'Withdrawals', description: 'Withdrawal operations and balance queries' },
     { name: 'Notifications', description: 'In-app notifications for users' },
   ],
   components: {
