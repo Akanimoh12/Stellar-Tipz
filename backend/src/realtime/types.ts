@@ -1,5 +1,6 @@
 import type { TipResponseDto } from '../modules/tips/tips.dto.js';
 import type { AuthPayload } from '../modules/auth/auth.types.js';
+import type { TimeWindow } from '../modules/leaderboard/leaderboard.schema.js';
 
 /**
  * Shared typed contract for the Socket.IO gateway. This is the single source
@@ -15,14 +16,17 @@ export interface ServerToClientEvents {
   'tip.created': (tip: TipResponseDto) => void;
   'notification.created': (notification: NotificationPayload) => void;
   'balance.updated': (balance: BalanceUpdatedPayload) => void;
+  'leaderboard.updated': (update: LeaderboardUpdatedPayload) => void;
 }
 
 /** Events a client may emit to the server. */
 export interface ClientToServerEvents {
   'subscribe:creator': (creatorAddress: string) => void;
   'subscribe:notifications': (userId: string) => void;
+  'subscribe:leaderboard': () => void;
   'unsubscribe:creator': (creatorAddress: string) => void;
   'unsubscribe:notifications': (userId: string) => void;
+  'unsubscribe:leaderboard': () => void;
 }
 
 /** Events emitted between server instances (unused for now, required by the Socket.IO generic signature). */
@@ -47,4 +51,16 @@ export interface BalanceUpdatedPayload {
   totalReceived: string;
   totalWithdrawn: string;
   withdrawableBalance: string;
+}
+
+export interface LeaderboardEntryPayload {
+  rank: number;
+  userId: string;
+  stellarAddress: string;
+  totalTips: string;
+}
+
+export interface LeaderboardUpdatedPayload {
+  window: TimeWindow;
+  entry: LeaderboardEntryPayload;
 }

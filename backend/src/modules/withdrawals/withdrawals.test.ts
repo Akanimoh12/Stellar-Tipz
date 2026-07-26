@@ -3,20 +3,35 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../app.js';
 import { calculateWithdrawalFee } from './withdrawals.service.js';
 
-const { mockFindMany, mockFindUnique, mockAggregate, mockGetAccount, mockSimulateTransaction } =
-  vi.hoisted(() => ({
-    mockFindMany: vi.fn(),
-    mockFindUnique: vi.fn(),
-    mockAggregate: vi.fn(),
-    mockGetAccount: vi.fn(),
-    mockSimulateTransaction: vi.fn(),
-  }));
+const {
+  mockFindMany,
+  mockFindUnique,
+  mockAggregate,
+  mockGetAccount,
+  mockSimulateTransaction,
+  mockSendTransaction,
+  mockFromXDR,
+  mockWithdrawalFindUnique,
+  mockWithdrawalCreate,
+} = vi.hoisted(() => ({
+  mockFindMany: vi.fn(),
+  mockFindUnique: vi.fn(),
+  mockAggregate: vi.fn(),
+  mockGetAccount: vi.fn(),
+  mockSimulateTransaction: vi.fn(),
+  mockSendTransaction: vi.fn(),
+  mockFromXDR: vi.fn(),
+  mockWithdrawalFindUnique: vi.fn(),
+  mockWithdrawalCreate: vi.fn(),
+}));
 
 vi.mock('../../db/prisma.js', () => ({
   prisma: {
     withdrawal: {
       findMany: mockFindMany,
       aggregate: mockAggregate,
+      findUnique: mockWithdrawalFindUnique,
+      create: mockWithdrawalCreate,
     },
     tip: { aggregate: mockAggregate },
     user: { findUnique: mockFindUnique },
@@ -34,17 +49,21 @@ vi.mock('@stellar/stellar-sdk', () => {
   };
 
   return {
-    TransactionBuilder: vi.fn(() => ({
-      addOperation: vi.fn(() => ({
-        setTimeout: vi.fn(() => ({
-          build: vi.fn(() => ({})),
+    TransactionBuilder: Object.assign(
+      vi.fn(() => ({
+        addOperation: vi.fn(() => ({
+          setTimeout: vi.fn(() => ({
+            build: vi.fn(() => ({})),
+          })),
         })),
       })),
-    })),
+      { fromXDR: mockFromXDR },
+    ),
     SorobanRpc: {
       Server: vi.fn(() => ({
         getAccount: mockGetAccount,
         simulateTransaction: mockSimulateTransaction,
+        sendTransaction: mockSendTransaction,
       })),
       assembleTransaction: vi.fn(() => mockPreparedTx),
       Api: { isSimulationError: vi.fn(() => false) },
@@ -183,6 +202,139 @@ describe('POST /api/v1/withdrawals/prepare', () => {
       fee: '20000',
       netAmount: '980000',
     });
+  });
+});
+
+describe('POST /api/v1/withdrawals/submit (#940)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFromXDR.mockReturnValue({});
+  });
+
+  it('returns 400 when signedTxXdr is missing', async () => {
+    mockAuth();
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/withdrawals/submit')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ amount: '1000000' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns 401 without an Authorization header', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/withdrawals/submit')
+      .send({ amount: '1000000', signedTxXdr: 'signed-xdr' });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('broadcasts the signed transaction and records a PENDING withdrawal', async () => {
+    mockAuth();
+    mockFindUnique.mockResolvedValue({ id: 'user-1', stellarAddress: address });
+    mockAggregate
+      .mockResolvedValueOnce({ _sum: { amountStroops: BigInt(5_000_000) } })
+      .mockResolvedValueOnce({ _sum: { amount: BigInt(0) } });
+    mockSendTransaction.mockResolvedValue({ status: 'PENDING', hash: 'submitted-tx-hash' });
+    mockWithdrawalFindUnique.mockResolvedValue(null);
+    mockWithdrawalCreate.mockResolvedValue({
+      id: 'wd-1',
+      txHash: 'submitted-tx-hash',
+      status: 'PENDING',
+      amount: BigInt(1_000_000),
+      fee: BigInt(20_000),
+    });
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/withdrawals/submit')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ amount: '1000000', signedTxXdr: 'signed-xdr' });
+
+    expect(res.status).toBe(200);
+    expect(mockSendTransaction).toHaveBeenCalledTimes(1);
+    expect(mockWithdrawalCreate).toHaveBeenCalledWith({
+      data: {
+        userId: 'user-1',
+        amount: BigInt(1_000_000),
+        fee: BigInt(20_000),
+        txHash: 'submitted-tx-hash',
+        status: 'PENDING',
+      },
+    });
+    expect(res.body.data).toMatchObject({
+      id: 'wd-1',
+      txHash: 'submitted-tx-hash',
+      status: 'PENDING',
+      amount: '1000000',
+      fee: '20000',
+      netAmount: '980000',
+    });
+  });
+
+  it('returns 400 when the amount exceeds the withdrawable balance', async () => {
+    mockAuth();
+    mockFindUnique.mockResolvedValue({ id: 'user-1', stellarAddress: address });
+    mockAggregate
+      .mockResolvedValueOnce({ _sum: { amountStroops: BigInt(1_000) } })
+      .mockResolvedValueOnce({ _sum: { amount: BigInt(0) } });
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/withdrawals/submit')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ amount: '1000000', signedTxXdr: 'signed-xdr' });
+
+    expect(res.status).toBe(400);
+    expect(mockSendTransaction).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when the network rejects the transaction', async () => {
+    mockAuth();
+    mockFindUnique.mockResolvedValue({ id: 'user-1', stellarAddress: address });
+    mockAggregate
+      .mockResolvedValueOnce({ _sum: { amountStroops: BigInt(5_000_000) } })
+      .mockResolvedValueOnce({ _sum: { amount: BigInt(0) } });
+    mockSendTransaction.mockResolvedValue({ status: 'ERROR', hash: 'rejected-tx-hash' });
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/withdrawals/submit')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ amount: '1000000', signedTxXdr: 'signed-xdr' });
+
+    expect(res.status).toBe(400);
+    expect(mockWithdrawalCreate).not.toHaveBeenCalled();
+  });
+
+  it('is idempotent — resubmitting a txHash that already exists returns the existing withdrawal', async () => {
+    mockAuth();
+    mockFindUnique.mockResolvedValue({ id: 'user-1', stellarAddress: address });
+    mockAggregate
+      .mockResolvedValueOnce({ _sum: { amountStroops: BigInt(5_000_000) } })
+      .mockResolvedValueOnce({ _sum: { amount: BigInt(0) } });
+    mockSendTransaction.mockResolvedValue({ status: 'DUPLICATE', hash: 'existing-tx-hash' });
+    mockWithdrawalFindUnique.mockResolvedValue({
+      id: 'wd-existing',
+      txHash: 'existing-tx-hash',
+      status: 'PENDING',
+      amount: BigInt(1_000_000),
+      fee: BigInt(20_000),
+    });
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/withdrawals/submit')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ amount: '1000000', signedTxXdr: 'signed-xdr' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.id).toBe('wd-existing');
+    expect(mockWithdrawalCreate).not.toHaveBeenCalled();
   });
 });
 

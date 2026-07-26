@@ -10,7 +10,7 @@ clients. See `src/realtime/`.
 | `types.ts` | Shared typed contract: event names + payloads, `SocketData` |
 | `auth.ts` | Handshake middleware — verifies the same JWT the REST API issues |
 | `rateLimit.ts` | Per-IP connection throttling and per-socket event throttling |
-| `gateway.ts` | Server init, room management, `emitTipCreated` / `emitNotificationCreated` |
+| `gateway.ts` | Server init, room management, `emitTipCreated` / `emitNotificationCreated` / `emitLeaderboardUpdated`, Redis adapter wiring |
 
 ## Connecting
 
@@ -37,13 +37,32 @@ The full typed contract lives in `types.ts` (`ServerToClientEvents`,
 `ClientToServerEvents`). Summary:
 
 - **Client → server:** `subscribe:creator`, `subscribe:notifications`,
-  `unsubscribe:creator`, `unsubscribe:notifications`
+  `subscribe:leaderboard`, `unsubscribe:creator`, `unsubscribe:notifications`,
+  `unsubscribe:leaderboard`
 - **Server → client:** `connected`, `error`, `tip.created`,
-  `notification.created`
+  `notification.created`, `balance.updated`, `leaderboard.updated`
 
 Subscribing to another user's `notifications` room is rejected with an
 `error` event (`code: 'FORBIDDEN'`) — a socket may only subscribe to its own
 `user:<userId>` room.
+
+`subscribe:creator` and `subscribe:leaderboard` have no such restriction —
+tip feeds and the leaderboard are public data, so any authenticated socket
+may join those rooms.
+
+### leaderboard.updated
+
+Broadcast to every socket in the public `leaderboard` room whenever a
+confirmed tip changes a creator's rank (emitted from the tip confirmation
+flow — see `modules/tips/tips.controller.ts`). Best-effort: a failure to
+compute the new rank never blocks the tip confirmation response.
+
+```ts
+socket.emit('subscribe:leaderboard');
+socket.on('leaderboard.updated', ({ window, entry }) => {
+  // entry: { rank, userId, stellarAddress, totalTips }
+});
+```
 
 ## Heartbeat
 
@@ -92,3 +111,23 @@ Two independent limiters, both in-memory per server process (see
 Exceeding the connection limit rejects the handshake (`connect_error`).
 Exceeding the event limit emits `error` (`code: 'RATE_LIMITED'`) and drops
 that event; the socket stays connected.
+
+## Horizontal scaling (Redis adapter)
+
+Rooms (`creator:*`, `user:*`, `leaderboard`) only exist in the memory of the
+Socket.IO instance a socket connected to. Running more than one backend
+instance requires the [`@socket.io/redis-adapter`](https://socket.io/docs/v4/redis-adapter/)
+so an `emit*` call on one instance reaches sockets connected to another.
+
+`initRealtime` attaches the adapter automatically using two dedicated
+connections duplicated from the shared `ioredis` client (`src/db/redis.js`) —
+a pub/sub subscriber can't issue other Redis commands on the same connection,
+so a plain client can't be reused here.
+
+Controlled by `REALTIME_REDIS_ADAPTER_ENABLED` (see `.env.example`):
+
+- `true` (default) — attach the adapter. Required once more than one backend
+  instance is running behind a load balancer.
+- `false` — skip it, e.g. for a single-instance local dev setup. The test
+  suite sets this to `false` (see `vitest.setup.ts`) so tests don't need a
+  live Redis pub/sub connection.

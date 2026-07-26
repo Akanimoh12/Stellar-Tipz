@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import jwt from 'jsonwebtoken';
 import { io as ioClient, type Socket as ClientSocket } from 'socket.io-client';
 import { env } from '../config/env.js';
-import { initRealtime } from './gateway.js';
+import { initRealtime, emitLeaderboardUpdated } from './gateway.js';
 import { socketAuth } from './auth.js';
 import { connectionLimiter, eventLimiter, SlidingWindowLimiter } from './rateLimit.js';
 
@@ -165,5 +165,71 @@ describe('initRealtime', () => {
     });
 
     expect(err.code).toBe('FORBIDDEN');
+  });
+
+  it('delivers leaderboard.updated only to sockets subscribed to the leaderboard room (#952, #949)', async () => {
+    const subscribed = ioClient(`http://localhost:${port}`, {
+      auth: { token: makeToken({ userId: 'user-sub' }) },
+      transports: ['websocket'],
+    });
+    const unsubscribed = ioClient(`http://localhost:${port}`, {
+      auth: { token: makeToken({ userId: 'user-unsub' }) },
+      transports: ['websocket'],
+    });
+    clientSocket = subscribed;
+
+    await Promise.all([
+      new Promise<void>((resolve) => subscribed.on('connected', () => resolve())),
+      new Promise<void>((resolve) => unsubscribed.on('connected', () => resolve())),
+    ]);
+
+    subscribed.emit('subscribe:leaderboard');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const received = new Promise((resolve) => subscribed.on('leaderboard.updated', resolve));
+    let unsubscribedReceived = false;
+    unsubscribed.on('leaderboard.updated', () => {
+      unsubscribedReceived = true;
+    });
+
+    emitLeaderboardUpdated({
+      window: 'all',
+      entry: { rank: 1, userId: 'creator-1', stellarAddress: 'GCREATOR', totalTips: '5000000' },
+    });
+
+    await expect(received).resolves.toMatchObject({
+      window: 'all',
+      entry: { rank: 1, userId: 'creator-1' },
+    });
+    expect(unsubscribedReceived).toBe(false);
+
+    unsubscribed.close();
+  });
+
+  it('stops receiving leaderboard.updated after unsubscribe:leaderboard', async () => {
+    clientSocket = ioClient(`http://localhost:${port}`, {
+      auth: { token: makeToken({ userId: 'user-toggle' }) },
+      transports: ['websocket'],
+    });
+
+    await new Promise<void>((resolve) => clientSocket.on('connected', () => resolve()));
+
+    clientSocket.emit('subscribe:leaderboard');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    clientSocket.emit('unsubscribe:leaderboard');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    let received = false;
+    clientSocket.on('leaderboard.updated', () => {
+      received = true;
+    });
+
+    emitLeaderboardUpdated({
+      window: 'all',
+      entry: { rank: 1, userId: 'creator-1', stellarAddress: 'GCREATOR', totalTips: '5000000' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(received).toBe(false);
   });
 });

@@ -6,6 +6,7 @@ export const withdrawalsRouter = Router();
 
 withdrawalsRouter.get('/me', requireAuth, withdrawalsController.getMyWithdrawals);
 withdrawalsRouter.post('/prepare', requireAuth, withdrawalsController.prepareWithdrawal);
+withdrawalsRouter.post('/submit', requireAuth, withdrawalsController.submitWithdrawal);
 
 export const balancesRouter = Router();
 balancesRouter.get('/me', requireAuth, withdrawalsController.getMyBalance);

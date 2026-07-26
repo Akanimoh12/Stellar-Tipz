@@ -15,6 +15,12 @@ const durationString = z
   .string()
   .regex(/^\d+[smhd]$/, 'Must be a positive integer followed by s, m, h, or d (e.g. "15m", "7d")');
 
+/** Accepts the literal strings "true"/"false" and coerces to a boolean (unlike z.coerce.boolean, which treats any non-empty string as true). */
+const booleanString = z
+  .enum(['true', 'false'])
+  .default('true')
+  .transform((value) => value === 'true');
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
@@ -23,6 +29,8 @@ const envSchema = z.object({
 
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
+  /** Attaches the Socket.IO Redis adapter so realtime rooms are shared across horizontally scaled instances. */
+  REALTIME_REDIS_ADAPTER_ENABLED: booleanString,
 
   JWT_SECRET: z.string().min(8),
   /** Access token TTL — must be a duration string like "15m" or "1h". */
