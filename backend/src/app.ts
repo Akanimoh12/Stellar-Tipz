@@ -17,6 +17,8 @@ import { balancesRouter, withdrawalsRouter } from './modules/withdrawals/withdra
 import { ipfsRouter } from './modules/ipfs/ipfs.routes.js';
 import { xRouter } from './modules/x/x.routes.js';
 import { notificationsRouter } from './modules/notifications/notifications.routes.js';
+import { searchRouter } from './modules/search/search.routes.js';
+import { analyticsRouter } from './modules/analytics/analytics.routes.js';
 
 /** Builds and configures the Express application without starting a listener. */
 export function createApp(): Express {
@@ -62,6 +64,8 @@ export function createApp(): Express {
   app.use(`${env.API_BASE_PATH}/notifications`, notificationsRouter);
   app.use(`${env.API_BASE_PATH}/x`, xRouter);
   app.use(`${env.API_BASE_PATH}/balances`, balancesRouter);
+  app.use(`${env.API_BASE_PATH}/search`, searchRouter);
+  app.use(`${env.API_BASE_PATH}/analytics`, analyticsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
