@@ -338,6 +338,98 @@ describe('PATCH /api/v1/notifications/:id/read', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.readAt).toBe(readAt.toISOString());
   });
+
+  it('returns 404 for unknown notification', async () => {
+    mockFindFirst.mockResolvedValue(null);
+
+    const app = createApp();
+    const token = mockAuth();
+    const res = await request(app)
+      .patch('/api/v1/notifications/unknown/read')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 401 without auth', async () => {
+    const app = createApp();
+    const res = await request(app).patch('/api/v1/notifications/notif-1/read');
+
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('POST /api/v1/notifications/:id/read (#960)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('marks notification as read via POST', async () => {
+    const createdAt = new Date('2026-07-24T12:00:00.000Z');
+    mockFindFirst.mockResolvedValue({
+      id: 'notif-1',
+      type: 'tip_received',
+      payload: {},
+      readAt: null,
+      createdAt,
+    });
+    const readAt = new Date('2026-07-25T12:00:00.000Z');
+    mockUpdate.mockResolvedValue({
+      id: 'notif-1',
+      type: 'tip_received',
+      payload: {},
+      readAt,
+      createdAt,
+    });
+
+    const app = createApp();
+    const token = mockAuth();
+    const res = await request(app)
+      .post('/api/v1/notifications/notif-1/read')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.readAt).toBe(readAt.toISOString());
+    expect(mockFindFirst).toHaveBeenCalledWith({
+      where: { id: 'notif-1', userId: 'user-1', deletedAt: null },
+    });
+    expect(mockUpdate).toHaveBeenCalledWith({
+      where: { id: 'notif-1' },
+      data: { readAt: expect.any(Date) },
+    });
+  });
+
+  it('returns 404 for unknown notification', async () => {
+    mockFindFirst.mockResolvedValue(null);
+
+    const app = createApp();
+    const token = mockAuth();
+    const res = await request(app)
+      .post('/api/v1/notifications/unknown/read')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('returns 401 without auth', async () => {
+    const app = createApp();
+    const res = await request(app).post('/api/v1/notifications/notif-1/read');
+
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 for notification owned by another user', async () => {
+    mockFindFirst.mockResolvedValue(null);
+
+    const app = createApp();
+    const token = mockAuth();
+    const res = await request(app)
+      .post('/api/v1/notifications/notif-other/read')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(404);
+  });
 });
 
 describe('POST /api/v1/notifications/read-all', () => {
