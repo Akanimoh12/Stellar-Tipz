@@ -62,6 +62,7 @@ export const openApiDocument: OpenApiDocument = {
     { name: 'Notifications', description: 'In-app notifications for users' },
     { name: 'Search', description: 'Search creators by name or username' },
     { name: 'Analytics', description: 'Platform analytics and daily stats' },
+    { name: 'Goals', description: 'Creator funding goals' },
   ],
   components: {
     securitySchemes: {

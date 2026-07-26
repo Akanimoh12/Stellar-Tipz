@@ -20,6 +20,7 @@ import { notificationsRouter } from './modules/notifications/notifications.route
 import { searchRouter } from './modules/search/search.routes.js';
 import { webhooksRouter } from './modules/webhooks/webhooks.routes.js';
 import { analyticsRouter } from './modules/analytics/analytics.routes.js';
+import { goalsRouter } from './modules/goals/goals.routes.js';
 
 /** Builds and configures the Express application without starting a listener. */
 export function createApp(): Express {
@@ -68,6 +69,7 @@ export function createApp(): Express {
   app.use(`${env.API_BASE_PATH}/search`, searchRouter);
   app.use(`${env.API_BASE_PATH}/webhooks`, webhooksRouter);
   app.use(`${env.API_BASE_PATH}/analytics`, analyticsRouter);
+  app.use(`${env.API_BASE_PATH}/goals`, goalsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
