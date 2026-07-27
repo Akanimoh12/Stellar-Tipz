@@ -1,8 +1,11 @@
 import type { Server as HttpServer } from 'node:http';
 import { Server as SocketIOServer } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
 import { env } from '../config/env.js';
+import { config } from '../config/index.js';
 import { logger } from '../common/utils/logger.js';
 import { registerClosable } from '../common/utils/lifecycle.js';
+import { redis } from '../db/redis.js';
 import { socketAuth } from './auth.js';
 import { connectionRateLimit, eventLimiter, guardEventRate } from './rateLimit.js';
 import type {
@@ -12,8 +15,12 @@ import type {
   SocketData,
   NotificationPayload,
   BalanceUpdatedPayload,
+  LeaderboardUpdatedPayload,
 } from './types.js';
 import type { TipResponseDto } from '../modules/tips/tips.dto.js';
+
+/** Room joined by every socket that wants public leaderboard updates. */
+const LEADERBOARD_ROOM = 'leaderboard';
 
 export type RealtimeServer = SocketIOServer<
   ClientToServerEvents,
@@ -46,6 +53,21 @@ export function initRealtime(httpServer: HttpServer): RealtimeServer {
 
   io.use(connectionRateLimit);
   io.use(socketAuth);
+
+  if (config.realtime.redisAdapterEnabled) {
+    const pubClient = redis.duplicate();
+    const subClient = redis.duplicate();
+    io.adapter(createAdapter(pubClient, subClient));
+
+    registerClosable({
+      name: 'Socket.IO Redis adapter',
+      close: async () => {
+        await Promise.all([pubClient.quit(), subClient.quit()]);
+      },
+    });
+
+    logger.info('Socket.IO Redis adapter attached');
+  }
 
   io.on('connection', (socket) => {
     const { userId } = socket.data.auth;
@@ -82,6 +104,18 @@ export function initRealtime(httpServer: HttpServer): RealtimeServer {
       const room = `user:${userId}`;
       void socket.leave(room);
       logger.debug({ socketId: socket.id, room }, 'Unsubscribed from notifications room');
+    });
+
+    socket.on('subscribe:leaderboard', () => {
+      if (!guardEventRate(socket)) return;
+      void socket.join(LEADERBOARD_ROOM);
+      logger.debug({ socketId: socket.id, room: LEADERBOARD_ROOM }, 'Subscribed to leaderboard room');
+    });
+
+    socket.on('unsubscribe:leaderboard', () => {
+      if (!guardEventRate(socket)) return;
+      void socket.leave(LEADERBOARD_ROOM);
+      logger.debug({ socketId: socket.id, room: LEADERBOARD_ROOM }, 'Unsubscribed from leaderboard room');
     });
 
     socket.on('disconnect', (reason) => {
@@ -126,6 +160,16 @@ export function emitBalanceUpdated(balance: BalanceUpdatedPayload): void {
   logger.debug(
     { userId: balance.userId, room: `user:${balance.userId}` },
     'Emitted balance.updated',
+  );
+}
+
+/** Broadcasts a leaderboard rank change to every socket subscribed to the public `leaderboard` room. */
+export function emitLeaderboardUpdated(update: LeaderboardUpdatedPayload): void {
+  if (!io) return;
+  io.to(LEADERBOARD_ROOM).emit('leaderboard.updated', update);
+  logger.debug(
+    { userId: update.entry.userId, window: update.window, room: LEADERBOARD_ROOM },
+    'Emitted leaderboard.updated',
   );
 }
 

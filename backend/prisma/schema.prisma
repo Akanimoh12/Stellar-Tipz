@@ -43,6 +43,7 @@ model User {
   notificationPreference NotificationPreference?
   leaderboardSnapshots   LeaderboardSnapshot[]
   streak                 Streak?
+  webhookSubscriptions   WebhookSubscription[]
 
   @@index([createdAt])
 }
@@ -182,13 +183,14 @@ model Notification {
 /// Per-user toggles controlling which notification types are created for them.
 /// Missing rows are treated as all-enabled (see notifications module defaults).
 model NotificationPreference {
-  id          String   @id @default(cuid())
-  userId      String   @unique
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tipReceived Boolean  @default(true)
-  goalReached Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tipReceived         Boolean  @default(true)
+  goalReached         Boolean  @default(true)
+  subscriptionCharged Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }
 
 /// Cached X (Twitter) account metrics.
@@ -327,11 +329,38 @@ model Subscription {
   /// Soft-delete marker: non-null means the record is logically deleted.
   deletedAt     DateTime?
 
-  webhookDeliveries WebhookDelivery[]
-
   @@index([tipperId])
   @@index([creatorId])
   @@index([nextChargeAt])
+}
+
+/// Lifecycle status of a webhook subscription.
+enum WebhookSubscriptionStatus {
+  ACTIVE
+  DISABLED
+}
+
+/// A consumer-registered HTTP endpoint that receives signed event payloads
+/// (issue #997). The `secret` is generated on creation and used to compute an
+/// HMAC-SHA256 signature for every outgoing delivery so consumers can verify
+/// payload authenticity.
+model WebhookSubscription {
+  id        String                    @id @default(cuid())
+  ownerId   String
+  owner     User                      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  url       String
+  secret    String
+  /// Event types this subscription receives, e.g. "tip.received".
+  events    String[]
+  status    WebhookSubscriptionStatus @default(ACTIVE)
+  createdAt DateTime                  @default(now())
+  updatedAt DateTime                  @updatedAt
+  /// Soft-delete marker: non-null means the record is logically deleted.
+  deletedAt DateTime?
+
+  deliveries WebhookDelivery[]
+
+  @@index([ownerId])
 }
 
 /// Delivery state of a single webhook notification attempt.
@@ -341,12 +370,12 @@ enum WebhookDeliveryStatus {
   FAILED
 }
 
-/// A single delivery attempt of a subscription billing event to a webhook
-/// consumer (e.g. notifying an integrator that a charge succeeded or failed).
+/// A single delivery attempt of an event payload to a webhook subscription's
+/// URL (e.g. notifying an integrator that a tip was received).
 model WebhookDelivery {
   id             String                @id @default(cuid())
   subscriptionId String
-  subscription   Subscription          @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  subscription   WebhookSubscription   @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
   status         WebhookDeliveryStatus @default(PENDING)
   responseCode   Int?
   attempts       Int                   @default(0)

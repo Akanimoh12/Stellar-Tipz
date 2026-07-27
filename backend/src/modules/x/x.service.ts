@@ -6,6 +6,7 @@ import {
   NotFoundError,
   ServiceUnavailableError,
 } from "../../common/errors/AppError.js";
+import { xCircuitBreaker } from "./x.circuit-breaker.js";
 import type {
   XAccountMetrics,
   XApiUserResponse,
@@ -13,15 +14,44 @@ import type {
 } from "./x.types.js";
 
 /**
- * X API client for fetching user metrics.
+ * X API client for fetching user metrics with rate limit handling,
+ * exponential backoff retry, and circuit breaker.
  */
 class XApiClient {
   private baseUrl: string;
   private bearerToken?: string;
+  private readonly maxRetries = 3;
+  private readonly baseDelayMs = 1_000;
+  private readonly maxDelayMs = 30_000;
 
   constructor() {
     this.baseUrl = env.X_API_BASE_URL;
     this.bearerToken = env.X_API_BEARER_TOKEN;
+  }
+
+  private computeBackoffDelay(
+    attempt: number,
+    responseHeaders?: Headers,
+  ): number {
+    if (responseHeaders) {
+      const retryAfter = responseHeaders.get("retry-after");
+      if (retryAfter) {
+        return parseInt(retryAfter, 10) * 1000;
+      }
+      const reset = responseHeaders.get("x-rate-limit-reset");
+      if (reset) {
+        const resetMs = parseInt(reset, 10) * 1000;
+        const wait = resetMs - Date.now();
+        if (wait > 0) {
+          return wait + 1_000;
+        }
+      }
+    }
+    const jitter = Math.random() * 1_000;
+    return Math.min(
+      this.baseDelayMs * Math.pow(2, attempt) + jitter,
+      this.maxDelayMs,
+    );
   }
 
   /**
@@ -35,42 +65,74 @@ class XApiClient {
       throw new ServiceUnavailableError("X API bearer token not configured");
     }
 
+    return xCircuitBreaker.call(async () => {
+      let lastError: unknown;
+
+      for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+        try {
+          return await this.executeFetch(handle, attempt);
+        } catch (error) {
+          lastError = error;
+          if (
+            error instanceof NotFoundError ||
+            error instanceof BadRequestError
+          ) {
+            throw error;
+          }
+          if (attempt < this.maxRetries) {
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      throw lastError;
+    });
+  }
+
+  private async executeFetch(
+    handle: string,
+    attempt: number,
+  ): Promise<XApiUserResponse> {
     const url = `${this.baseUrl}/users/by/username/${handle}?user.fields=public_metrics`;
 
+    let response: Response;
     try {
-      const response = await fetch(url, {
+      response = await fetch(url, {
         headers: {
-          Authorization: `Bearer ${this.bearerToken}`,
+          Authorization: `Bearer ${this.bearerToken!}`,
           "Content-Type": "application/json",
         },
       });
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new NotFoundError(`X user @${handle} not found`);
-        }
-        if (response.status === 429) {
-          throw new ServiceUnavailableError("X API rate limit exceeded");
-        }
-        if (response.status >= 500) {
-          throw new ServiceUnavailableError("X API is currently unavailable");
-        }
-        throw new BadRequestError(`X API error: ${response.statusText}`);
-      }
-
-      const data = (await response.json()) as XApiUserResponse;
-      return data;
     } catch (error) {
-      if (
-        error instanceof NotFoundError ||
-        error instanceof ServiceUnavailableError ||
-        error instanceof BadRequestError
-      ) {
-        throw error;
-      }
       logger.error({ error, handle }, "Failed to fetch X user data");
       throw new ServiceUnavailableError("Failed to connect to X API");
     }
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new NotFoundError(`X user @${handle} not found`);
+      }
+      if (response.status === 429 && attempt < this.maxRetries) {
+        const delay = this.computeBackoffDelay(attempt, response.headers);
+        logger.warn(
+          { delay, attempt: attempt + 1, maxRetries: this.maxRetries },
+          "X API rate limited, retrying with backoff",
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        throw new ServiceUnavailableError("X API rate limit exceeded");
+      }
+      if (response.status === 429) {
+        throw new ServiceUnavailableError("X API rate limit exceeded");
+      }
+      if (response.status >= 500) {
+        throw new ServiceUnavailableError("X API is currently unavailable");
+      }
+      throw new BadRequestError(`X API error: ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as XApiUserResponse;
+    return data;
   }
 }
 

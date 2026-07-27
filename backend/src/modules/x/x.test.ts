@@ -9,6 +9,7 @@ import {
   ServiceUnavailableError,
   NotFoundError,
 } from "../../common/errors/AppError.js";
+import { xCircuitBreaker } from "./x.circuit-breaker.js";
 
 // Mock fixtures
 const mockXApiResponse = {
@@ -43,9 +44,24 @@ const mockXApiResponseLowActivity = {
 const mockFetch = vi.fn();
 (globalThis as unknown as { fetch: typeof mockFetch }).fetch = mockFetch;
 
+function mockErrorResponses(
+  status: number,
+  statusText: string,
+  count = 4,
+): void {
+  for (let i = 0; i < count; i++) {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status,
+      statusText,
+    });
+  }
+}
+
 describe("X Integration Service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    xCircuitBreaker.reset();
     // Reset env for testing
     process.env.X_API_BEARER_TOKEN = "mock-bearer-token";
     process.env.X_API_BASE_URL = "https://api.twitter.com/2";
@@ -129,11 +145,7 @@ describe("X Integration Service", () => {
     });
 
     it("should throw ServiceUnavailableError when rate limited", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 429,
-        statusText: "Too Many Requests",
-      });
+      mockErrorResponses(429, "Too Many Requests");
 
       await expect(fetchXMetrics("johndoe")).rejects.toThrow(
         ServiceUnavailableError,
@@ -141,11 +153,7 @@ describe("X Integration Service", () => {
     });
 
     it("should throw ServiceUnavailableError when API is down", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 503,
-        statusText: "Service Unavailable",
-      });
+      mockErrorResponses(503, "Service Unavailable");
 
       await expect(fetchXMetrics("johndoe")).rejects.toThrow(
         ServiceUnavailableError,
@@ -171,12 +179,8 @@ describe("X Integration Service", () => {
         },
       });
 
-      // Mock API failure
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 503,
-        statusText: "Service Unavailable",
-      });
+      // Mock API failure - need enough for retries
+      mockErrorResponses(503, "Service Unavailable");
 
       const metrics = await fetchXMetrics("johndoe", { useFallback: true });
 
@@ -196,12 +200,8 @@ describe("X Integration Service", () => {
         },
       });
 
-      // Mock API failure
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 503,
-        statusText: "Service Unavailable",
-      });
+      // Mock API failure - need enough for retries
+      mockErrorResponses(503, "Service Unavailable");
 
       await expect(
         fetchXMetrics("johndoe", { useFallback: false }),
@@ -220,12 +220,8 @@ describe("X Integration Service", () => {
         },
       });
 
-      // Mock API failure
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 503,
-        statusText: "Service Unavailable",
-      });
+      // Mock API failure - need enough for retries
+      mockErrorResponses(503, "Service Unavailable");
 
       // Set maxCacheAge to 1 day
       await expect(
@@ -248,12 +244,8 @@ describe("X Integration Service", () => {
         },
       });
 
-      // Mock API failure
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 503,
-        statusText: "Service Unavailable",
-      });
+      // Mock API failure - need enough for retries
+      mockErrorResponses(503, "Service Unavailable");
 
       const metrics = await fetchXMetrics("johndoe", {
         useFallback: true,
@@ -289,6 +281,51 @@ describe("X Integration Service", () => {
       });
       expect(updated?.followers).toBe(10000);
       expect(updated?.engagement).toBeCloseTo(0.5, 2);
+    });
+
+    it("should retry on rate limit and succeed on retry", async () => {
+      const successResponse = {
+        ok: true,
+        status: 200,
+        json: async () => mockXApiResponse,
+      };
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 429,
+          statusText: "Too Many Requests",
+        })
+        .mockResolvedValueOnce(successResponse);
+
+      const metrics = await fetchXMetrics("johndoe");
+
+      expect(metrics.handle).toBe("johndoe");
+      expect(metrics.followers).toBe(10000);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("should respect retry-after header for backoff timing", async () => {
+      const successResponse = {
+        ok: true,
+        status: 200,
+        json: async () => mockXApiResponse,
+      };
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 429,
+          statusText: "Too Many Requests",
+          headers: new Headers({ "retry-after": "0" }),
+        })
+        .mockResolvedValueOnce(successResponse);
+
+      const metrics = await fetchXMetrics("johndoe");
+
+      expect(metrics.handle).toBe("johndoe");
+      expect(metrics.followers).toBe(10000);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
   });
 

@@ -12,9 +12,13 @@ import type {
 } from './notifications.types.js';
 
 /** Maps a notification type to the preference field gating its delivery. */
-const PREFERENCE_FIELD_BY_TYPE: Record<NotificationType, 'tipReceived' | 'goalReached'> = {
+const PREFERENCE_FIELD_BY_TYPE: Record<
+  NotificationType,
+  'tipReceived' | 'goalReached' | 'subscriptionCharged'
+> = {
   tip_received: 'tipReceived',
   goal_reached: 'goalReached',
+  subscription_charged: 'subscriptionCharged',
 };
 
 function formatNotification(n: {
@@ -122,11 +126,13 @@ export async function getUnreadCount(userId: string): Promise<UnreadCountRespons
 function formatPreferences(pref: {
   tipReceived: boolean;
   goalReached: boolean;
+  subscriptionCharged: boolean;
   updatedAt: Date;
 }): NotificationPreferenceResponse {
   return {
     tipReceived: pref.tipReceived,
     goalReached: pref.goalReached,
+    subscriptionCharged: pref.subscriptionCharged,
     updatedAt: pref.updatedAt.toISOString(),
   };
 }
@@ -135,7 +141,12 @@ function formatPreferences(pref: {
 export async function getPreferences(userId: string): Promise<NotificationPreferenceResponse> {
   const pref = await prisma.notificationPreference.findUnique({ where: { userId } });
   if (!pref) {
-    return { tipReceived: true, goalReached: true, updatedAt: new Date(0).toISOString() };
+    return {
+      tipReceived: true,
+      goalReached: true,
+      subscriptionCharged: true,
+      updatedAt: new Date(0).toISOString(),
+    };
   }
   return formatPreferences(pref);
 }

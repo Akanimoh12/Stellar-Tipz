@@ -314,6 +314,27 @@ describe('projectEvent — subscriptions (#900)', () => {
     await projectEvent(event('sub_created', [ADDR_A, ADDR_B, 'nope', 7]));
     expect(mockSubUpsert).not.toHaveBeenCalled();
   });
+
+  it('notifies the creator of a new charge (#965)', async () => {
+    mockEventLogFindFirst.mockResolvedValue(null);
+    await projectEvent(event('sub_exec', [ADDR_A, ADDR_B, '500']));
+    expect(mockCreateNotification).toHaveBeenCalledWith('u_' + ADDR_B, 'subscription_charged', {
+      tipperId: 'u_' + ADDR_A,
+      amountStroops: '500',
+    });
+  });
+
+  it('does not re-notify when replaying an already-logged charge (#965)', async () => {
+    mockEventLogFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'existing' });
+    await projectEvent(event('sub_exec', [ADDR_A, ADDR_B, '500']));
+    await projectEvent(event('sub_exec', [ADDR_A, ADDR_B, '500']));
+    expect(mockCreateNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips notifying when the charge event is unparseable', async () => {
+    await projectEvent(event('sub_exec', [ADDR_A, ADDR_B, 'nope']));
+    expect(mockCreateNotification).not.toHaveBeenCalled();
+  });
 });
 
 describe('projectEvent — tip idempotency (#892)', () => {

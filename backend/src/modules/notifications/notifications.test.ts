@@ -651,13 +651,94 @@ describe('PATCH /api/v1/notifications/:id/read', () => {
     expect(res.body.data.readAt).toBe(readAt.toISOString());
   });
 
-  it('returns 404 when the notification does not exist', async () => {
+  it('returns 404 for unknown notification', async () => {
     mockFindFirst.mockResolvedValue(null);
 
     const app = createApp();
+    const token = mockAuth();
     const res = await request(app)
       .patch('/api/v1/notifications/unknown/read')
-      .set('Authorization', authHeader());
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 401 without auth', async () => {
+    const app = createApp();
+    const res = await request(app).patch('/api/v1/notifications/notif-1/read');
+
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('POST /api/v1/notifications/:id/read (#960)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('marks notification as read via POST', async () => {
+    const createdAt = new Date('2026-07-24T12:00:00.000Z');
+    mockFindFirst.mockResolvedValue({
+      id: 'notif-1',
+      type: 'tip_received',
+      payload: {},
+      readAt: null,
+      createdAt,
+    });
+    const readAt = new Date('2026-07-25T12:00:00.000Z');
+    mockUpdate.mockResolvedValue({
+      id: 'notif-1',
+      type: 'tip_received',
+      payload: {},
+      readAt,
+      createdAt,
+    });
+
+    const app = createApp();
+    const token = mockAuth();
+    const res = await request(app)
+      .post('/api/v1/notifications/notif-1/read')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.readAt).toBe(readAt.toISOString());
+    expect(mockFindFirst).toHaveBeenCalledWith({
+      where: { id: 'notif-1', userId: 'user-1', deletedAt: null },
+    });
+    expect(mockUpdate).toHaveBeenCalledWith({
+      where: { id: 'notif-1' },
+      data: { readAt: expect.any(Date) },
+    });
+  });
+
+  it('returns 404 for unknown notification', async () => {
+    mockFindFirst.mockResolvedValue(null);
+
+    const app = createApp();
+    const token = mockAuth();
+    const res = await request(app)
+      .post('/api/v1/notifications/unknown/read')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('returns 401 without auth', async () => {
+    const app = createApp();
+    const res = await request(app).post('/api/v1/notifications/notif-1/read');
+
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 for notification owned by another user', async () => {
+    mockFindFirst.mockResolvedValue(null);
+
+    const app = createApp();
+    const token = mockAuth();
+    const res = await request(app)
+      .post('/api/v1/notifications/notif-other/read')
+      .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(404);
   });
@@ -682,18 +763,6 @@ describe('POST /api/v1/notifications/read-all', () => {
     expect(res.body.data.count).toBe(3);
   });
 
-  it('returns 0 when nothing to mark', async () => {
-    mockUpdateMany.mockResolvedValue({ count: 0 });
-
-    const app = createApp();
-    const res = await request(app)
-      .post('/api/v1/notifications/read-all')
-      .set('Authorization', authHeader());
-
-    expect(res.status).toBe(200);
-    expect(res.body.data.count).toBe(0);
-  });
-
   it('returns 401 without auth', async () => {
     const app = createApp();
     const res = await request(app).post('/api/v1/notifications/read-all');
@@ -702,7 +771,199 @@ describe('POST /api/v1/notifications/read-all', () => {
   });
 });
 
-// ── GET /api/v1/notifications/unread-count ────────────────────────────────
+describe('getUnreadCount', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns the unread, non-deleted count for the user', async () => {
+    mockCount.mockResolvedValue(4);
+
+    const result = await getUnreadCount('user-1');
+
+    expect(result).toEqual({ count: 4 });
+    expect(mockCount).toHaveBeenCalledWith({
+      where: { userId: 'user-1', readAt: null, deletedAt: null },
+    });
+  });
+});
+
+describe('getPreferences', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('defaults to all-enabled when no preference row exists', async () => {
+    mockPrefFindUnique.mockResolvedValue(null);
+
+    const result = await getPreferences('user-1');
+
+    expect(result.tipReceived).toBe(true);
+    expect(result.goalReached).toBe(true);
+    expect(result.subscriptionCharged).toBe(true);
+  });
+
+  it('returns the stored preference row when it exists', async () => {
+    const updatedAt = new Date('2026-07-24T12:00:00.000Z');
+    mockPrefFindUnique.mockResolvedValue({
+      tipReceived: false,
+      goalReached: true,
+      subscriptionCharged: false,
+      updatedAt,
+    });
+
+    const result = await getPreferences('user-1');
+
+    expect(result).toEqual({
+      tipReceived: false,
+      goalReached: true,
+      subscriptionCharged: false,
+      updatedAt: updatedAt.toISOString(),
+    });
+  });
+});
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.count).toBe(0);
+  });
+
+  it('upserts the preference row with the given patch', async () => {
+    const updatedAt = new Date('2026-07-25T12:00:00.000Z');
+    mockPrefUpsert.mockResolvedValue({
+      tipReceived: false,
+      goalReached: true,
+      subscriptionCharged: true,
+      updatedAt,
+    });
+
+    const result = await updatePreferences('user-1', { tipReceived: false });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('upserts the subscriptionCharged preference', async () => {
+    const updatedAt = new Date('2026-07-25T12:00:00.000Z');
+    mockPrefUpsert.mockResolvedValue({
+      tipReceived: true,
+      goalReached: true,
+      subscriptionCharged: false,
+      updatedAt,
+    });
+
+    const result = await updatePreferences('user-1', { subscriptionCharged: false });
+
+    expect(result.subscriptionCharged).toBe(false);
+    expect(mockPrefUpsert).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+      create: { userId: 'user-1', subscriptionCharged: false },
+      update: { subscriptionCharged: false },
+    });
+  });
+});
+
+describe('createNotification', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('creates and emits a notification when no preference row exists', async () => {
+    mockPrefFindUnique.mockResolvedValue(null);
+    const createdAt = new Date('2026-07-25T12:00:00.000Z');
+    mockCreate.mockResolvedValue({
+      id: 'notif-1',
+      type: 'tip_received',
+      payload: { amount: '100' },
+      readAt: null,
+      createdAt,
+    });
+
+    const result = await createNotification('user-1', 'tip_received', { amount: '100' });
+
+    expect(result).not.toBeNull();
+    expect(mockCreate).toHaveBeenCalledWith({
+      data: { userId: 'user-1', type: 'tip_received', payload: { amount: '100' } },
+    });
+    expect(mockEmitNotificationCreated).toHaveBeenCalledWith({
+      id: 'notif-1',
+      userId: 'user-1',
+      type: 'tip_received',
+      payload: { amount: '100' },
+      createdAt: createdAt.toISOString(),
+    });
+  });
+
+  it('skips creation when the user disabled this notification type', async () => {
+    mockPrefFindUnique.mockResolvedValue({ tipReceived: false, goalReached: true });
+
+    const result = await createNotification('user-1', 'tip_received', { amount: '100' });
+
+    expect(result).toBeNull();
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockEmitNotificationCreated).not.toHaveBeenCalled();
+  });
+
+  it('creates when the notification type is still enabled', async () => {
+    mockPrefFindUnique.mockResolvedValue({ tipReceived: false, goalReached: true });
+    const createdAt = new Date('2026-07-25T12:00:00.000Z');
+    mockCreate.mockResolvedValue({
+      id: 'notif-2',
+      type: 'goal_reached',
+      payload: {},
+      readAt: null,
+      createdAt,
+    });
+
+    const result = await createNotification('user-1', 'goal_reached', {});
+
+    expect(result).not.toBeNull();
+    expect(mockCreate).toHaveBeenCalled();
+  });
+
+  it('creates and emits a subscription_charged notification (#965)', async () => {
+    mockPrefFindUnique.mockResolvedValue(null);
+    const createdAt = new Date('2026-07-25T12:00:00.000Z');
+    mockCreate.mockResolvedValue({
+      id: 'notif-3',
+      type: 'subscription_charged',
+      payload: { tipperId: 'user-2', amountStroops: '500' },
+      readAt: null,
+      createdAt,
+    });
+
+    const result = await createNotification('user-1', 'subscription_charged', {
+      tipperId: 'user-2',
+      amountStroops: '500',
+    });
+
+    expect(result).not.toBeNull();
+    expect(mockCreate).toHaveBeenCalledWith({
+      data: {
+        userId: 'user-1',
+        type: 'subscription_charged',
+        payload: { tipperId: 'user-2', amountStroops: '500' },
+      },
+    });
+    expect(mockEmitNotificationCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'notif-3', type: 'subscription_charged' }),
+    );
+  });
+
+  it('skips creation when the user disabled subscription_charged notifications', async () => {
+    mockPrefFindUnique.mockResolvedValue({
+      tipReceived: true,
+      goalReached: true,
+      subscriptionCharged: false,
+    });
+
+    const result = await createNotification('user-1', 'subscription_charged', {
+      tipperId: 'user-2',
+      amountStroops: '500',
+    });
+
+    expect(result).toBeNull();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
 
 describe('GET /api/v1/notifications/unread-count', () => {
   beforeEach(() => {

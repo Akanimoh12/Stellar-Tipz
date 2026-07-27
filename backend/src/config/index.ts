@@ -24,6 +24,10 @@ export const config = {
     redisUrl: env.REDIS_URL,
   },
 
+  realtime: {
+    redisAdapterEnabled: env.REALTIME_REDIS_ADAPTER_ENABLED,
+  },
+
   auth: {
     jwtSecret: env.JWT_SECRET,
     jwtExpiresIn: env.JWT_EXPIRES_IN,
@@ -56,6 +60,10 @@ export const config = {
 
   credit: {
     recomputeCron: env.CREDIT_RECOMPUTE_CRON,
+  },
+
+  analytics: {
+    dailyCron: env.ANALYTICS_DAILY_CRON,
   },
 
   withdrawals: {
