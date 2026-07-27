@@ -1,26 +1,36 @@
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../app.js';
-import { getDailyAnalytics } from './analytics.service.js';
+import { getDailyAnalytics, computeDailyAnalytics } from './analytics.service.js';
 
-const { mockFindMany, mockCount } = vi.hoisted(() => ({
+const { mockFindMany, mockCount, mockTipFindMany, mockUserFindMany, mockUpsert } = vi.hoisted(() => ({
   mockFindMany: vi.fn(),
   mockCount: vi.fn(),
+  mockTipFindMany: vi.fn(),
+  mockUserFindMany: vi.fn(),
+  mockUpsert: vi.fn(),
 }));
 
 vi.mock('../../db/prisma.js', () => ({
   prisma: {
-    analyticsDaily: { findMany: mockFindMany, count: mockCount },
+    analyticsDaily: { findMany: mockFindMany, count: mockCount, upsert: mockUpsert },
+    tip: { findMany: mockTipFindMany },
+    user: { findMany: mockUserFindMany },
     $disconnect: vi.fn(),
   },
 }));
 
+function resetMocks() {
+  vi.clearAllMocks();
+  mockFindMany.mockResolvedValue([]);
+  mockCount.mockResolvedValue(0);
+  mockTipFindMany.mockResolvedValue([]);
+  mockUserFindMany.mockResolvedValue([]);
+  mockUpsert.mockRejectedValue(new Error('unexpected call'));
+}
+
 describe('GET /api/v1/analytics/daily', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockFindMany.mockResolvedValue([]);
-    mockCount.mockResolvedValue(0);
-  });
+  beforeEach(resetMocks);
 
   it('returns 200 with empty data by default', async () => {
     const app = createApp();
@@ -90,9 +100,7 @@ describe('GET /api/v1/analytics/daily', () => {
 });
 
 describe('GET /api/v1/analytics/summary', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
+  beforeEach(resetMocks);
 
   it('returns aggregated summary', async () => {
     mockFindMany.mockResolvedValue([
@@ -147,9 +155,7 @@ describe('GET /api/v1/analytics/summary', () => {
 });
 
 describe('getDailyAnalytics service', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
+  beforeEach(resetMocks);
 
   it('reports hasMore when additional pages exist', async () => {
     mockFindMany.mockResolvedValue([{ date: new Date(), totalTips: 1, totalVolume: BigInt(0), newUsers: 1, activeUsers: 1 }]);
@@ -159,5 +165,90 @@ describe('getDailyAnalytics service', () => {
 
     expect(result.pagination.hasMore).toBe(true);
     expect(result.pagination.total).toBe(10);
+  });
+});
+
+describe('computeDailyAnalytics', () => {
+  beforeEach(resetMocks);
+
+  it('computes analytics from tips and users for a given date', async () => {
+    mockTipFindMany.mockImplementation(async ({ select, distinct }: any) => {
+      if (select?.amountStroops) {
+        return [
+          { amountStroops: BigInt(100000000) },
+          { amountStroops: BigInt(200000000) },
+          { amountStroops: BigInt(150000000) },
+        ];
+      }
+      if (distinct?.includes('fromAddress')) {
+        return [{ fromAddress: 'GAAAA…' }, { fromAddress: 'GBBBB…' }];
+      }
+      if (distinct?.includes('toAddress')) {
+        return [{ toAddress: 'GCCCC…' }, { toAddress: 'GAAAA…' }];
+      }
+      return [];
+    });
+
+    mockUserFindMany.mockResolvedValue([
+      { id: 'user-1' },
+      { id: 'user-2' },
+    ]);
+
+    mockUpsert.mockResolvedValue({
+      date: new Date('2026-07-24T00:00:00.000Z'),
+      totalTips: 3,
+      totalVolume: BigInt(450000000),
+      newUsers: 2,
+      activeUsers: 3,
+    });
+
+    const result = await computeDailyAnalytics('2026-07-24');
+
+    expect(result).toEqual({
+      date: '2026-07-24',
+      totalTips: 3,
+      totalVolume: '450000000',
+      newUsers: 2,
+      activeUsers: 3,
+    });
+
+    expect(mockUpsert).toHaveBeenCalledWith({
+      where: { date: new Date('2026-07-24T00:00:00.000Z') },
+      create: expect.objectContaining({
+        totalTips: 3,
+        totalVolume: BigInt(450000000),
+        newUsers: 2,
+        activeUsers: 3,
+      }),
+      update: expect.objectContaining({
+        totalTips: 3,
+        totalVolume: BigInt(450000000),
+        newUsers: 2,
+        activeUsers: 3,
+      }),
+    });
+  });
+
+  it('handles days with no tips or users', async () => {
+    mockTipFindMany.mockResolvedValue([]);
+    mockUserFindMany.mockResolvedValue([]);
+
+    mockUpsert.mockResolvedValue({
+      date: new Date('2026-07-24T00:00:00.000Z'),
+      totalTips: 0,
+      totalVolume: BigInt(0),
+      newUsers: 0,
+      activeUsers: 0,
+    });
+
+    const result = await computeDailyAnalytics('2026-07-24');
+
+    expect(result).toEqual({
+      date: '2026-07-24',
+      totalTips: 0,
+      totalVolume: '0',
+      newUsers: 0,
+      activeUsers: 0,
+    });
   });
 });
