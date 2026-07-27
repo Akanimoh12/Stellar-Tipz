@@ -49,6 +49,8 @@ const envSchema = z.object({
   INDEXER_START_LEDGER: z.coerce.number().optional(),
 
   CREDIT_RECOMPUTE_CRON: z.string().default('0 */6 * * *'),
+  /** Cron expression for the daily analytics rollup job. Runs at 00:05 UTC daily by default. */
+  ANALYTICS_DAILY_CRON: z.string().default('5 0 * * *'),
   /** Credit score weights (must sum to <= 100) */
   CREDIT_SCORE_WEIGHT_BASE: z.coerce.number().int().min(0).max(100).optional(),
   CREDIT_SCORE_WEIGHT_TIP: z.coerce.number().int().min(0).max(100).optional(),

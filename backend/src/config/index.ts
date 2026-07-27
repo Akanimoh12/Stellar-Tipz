@@ -62,6 +62,10 @@ export const config = {
     recomputeCron: env.CREDIT_RECOMPUTE_CRON,
   },
 
+  analytics: {
+    dailyCron: env.ANALYTICS_DAILY_CRON,
+  },
+
   withdrawals: {
     minAmountStroops: env.WITHDRAWAL_MIN_AMOUNT_STROOPS,
     feeBps: env.WITHDRAWAL_FEE_BPS,
