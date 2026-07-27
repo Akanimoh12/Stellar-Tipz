@@ -69,6 +69,8 @@ const envSchema = z.object({
   CREDIT_SCORE_CAP_TIP_SUB: z.coerce.number().int().min(0).optional(),
   /** Credit score cache TTL in seconds */
   CREDIT_SCORE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional(),
+  /** Search results cache TTL in seconds */
+  SEARCH_CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional(),
   /** Minimum withdrawal amount, in stroops (1 XLM = 10,000,000 stroops). */
   WITHDRAWAL_MIN_AMOUNT_STROOPS: z.coerce.number().int().positive().default(10_000_000),
   /** Withdrawal fee, in basis points (1/100th of a percent). 200 = 2%. */
