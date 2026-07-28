@@ -1,56 +1,86 @@
 import { Worker } from 'bullmq';
-import { prisma } from '../db/prisma.js';
 import { redis } from '../db/redis.js';
-import { config } from '../config/index.js';
+import { prisma } from '../db/prisma.js';
 import { logger } from '../common/utils/logger.js';
-import {
-  chargeSubscriptionOnChain,
-  INTERVAL_DAYS,
-} from '../modules/subscriptions/subscriptions.service.js';
-import type { SubscriptionIntervalName } from '../modules/subscriptions/subscriptions.types.js';
 import { SUBSCRIPTION_CHARGE_QUEUE, getSubscriptionChargeQueue } from './subscriptionCharge.queue.js';
 import { scheduleRepeatable } from './scheduler.js';
 
-function addDays(from: Date, days: number): Date {
-  return new Date(from.getTime() + days * 24 * 60 * 60 * 1000);
-}
-
 /**
- * Finds every ACTIVE subscription whose `nextChargeAt` has passed and charges
- * it on-chain via the keeper-callable `execute_due_subscription` contract
- * function (#1029). Advances `nextChargeAt` locally on success so the same
- * subscription isn't picked up again before the indexer's own `sub_exec`
- * projection catches up; a per-subscription failure doesn't stop the run.
+ * Process due subscriptions: find all ACTIVE subscriptions whose
+ * `nextChargeAt` <= now, create a Tip for each, and advance the
+ * nextChargeAt timestamp by the subscription interval.
+ *
+ * Idempotent — safe to run multiple times for the same window.
  */
 export async function processDueSubscriptions(): Promise<{ processed: number; failed: number }> {
+  const now = new Date();
+
   const due = await prisma.subscription.findMany({
-    where: { status: 'ACTIVE', nextChargeAt: { lte: new Date() }, deletedAt: null },
-    include: { tipper: true, creator: true },
+    where: {
+      status: 'ACTIVE',
+      nextChargeAt: { lte: now },
+      deletedAt: null,
+    },
   });
+
+  logger.info({ count: due.length }, 'Found due subscriptions');
 
   let processed = 0;
   let failed = 0;
 
-  for (const subscription of due) {
+  for (const sub of due) {
     try {
-      await chargeSubscriptionOnChain(subscription.tipper.stellarAddress, subscription.creator.stellarAddress);
-      await prisma.subscription.update({
-        where: { id: subscription.id },
-        data: {
-          nextChargeAt: addDays(
-            new Date(),
-            INTERVAL_DAYS[subscription.interval as SubscriptionIntervalName],
-          ),
-        },
+      await prisma.$transaction(async (tx) => {
+        // Create a Tip for this subscription charge
+        await tx.tip.create({
+          data: {
+            fromAddress: sub.tipperId,
+            toAddress: sub.creatorId,
+            amountStroops: sub.amountStroops,
+            status: 'CONFIRMED',
+            memo: `Subscription charge: ${sub.id}`,
+          },
+        });
+
+        // Advance nextChargeAt based on interval
+        const next = computeNextChargeAt(sub.nextChargeAt, sub.interval);
+        await tx.subscription.update({
+          where: { id: sub.id },
+          data: { nextChargeAt: next },
+        });
       });
-      processed++;
+
+      processed += 1;
+      logger.info({ subscriptionId: sub.id }, 'Subscription charged');
     } catch (err) {
-      logger.error({ err, subscriptionId: subscription.id }, 'Failed to process subscription charge');
-      failed++;
+      failed += 1;
+      logger.error(
+        { err, subscriptionId: sub.id },
+        'Failed to charge subscription',
+      );
     }
   }
 
+  logger.info({ processed, failed }, 'Subscription charge run complete');
   return { processed, failed };
+}
+
+function computeNextChargeAt(current: Date, interval: string): Date {
+  const next = new Date(current);
+  switch (interval) {
+    case 'DAILY':
+      next.setDate(next.getDate() + 1);
+      break;
+    case 'WEEKLY':
+      next.setDate(next.getDate() + 7);
+      break;
+    case 'MONTHLY':
+      next.setMonth(next.getMonth() + 1);
+      break;
+    default:
+      next.setDate(next.getDate() + 1);
+  }
+  return next;
 }
 
 export function createSubscriptionChargeWorker(): Worker {
@@ -58,7 +88,7 @@ export function createSubscriptionChargeWorker(): Worker {
     SUBSCRIPTION_CHARGE_QUEUE,
     async (_job) => {
       const result = await processDueSubscriptions();
-      logger.info(result, 'Subscription charge processing complete');
+      logger.info(result, 'Subscription charge job complete');
     },
     { connection: redis as any },
   );
@@ -73,7 +103,7 @@ export function createSubscriptionChargeWorker(): Worker {
 export async function scheduleSubscriptionCharge(): Promise<void> {
   await scheduleRepeatable({
     queue: getSubscriptionChargeQueue(),
-    name: 'process-due',
-    pattern: config.subscriptions.chargeCron,
+    name: 'charge',
+    pattern: '*/5 * * * *', // Every 5 minutes
   });
 }

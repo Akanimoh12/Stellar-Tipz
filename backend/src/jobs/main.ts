@@ -38,11 +38,11 @@ export async function bootstrapJobs(): Promise<void> {
   });
   await scheduleAnalyticsDaily();
 
-  const subscriptionChargeWorker = createSubscriptionChargeWorker();
+  const subscriptionWorker = createSubscriptionChargeWorker();
   registerClosable({
     name: 'SubscriptionChargeWorker',
     close: async () => {
-      await subscriptionChargeWorker.close();
+      await subscriptionWorker.close();
     },
   });
   await scheduleSubscriptionCharge();
