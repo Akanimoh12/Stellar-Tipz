@@ -8,6 +8,8 @@ import {
   scheduleCreditRecompute,
   createAnalyticsDailyWorker,
   scheduleAnalyticsDaily,
+  createSubscriptionChargeWorker,
+  scheduleSubscriptionCharge,
 } from './index.js';
 
 /**
@@ -35,6 +37,15 @@ export async function bootstrapJobs(): Promise<void> {
     },
   });
   await scheduleAnalyticsDaily();
+
+  const subscriptionWorker = createSubscriptionChargeWorker();
+  registerClosable({
+    name: 'SubscriptionChargeWorker',
+    close: async () => {
+      await subscriptionWorker.close();
+    },
+  });
+  await scheduleSubscriptionCharge();
 
   logger.info('Jobs process started');
 
