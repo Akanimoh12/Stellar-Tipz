@@ -25,6 +25,7 @@ vi.mock('../config/index.js', () => ({
   config: {
     credit: { recomputeCron: '0 */6 * * *' },
     analytics: { dailyCron: '5 0 * * *' },
+    subscriptions: { chargeCron: '0 * * * *' },
   },
 }));
 
@@ -70,19 +71,20 @@ describe('bootstrapJobs', () => {
     expect(closableNames).toContain('Redis');
   });
 
-  it('registers credit and analytics workers as closable', async () => {
+  it('registers credit, analytics, and subscription-charge workers as closable', async () => {
     const { bootstrapJobs } = await import('./main.js');
     await bootstrapJobs();
 
     const closableNames = mockRegisterClosable.mock.calls.map((c: any[]) => c[0].name);
     expect(closableNames).toContain('CreditRecomputeWorker');
     expect(closableNames).toContain('AnalyticsDailyWorker');
+    expect(closableNames).toContain('SubscriptionChargeWorker');
   });
 
-  it('schedules both credit recompute and analytics daily jobs', async () => {
+  it('schedules credit recompute, analytics daily, and subscription-charge jobs', async () => {
     const { bootstrapJobs } = await import('./main.js');
     await bootstrapJobs();
 
-    expect(mockScheduleRepeatable).toHaveBeenCalledTimes(2);
+    expect(mockScheduleRepeatable).toHaveBeenCalledTimes(3);
   });
 });
