@@ -1,3 +1,6 @@
+export { getQueue } from './queueFactory.js';
+export { scheduleRepeatable } from './scheduler.js';
+
 export {
   CREDIT_RECOMPUTE_QUEUE,
   getCreditRecomputeQueue,
@@ -17,3 +20,5 @@ export {
   createAnalyticsDailyWorker,
   scheduleAnalyticsDaily,
 } from './analyticsDaily.worker.js';
+
+export { bootstrapJobs } from './main.js';
