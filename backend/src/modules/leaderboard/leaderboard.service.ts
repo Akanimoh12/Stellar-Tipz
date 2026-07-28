@@ -1,207 +1,164 @@
-import { prisma } from "../../db/prisma.js";
-import { logger } from "../../common/utils/logger.js";
-import { computeCreditScore } from "../credit/credit.service.js";
+import { prisma } from '../../db/prisma.js';
+import { NotFoundError } from '../../common/errors/AppError.js';
+import type { SnapshotPeriod, TimeWindow } from './leaderboard.schema.js';
 import type {
   LeaderboardEntry,
   LeaderboardResponse,
-  LeaderboardPeriod,
-  LeaderboardVariant,
-} from "./leaderboard.types.js";
+  LeaderboardSnapshotResult,
+} from './leaderboard.types.js';
 
-// ── Tips leaderboard ──────────────────────────────────────────────────────────
+const WINDOW_MS: Record<Exclude<TimeWindow, 'all'>, number> = {
+  '24h': 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+};
 
-/**
- * Returns leaderboard entries ranked by total tips received (stroops).
- * Uses pre-computed LeaderboardSnapshot rows for WEEKLY / MONTHLY views;
- * falls back to a live aggregate for ALL_TIME.
- *
- * Issue #933
- */
-async function getTipsLeaderboard(
-  period: LeaderboardPeriod,
-  page: number,
-  limit: number,
-): Promise<{ entries: LeaderboardEntry[]; total: number }> {
-  if (period !== "ALL_TIME") {
-    // Use periodic snapshots for fast pre-aggregated reads.
-    const skip = (page - 1) * limit;
+const SNAPSHOT_WINDOW_MS: Record<Exclude<SnapshotPeriod, 'ALL_TIME'>, number> = {
+  WEEKLY: 7 * 24 * 60 * 60 * 1000,
+  MONTHLY: 30 * 24 * 60 * 60 * 1000,
+};
 
-    const [snapshots, total] = await Promise.all([
-      prisma.leaderboardSnapshot.findMany({
-        where: { period },
-        orderBy: { rank: "asc" },
-        skip,
-        take: limit,
-        include: {
-          user: {
-            select: {
-              id: true,
-              stellarAddress: true,
-              username: true,
-              displayName: true,
-            },
-          },
-        },
-      }),
-      prisma.leaderboardSnapshot.count({ where: { period } }),
-    ]);
+function getSince(window: TimeWindow, now = new Date()): Date | undefined {
+  if (window === 'all') return undefined;
+  return new Date(now.getTime() - WINDOW_MS[window]);
+}
 
-    const entries: LeaderboardEntry[] = snapshots.map((s) => ({
-      rank: s.rank,
-      userId: s.user.id,
-      stellarAddress: s.user.stellarAddress,
-      username: s.user.username,
-      displayName: s.user.displayName,
-      totalTipsStroops: s.totalTips.toString(),
-    }));
+function getSnapshotSince(period: SnapshotPeriod, now = new Date()): Date | undefined {
+  if (period === 'ALL_TIME') return undefined;
+  return new Date(now.getTime() - SNAPSHOT_WINDOW_MS[period]);
+}
 
-    return { entries, total };
-  }
-
-  // ALL_TIME: aggregate directly from Tip table.
-  const skip = (page - 1) * limit;
-
-  // Group tips by recipient address, sum amounts.
-  const grouped = await prisma.tip.groupBy({
-    by: ["toAddress"],
+async function getRankedRows(since: Date | undefined, limit?: number, offset?: number) {
+  return prisma.tip.groupBy({
+    by: ['toAddress'],
+    where: {
+      status: 'CONFIRMED',
+      ...(since ? { createdAt: { gte: since } } : {}),
+    },
     _sum: { amountStroops: true },
-    orderBy: { _sum: { amountStroops: "desc" } },
-    skip,
-    take: limit,
+    orderBy: { _sum: { amountStroops: 'desc' } },
+    ...(limit === undefined ? {} : { take: limit }),
+    ...(offset === undefined ? {} : { skip: offset }),
+  });
+}
+
+async function countRankedRows(since: Date | undefined): Promise<number> {
+  const rows = await prisma.tip.groupBy({
+    by: ['toAddress'],
+    where: {
+      status: 'CONFIRMED',
+      ...(since ? { createdAt: { gte: since } } : {}),
+    },
   });
 
-  const total = (await prisma.tip.groupBy({ by: ["toAddress"] })).length;
-
-  // Resolve users by stellarAddress for display fields.
-  const entries: LeaderboardEntry[] = await Promise.all(
-    grouped.map(async (row, index) => {
-      const user = await prisma.user.findUnique({
-        where: { stellarAddress: row.toAddress },
-        select: { id: true, stellarAddress: true, username: true, displayName: true },
-      });
-      return {
-        rank: skip + index + 1,
-        userId: user?.id ?? "",
-        stellarAddress: row.toAddress,
-        username: user?.username ?? null,
-        displayName: user?.displayName ?? null,
-        totalTipsStroops: (row._sum.amountStroops ?? 0n).toString(),
-      };
-    }),
-  );
-
-  return { entries, total };
+  return rows.length;
 }
 
-// ── Credit score leaderboard (issue #933 variant) ────────────────────────────
+async function hydrateEntries(
+  rows: Awaited<ReturnType<typeof getRankedRows>>,
+  offset: number,
+): Promise<LeaderboardEntry[]> {
+  const addresses = rows.map((row) => row.toAddress);
+  const users = await prisma.user.findMany({
+    where: { stellarAddress: { in: addresses } },
+    select: { id: true, username: true, stellarAddress: true },
+  });
+  const userMap = new Map(users.map((user) => [user.stellarAddress, user]));
 
-/**
- * Returns leaderboard entries ranked by live credit score (descending).
- * Scores are computed on the fly using the credit formula (issue #920/#922).
- *
- * NOTE: This is intentionally simple – a production system would cache scores
- * in a CreditScore table and run a background recompute job (issue #919).
- *
- * Issue #933
- */
-async function getCreditLeaderboard(
-  page: number,
+  return rows.map((row, index) => {
+    const user = userMap.get(row.toAddress);
+    return {
+      rank: offset + index + 1,
+      userId: user?.id ?? '',
+      username: user?.username ?? null,
+      stellarAddress: row.toAddress,
+      totalTips: row._sum.amountStroops?.toString() ?? '0',
+    };
+  });
+}
+
+/** Returns creators ranked by confirmed tip volume with limit/offset pagination. */
+export async function getLeaderboard(
+  window: TimeWindow,
   limit: number,
-): Promise<{ entries: LeaderboardEntry[]; total: number }> {
-  const skip = (page - 1) * limit;
+  offset: number,
+): Promise<LeaderboardResponse> {
+  const since = getSince(window);
+  const [rows, total] = await Promise.all([
+    getRankedRows(since, limit, offset),
+    countRankedRows(since),
+  ]);
+  const data = await hydrateEntries(rows, offset);
 
-  const [users, total] = await Promise.all([
-    prisma.user.findMany({
-      skip,
-      take: limit,
-      select: {
-        id: true,
-        stellarAddress: true,
-        username: true,
-        displayName: true,
-        xHandle: true,
-      },
-      orderBy: { createdAt: "asc" }, // stable pagination order before re-ranking
-    }),
-    prisma.user.count(),
+  return {
+    data,
+    window,
+    pagination: {
+      limit,
+      offset,
+      total,
+      hasMore: offset + data.length < total,
+    },
+  };
+}
+
+/** Returns a single user's rank for the requested leaderboard window. */
+export async function getUserRank(
+  userId: string,
+  window: TimeWindow,
+): Promise<{ rank: number; totalTips: string; window: TimeWindow }> {
+  const since = getSince(window);
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { stellarAddress: true },
+  });
+
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  const rows = await getRankedRows(since);
+  const index = rows.findIndex((row) => row.toAddress === user.stellarAddress);
+
+  if (index === -1) {
+    throw new NotFoundError('User not found on the leaderboard for this window');
+  }
+
+  return {
+    rank: index + 1,
+    totalTips: rows[index]._sum.amountStroops?.toString() ?? '0',
+    window,
+  };
+}
+
+/** Rebuilds stored leaderboard snapshots for a period from confirmed tip volume. */
+export async function createLeaderboardSnapshot(
+  period: SnapshotPeriod,
+  now = new Date(),
+): Promise<LeaderboardSnapshotResult> {
+  const since = getSnapshotSince(period, now);
+  const rows = await getRankedRows(since);
+  const addresses = rows.map((row) => row.toAddress);
+  const users = await prisma.user.findMany({
+    where: { stellarAddress: { in: addresses } },
+    select: { id: true, stellarAddress: true },
+  });
+  const userMap = new Map(users.map((user) => [user.stellarAddress, user]));
+
+  const data = rows.flatMap((row, index) => {
+    const user = userMap.get(row.toAddress);
+    if (!user) return [];
+    return {
+      period,
+      rank: index + 1,
+      userId: user.id,
+      totalTips: row._sum.amountStroops ?? BigInt(0),
+    };
+  });
+
+  await prisma.$transaction([
+    prisma.leaderboardSnapshot.deleteMany({ where: { period } }),
+    ...(data.length > 0 ? [prisma.leaderboardSnapshot.createMany({ data })] : []),
   ]);
 
-  // Compute credit scores for this page in parallel.
-  const scored = await Promise.all(
-    users.map(async (user) => {
-      try {
-        const [tipsSent, tipsReceived, selfTips, streak, xAccount] =
-          await Promise.all([
-            prisma.tip.count({ where: { fromAddress: user.stellarAddress } }),
-            prisma.tip.count({ where: { toAddress: user.stellarAddress } }),
-            prisma.tip.count({
-              where: {
-                fromAddress: user.stellarAddress,
-                toAddress: user.stellarAddress,
-              },
-            }),
-            prisma.streak.findUnique({ where: { userId: user.id } }),
-            user.xHandle
-              ? prisma.xAccount.findUnique({ where: { handle: user.xHandle } })
-              : null,
-          ]);
-
-        const washTipRatio = tipsSent > 0 ? Math.min(selfTips / tipsSent, 1) : 0;
-
-        const result = computeCreditScore(user.id, {
-          tipsSent,
-          tipsReceived,
-          streak: streak?.currentStreak ?? 0,
-          xFollowers: xAccount?.followers ?? 0,
-          xEngagement: xAccount?.engagement ?? null,
-          selfTips,
-          washTipRatio,
-        });
-
-        return { user, creditScore: result.score };
-      } catch {
-        return { user, creditScore: 0 };
-      }
-    }),
-  );
-
-  // Sort descending by credit score, then assign ranks.
-  scored.sort((a, b) => b.creditScore - a.creditScore);
-
-  const entries: LeaderboardEntry[] = scored.map((item, index) => ({
-    rank: skip + index + 1,
-    userId: item.user.id,
-    stellarAddress: item.user.stellarAddress,
-    username: item.user.username,
-    displayName: item.user.displayName,
-    creditScore: item.creditScore,
-  }));
-
-  return { entries, total };
-}
-
-// ── Public service function ───────────────────────────────────────────────────
-
-/**
- * Returns a paginated leaderboard in the requested variant and period.
- *
- * - `variant = "tips"` → ranked by total tips received (stroops).
- * - `variant = "credit"` → ranked by live credit score (issue #933).
- *
- * Issue #933
- */
-export async function getLeaderboard(
-  variant: LeaderboardVariant,
-  period: LeaderboardPeriod,
-  page: number,
-  limit: number,
-): Promise<LeaderboardResponse> {
-  logger.info({ variant, period, page, limit }, "Fetching leaderboard");
-
-  const { entries, total } =
-    variant === "credit"
-      ? await getCreditLeaderboard(page, limit)
-      : await getTipsLeaderboard(period, page, limit);
-
-  return { variant, period, entries, total, page, limit };
+  return { period, entriesCreated: data.length };
 }
