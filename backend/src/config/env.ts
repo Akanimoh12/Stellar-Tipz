@@ -76,6 +76,17 @@ const envSchema = z.object({
   /** Withdrawal fee, in basis points (1/100th of a percent). 200 = 2%. */
   WITHDRAWAL_FEE_BPS: z.coerce.number().int().min(0).max(10_000).default(200),
 
+  /**
+   * Secret key for the platform's subscription-charge keeper account. Used
+   * only by the subscription-charge job to sign `execute_due_subscription`
+   * calls server-side (that contract function doesn't require the
+   * subscriber's own signature). Optional so the app/tests can run without
+   * it; the job itself throws a clear error per-subscription if it's unset.
+   */
+  SUBSCRIPTION_KEEPER_SECRET_KEY: z.string().optional(),
+  /** Cron expression for the subscription-charge processing job. */
+  SUBSCRIPTION_CHARGE_CRON: z.string().default('0 * * * *'),
+
   X_API_BEARER_TOKEN: z.string().optional(),
   X_API_BASE_URL: z.string().default('https://api.twitter.com/2'),
 

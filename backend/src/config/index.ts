@@ -71,6 +71,11 @@ export const config = {
     feeBps: env.WITHDRAWAL_FEE_BPS,
   },
 
+  subscriptions: {
+    keeperSecretKey: env.SUBSCRIPTION_KEEPER_SECRET_KEY,
+    chargeCron: env.SUBSCRIPTION_CHARGE_CRON,
+  },
+
   logging: {
     level: env.LOG_LEVEL,
     sentryDsn: env.SENTRY_DSN,
