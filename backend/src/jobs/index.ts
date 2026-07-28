@@ -21,4 +21,14 @@ export {
   scheduleAnalyticsDaily,
 } from './analyticsDaily.worker.js';
 
+export {
+  SUBSCRIPTION_CHARGE_QUEUE,
+  getSubscriptionChargeQueue,
+} from './subscriptionCharge.queue.js';
+export {
+  processDueSubscriptions,
+  createSubscriptionChargeWorker,
+  scheduleSubscriptionCharge,
+} from './subscriptionCharge.worker.js';
+
 export { bootstrapJobs } from './main.js';
