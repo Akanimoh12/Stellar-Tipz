@@ -15,6 +15,12 @@ const durationString = z
   .string()
   .regex(/^\d+[smhd]$/, 'Must be a positive integer followed by s, m, h, or d (e.g. "15m", "7d")');
 
+/** Accepts the literal strings "true"/"false" and coerces to a boolean (unlike z.coerce.boolean, which treats any non-empty string as true). */
+const booleanString = z
+  .enum(['true', 'false'])
+  .default('true')
+  .transform((value) => value === 'true');
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
@@ -23,6 +29,8 @@ const envSchema = z.object({
 
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
+  /** Attaches the Socket.IO Redis adapter so realtime rooms are shared across horizontally scaled instances. */
+  REALTIME_REDIS_ADAPTER_ENABLED: booleanString,
 
   JWT_SECRET: z.string().min(8),
   /** Access token TTL — must be a duration string like "15m" or "1h". */
@@ -39,6 +47,34 @@ const envSchema = z.object({
 
   INDEXER_POLL_INTERVAL_MS: z.coerce.number().default(5000),
   INDEXER_START_LEDGER: z.coerce.number().optional(),
+
+  CREDIT_RECOMPUTE_CRON: z.string().default('0 */6 * * *'),
+  /** Cron expression for the daily analytics rollup job. Runs at 00:05 UTC daily by default. */
+  ANALYTICS_DAILY_CRON: z.string().default('5 0 * * *'),
+  /** Credit score weights (must sum to <= 100) */
+  CREDIT_SCORE_WEIGHT_BASE: z.coerce.number().int().min(0).max(100).optional(),
+  CREDIT_SCORE_WEIGHT_TIP: z.coerce.number().int().min(0).max(100).optional(),
+  CREDIT_SCORE_WEIGHT_X: z.coerce.number().int().min(0).max(100).optional(),
+  CREDIT_SCORE_WEIGHT_AGE: z.coerce.number().int().min(0).max(100).optional(),
+  /** Credit score divisors */
+  CREDIT_SCORE_DIVISOR_TIP: z.coerce.number().int().positive().optional(),
+  CREDIT_SCORE_DIVISOR_FOLLOWER: z.coerce.number().int().positive().optional(),
+  CREDIT_SCORE_DIVISOR_ENGAGEMENT: z.coerce.number().int().positive().optional(),
+  CREDIT_SCORE_DIVISOR_AGE: z.coerce.number().int().positive().optional(),
+  /** Credit score caps */
+  CREDIT_SCORE_CAP_BASE: z.coerce.number().int().min(0).optional(),
+  CREDIT_SCORE_CAP_MAX: z.coerce.number().int().min(0).optional(),
+  CREDIT_SCORE_CAP_X_SUB: z.coerce.number().int().min(0).optional(),
+  CREDIT_SCORE_CAP_AGE_SUB: z.coerce.number().int().min(0).optional(),
+  CREDIT_SCORE_CAP_TIP_SUB: z.coerce.number().int().min(0).optional(),
+  /** Credit score cache TTL in seconds */
+  CREDIT_SCORE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional(),
+  /** Search results cache TTL in seconds */
+  SEARCH_CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional(),
+  /** Minimum withdrawal amount, in stroops (1 XLM = 10,000,000 stroops). */
+  WITHDRAWAL_MIN_AMOUNT_STROOPS: z.coerce.number().int().positive().default(10_000_000),
+  /** Withdrawal fee, in basis points (1/100th of a percent). 200 = 2%. */
+  WITHDRAWAL_FEE_BPS: z.coerce.number().int().min(0).max(10_000).default(200),
 
   X_API_BEARER_TOKEN: z.string().optional(),
   X_API_BASE_URL: z.string().default('https://api.twitter.com/2'),

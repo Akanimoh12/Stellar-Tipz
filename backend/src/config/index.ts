@@ -24,6 +24,10 @@ export const config = {
     redisUrl: env.REDIS_URL,
   },
 
+  realtime: {
+    redisAdapterEnabled: env.REALTIME_REDIS_ADAPTER_ENABLED,
+  },
+
   auth: {
     jwtSecret: env.JWT_SECRET,
     jwtExpiresIn: env.JWT_EXPIRES_IN,
@@ -52,6 +56,19 @@ export const config = {
   ipfs: {
     apiUrl: env.IPFS_API_URL,
     gatewayUrl: env.IPFS_GATEWAY_URL,
+  },
+
+  credit: {
+    recomputeCron: env.CREDIT_RECOMPUTE_CRON,
+  },
+
+  analytics: {
+    dailyCron: env.ANALYTICS_DAILY_CRON,
+  },
+
+  withdrawals: {
+    minAmountStroops: env.WITHDRAWAL_MIN_AMOUNT_STROOPS,
+    feeBps: env.WITHDRAWAL_FEE_BPS,
   },
 
   logging: {
