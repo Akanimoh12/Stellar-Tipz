@@ -140,6 +140,30 @@ describe('GET /api/v1/subscriptions/me', () => {
     });
   });
 
+  it('returns 401 with an invalid token', async () => {
+    (jwt.default.verify as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw new Error('Invalid token');
+    });
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/v1/subscriptions/me')
+      .set('Authorization', 'Bearer invalid-token');
+    expect(res.status).toBe(401);
+  });
+
+  it('returns empty list when user has no subscriptions', async () => {
+    mockAuth();
+    mockFindMany.mockResolvedValue([]);
+
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/v1/subscriptions/me')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([]);
+  });
+
   it('filters by creator role and status when provided', async () => {
     mockAuth();
     mockFindMany.mockResolvedValue([]);
@@ -240,6 +264,29 @@ describe('POST /api/v1/subscriptions/submit', () => {
     vi.clearAllMocks();
   });
 
+  it('returns 401 without an Authorization header', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/subscriptions/submit')
+      .send({
+        creatorStellarAddress: creatorAddress,
+        amountStroops: '1000000',
+        interval: 'MONTHLY',
+        signedTxXdr: 'signed-xdr',
+      });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 for an invalid body', async () => {
+    mockAuth();
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/subscriptions/submit')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ creatorStellarAddress: 'not-valid', amountStroops: '1000000', interval: 'MONTHLY', signedTxXdr: 'signed-xdr' });
+    expect(res.status).toBe(400);
+  });
+
   it('creates the subscription with a deterministic id on success', async () => {
     mockAuth();
     mockUserFindUnique
@@ -314,6 +361,24 @@ describe('POST /api/v1/subscriptions/prepare-cancel', () => {
       .send({ creatorStellarAddress: creatorAddress });
 
     expect(res.status).toBe(404);
+  });
+
+  it('returns 401 without an Authorization header', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/subscriptions/prepare-cancel')
+      .send({ creatorStellarAddress: creatorAddress });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 for an invalid stellar address', async () => {
+    mockAuth();
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/subscriptions/prepare-cancel')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ creatorStellarAddress: 'not-valid' });
+    expect(res.status).toBe(400);
   });
 
   it('returns 400 when the subscription is already cancelled', async () => {
@@ -392,5 +457,59 @@ describe('POST /api/v1/subscriptions/submit-cancel', () => {
       where: { id: 'sub_tipper-1_creator-1' },
       data: { status: 'CANCELLED' },
     });
+  });
+
+  it('returns 401 without an Authorization header', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/subscriptions/submit-cancel')
+      .send({ creatorStellarAddress: creatorAddress, signedTxXdr: 'signed-xdr' });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 for an invalid stellar address', async () => {
+    mockAuth();
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/subscriptions/submit-cancel')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ creatorStellarAddress: 'not-valid', signedTxXdr: 'signed-xdr' });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when subscription does not exist', async () => {
+    mockAuth();
+    mockUserFindUnique.mockResolvedValueOnce({ id: 'creator-1', stellarAddress: creatorAddress });
+    mockSubFindUnique.mockResolvedValue(null);
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/subscriptions/submit-cancel')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ creatorStellarAddress: creatorAddress, signedTxXdr: 'signed-xdr' });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 400 when the network rejects the transaction', async () => {
+    mockAuth();
+    mockUserFindUnique.mockResolvedValueOnce({ id: 'creator-1', stellarAddress: creatorAddress });
+    mockSubFindUnique.mockResolvedValue({
+      id: 'sub_tipper-1_creator-1',
+      tipperId: 'tipper-1',
+      status: 'ACTIVE',
+      deletedAt: null,
+    });
+    mockFromXDR.mockReturnValue({});
+    mockSendTransaction.mockResolvedValue({ status: 'ERROR', hash: 'tx-hash-2' });
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/subscriptions/submit-cancel')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ creatorStellarAddress: creatorAddress, signedTxXdr: 'signed-xdr' });
+
+    expect(res.status).toBe(400);
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });

@@ -22,6 +22,7 @@ import { webhooksRouter } from './modules/webhooks/webhooks.routes.js';
 import { analyticsRouter } from './modules/analytics/analytics.routes.js';
 import { goalsRouter } from './modules/goals/goals.routes.js';
 import { registerGoalsDocs } from './modules/goals/goals.openapi.js';
+import { registerSubscriptionsDocs } from './modules/subscriptions/subscriptions.openapi.js';
 import { subscriptionsRouter } from './modules/subscriptions/subscriptions.routes.js';
 import { refundsRouter } from './modules/refunds/refunds.routes.js';
 import { streaksRouter } from './modules/streaks/streaks.routes.js';
@@ -80,6 +81,7 @@ export function createApp(): Express {
 
   // Register OpenAPI path docs for feature modules.
   registerGoalsDocs();
+  registerSubscriptionsDocs();
 
   app.use(notFoundHandler);
   app.use(errorHandler);

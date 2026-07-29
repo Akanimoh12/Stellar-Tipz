@@ -1,7 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import * as streaksService from './streaks.service.js';
 
-/** GET /streaks/me: the authenticated user's current tipping streak. */
 export async function getMyStreak(
   req: Request,
   res: Response,
