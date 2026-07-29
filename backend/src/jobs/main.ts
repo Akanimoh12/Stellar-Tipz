@@ -10,6 +10,8 @@ import {
   scheduleAnalyticsDaily,
   createSubscriptionChargeWorker,
   scheduleSubscriptionCharge,
+  createLeaderboardSnapshotWorker,
+  scheduleLeaderboardSnapshot,
 } from './index.js';
 
 /**
@@ -46,6 +48,15 @@ export async function bootstrapJobs(): Promise<void> {
     },
   });
   await scheduleSubscriptionCharge();
+
+  const leaderboardSnapshotWorker = createLeaderboardSnapshotWorker();
+  registerClosable({
+    name: 'LeaderboardSnapshotWorker',
+    close: async () => {
+      await leaderboardSnapshotWorker.close();
+    },
+  });
+  await scheduleLeaderboardSnapshot();
 
   logger.info('Jobs process started');
 
