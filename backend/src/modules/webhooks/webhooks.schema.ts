@@ -9,6 +9,9 @@ export const WEBHOOK_EVENT_TYPES = [
   "credit_score.updated",
 ] as const;
 
+/** Union of valid webhook event type strings. */
+export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
+
 export const createWebhookSubscriptionSchema = z.object({
   url: z
     .string()
