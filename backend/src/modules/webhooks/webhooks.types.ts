@@ -1,5 +1,20 @@
+import type { WebhookEventType } from "./webhooks.schema.js";
+
 /** Lifecycle status of a webhook subscription. Mirrors the Prisma enum. */
 export type WebhookSubscriptionStatus = "ACTIVE" | "DISABLED";
+
+/** The signed envelope sent as the body of every webhook delivery. */
+export interface WebhookEventEnvelope {
+  event: WebhookEventType;
+  timestamp: string;
+  data: Record<string, unknown>;
+}
+
+/** Result of fanning an event out to matching subscriptions. */
+export interface WebhookDispatchResult {
+  matched: number;
+  dispatched: number;
+}
 
 /** A registered webhook subscription (secret omitted — only returned on creation). */
 export interface WebhookSubscriptionResponse {
