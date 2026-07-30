@@ -252,3 +252,119 @@ describe('computeDailyAnalytics', () => {
     });
   });
 });
+
+describe('GET /api/v1/analytics/creators/:username', () => {
+  beforeEach(resetMocks);
+
+  const mockUser = {
+    id: 'user-1',
+    stellarAddress: 'GCREATOR123',
+    username: 'testcreator',
+    displayName: 'Test Creator',
+  };
+
+  const mockTips = [
+    { amountStroops: BigInt(100000000), createdAt: new Date('2026-07-20T10:00:00Z'), fromAddress: 'GTIPPER1' },
+    { amountStroops: BigInt(200000000), createdAt: new Date('2026-07-21T11:00:00Z'), fromAddress: 'GTIPPER2' },
+    { amountStroops: BigInt(150000000), createdAt: new Date('2026-07-21T12:00:00Z'), fromAddress: 'GTIPPER1' },
+    { amountStroops: BigInt(50000000), createdAt: new Date('2026-07-22T09:00:00Z'), fromAddress: 'GTIPPER3' },
+  ];
+
+  it('returns 404 for non-existent creator', async () => {
+    vi.spyOn(await import('../../db/prisma.js'), 'prisma').mockReturnValue({
+      user: { findUnique: vi.fn().mockResolvedValue(null) },
+      tip: { findMany: vi.fn() },
+      $disconnect: vi.fn(),
+    } as any);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/analytics/creators/nonexistent');
+
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 400 for missing username', async () => {
+    const app = createApp();
+    const res = await request(app).get('/api/v1/analytics/creators/');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns creator analytics with default parameters', async () => {
+    const { prisma } = await import('../../db/prisma.js');
+    vi.spyOn(prisma.user, 'findUnique').mockResolvedValue(mockUser as any);
+    vi.spyOn(prisma.tip, 'findMany').mockResolvedValue(mockTips as any);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/analytics/creators/testcreator');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toBeDefined();
+    expect(res.body.data.summary).toBeDefined();
+    expect(res.body.data.summary.totalTipsReceived).toBe(4);
+    expect(res.body.data.summary.totalVolumeReceived).toBe('500000000');
+    expect(res.body.data.summary.uniqueTippers).toBe(3);
+    expect(res.body.data.granularity).toBe('day');
+  });
+
+  it('returns creator analytics with custom date range', async () => {
+    const { prisma } = await import('../../db/prisma.js');
+    vi.spyOn(prisma.user, 'findUnique').mockResolvedValue(mockUser as any);
+    vi.spyOn(prisma.tip, 'findMany').mockResolvedValue(mockTips as any);
+
+    const app = createApp();
+    const res = await request(app).get(
+      '/api/v1/analytics/creators/testcreator?startDate=2026-07-20&endDate=2026-07-21',
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.period.start).toBe('2026-07-20');
+    expect(res.body.data.period.end).toBe('2026-07-21');
+  });
+
+  it('returns creator analytics with week granularity', async () => {
+    const { prisma } = await import('../../db/prisma.js');
+    vi.spyOn(prisma.user, 'findUnique').mockResolvedValue(mockUser as any);
+    vi.spyOn(prisma.tip, 'findMany').mockResolvedValue(mockTips as any);
+
+    const app = createApp();
+    const res = await request(app).get(
+      '/api/v1/analytics/creators/testcreator?granularity=week',
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.granularity).toBe('week');
+    expect(res.body.data.timeSeries).toBeDefined();
+  });
+
+  it('returns empty analytics for creator with no tips', async () => {
+    const { prisma } = await import('../../db/prisma.js');
+    vi.spyOn(prisma.user, 'findUnique').mockResolvedValue(mockUser as any);
+    vi.spyOn(prisma.tip, 'findMany').mockResolvedValue([]);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/analytics/creators/testcreator');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.summary.totalTipsReceived).toBe(0);
+    expect(res.body.data.summary.totalVolumeReceived).toBe('0');
+    expect(res.body.data.summary.uniqueTippers).toBe(0);
+    expect(res.body.data.timeSeries).toEqual([]);
+    expect(res.body.data.topTippers).toEqual([]);
+  });
+
+  it('returns 400 for invalid date format', async () => {
+    const app = createApp();
+    const res = await request(app).get(
+      '/api/v1/analytics/creators/testcreator?startDate=invalid-date',
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for invalid granularity', async () => {
+    const app = createApp();
+    const res = await request(app).get(
+      '/api/v1/analytics/creators/testcreator?granularity=invalid',
+    );
+    expect(res.status).toBe(400);
+  });
+});
