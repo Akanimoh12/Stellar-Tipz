@@ -9,6 +9,7 @@ analyticsRouter.get('/daily', analyticsController.getDailyAnalytics);
 analyticsRouter.get('/summary', analyticsController.getAnalyticsSummary);
 analyticsRouter.get('/volume', analyticsController.getTipVolumeController);
 analyticsRouter.get('/top-tippers', analyticsController.getTopTippersController);
+analyticsRouter.get('/active-users', analyticsController.getActiveUsersController);
 analyticsRouter.get('/creators/:username', analyticsController.getCreatorAnalyticsController);
 
 const base = `${env.API_BASE_PATH}/analytics`;
