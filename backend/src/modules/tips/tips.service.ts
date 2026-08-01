@@ -6,6 +6,7 @@ import { BadRequestError, NotFoundError } from '../../common/errors/AppError.js'
 import { logger } from '../../common/utils/logger.js';
 import { TipStatus } from '../../types/enums.js';
 import * as notificationsService from '../notifications/notifications.service.js';
+import { updateStreakOnTip } from '../streaks/streaks.service.js';
 import type { RecordTipInput } from './tips.schema.js';
 import { serializeTip } from './tips.serializer.js';
 import type { TipResponseDto, TipAggregateByCreatorDto } from './tips.dto.js';
@@ -230,6 +231,7 @@ export async function recordTip(input: RecordTipInput): Promise<TipResponseDto> 
       },
     });
     await notifyCreatorOfTip(tip);
+    await updateTipperStreak(tip.fromAddress);
     return serializeTip(tip);
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -266,6 +268,21 @@ async function notifyCreatorOfTip(tip: {
     });
   } catch (err) {
     logger.error({ err, tipId: tip.id }, 'Failed to notify creator of new tip');
+  }
+}
+
+/**
+ * Update the tipper's streak when a tip is recorded. Best-effort: only fires
+ * for tippers with an off-chain User row and never lets a streak update
+ * failure block the tip recording itself.
+ */
+async function updateTipperStreak(fromAddress: string): Promise<void> {
+  try {
+    const sender = await prisma.user.findUnique({ where: { stellarAddress: fromAddress } });
+    if (!sender) return;
+    await updateStreakOnTip(sender.id);
+  } catch (err) {
+    logger.error({ err, fromAddress }, 'Failed to update tipper streak');
   }
 }
 
