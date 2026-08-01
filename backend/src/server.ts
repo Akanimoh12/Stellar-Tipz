@@ -9,6 +9,8 @@ import { startIndexer } from './indexer/index.js';
 import {
   createCreditRecomputeWorker,
   scheduleCreditRecompute,
+  createAnalyticsDailyWorker,
+  scheduleAnalyticsDaily,
 } from './jobs/index.js';
 import { initRealtime } from './realtime/index.js';
 
@@ -47,6 +49,16 @@ async function bootstrap(): Promise<void> {
     },
   });
   await scheduleCreditRecompute();
+
+  // Start the daily analytics rollup worker and schedule the recurring job.
+  const analyticsWorker = createAnalyticsDailyWorker();
+  registerClosable({
+    name: 'AnalyticsDailyWorker',
+    close: async () => {
+      await analyticsWorker.close();
+    },
+  });
+  await scheduleAnalyticsDaily();
 
   // The realtime gateway (Socket.IO) attaches to this httpServer.
   initRealtime(httpServer);

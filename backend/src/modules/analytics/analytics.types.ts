@@ -75,4 +75,42 @@ export interface ActiveUsersResponse {
   granularity: string;
   startDate: string;
   endDate: string;
+/** A single creator analytics time-series entry. */
+export interface CreatorAnalyticsEntry {
+  date: string;
+  totalTips: number;
+  totalVolume: string;
+  uniqueTippers: number;
+}
+
+/** Creator analytics summary. */
+export interface CreatorAnalyticsSummary {
+  totalTipsReceived: number;
+  totalVolumeReceived: string;
+  uniqueTippers: number;
+  averageTipSize: string;
+  firstTipDate: string | null;
+  lastTipDate: string | null;
+}
+
+/** Top tipper to a specific creator. */
+export interface CreatorTopTipperEntry {
+  userId: string;
+  stellarAddress: string;
+  username: string | null;
+  displayName: string | null;
+  totalTipsStroops: string;
+  tipCount: number;
+}
+
+/** Creator analytics response. */
+export interface CreatorAnalyticsResponse {
+  summary: CreatorAnalyticsSummary;
+  timeSeries: CreatorAnalyticsEntry[];
+  topTippers: CreatorTopTipperEntry[];
+  granularity: string;
+  period: {
+    start: string | null;
+    end: string | null;
+  };
 }

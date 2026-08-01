@@ -1,8 +1,10 @@
 import { prisma } from '../../db/prisma.js';
 import { logger } from '../../common/utils/logger.js';
-import type { AnalyticsDailyResponse, AnalyticsSummary } from './analytics.types.js';
+import { NotFoundError } from '../../common/errors/AppError.js';
+import type { AnalyticsDailyEntry, AnalyticsDailyResponse, AnalyticsSummary } from './analytics.types.js';
 import type { TipVolumeResponse, TopTipperEntry, TopTippersResponse } from './analytics.types.js';
 import type { ActiveUsersResponse } from './analytics.types.js';
+import type { CreatorAnalyticsResponse, CreatorAnalyticsSummary, CreatorAnalyticsEntry, CreatorTopTipperEntry } from './analytics.types.js';
 
 /**
  * Returns paginated daily analytics rows, optionally filtered by date range.
@@ -106,7 +108,7 @@ export async function getTipVolume(
   const tips = await prisma.tip.findMany({
     where: {
       createdAt: { gte: start, lte: end },
-      status: 'COMPLETED',
+      status: 'CONFIRMED',
     },
     select: { amountStroops: true, createdAt: true },
     orderBy: { createdAt: 'asc' },
@@ -212,6 +214,109 @@ export async function getActiveUsers(
   endDate?: string,
 ): Promise<ActiveUsersResponse> {
   logger.info({ granularity, startDate, endDate }, 'Fetching active users time-series');
+ * Compute and upsert daily analytics for a given calendar date.
+ *
+ * Queries completed tips and registered users for that day, then upserts a
+ * single AnalyticsDaily row. Idempotent — safe to run multiple times for the
+ * same date.
+ */
+export async function computeDailyAnalytics(date: string): Promise<AnalyticsDailyEntry> {
+  const dayStart = new Date(`${date}T00:00:00.000Z`);
+  const dayEnd = new Date(`${date}T23:59:59.999Z`);
+
+  const [completedTips, newUsers, rawSenderAddresses, rawReceiverAddresses] = await Promise.all([
+    prisma.tip.findMany({
+      where: {
+        createdAt: { gte: dayStart, lte: dayEnd },
+        status: 'CONFIRMED',
+      },
+      select: { amountStroops: true },
+    }),
+    prisma.user.findMany({
+      where: {
+        createdAt: { gte: dayStart, lte: dayEnd },
+        deletedAt: null,
+      },
+      select: { id: true },
+    }),
+    prisma.tip.findMany({
+      where: {
+        createdAt: { gte: dayStart, lte: dayEnd },
+        status: 'CONFIRMED',
+      },
+      select: { fromAddress: true },
+      distinct: ['fromAddress'],
+    }),
+    prisma.tip.findMany({
+      where: {
+        createdAt: { gte: dayStart, lte: dayEnd },
+        status: 'CONFIRMED',
+      },
+      select: { toAddress: true },
+      distinct: ['toAddress'],
+    }),
+  ]);
+
+  const totalTips = completedTips.length;
+  const totalVolume = completedTips.reduce(
+    (sum, tip) => sum + tip.amountStroops,
+    BigInt(0),
+  );
+  const newUsersCount = newUsers.length;
+
+  const activeAddresses = new Set<string>();
+  for (const { fromAddress } of rawSenderAddresses) activeAddresses.add(fromAddress);
+  for (const { toAddress } of rawReceiverAddresses) activeAddresses.add(toAddress);
+  const activeUsers = activeAddresses.size;
+
+  const upserted = await prisma.analyticsDaily.upsert({
+    where: { date: dayStart },
+    create: {
+      date: dayStart,
+      totalTips,
+      totalVolume,
+      newUsers: newUsersCount,
+      activeUsers,
+    },
+    update: {
+      totalTips,
+      totalVolume,
+      newUsers: newUsersCount,
+      activeUsers,
+    },
+  });
+
+  logger.info({ date, totalTips, totalVolume: totalVolume.toString(), newUsers: newUsersCount, activeUsers }, 'Daily analytics computed');
+
+  return {
+    date: upserted.date.toISOString().slice(0, 10),
+    totalTips: upserted.totalTips,
+    totalVolume: upserted.totalVolume.toString(),
+    newUsers: upserted.newUsers,
+    activeUsers: upserted.activeUsers,
+  };
+}
+
+/**
+ * Returns analytics for a specific creator identified by username.
+ * Includes summary stats, time-series data, and top tippers.
+ */
+export async function getCreatorAnalytics(
+  username: string,
+  startDate: string | undefined,
+  endDate: string | undefined,
+  granularity: string,
+): Promise<CreatorAnalyticsResponse> {
+  logger.info({ username, startDate, endDate, granularity }, 'Fetching creator analytics');
+
+  const user = await prisma.user.findUnique({
+    where: { username },
+    select: { id: true, stellarAddress: true, username: true, displayName: true },
+  });
+
+  if (!user) {
+    throw new NotFoundError('Creator not found');
+  }
 
   const now = new Date();
   const start = startDate ? new Date(startDate) : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -230,6 +335,40 @@ export async function getActiveUsers(
   for (const row of rows) {
     let key: string;
     const d = new Date(row.date);
+  const tips = await prisma.tip.findMany({
+    where: {
+      toAddress: user.stellarAddress,
+      createdAt: { gte: start, lte: end },
+      status: 'CONFIRMED',
+    },
+    select: { amountStroops: true, createdAt: true, fromAddress: true },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  const totalTipsReceived = tips.length;
+  const totalVolumeReceived = tips.reduce((sum, tip) => sum + tip.amountStroops, BigInt(0));
+  const uniqueTippers = new Set(tips.map((tip) => tip.fromAddress)).size;
+  const averageTipSize = totalTipsReceived > 0
+    ? (totalVolumeReceived / BigInt(totalTipsReceived)).toString()
+    : '0';
+
+  const firstTipDate = tips.length > 0 ? tips[0].createdAt.toISOString().slice(0, 10) : null;
+  const lastTipDate = tips.length > 0 ? tips[tips.length - 1].createdAt.toISOString().slice(0, 10) : null;
+
+  const summary: CreatorAnalyticsSummary = {
+    totalTipsReceived,
+    totalVolumeReceived: totalVolumeReceived.toString(),
+    uniqueTippers,
+    averageTipSize,
+    firstTipDate,
+    lastTipDate,
+  };
+
+  const buckets = new Map<string, { totalStroops: bigint; count: number; tippers: Set<string> }>();
+
+  for (const tip of tips) {
+    let key: string;
+    const d = new Date(tip.createdAt);
 
     switch (granularity) {
       case 'week': {
@@ -264,5 +403,66 @@ export async function getActiveUsers(
     granularity,
     startDate: start.toISOString(),
     endDate: end.toISOString(),
+    if (existing) {
+      existing.totalStroops += tip.amountStroops;
+      existing.count += 1;
+      existing.tippers.add(tip.fromAddress);
+    } else {
+      buckets.set(key, {
+        totalStroops: tip.amountStroops,
+        count: 1,
+        tippers: new Set([tip.fromAddress]),
+      });
+    }
+  }
+
+  const timeSeries: CreatorAnalyticsEntry[] = Array.from(buckets.entries()).map(([date, data]) => ({
+    date,
+    totalTips: data.count,
+    totalVolume: data.totalStroops.toString(),
+    uniqueTippers: data.tippers.size,
+  }));
+
+  const tipperMap = new Map<string, { totalStroops: bigint; count: number }>();
+  for (const tip of tips) {
+    const existing = tipperMap.get(tip.fromAddress);
+    if (existing) {
+      existing.totalStroops += tip.amountStroops;
+      existing.count += 1;
+    } else {
+      tipperMap.set(tip.fromAddress, { totalStroops: tip.amountStroops, count: 1 });
+    }
+  }
+
+  const sortedTippers = Array.from(tipperMap.entries())
+    .sort((a, b) => (b[1].totalStroops > a[1].totalStroops ? 1 : -1))
+    .slice(0, 10);
+
+  const topTippers: CreatorTopTipperEntry[] = await Promise.all(
+    sortedTippers.map(async ([address, data]) => {
+      const tipper = await prisma.user.findUnique({
+        where: { stellarAddress: address },
+        select: { id: true, stellarAddress: true, username: true, displayName: true },
+      });
+      return {
+        userId: tipper?.id ?? '',
+        stellarAddress: address,
+        username: tipper?.username ?? null,
+        displayName: tipper?.displayName ?? null,
+        totalTipsStroops: data.totalStroops.toString(),
+        tipCount: data.count,
+      };
+    }),
+  );
+
+  return {
+    summary,
+    timeSeries,
+    topTippers,
+    granularity,
+    period: {
+      start: startDate ?? null,
+      end: endDate ?? null,
+    },
   };
 }
