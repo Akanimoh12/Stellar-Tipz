@@ -49,6 +49,13 @@ mergeOpenApiPaths({
           required: false,
           schema: { type: 'integer', minimum: 0, default: 0 },
         },
+        {
+          name: 'sort',
+          in: 'query',
+          required: false,
+          schema: { type: 'string', enum: ['relevance', 'recent', 'popular'], default: 'relevance' },
+          description: 'Sort order: relevance (exact matches first), recent (newest first), popular (by activity)',
+        },
       ],
       responses: {
         '200': {
