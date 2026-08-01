@@ -63,6 +63,8 @@ export const openApiDocument: OpenApiDocument = {
     { name: 'Search', description: 'Search creators by name or username' },
     { name: 'Analytics', description: 'Platform analytics and daily stats' },
     { name: 'Goals', description: 'Creator funding goals' },
+    { name: 'Subscriptions', description: 'Recurring tip subscriptions' },
+    { name: 'Streaks', description: 'Tipping streaks' },
   ],
   components: {
     securitySchemes: {

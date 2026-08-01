@@ -7,10 +7,23 @@ vi.mock("../../common/utils/logger.js", () => ({
 vi.mock("../../db/prisma.js", () => ({
   prisma: {
     webhookDelivery: { findMany: vi.fn(), count: vi.fn(), findUnique: vi.fn() },
+    webhookSubscription: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
+    },
   },
 }));
 
-import { listDeliveries, getDelivery } from "./webhooks.service.js";
+import {
+  listDeliveries,
+  getDelivery,
+  createSubscription,
+  listSubscriptions,
+  deleteSubscription,
+} from "./webhooks.service.js";
 import { prisma } from "../../db/prisma.js";
 
 const fakeDeliveries = [
@@ -131,6 +144,139 @@ describe("getDelivery (issue #1001)", () => {
 
     await expect(getDelivery("ghost")).rejects.toMatchObject({
       statusCode: 404,
+    });
+  });
+});
+
+const fakeSubscription = {
+  id: "wh_sub_01",
+  ownerId: "user_01",
+  url: "https://example.com/webhook",
+  secret: "abc123",
+  events: ["tip.received"],
+  status: "ACTIVE",
+  createdAt: new Date("2026-07-01T00:00:00Z"),
+  updatedAt: new Date("2026-07-01T00:00:00Z"),
+  deletedAt: null,
+};
+
+describe("createSubscription (issue #997)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("creates a subscription and returns the generated secret once", async () => {
+    vi.mocked(prisma.webhookSubscription.create).mockImplementation(
+      (async ({ data }: { data: { secret: string } }) => ({
+        ...fakeSubscription,
+        ...data,
+      })) as never,
+    );
+
+    const result = await createSubscription("user_01", {
+      url: "https://example.com/webhook",
+      events: ["tip.received"],
+    });
+
+    expect(prisma.webhookSubscription.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        ownerId: "user_01",
+        url: "https://example.com/webhook",
+        events: ["tip.received"],
+        secret: expect.any(String),
+      }),
+    });
+    expect(result.secret).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.id).toBe("wh_sub_01");
+    expect(result.status).toBe("ACTIVE");
+  });
+
+  it("generates a fresh random secret per subscription", async () => {
+    vi.mocked(prisma.webhookSubscription.create).mockImplementation(
+      (async ({ data }: { data: { secret: string } }) => ({
+        ...fakeSubscription,
+        secret: data.secret,
+      })) as never,
+    );
+
+    const a = await createSubscription("user_01", {
+      url: "https://example.com/a",
+      events: ["tip.received"],
+    });
+    const b = await createSubscription("user_01", {
+      url: "https://example.com/b",
+      events: ["tip.received"],
+    });
+
+    expect(a.secret).not.toBe(b.secret);
+  });
+});
+
+describe("listSubscriptions (issue #997)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns paginated subscriptions scoped to the owner, without secrets", async () => {
+    vi.mocked(prisma.webhookSubscription.findMany).mockResolvedValueOnce([
+      fakeSubscription,
+    ] as never);
+    vi.mocked(prisma.webhookSubscription.count).mockResolvedValueOnce(1 as never);
+
+    const result = await listSubscriptions("user_01", 1, 20);
+
+    expect(prisma.webhookSubscription.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { ownerId: "user_01", deletedAt: null },
+      }),
+    );
+    expect(result.total).toBe(1);
+    expect(result.entries[0].id).toBe("wh_sub_01");
+    expect(result.entries[0]).not.toHaveProperty("secret");
+  });
+});
+
+describe("deleteSubscription (issue #997)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("soft-deletes a subscription owned by the caller", async () => {
+    vi.mocked(prisma.webhookSubscription.findUnique).mockResolvedValueOnce(
+      fakeSubscription as never,
+    );
+    vi.mocked(prisma.webhookSubscription.update).mockResolvedValueOnce(
+      { ...fakeSubscription, deletedAt: new Date(), status: "DISABLED" } as never,
+    );
+
+    await deleteSubscription("user_01", "wh_sub_01");
+
+    expect(prisma.webhookSubscription.update).toHaveBeenCalledWith({
+      where: { id: "wh_sub_01" },
+      data: { deletedAt: expect.any(Date), status: "DISABLED" },
+    });
+  });
+
+  it("throws NotFoundError when the subscription does not exist", async () => {
+    vi.mocked(prisma.webhookSubscription.findUnique).mockResolvedValueOnce(null);
+
+    await expect(deleteSubscription("user_01", "ghost")).rejects.toMatchObject({
+      statusCode: 404,
+    });
+  });
+
+  it("throws NotFoundError when the subscription was already deleted", async () => {
+    vi.mocked(prisma.webhookSubscription.findUnique).mockResolvedValueOnce({
+      ...fakeSubscription,
+      deletedAt: new Date(),
+    } as never);
+
+    await expect(deleteSubscription("user_01", "wh_sub_01")).rejects.toMatchObject({
+      statusCode: 404,
+    });
+  });
+
+  it("throws ForbiddenError when the caller does not own the subscription", async () => {
+    vi.mocked(prisma.webhookSubscription.findUnique).mockResolvedValueOnce(
+      fakeSubscription as never,
+    );
+
+    await expect(deleteSubscription("someone_else", "wh_sub_01")).rejects.toMatchObject({
+      statusCode: 403,
     });
   });
 });
