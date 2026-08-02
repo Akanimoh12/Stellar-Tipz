@@ -26,3 +26,27 @@ export const topTippersQuerySchema = z.object({
 });
 
 export type TopTippersQuery = z.infer<typeof topTippersQuerySchema>;
+
+/** Query parameters for GET /analytics/active-users (issue #1010). */
+export const activeUsersQuerySchema = z.object({
+  granularity: z.enum(['day', 'week', 'month']).default('day'),
+  startDate: z.string().datetime({ offset: true }).optional(),
+  endDate: z.string().datetime({ offset: true }).optional(),
+});
+
+export type ActiveUsersQuery = z.infer<typeof activeUsersQuerySchema>;
+/** Path parameters for GET /analytics/creators/:username. */
+export const creatorUsernameParamSchema = z.object({
+  username: z.string().min(1, 'Username is required').max(50),
+});
+
+export type CreatorUsernameParam = z.infer<typeof creatorUsernameParamSchema>;
+
+/** Query parameters for GET /analytics/creators/:username. */
+export const creatorAnalyticsQuerySchema = z.object({
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD format').optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD format').optional(),
+  granularity: z.enum(['day', 'week', 'month']).default('day'),
+});
+
+export type CreatorAnalyticsQuery = z.infer<typeof creatorAnalyticsQuerySchema>;

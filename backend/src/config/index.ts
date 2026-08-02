@@ -66,9 +66,18 @@ export const config = {
     dailyCron: env.ANALYTICS_DAILY_CRON,
   },
 
+  leaderboard: {
+    snapshotCron: env.LEADERBOARD_SNAPSHOT_CRON,
+  },
+
   withdrawals: {
     minAmountStroops: env.WITHDRAWAL_MIN_AMOUNT_STROOPS,
     feeBps: env.WITHDRAWAL_FEE_BPS,
+  },
+
+  subscriptions: {
+    keeperSecretKey: env.SUBSCRIPTION_KEEPER_SECRET_KEY,
+    chargeCron: env.SUBSCRIPTION_CHARGE_CRON,
   },
 
   logging: {

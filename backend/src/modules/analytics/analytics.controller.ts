@@ -1,9 +1,10 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { BadRequestError } from '../../common/errors/AppError.js';
-import { analyticsDailyQuerySchema, volumeQuerySchema, topTippersQuerySchema } from './analytics.schema.js';
+import { analyticsDailyQuerySchema, volumeQuerySchema, topTippersQuerySchema, activeUsersQuerySchema } from './analytics.schema.js';
+import { analyticsDailyQuerySchema, volumeQuerySchema, topTippersQuerySchema, creatorUsernameParamSchema, creatorAnalyticsQuerySchema } from './analytics.schema.js';
 import * as analyticsService from './analytics.service.js';
-import { getTipVolume, getTopTippers } from './analytics.service.js';
+import { getTipVolume, getTopTippers, getCreatorAnalytics } from './analytics.service.js';
 
 /** GET /analytics/daily — paginated daily analytics with optional date range. */
 export async function getDailyAnalytics(
@@ -71,6 +72,43 @@ export async function getTopTippersController(
   } catch (error) {
     if (error instanceof z.ZodError) {
       next(new BadRequestError('Invalid query parameters', error.issues));
+    } else {
+      next(error);
+    }
+  }
+}
+
+/** GET /analytics/active-users — active users time-series with granularity (issue #1010). */
+export async function getActiveUsersController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const query = activeUsersQuerySchema.parse(req.query);
+    const result = await analyticsService.getActiveUsers(
+      query.granularity,
+      query.startDate,
+      query.endDate,
+    );
+    res.json({ data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(new BadRequestError('Invalid query parameters', error.issues));
+/** GET /analytics/creators/:username — creator-specific analytics (issue #1006). */
+export async function getCreatorAnalyticsController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const { username } = creatorUsernameParamSchema.parse(req.params);
+    const query = creatorAnalyticsQuerySchema.parse(req.query);
+    const result = await getCreatorAnalytics(username, query.startDate, query.endDate, query.granularity);
+    res.status(200).json({ data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(new BadRequestError('Invalid parameters', error.issues));
     } else {
       next(error);
     }

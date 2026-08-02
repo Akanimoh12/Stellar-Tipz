@@ -9,6 +9,8 @@ analyticsRouter.get('/daily', analyticsController.getDailyAnalytics);
 analyticsRouter.get('/summary', analyticsController.getAnalyticsSummary);
 analyticsRouter.get('/volume', analyticsController.getTipVolumeController);
 analyticsRouter.get('/top-tippers', analyticsController.getTopTippersController);
+analyticsRouter.get('/active-users', analyticsController.getActiveUsersController);
+analyticsRouter.get('/creators/:username', analyticsController.getCreatorAnalyticsController);
 
 const base = `${env.API_BASE_PATH}/analytics`;
 
@@ -135,6 +137,105 @@ mergeOpenApiPaths({
           },
         },
         '400': { description: 'Validation error' },
+      },
+    },
+  },
+  [`${base}/creators/{username}`]: {
+    get: {
+      tags: ['Analytics'],
+      summary: 'Get creator analytics',
+      description: 'Returns analytics for a specific creator including summary stats, time-series data, and top tippers.',
+      parameters: [
+        {
+          name: 'username',
+          in: 'path',
+          required: true,
+          schema: { type: 'string', description: 'Creator username' },
+        },
+        {
+          name: 'startDate',
+          in: 'query',
+          required: false,
+          schema: { type: 'string', format: 'date', description: 'Start date (YYYY-MM-DD)' },
+        },
+        {
+          name: 'endDate',
+          in: 'query',
+          required: false,
+          schema: { type: 'string', format: 'date', description: 'End date (YYYY-MM-DD)' },
+        },
+        {
+          name: 'granularity',
+          in: 'query',
+          required: false,
+          schema: { type: 'string', enum: ['day', 'week', 'month'], default: 'day' },
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'Creator analytics',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: {
+                    type: 'object',
+                    properties: {
+                      summary: {
+                        type: 'object',
+                        properties: {
+                          totalTipsReceived: { type: 'integer' },
+                          totalVolumeReceived: { type: 'string' },
+                          uniqueTippers: { type: 'integer' },
+                          averageTipSize: { type: 'string' },
+                          firstTipDate: { type: 'string', nullable: true },
+                          lastTipDate: { type: 'string', nullable: true },
+                        },
+                      },
+                      timeSeries: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            date: { type: 'string' },
+                            totalTips: { type: 'integer' },
+                            totalVolume: { type: 'string' },
+                            uniqueTippers: { type: 'integer' },
+                          },
+                        },
+                      },
+                      topTippers: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            userId: { type: 'string' },
+                            stellarAddress: { type: 'string' },
+                            username: { type: 'string', nullable: true },
+                            displayName: { type: 'string', nullable: true },
+                            totalTipsStroops: { type: 'string' },
+                            tipCount: { type: 'integer' },
+                          },
+                        },
+                      },
+                      granularity: { type: 'string' },
+                      period: {
+                        type: 'object',
+                        properties: {
+                          start: { type: 'string', nullable: true },
+                          end: { type: 'string', nullable: true },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        '400': { description: 'Validation error' },
+        '404': { description: 'Creator not found' },
       },
     },
   },

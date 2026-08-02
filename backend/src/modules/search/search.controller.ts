@@ -9,8 +9,8 @@ export async function searchCreators(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { q, limit, offset } = searchCreatorsQuerySchema.parse(req.query);
-    const result = await searchService.searchCreators(q, limit, offset);
+    const { q, limit, offset, sort } = searchCreatorsQuerySchema.parse(req.query);
+    const result = await searchService.searchCreators(q, limit, offset, sort);
     res.status(200).json(result);
   } catch (err) {
     next(err);

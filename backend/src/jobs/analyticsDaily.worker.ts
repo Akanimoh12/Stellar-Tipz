@@ -4,6 +4,7 @@ import { config } from '../config/index.js';
 import { logger } from '../common/utils/logger.js';
 import { computeDailyAnalytics } from '../modules/analytics/analytics.service.js';
 import { ANALYTICS_DAILY_QUEUE, getAnalyticsDailyQueue } from './analyticsDaily.queue.js';
+import { scheduleRepeatable } from './scheduler.js';
 
 export async function runDailyAnalyticsRollup(): Promise<{ date: string; totalTips: number; totalVolume: string }> {
   // Compute for yesterday in UTC so the job can run anytime after midnight
@@ -33,20 +34,9 @@ export function createAnalyticsDailyWorker(): Worker {
 }
 
 export async function scheduleAnalyticsDaily(): Promise<void> {
-  const queue = getAnalyticsDailyQueue();
-  const repeatableJobs = await queue.getRepeatableJobs();
-  const alreadyScheduled = repeatableJobs.some(
-    (j) => j.name === 'rollup' && j.pattern === config.analytics.dailyCron,
-  );
-
-  if (!alreadyScheduled) {
-    await queue.add(
-      'rollup',
-      {},
-      {
-        repeat: { pattern: config.analytics.dailyCron },
-      },
-    );
-    logger.info({ cron: config.analytics.dailyCron }, 'Daily analytics rollup scheduled');
-  }
+  await scheduleRepeatable({
+    queue: getAnalyticsDailyQueue(),
+    name: 'rollup',
+    pattern: config.analytics.dailyCron,
+  });
 }
