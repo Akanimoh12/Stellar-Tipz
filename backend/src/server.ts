@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { createApp } from './app.js';
 import { env } from '@/config/env.js';
 import { logger } from './common/utils/logger.js';
+import { initSentry } from './common/observability/sentry.js';
 import { prisma } from './db/prisma.js';
 import { redis } from './db/redis.js';
 import { registerClosable, closeAll } from './common/utils/lifecycle.js';
@@ -16,6 +17,7 @@ import { initRealtime } from './realtime/index.js';
 
 /** Process entry point: starts the HTTP server (and, later, the WebSocket + indexer). */
 async function bootstrap(): Promise<void> {
+  initSentry();
   const app = createApp();
   const httpServer = createServer(app);
 
