@@ -1,121 +1,260 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import request from 'supertest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createApp } from '../../app.js';
 
-vi.mock('../../common/utils/logger.js', () => ({
-  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+const {
+  mockAuditLogFindMany,
+  mockAuditLogCreate,
+  mockUserCount,
+  mockTipCount,
+  mockTipAggregate,
+  mockSubscriptionCount,
+  mockRefundCount,
+} = vi.hoisted(() => ({
+  mockAuditLogFindMany: vi.fn(),
+  mockAuditLogCreate: vi.fn(),
+  mockUserCount: vi.fn(),
+  mockTipCount: vi.fn(),
+  mockTipAggregate: vi.fn(),
+  mockSubscriptionCount: vi.fn(),
+  mockRefundCount: vi.fn(),
 }));
 
 vi.mock('../../db/prisma.js', () => ({
   prisma: {
-    user: {
-      findMany: vi.fn(),
-      count: vi.fn(),
-      findUnique: vi.fn(),
-      update: vi.fn(),
+    auditLog: {
+      findMany: mockAuditLogFindMany,
+      create: mockAuditLogCreate,
     },
+    user: {
+      count: mockUserCount,
+    },
+    tip: {
+      count: mockTipCount,
+      aggregate: mockTipAggregate,
+    },
+    subscription: {
+      count: mockSubscriptionCount,
+    },
+    refund: {
+      count: mockRefundCount,
+    },
+    $disconnect: vi.fn(),
   },
 }));
 
-import { listUsers, suspendUser } from './admin.service.js';
-import { prisma } from '../../db/prisma.js';
-import { NotFoundError } from '../../common/errors/AppError.js';
+vi.mock('jsonwebtoken', () => ({
+  default: { verify: vi.fn() },
+}));
 
-const fakeUsers = [
-  {
-    id: 'user_01',
-    username: 'alice',
-    displayName: 'Alice',
-    stellarAddress: 'GAAA...',
-    role: 'user',
-    createdAt: new Date('2026-07-01'),
-    deletedAt: null,
-  },
-  {
-    id: 'user_02',
-    username: 'bob',
-    displayName: 'Bob',
-    stellarAddress: 'GBBB...',
-    role: 'admin',
-    createdAt: new Date('2026-07-02'),
-    deletedAt: null,
-  },
-];
+const jwt = await import('jsonwebtoken');
 
-describe('listUsers (issue #1041)', () => {
-  beforeEach(() => vi.clearAllMocks());
+function mockAuth(userId = 'user-1', role = 'admin'): void {
+  (jwt.default.verify as ReturnType<typeof vi.fn>).mockReturnValue({
+    sub: userId,
+    role,
+    scopes: [],
+  });
+}
 
-  it('returns paginated users ordered by createdAt desc', async () => {
-    vi.mocked(prisma.user.findMany).mockResolvedValueOnce(fakeUsers as never);
-    vi.mocked(prisma.user.count).mockResolvedValueOnce(2 as never);
-
-    const result = await listUsers({ page: 1, limit: 20 });
-
-    expect(result.entries).toHaveLength(2);
-    expect(result.total).toBe(2);
-    expect(result.page).toBe(1);
-    expect(result.limit).toBe(20);
-    expect(result.entries[0].username).toBe('alice');
+describe('GET /api/v1/admin/audit-logs', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it('filters by role when provided', async () => {
-    vi.mocked(prisma.user.findMany).mockResolvedValueOnce([fakeUsers[1]] as never);
-    vi.mocked(prisma.user.count).mockResolvedValueOnce(1 as never);
+  it('returns 401 without authorization', async () => {
+    const app = createApp();
+    const res = await request(app).get('/api/v1/admin/audit-logs');
 
-    await listUsers({ page: 1, limit: 20, role: 'admin' });
+    expect(res.status).toBe(401);
+  });
 
-    expect(prisma.user.findMany).toHaveBeenCalledWith(
+  it('returns 403 for non-admin users', async () => {
+    mockAuth('user-1', 'user');
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/v1/admin/audit-logs')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(403);
+  });
+
+  it('returns audit logs for admin users', async () => {
+    mockAuth('admin-1', 'admin');
+    mockAuditLogFindMany.mockResolvedValue([
+      {
+        id: 'log-1',
+        actor: 'admin-1',
+        action: 'suspend_user',
+        target: 'user-1',
+        metadata: { reason: 'spam' },
+        createdAt: new Date('2024-01-01T00:00:00Z'),
+      },
+    ]);
+
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/v1/admin/audit-logs')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].action).toBe('suspend_user');
+  });
+
+  it('filters audit logs by action', async () => {
+    mockAuth('admin-1', 'admin');
+    mockAuditLogFindMany.mockResolvedValue([]);
+
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/v1/admin/audit-logs?action=suspend_user')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(200);
+    expect(mockAuditLogFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ role: 'admin' }),
+        where: { action: 'suspend_user' },
       }),
     );
   });
 
-  it('calculates skip correctly for pagination', async () => {
-    vi.mocked(prisma.user.findMany).mockResolvedValueOnce([] as never);
-    vi.mocked(prisma.user.count).mockResolvedValueOnce(0 as never);
+  it('uses default pagination values', async () => {
+    mockAuth('admin-1', 'admin');
+    mockAuditLogFindMany.mockResolvedValue([]);
 
-    await listUsers({ page: 3, limit: 10 });
+    const app = createApp();
+    await request(app)
+      .get('/api/v1/admin/audit-logs')
+      .set('Authorization', 'Bearer valid-token');
 
-    expect(prisma.user.findMany).toHaveBeenCalledWith(
+    expect(mockAuditLogFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        skip: 20,
-        take: 10,
+        skip: 0,
+        take: 20,
       }),
     );
   });
 });
 
-describe('suspendUser (issue #1041)', () => {
-  beforeEach(() => vi.clearAllMocks());
+describe('GET /api/v1/admin/stats', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-  it('soft-deletes a user by setting deletedAt', async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(fakeUsers[0] as never);
+  it('returns 401 without authorization', async () => {
+    const app = createApp();
+    const res = await request(app).get('/api/v1/admin/stats');
 
-    await suspendUser('user_01', 'spam');
+    expect(res.status).toBe(401);
+  });
 
-    expect(prisma.user.update).toHaveBeenCalledWith({
-      where: { id: 'user_01' },
-      data: { deletedAt: expect.any(Date) },
+  it('returns 403 for non-admin users', async () => {
+    mockAuth('user-1', 'user');
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/v1/admin/stats')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(403);
+  });
+
+  it('returns platform statistics', async () => {
+    mockAuth('admin-1', 'admin');
+    mockUserCount.mockResolvedValueOnce(100); // totalUsers
+    mockUserCount.mockResolvedValueOnce(10); // totalCreators
+    mockTipCount.mockResolvedValue(500);
+    mockTipAggregate.mockResolvedValue({
+      _sum: { amountStroops: BigInt(1_000_000_000) },
     });
+    mockUserCount.mockResolvedValueOnce(50); // activeUsers
+    mockSubscriptionCount.mockResolvedValue(25);
+    mockRefundCount.mockResolvedValue(5);
+
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/v1/admin/stats')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({
+      totalUsers: 100,
+      totalCreators: 10,
+      totalTips: 500,
+      totalSubscriptions: 25,
+      totalRefunds: 5,
+      activeUsersLast30Days: 50,
+    });
+    expect(res.body.data.totalTipAmountStroops).toBe('1000000000');
   });
 
-  it('throws NotFoundError when user does not exist', async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null);
+  it('handles zero tips gracefully', async () => {
+    mockAuth('admin-1', 'admin');
+    mockUserCount.mockResolvedValueOnce(10);
+    mockUserCount.mockResolvedValueOnce(2);
+    mockTipCount.mockResolvedValue(0);
+    mockTipAggregate.mockResolvedValue({ _sum: { amountStroops: null } });
+    mockUserCount.mockResolvedValueOnce(5);
+    mockSubscriptionCount.mockResolvedValue(0);
+    mockRefundCount.mockResolvedValue(0);
 
-    await expect(suspendUser('nonexistent')).rejects.toThrow(NotFoundError);
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/v1/admin/stats')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.averageTipAmount).toBe('0');
+  });
+});
+
+describe('POST /api/v1/admin/audit-log', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it('throws NotFoundError when user is already suspended', async () => {
-    const deletedUser = { ...fakeUsers[0], deletedAt: new Date() };
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(deletedUser as never);
+  it('returns 401 without authorization', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/admin/audit-log')
+      .send({ action: 'test', resource: 'test' });
 
-    await expect(suspendUser('user_01')).rejects.toThrow(NotFoundError);
+    expect(res.status).toBe(401);
   });
 
-  it('accepts optional reason but does not require it', async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(fakeUsers[0] as never);
+  it('returns 403 for non-admin users', async () => {
+    mockAuth('user-1', 'user');
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/admin/audit-log')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ action: 'test', resource: 'test' });
 
-    await suspendUser('user_01');
+    expect(res.status).toBe(403);
+  });
 
-    expect(prisma.user.update).toHaveBeenCalled();
+  it('creates an audit log entry', async () => {
+    mockAuth('admin-1', 'admin');
+    mockAuditLogCreate.mockResolvedValue({
+      id: 'log-1',
+      actor: 'admin-1',
+      action: 'suspend_user',
+      target: 'user-1',
+      metadata: { reason: 'spam' },
+      createdAt: new Date('2024-01-01T00:00:00Z'),
+    });
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/admin/audit-log')
+      .set('Authorization', 'Bearer valid-token')
+      .send({
+        action: 'suspend_user',
+        target: 'user-1',
+        metadata: { reason: 'spam' },
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.action).toBe('suspend_user');
   });
 });

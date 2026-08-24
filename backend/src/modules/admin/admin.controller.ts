@@ -1,38 +1,71 @@
-import { Request, Response, NextFunction } from 'express';
-import { z } from 'zod';
+import type { Request, Response } from 'express';
 import { BadRequestError } from '../../common/errors/AppError.js';
-import { listUsers, suspendUser } from './admin.service.js';
 import {
-  listUsersQuerySchema,
-  suspendUserParamSchema,
-  suspendUserBodySchema,
+  listAuditLogsQuerySchema,
+  platformStatsResponseSchema,
 } from './admin.schema.js';
+import {
+  logAuditAction,
+  listAuditLogs,
+  getPlatformStats,
+} from './admin.service.js';
 
-export async function listUsersController(req: Request, res: Response, next: NextFunction) {
-  try {
-    const query = listUsersQuerySchema.parse(req.query);
-    const result = await listUsers(query);
-    res.json({ data: result });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      next(new BadRequestError('Invalid query parameters', error.issues));
-    } else {
-      next(error);
-    }
+/**
+ * GET /admin/audit-logs — list audit logs with optional filtering.
+ */
+export async function listAuditLogsController(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const parsed = listAuditLogsQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    throw new BadRequestError('Invalid query parameters');
   }
+
+  const { limit, offset, action, actor } = parsed.data;
+  const logs = await listAuditLogs(limit, offset, action, actor);
+
+  res.json({ data: logs });
 }
 
-export async function suspendUserController(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = suspendUserParamSchema.parse(req.params);
-    const body = suspendUserBodySchema.parse(req.body);
-    await suspendUser(id, body.reason);
-    res.status(204).send();
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      next(new BadRequestError('Invalid request', error.issues));
-    } else {
-      next(error);
-    }
+/**
+ * GET /admin/stats — get platform statistics.
+ */
+export async function getPlatformStatsController(
+  _req: Request,
+  res: Response,
+): Promise<void> {
+  const stats = await getPlatformStats();
+
+  const response = {
+    ...stats,
+    totalTipAmountStroops: stats.totalTipAmountStroops.toString(),
+  };
+
+  const validated = platformStatsResponseSchema.parse(response);
+  res.json({ data: validated });
+}
+
+/**
+ * POST /admin/audit-log — create an audit log entry (internal use).
+ */
+export async function createAuditLogController(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const auth = req.auth;
+  if (!auth) {
+    throw new BadRequestError('Unauthorized');
   }
+
+  const { action, target, metadata } = req.body;
+
+  const log = await logAuditAction(
+    auth.sub,
+    action,
+    target,
+    metadata,
+  );
+
+  res.status(201).json({ data: log });
 }
