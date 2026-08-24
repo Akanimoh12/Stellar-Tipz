@@ -243,4 +243,60 @@ describe('GET /api/v1/refunds/me', () => {
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual([]);
   });
+
+  it('respects pagination limits', async () => {
+    mockAuth();
+    mockUserFindUnique.mockResolvedValue({ id: 'user-1', stellarAddress: address });
+    mockRefundFindMany.mockResolvedValue([]);
+
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/v1/refunds/me?limit=50&offset=10')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(200);
+    expect(mockRefundFindMany).toHaveBeenCalledWith({
+      where: { tip: { fromAddress: address } },
+      orderBy: { createdAt: 'desc' },
+      skip: 10,
+      take: 50,
+    });
+  });
+
+  it('orders refunds by creation date descending', async () => {
+    mockAuth();
+    mockUserFindUnique.mockResolvedValue({ id: 'user-1', stellarAddress: address });
+    mockRefundFindMany.mockResolvedValue([
+      {
+        id: 'refund-2',
+        tipId: 'tip-2',
+        amount: BigInt(2_000_000),
+        reason: 'duplicate',
+        status: 'completed',
+        txHash: 'tx-hash-2',
+        createdAt: new Date('2024-01-02T00:00:00.000Z'),
+        updatedAt: new Date('2024-01-02T00:00:00.000Z'),
+      },
+      {
+        id: 'refund-1',
+        tipId: 'tip-1',
+        amount: BigInt(1_000_000),
+        reason: 'wrong creator',
+        status: 'pending',
+        txHash: null,
+        createdAt: new Date('2024-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2024-01-01T00:00:00.000Z'),
+      },
+    ]);
+
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/v1/refunds/me')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(2);
+    expect(res.body.data[0].id).toBe('refund-2');
+    expect(res.body.data[1].id).toBe('refund-1');
+  });
 });

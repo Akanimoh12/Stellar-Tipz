@@ -26,6 +26,7 @@ import { registerSubscriptionsDocs } from './modules/subscriptions/subscriptions
 import { subscriptionsRouter } from './modules/subscriptions/subscriptions.routes.js';
 import { refundsRouter } from './modules/refunds/refunds.routes.js';
 import { streaksRouter } from './modules/streaks/streaks.routes.js';
+import { adminRouter } from './modules/admin/admin.routes.js';
 
 /** Builds and configures the Express application without starting a listener. */
 export function createApp(): Express {
@@ -78,6 +79,7 @@ export function createApp(): Express {
   app.use(`${env.API_BASE_PATH}/subscriptions`, subscriptionsRouter);
   app.use(`${env.API_BASE_PATH}/refunds`, refundsRouter);
   app.use(`${env.API_BASE_PATH}/streaks`, streaksRouter);
+  app.use(`${env.API_BASE_PATH}/admin`, adminRouter);
 
   // Register OpenAPI path docs for feature modules.
   registerGoalsDocs();
