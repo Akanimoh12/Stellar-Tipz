@@ -8,7 +8,7 @@
 //! Topic tuple  → `(Symbol, Symbol)`   – identifies the event type
 //! Data tuple   → `(field, field, …)`  – the payload
 
-use soroban_sdk::{symbol_short, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{symbol_short, Address, BytesN, Env, String, Symbol, Vec};
 
 use crate::types::BatchSkip;
 
@@ -66,6 +66,20 @@ pub fn emit_profile_reactivated(env: &Env, creator: &Address, actor: &Address) {
 /// complete tip history from events alone, without relying on temporary storage
 /// which expires after ~7 days.
 #[allow(clippy::too_many_arguments)]
+pub fn emit_tipper_blocked(env: &Env, creator: &Address, tipper: &Address) {
+    env.events().publish(
+        (symbol_short!("tipper"), symbol_short!("blocked")),
+        (creator.clone(), tipper.clone()),
+    );
+}
+
+pub fn emit_tipper_unblocked(env: &Env, creator: &Address, tipper: &Address) {
+    env.events().publish(
+        (symbol_short!("tipper"), symbol_short!("unblocked")),
+        (creator.clone(), tipper.clone()),
+    );
+}
+
 pub fn emit_tip_sent(
     env: &Env,
     tip_id: u32,
@@ -183,6 +197,16 @@ pub fn emit_admin_change_confirmed(env: &Env, old_admin: &Address, new_admin: &A
         (symbol_short!("admin"), symbol_short!("chgconf")),
         (old_admin.clone(), new_admin.clone()),
     );
+}
+
+pub fn emit_upgrade_proposed(env: &Env, wasm_hash: &BytesN<32>) {
+    env.events()
+        .publish((symbol_short!("upgrade"), symbol_short!("proposed")), wasm_hash.clone());
+}
+
+pub fn emit_upgrade_cancelled(env: &Env, admin: &Address) {
+    env.events()
+        .publish((symbol_short!("upgrade"), symbol_short!("canceled")), admin.clone());
 }
 
 // ── Fee events ────────────────────────────────────────────────────────────────

@@ -166,6 +166,12 @@ pub enum DataKey {
     RateLimitConfig,
     /// Tips received by a creator during a specific period (Address, Period, StartTimestamp)
     CreatorPeriodVolume(Address, crate::types::LeaderboardPeriod, u64),
+    /// Creator-level blocked tipper entry `(creator, tipper)`.
+    CreatorBlockedTipper(Address, Address),
+    /// Active blocked-tipper count for a creator.
+    CreatorBlockedTipperCount(Address),
+    /// Proposed contract upgrade WASM hash awaiting execution.
+    ProposedUpgradeHash,
 }
 
 /// Extended storage keys for new features (separate enum to avoid size limits)
@@ -485,6 +491,53 @@ pub fn clear_profile_deactivation(env: &Env, address: &Address) {
     let key = DataKey::ProfileDeactivatedAt(address.clone());
     if env.storage().persistent().has(&key) {
         env.storage().persistent().remove(&key);
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Creator tip allowlist/blocklist
+// ──────────────────────────────────────────────────────────────────────────────
+
+pub fn is_creator_blocked_tipper(env: &Env, creator: &Address, tipper: &Address) -> bool {
+    let key = DataKey::CreatorBlockedTipper(creator.clone(), tipper.clone());
+    let blocked = env.storage().persistent().has(&key);
+    if blocked {
+        extend_persistent_ttl(env, &key, PersistentTier::Standard);
+    }
+    blocked
+}
+
+pub fn get_creator_blocked_tipper_count(env: &Env, creator: &Address) -> u32 {
+    let key = DataKey::CreatorBlockedTipperCount(creator.clone());
+    let count = env.storage().persistent().get(&key).unwrap_or(0_u32);
+    if count > 0 {
+        extend_persistent_ttl(env, &key, PersistentTier::Standard);
+    }
+    count
+}
+
+pub fn set_creator_blocked_tipper(env: &Env, creator: &Address, tipper: &Address, blocked_at: u64) {
+    let entry_key = DataKey::CreatorBlockedTipper(creator.clone(), tipper.clone());
+    if !env.storage().persistent().has(&entry_key) {
+        let count_key = DataKey::CreatorBlockedTipperCount(creator.clone());
+        let count = get_creator_blocked_tipper_count(env, creator);
+        env.storage().persistent().set(&count_key, &(count + 1));
+        extend_persistent_ttl(env, &count_key, PersistentTier::Standard);
+    }
+    env.storage().persistent().set(&entry_key, &blocked_at);
+    extend_persistent_ttl(env, &entry_key, PersistentTier::Standard);
+}
+
+pub fn remove_creator_blocked_tipper(env: &Env, creator: &Address, tipper: &Address) {
+    let entry_key = DataKey::CreatorBlockedTipper(creator.clone(), tipper.clone());
+    if env.storage().persistent().has(&entry_key) {
+        env.storage().persistent().remove(&entry_key);
+        let count_key = DataKey::CreatorBlockedTipperCount(creator.clone());
+        let count = get_creator_blocked_tipper_count(env, creator);
+        env.storage()
+            .persistent()
+            .set(&count_key, &count.saturating_sub(1));
+        extend_persistent_ttl(env, &count_key, PersistentTier::Standard);
     }
 }
 

@@ -4,7 +4,7 @@
 //! - Fee management
 //! - Admin role transfer
 
-use soroban_sdk::{Address, Env, Vec};
+use soroban_sdk::{Address, BytesN, Env, Vec};
 
 use crate::credit;
 use crate::errors::ContractError;
@@ -512,7 +512,34 @@ pub fn set_domain_reverify_interval(
     Ok(())
 }
 
-/// Upgrade the contract to a new WASM hash. Admin only.
+/// Store a proposed WASM hash for dry-run verification before execution.
+pub fn propose_upgrade(
+    env: &Env,
+    caller: &Address,
+    new_wasm_hash: &BytesN<32>,
+) -> Result<BytesN<32>, ContractError> {
+    storage::extend_instance_ttl(env);
+    require_admin(env, caller)?;
+    env.storage()
+        .instance()
+        .set(&DataKey::ProposedUpgradeHash, new_wasm_hash);
+    events::emit_upgrade_proposed(env, new_wasm_hash);
+    Ok(new_wasm_hash.clone())
+}
+
+pub fn get_proposed_upgrade(env: &Env) -> Option<BytesN<32>> {
+    env.storage().instance().get(&DataKey::ProposedUpgradeHash)
+}
+
+pub fn cancel_upgrade(env: &Env, caller: &Address) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    require_admin(env, caller)?;
+    env.storage().instance().remove(&DataKey::ProposedUpgradeHash);
+    events::emit_upgrade_cancelled(env, caller);
+    Ok(())
+}
+
+/// Upgrade the contract to a previously proposed WASM hash. Admin only.
 pub fn upgrade(
     env: &Env,
     caller: &Address,
@@ -520,8 +547,13 @@ pub fn upgrade(
 ) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
+    let proposed = get_proposed_upgrade(env).ok_or(ContractError::NotFound)?;
+    if proposed != new_wasm_hash.clone() {
+        return Err(ContractError::InvalidInput);
+    }
     env.deployer()
         .update_current_contract_wasm(new_wasm_hash.clone());
+    env.storage().instance().remove(&DataKey::ProposedUpgradeHash);
     let new_version = storage::get_version(env) + 1;
     storage::set_version(env, new_version);
     Ok(())

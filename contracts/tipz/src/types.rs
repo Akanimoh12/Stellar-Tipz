@@ -8,6 +8,9 @@ pub const MAX_PROFILES: u32 = 10_000;
 /// Maximum tip message length in characters.
 pub const MAX_MESSAGE_LENGTH: u32 = 280;
 
+/// Maximum number of blocked tippers a creator can keep on-chain.
+pub const MAX_CREATOR_BLOCKED_TIPPERS: u32 = 100;
+
 /// Maximum username length in characters.
 pub const MAX_USERNAME_LENGTH: u32 = 32;
 

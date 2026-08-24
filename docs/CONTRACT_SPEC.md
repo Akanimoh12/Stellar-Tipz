@@ -102,7 +102,7 @@ pub struct ContractConfig {
 
 ### DataKey (Storage Keys)
 
-The current contract defines **21 `DataKey` variants** across Soroban's
+The contract defines storage keys across Soroban's
 `instance`, `persistent`, and `temporary` storage tiers.
 
 | DataKey                     | Storage tier | Stored value            | Purpose                                                          |
@@ -128,6 +128,9 @@ The current contract defines **21 `DataKey` variants** across Soroban's
 | `CreatorTipCount(Address)`  | Temporary    | `u32`                   | Number of tips received by a specific creator                    |
 | `CreatorTip(Address, u32)`  | Temporary    | `u32`                   | Reverse index from `(creator, local_index)` to global tip id     |
 | `PendingAdmin`              | Instance     | `Address`               | Proposed admin during the two-step admin transfer flow           |
+| `CreatorBlockedTipper`      | Persistent   | `u64`                   | Creator-level blocklist entry keyed by `(creator, tipper)`       |
+| `CreatorBlockedTipperCount` | Persistent   | `u32`                   | Active blocklist size for a creator                              |
+| `ProposedUpgradeHash`       | Instance     | `BytesN<32>`            | WASM hash proposed before `execute_upgrade`                      |
 
 ---
 
@@ -177,7 +180,14 @@ Returns a profile by username.
 
 Transfers native XLM from the tipper to the contract, credits the creator,
 stores a temporary tip record, updates counters, and refreshes leaderboard
-state.
+state. Messages are capped on-chain by `MAX_MESSAGE_LENGTH` (280 characters)
+and invalid control characters are rejected.
+
+#### `block_tipper(creator, tipper)` / `unblock_tipper(creator, tipper)`
+
+Creators can block abusive tippers from sending future tips. A blocked tipper
+receives `TipperBlocked` from `send_tip`. Each creator can keep up to
+`MAX_CREATOR_BLOCKED_TIPPERS` active entries.
 
 #### `withdraw_tips(caller, amount)`
 
@@ -225,6 +235,11 @@ Returns the top creators by total tips received.
 #### `get_stats() -> ContractStats`
 
 Returns aggregate platform statistics.
+
+#### `propose_upgrade(admin, new_wasm_hash)` / `execute_upgrade(admin, new_wasm_hash)`
+
+Admins can stage a WASM hash before execution. `execute_upgrade` only accepts
+the currently proposed hash, and `cancel_upgrade` clears a pending proposal.
 
 #### `get_config() -> ContractConfig`
 
@@ -645,3 +660,11 @@ state commits).
 | INV-P-1   | `test_profiles.rs`        | `test_username_unique`                         |
 | INV-P-2   | `test_profiles.rs`        | `test_address_unique`                          |
 | INV-P-3   | `test_profiles.rs`        | `test_deregister_clears_state`                 |
+
+
+### Verification Renewal
+
+Verification approvals expire after the configured domain re-verification
+interval. Once expired, `request_verification` may be called again and
+`get_verification_status` reports the creator as unverified until approval is
+renewed.
