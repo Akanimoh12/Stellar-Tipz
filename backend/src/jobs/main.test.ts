@@ -27,6 +27,7 @@ vi.mock('../config/index.js', () => ({
     analytics: { dailyCron: '5 0 * * *' },
     subscriptions: { chargeCron: '0 * * * *' },
     leaderboard: { snapshotCron: '15 0 * * *' },
+    twitter: { metricsRefreshCron: '30 0 * * *' },
   },
 }));
 
@@ -72,7 +73,7 @@ describe('bootstrapJobs', () => {
     expect(closableNames).toContain('Redis');
   });
 
-  it('registers credit, analytics, subscription-charge, and leaderboard-snapshot workers as closable', async () => {
+  it('registers credit, analytics, subscription-charge, leaderboard-snapshot, and x-metrics-refresh workers as closable', async () => {
     const { bootstrapJobs } = await import('./main.js');
     await bootstrapJobs();
 
@@ -81,12 +82,13 @@ describe('bootstrapJobs', () => {
     expect(closableNames).toContain('AnalyticsDailyWorker');
     expect(closableNames).toContain('SubscriptionChargeWorker');
     expect(closableNames).toContain('LeaderboardSnapshotWorker');
+    expect(closableNames).toContain('XMetricsRefreshWorker');
   });
 
-  it('schedules credit recompute, analytics daily, subscription-charge, and leaderboard-snapshot jobs', async () => {
+  it('schedules credit recompute, analytics daily, subscription-charge, leaderboard-snapshot, and x-metrics-refresh jobs', async () => {
     const { bootstrapJobs } = await import('./main.js');
     await bootstrapJobs();
 
-    expect(mockScheduleRepeatable).toHaveBeenCalledTimes(4);
+    expect(mockScheduleRepeatable).toHaveBeenCalledTimes(5);
   });
 });

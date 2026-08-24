@@ -41,4 +41,16 @@ export {
   scheduleLeaderboardSnapshot,
 } from './leaderboardSnapshot.worker.js';
 
+export {
+  X_METRICS_REFRESH_QUEUE,
+  getXMetricsRefreshQueue,
+} from './xMetricsRefresh.queue.js';
+export {
+  refreshAllXMetrics,
+  createXMetricsRefreshWorker,
+  scheduleXMetricsRefresh,
+} from './xMetricsRefresh.worker.js';
+
+export { recordDeadLetter, attachDeadLetterHandler, listDeadLetterJobs } from './deadLetter.js';
+
 export { bootstrapJobs } from './main.js';

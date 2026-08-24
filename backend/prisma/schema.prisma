@@ -444,3 +444,26 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
 }
+
+/// A background job that exhausted all of its BullMQ retry attempts.
+/// Rows are written by the jobs runtime's dead-letter handler so failed
+/// jobs remain inspectable after BullMQ prunes them from Redis.
+model DeadLetterJob {
+  id            String   @id @default(cuid())
+  /// BullMQ queue name the job belonged to, e.g. "x-metrics-refresh".
+  queue         String
+  /// BullMQ job id, when available.
+  jobId         String?
+  /// BullMQ job name, e.g. "refresh".
+  jobName       String
+  /// The job's data payload at the time it failed.
+  data          Json?
+  /// Error message from the final failed attempt.
+  failedReason  String
+  /// Number of attempts made before the job was moved to the dead letter.
+  attemptsMade  Int
+  failedAt      DateTime @default(now())
+
+  @@index([queue])
+  @@index([failedAt])
+}

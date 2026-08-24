@@ -4,6 +4,7 @@ import { prisma } from '../db/prisma.js';
 import { logger } from '../common/utils/logger.js';
 import { SUBSCRIPTION_CHARGE_QUEUE, getSubscriptionChargeQueue } from './subscriptionCharge.queue.js';
 import { scheduleRepeatable } from './scheduler.js';
+import { attachDeadLetterHandler } from './deadLetter.js';
 
 /**
  * Process due subscriptions: find all ACTIVE subscriptions whose
@@ -96,6 +97,7 @@ export function createSubscriptionChargeWorker(): Worker {
   worker.on('failed', (job, err) => {
     logger.error({ err, jobId: job?.id }, 'Subscription charge job failed');
   });
+  attachDeadLetterHandler(worker, SUBSCRIPTION_CHARGE_QUEUE);
 
   return worker;
 }

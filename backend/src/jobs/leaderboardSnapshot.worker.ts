@@ -9,6 +9,7 @@ import {
   getLeaderboardSnapshotQueue,
 } from './leaderboardSnapshot.queue.js';
 import { scheduleRepeatable } from './scheduler.js';
+import { attachDeadLetterHandler } from './deadLetter.js';
 
 const SNAPSHOT_PERIODS: SnapshotPeriod[] = ['WEEKLY', 'MONTHLY', 'ALL_TIME'];
 
@@ -51,6 +52,7 @@ export function createLeaderboardSnapshotWorker(): Worker {
   worker.on('failed', (job, err) => {
     logger.error({ err, jobId: job?.id }, 'Leaderboard snapshot job failed');
   });
+  attachDeadLetterHandler(worker, LEADERBOARD_SNAPSHOT_QUEUE);
 
   return worker;
 }
