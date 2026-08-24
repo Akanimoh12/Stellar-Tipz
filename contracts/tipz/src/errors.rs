@@ -64,4 +64,8 @@ pub enum ContractError {
     NotTipper = 42,
     /// Only the creator can approve/reject a refund
     NotCreator = 43,
+    /// Tipper is blocked by the creator
+    TipperBlocked = 44,
+    /// Creator blocklist reached its configured cap
+    BlocklistLimitReached = 45,
 }

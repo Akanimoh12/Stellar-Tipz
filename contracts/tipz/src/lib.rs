@@ -306,6 +306,30 @@ impl TipzContract {
         storage::get_tipper_tip_count(&env, &tipper)
     }
 
+    pub fn block_tipper(
+        env: Env,
+        creator: Address,
+        tipper: Address,
+    ) -> Result<(), ContractError> {
+        tips::block_tipper(&env, &creator, &tipper)
+    }
+
+    pub fn unblock_tipper(
+        env: Env,
+        creator: Address,
+        tipper: Address,
+    ) -> Result<(), ContractError> {
+        tips::unblock_tipper(&env, &creator, &tipper)
+    }
+
+    pub fn is_tipper_blocked(env: Env, creator: Address, tipper: Address) -> bool {
+        tips::is_tipper_blocked(&env, &creator, &tipper)
+    }
+
+    pub fn get_blocked_tipper_count(env: Env, creator: Address) -> u32 {
+        tips::get_blocked_tipper_count(&env, &creator)
+    }
+
     // ──────────────────────────────────────────────
     // Credit Score
     // ──────────────────────────────────────────────
@@ -541,6 +565,30 @@ impl TipzContract {
     ///
     /// After this call the contract executes new WASM code and the stored
     /// version is incremented by one.
+    pub fn propose_upgrade(
+        env: Env,
+        admin: Address,
+        new_wasm_hash: BytesN<32>,
+    ) -> Result<BytesN<32>, ContractError> {
+        admin::propose_upgrade(&env, &admin, &new_wasm_hash)
+    }
+
+    pub fn get_proposed_upgrade(env: Env) -> Option<BytesN<32>> {
+        admin::get_proposed_upgrade(&env)
+    }
+
+    pub fn cancel_upgrade(env: Env, admin: Address) -> Result<(), ContractError> {
+        admin::cancel_upgrade(&env, &admin)
+    }
+
+    pub fn execute_upgrade(
+        env: Env,
+        admin: Address,
+        new_wasm_hash: BytesN<32>,
+    ) -> Result<(), ContractError> {
+        admin::upgrade(&env, &admin, &new_wasm_hash)
+    }
+
     pub fn upgrade(
         env: Env,
         admin: Address,
@@ -631,6 +679,10 @@ impl TipzContract {
         creator: Address,
     ) -> Result<crate::types::VerificationStatus, ContractError> {
         verification::get_verification_status(&env, creator)
+    }
+
+    pub fn is_verification_expired(env: Env, creator: Address) -> Result<bool, ContractError> {
+        verification::is_verification_expired(&env, creator)
     }
 
     // ──────────────────────────────────────────────

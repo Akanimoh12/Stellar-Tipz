@@ -13,7 +13,7 @@ use crate::leaderboard;
 use crate::storage::{self, DataKey};
 use crate::streaks;
 use crate::token;
-use crate::types::Tip;
+use crate::types::{Tip, MAX_CREATOR_BLOCKED_TIPPERS};
 use crate::validation::{validate_message, validate_tip_for_creator};
 
 /// Create a new [`Tip`] record and store it in temporary storage.
@@ -152,6 +152,55 @@ pub const MAX_TIP_AMOUNT: i128 = 1_000_000_000_000_i128;
 /// Maximum per-creator tip count stored in the profile.
 pub const MAX_TIP_COUNT: u32 = u32::MAX;
 
+/// Block a tipper from sending future tips to `creator`.
+pub fn block_tipper(
+    env: &Env,
+    creator: &Address,
+    tipper: &Address,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    creator.require_auth();
+    if !storage::has_profile(env, creator) {
+        return Err(ContractError::NotRegistered);
+    }
+    if creator == tipper {
+        return Err(ContractError::CannotTipSelf);
+    }
+    if storage::is_creator_blocked_tipper(env, creator, tipper) {
+        return Ok(());
+    }
+    if storage::get_creator_blocked_tipper_count(env, creator) >= MAX_CREATOR_BLOCKED_TIPPERS {
+        return Err(ContractError::BlocklistLimitReached);
+    }
+    storage::set_creator_blocked_tipper(env, creator, tipper, env.ledger().timestamp());
+    crate::events::emit_tipper_blocked(env, creator, tipper);
+    Ok(())
+}
+
+/// Remove a tipper from `creator`'s blocklist.
+pub fn unblock_tipper(
+    env: &Env,
+    creator: &Address,
+    tipper: &Address,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    creator.require_auth();
+    if !storage::has_profile(env, creator) {
+        return Err(ContractError::NotRegistered);
+    }
+    storage::remove_creator_blocked_tipper(env, creator, tipper);
+    crate::events::emit_tipper_unblocked(env, creator, tipper);
+    Ok(())
+}
+
+pub fn is_tipper_blocked(env: &Env, creator: &Address, tipper: &Address) -> bool {
+    storage::is_creator_blocked_tipper(env, creator, tipper)
+}
+
+pub fn get_blocked_tipper_count(env: &Env, creator: &Address) -> u32 {
+    storage::get_creator_blocked_tipper_count(env, creator)
+}
+
 /// Send an XLM tip from `tipper` to a registered `creator`.
 pub fn send_tip(
     env: &Env,
@@ -183,6 +232,9 @@ pub fn send_tip(
 
     if storage::is_profile_deactivated(env, creator) {
         return Err(ContractError::ProfileDeactivated);
+    }
+    if storage::is_creator_blocked_tipper(env, creator, tipper) {
+        return Err(ContractError::TipperBlocked);
     }
 
     validate_tip_for_creator(env, creator, amount)?;
