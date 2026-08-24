@@ -5,6 +5,7 @@ import { mergeOpenApiPaths } from '../../docs/openapi.js';
 
 export const searchRouter = Router();
 
+searchRouter.get('/creators/trending', searchController.getTrendingCreators);
 searchRouter.get('/creators', searchController.searchCreators);
 
 const base = `${env.API_BASE_PATH}/search`;
@@ -60,6 +61,54 @@ mergeOpenApiPaths({
       responses: {
         '200': {
           description: 'Matching creators',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: { type: 'array', items: searchCreatorSchema },
+                  pagination: {
+                    type: 'object',
+                    properties: {
+                      limit: { type: 'integer' },
+                      offset: { type: 'integer' },
+                      total: { type: 'integer' },
+                      hasMore: { type: 'boolean' },
+                    },
+                    required: ['limit', 'offset', 'total', 'hasMore'],
+                  },
+                },
+                required: ['data', 'pagination'],
+              },
+            },
+          },
+        },
+        '400': { description: 'Validation error' },
+      },
+    },
+  },
+  [`${base}/creators/trending`]: {
+    get: {
+      tags: ['Search'],
+      summary: 'Get trending creators',
+      description: 'Returns a list of trending creators sorted by most tips received.',
+      parameters: [
+        {
+          name: 'limit',
+          in: 'query',
+          required: false,
+          schema: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+        },
+        {
+          name: 'offset',
+          in: 'query',
+          required: false,
+          schema: { type: 'integer', minimum: 0, default: 0 },
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'Trending creators',
           content: {
             'application/json': {
               schema: {

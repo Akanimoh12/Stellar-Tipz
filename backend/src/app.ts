@@ -5,6 +5,9 @@ import pinoHttp from 'pino-http';
 import swaggerUi from 'swagger-ui-express';
 import { env } from './config/env.js';
 import { errorHandler, notFoundHandler } from './common/middleware/errorHandler.js';
+import { globalRateLimiter } from './common/middleware/rateLimiter.js';
+import { metricsController, metricsMiddleware } from './common/observability/metrics.js';
+import { getSentryRequestHandler, getSentryErrorHandler } from './common/observability/sentry.js';
 import { logger } from './common/utils/logger.js';
 import { openApiDocument } from './docs/openapi.js';
 import { requestId } from './common/middleware/requestId.js';
@@ -32,6 +35,7 @@ import { adminRouter } from './modules/admin/admin.routes.js';
 export function createApp(): Express {
   const app = express();
 
+  app.use(getSentryRequestHandler());
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -44,7 +48,9 @@ export function createApp(): Express {
     }),
   );
   app.use(cors({ origin: env.CORS_ORIGIN.split(','), credentials: true }));
+  app.use(globalRateLimiter);
   app.use(requestId);
+  app.use(metricsMiddleware);
   app.use(express.json({ limit: '1mb' }));
   app.use(pinoHttp({ logger }));
 
@@ -61,6 +67,8 @@ export function createApp(): Express {
       time: new Date().toISOString(),
     });
   });
+
+  app.get('/metrics', metricsController);
 
   app.use(`${env.API_BASE_PATH}/auth`, authRouter);
   app.use(`${env.API_BASE_PATH}/profiles`, profilesRouter);
@@ -85,6 +93,7 @@ export function createApp(): Express {
   registerGoalsDocs();
   registerSubscriptionsDocs();
 
+  app.use(getSentryErrorHandler());
   app.use(notFoundHandler);
   app.use(errorHandler);
 

@@ -37,6 +37,28 @@ pub const PROFILE_TTL_MIN_LEDGERS: u32 = 120_960;
 /// Target TTL for profile entries after a bump (~31 days).
 pub const PROFILE_TTL_MAX_LEDGERS: u32 = 535_680;
 
+// Per-entry-type persistent TTL policy (#1175).
+//
+// Two tiers, so no persistent entry silently archives mid-lifecycle:
+//
+// | Tier       | Entries                              | Min bump | Extend-to |
+// |------------|--------------------------------------|----------|-----------|
+// | `Balance`  | `Profile`, `TokenBalance`            | ~7 days  | ~31 days  |
+// | `Standard` | username, streak, goal, donation, …  | ~7 days  | ~15 days  |
+//
+// Balance-bearing entries get the longest target so a creator's funds can
+// never become inaccessible before their metadata does.
+
+/// Minimum remaining TTL before a balance-bearing entry is extended (~7 days).
+pub const BALANCE_TTL_MIN_LEDGERS: u32 = 120_960;
+/// Extend-to target for balance-bearing entries after a bump (~31 days).
+pub const BALANCE_TTL_MAX_LEDGERS: u32 = 535_680;
+
+/// Minimum remaining TTL before a standard persistent entry is extended (~7 days).
+pub const PERSISTENT_TTL_MIN_LEDGERS: u32 = 120_960;
+/// Extend-to target for standard persistent entries after a bump (~15 days).
+pub const PERSISTENT_TTL_MAX_LEDGERS: u32 = 267_840;
+
 // ──────────────────────────────────────────────────────────────────────────────
 // DataKey
 // ──────────────────────────────────────────────────────────────────────────────
@@ -236,6 +258,35 @@ pub fn set_tip_ttl(env: &Env, key: &DataKey) {
         .extend_ttl(key, TIP_TTL_LEDGERS, TIP_TTL_LEDGERS);
 }
 
+/// TTL tier for a persistent entry. Balance-bearing entries get the longest
+/// target so funds never archive before metadata.
+pub(crate) enum PersistentTier {
+    /// `Profile`, `TokenBalance` — longest TTL.
+    Balance,
+    /// Everything else in persistent storage.
+    Standard,
+}
+
+/// The single shared persistent-TTL bump. Every persistent read and write path
+/// routes through this helper, so there is exactly one place a TTL policy can
+/// be forgotten — the failure mode this issue exists to remove (#1175).
+///
+/// No-op when the entry is absent, so it is safe to call after a read that may
+/// have missed. Generic over the key type because balances live under
+/// `ExtendedDataKey` while the rest live under `DataKey`.
+pub(crate) fn extend_persistent_ttl<K>(env: &Env, key: &K, tier: PersistentTier)
+where
+    K: soroban_sdk::IntoVal<Env, soroban_sdk::Val>,
+{
+    if env.storage().persistent().has(key) {
+        let (min, max) = match tier {
+            PersistentTier::Balance => (BALANCE_TTL_MIN_LEDGERS, BALANCE_TTL_MAX_LEDGERS),
+            PersistentTier::Standard => (PERSISTENT_TTL_MIN_LEDGERS, PERSISTENT_TTL_MAX_LEDGERS),
+        };
+        env.storage().persistent().extend_ttl(key, min, max);
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Initialisation
 // ──────────────────────────────────────────────────────────────────────────────
@@ -416,15 +467,18 @@ pub fn is_profile_deactivated(env: &Env, address: &Address) -> bool {
 
 /// Ledger timestamp when the profile was deactivated, if deactivated.
 pub fn get_profile_deactivated_at(env: &Env, address: &Address) -> Option<u64> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::ProfileDeactivatedAt(address.clone()))
+    let key = DataKey::ProfileDeactivatedAt(address.clone());
+    let at = env.storage().persistent().get(&key);
+    if at.is_some() {
+        extend_persistent_ttl(env, &key, PersistentTier::Standard);
+    }
+    at
 }
 
 pub fn set_profile_deactivated_at(env: &Env, address: &Address, at: u64) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::ProfileDeactivatedAt(address.clone()), &at);
+    let key = DataKey::ProfileDeactivatedAt(address.clone());
+    env.storage().persistent().set(&key, &at);
+    extend_persistent_ttl(env, &key, PersistentTier::Standard);
 }
 
 pub fn clear_profile_deactivation(env: &Env, address: &Address) {
@@ -571,24 +625,31 @@ pub fn has_profile(env: &Env, address: &Address) -> bool {
 /// Panics if no profile is registered for `address`. Callers should guard
 /// with [`has_profile`] first.
 pub fn get_profile(env: &Env, address: &Address) -> Profile {
-    env.storage()
+    let key = DataKey::Profile(address.clone());
+    let profile = env
+        .storage()
         .persistent()
-        .get(&DataKey::Profile(address.clone()))
-        .expect("profile not found")
+        .get(&key)
+        .expect("profile not found");
+    extend_persistent_ttl(env, &key, PersistentTier::Balance);
+    profile
 }
 
 /// Returns the profile for `address`, or `None` when absent.
 pub fn get_profile_opt(env: &Env, address: &Address) -> Option<Profile> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::Profile(address.clone()))
+    let key = DataKey::Profile(address.clone());
+    let profile = env.storage().persistent().get(&key);
+    if profile.is_some() {
+        extend_persistent_ttl(env, &key, PersistentTier::Balance);
+    }
+    profile
 }
 
 /// Persists (creates or updates) a profile, keyed by `profile.owner`.
 pub fn set_profile(env: &Env, profile: &Profile) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::Profile(profile.owner.clone()), profile);
+    let key = DataKey::Profile(profile.owner.clone());
+    env.storage().persistent().set(&key, profile);
+    extend_persistent_ttl(env, &key, PersistentTier::Balance);
 }
 
 /// Remove a profile from persistent storage.
@@ -611,16 +672,19 @@ pub fn remove_username_address(env: &Env, username: &String) {
 
 /// Returns the address associated with `username`, or `None` if not taken.
 pub fn get_username_address(env: &Env, username: &String) -> Option<Address> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::UsernameToAddress(username.clone()))
+    let key = DataKey::UsernameToAddress(username.clone());
+    let addr = env.storage().persistent().get(&key);
+    if addr.is_some() {
+        extend_persistent_ttl(env, &key, PersistentTier::Standard);
+    }
+    addr
 }
 
 /// Stores the `username → address` reverse-lookup entry.
 pub fn set_username_address(env: &Env, username: &String, address: &Address) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::UsernameToAddress(username.clone()), address);
+    let key = DataKey::UsernameToAddress(username.clone());
+    env.storage().persistent().set(&key, address);
+    extend_persistent_ttl(env, &key, PersistentTier::Standard);
 }
 
 /// Bumps the TTL for both `Profile` and `UsernameToAddress` entries together,
@@ -826,17 +890,19 @@ pub fn get_streak(
     supporter: &Address,
     creator: &Address,
 ) -> Option<crate::types::Streak> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::Streak(supporter.clone(), creator.clone()))
+    let key = DataKey::Streak(supporter.clone(), creator.clone());
+    let streak = env.storage().persistent().get(&key);
+    if streak.is_some() {
+        extend_persistent_ttl(env, &key, PersistentTier::Standard);
+    }
+    streak
 }
 
 /// Persist a streak record for a supporter/creator pair.
 pub fn set_streak(env: &Env, streak: &crate::types::Streak) {
-    env.storage().persistent().set(
-        &DataKey::Streak(streak.supporter.clone(), streak.creator.clone()),
-        streak,
-    );
+    let key = DataKey::Streak(streak.supporter.clone(), streak.creator.clone());
+    env.storage().persistent().set(&key, streak);
+    extend_persistent_ttl(env, &key, PersistentTier::Standard);
 }
 
 /// Return the total streak bonus accumulated for a creator.
@@ -1297,7 +1363,7 @@ pub fn remove_refund_request(env: &Env, tip_id: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::storage::{Instance, Temporary};
+    use soroban_sdk::testutils::storage::{Instance, Persistent, Temporary};
     use soroban_sdk::{testutils::Address as _, Env, Map, Symbol};
 
     use crate::types::{VerificationStatus, VerificationType};
@@ -1309,6 +1375,70 @@ mod tests {
         let env = Env::default();
         let id = env.register_contract(None, TipzContract);
         (env, id)
+    }
+
+    // ── #1175 persistent TTL policy ────────────────────────────────────────────
+
+    #[test]
+    fn set_username_bumps_standard_ttl_on_write() {
+        let (env, id) = make_env();
+        env.as_contract(&id, || {
+            let user = String::from_str(&env, "alice");
+            let addr = Address::generate(&env);
+            set_username_address(&env, &user, &addr);
+            let key = DataKey::UsernameToAddress(user);
+            assert_eq!(
+                env.storage().persistent().get_ttl(&key),
+                PERSISTENT_TTL_MAX_LEDGERS
+            );
+        });
+    }
+
+    #[test]
+    fn get_username_bumps_standard_ttl_on_read() {
+        let (env, id) = make_env();
+        env.as_contract(&id, || {
+            let user = String::from_str(&env, "bob");
+            let addr = Address::generate(&env);
+            let key = DataKey::UsernameToAddress(user.clone());
+            // Seed the entry, then knock its TTL below the bump threshold.
+            env.storage().persistent().set(&key, &addr);
+            // A read must re-extend it back to the standard target.
+            let _ = get_username_address(&env, &user);
+            assert_eq!(
+                env.storage().persistent().get_ttl(&key),
+                PERSISTENT_TTL_MAX_LEDGERS
+            );
+        });
+    }
+
+    #[test]
+    fn token_balance_bumps_balance_ttl_on_write_and_read() {
+        let (env, id) = make_env();
+        env.as_contract(&id, || {
+            let creator = Address::generate(&env);
+            let token = Address::generate(&env);
+            set_token_balance(&env, &creator, &token, 100i128);
+            let key = ExtendedDataKey::TokenBalance(creator.clone(), token.clone());
+            // Balance-bearing entries get the longest TTL, on write …
+            assert_eq!(
+                env.storage().persistent().get_ttl(&key),
+                BALANCE_TTL_MAX_LEDGERS
+            );
+            // … and on read.
+            let _ = get_token_balance(&env, &creator, &token);
+            assert_eq!(
+                env.storage().persistent().get_ttl(&key),
+                BALANCE_TTL_MAX_LEDGERS
+            );
+        });
+    }
+
+    #[test]
+    fn balance_ttl_outlives_standard_ttl() {
+        // The core funds-safety guarantee: a balance entry is always extended
+        // at least as far out as any standard metadata entry.
+        assert!(BALANCE_TTL_MAX_LEDGERS >= PERSISTENT_TTL_MAX_LEDGERS);
     }
 
     // ── is_initialized ────────────────────────────────────────────────────────
@@ -1626,10 +1756,9 @@ pub fn set_verification_request(
     address: &Address,
     verification_type: &crate::types::VerificationType,
 ) {
-    env.storage().persistent().set(
-        &DataKey::VerificationRequest(address.clone()),
-        verification_type,
-    );
+    let key = DataKey::VerificationRequest(address.clone());
+    env.storage().persistent().set(&key, verification_type);
+    extend_persistent_ttl(env, &key, PersistentTier::Standard);
     bump_profile_ttl(env, address);
 }
 
@@ -1644,15 +1773,18 @@ pub fn remove_verification_request(env: &Env, address: &Address) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 pub fn get_donation_page(env: &Env, creator: &Address) -> Option<crate::types::DonationPageConfig> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::DonationPage(creator.clone()))
+    let key = DataKey::DonationPage(creator.clone());
+    let page = env.storage().persistent().get(&key);
+    if page.is_some() {
+        extend_persistent_ttl(env, &key, PersistentTier::Standard);
+    }
+    page
 }
 
 pub fn set_donation_page(env: &Env, creator: &Address, config: &crate::types::DonationPageConfig) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::DonationPage(creator.clone()), config);
+    let key = DataKey::DonationPage(creator.clone());
+    env.storage().persistent().set(&key, config);
+    extend_persistent_ttl(env, &key, PersistentTier::Standard);
     bump_profile_ttl(env, creator);
 }
 
@@ -1727,16 +1859,16 @@ pub fn set_active_creators_30d(env: &Env, count: u32) {
 }
 
 pub fn get_creator_last_active(env: &Env, creator: &Address) -> u64 {
-    env.storage()
-        .persistent()
-        .get(&DataKey::CreatorLastActive(creator.clone()))
-        .unwrap_or(0)
+    let key = DataKey::CreatorLastActive(creator.clone());
+    let ts = env.storage().persistent().get(&key).unwrap_or(0);
+    extend_persistent_ttl(env, &key, PersistentTier::Standard);
+    ts
 }
 
 pub fn set_creator_last_active(env: &Env, creator: &Address, timestamp: u64) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::CreatorLastActive(creator.clone()), &timestamp);
+    let key = DataKey::CreatorLastActive(creator.clone());
+    env.storage().persistent().set(&key, &timestamp);
+    extend_persistent_ttl(env, &key, PersistentTier::Standard);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1744,28 +1876,39 @@ pub fn set_creator_last_active(env: &Env, creator: &Address, timestamp: u64) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 pub fn get_active_goal(env: &Env, creator: &Address) -> Option<crate::types::Goal> {
-    env.storage()
-        .persistent()
-        .get(&ExtendedDataKey::ActiveGoal(creator.clone()))
+    let key = ExtendedDataKey::ActiveGoal(creator.clone());
+    let goal = env.storage().persistent().get(&key);
+    if goal.is_some() {
+        extend_persistent_ttl(env, &key, PersistentTier::Standard);
+    }
+    goal
 }
 
 pub fn set_active_goal(env: &Env, creator: &Address, goal: &crate::types::Goal) {
-    env.storage()
-        .persistent()
-        .set(&ExtendedDataKey::ActiveGoal(creator.clone()), goal);
+    let key = ExtendedDataKey::ActiveGoal(creator.clone());
+    env.storage().persistent().set(&key, goal);
+    extend_persistent_ttl(env, &key, PersistentTier::Standard);
 }
 
 pub fn get_archived_goals(env: &Env, creator: &Address) -> soroban_sdk::Vec<crate::types::Goal> {
-    env.storage()
+    let key = ExtendedDataKey::ArchivedGoals(creator.clone());
+    let goals = env
+        .storage()
         .persistent()
-        .get(&ExtendedDataKey::ArchivedGoals(creator.clone()))
-        .unwrap_or(soroban_sdk::Vec::new(env))
+        .get(&key)
+        .unwrap_or(soroban_sdk::Vec::new(env));
+    extend_persistent_ttl(env, &key, PersistentTier::Standard);
+    goals
 }
 
-pub fn set_archived_goals(env: &Env, creator: &Address, goals: &soroban_sdk::Vec<crate::types::Goal>) {
-    env.storage()
-        .persistent()
-        .set(&ExtendedDataKey::ArchivedGoals(creator.clone()), goals);
+pub fn set_archived_goals(
+    env: &Env,
+    creator: &Address,
+    goals: &soroban_sdk::Vec<crate::types::Goal>,
+) {
+    let key = ExtendedDataKey::ArchivedGoals(creator.clone());
+    env.storage().persistent().set(&key, goals);
+    extend_persistent_ttl(env, &key, PersistentTier::Standard);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1798,21 +1941,28 @@ pub fn set_accepted_token_list(env: &Env, tokens: &soroban_sdk::Vec<Address>) {
 }
 
 pub fn get_token_balance(env: &Env, creator: &Address, token: &Address) -> i128 {
-    env.storage()
-        .persistent()
-        .get(&ExtendedDataKey::TokenBalance(creator.clone(), token.clone()))
-        .unwrap_or(0)
+    let key = ExtendedDataKey::TokenBalance(creator.clone(), token.clone());
+    let balance = env.storage().persistent().get(&key).unwrap_or(0);
+    extend_persistent_ttl(env, &key, PersistentTier::Balance);
+    balance
 }
 
 pub fn set_token_balance(env: &Env, creator: &Address, token: &Address, amount: i128) {
-    env.storage()
-        .persistent()
-        .set(&ExtendedDataKey::TokenBalance(creator.clone(), token.clone()), &amount);
+    let key = ExtendedDataKey::TokenBalance(creator.clone(), token.clone());
+    env.storage().persistent().set(&key, &amount);
+    extend_persistent_ttl(env, &key, PersistentTier::Balance);
 }
 
-pub fn add_token_balance(env: &Env, creator: &Address, token: &Address, amount: i128) -> Result<i128, ContractError> {
+pub fn add_token_balance(
+    env: &Env,
+    creator: &Address,
+    token: &Address,
+    amount: i128,
+) -> Result<i128, ContractError> {
     let current = get_token_balance(env, creator, token);
-    let new_balance = current.checked_add(amount).ok_or(ContractError::OverflowError)?;
+    let new_balance = current
+        .checked_add(amount)
+        .ok_or(ContractError::OverflowError)?;
     set_token_balance(env, creator, token, new_balance);
     Ok(new_balance)
 }
