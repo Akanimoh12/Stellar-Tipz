@@ -3,13 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../app.js';
 import { searchCreators } from './search.service.js';
 
-const { mockFindMany, mockCount, mockQueryRaw } = vi.hoisted(() => ({
+const { mockFindMany, mockCount, mockQueryRaw, mockRedisGet, mockRedisSet } = vi.hoisted(() => ({
   mockFindMany: vi.fn(),
   mockCount: vi.fn(),
   mockQueryRaw: vi.fn(),
-const { mockFindMany, mockCount, mockRedisGet, mockRedisSet } = vi.hoisted(() => ({
-  mockFindMany: vi.fn(),
-  mockCount: vi.fn(),
   mockRedisGet: vi.fn(),
   mockRedisSet: vi.fn(),
 }));
@@ -147,6 +144,7 @@ describe('GET /api/v1/search/creators', () => {
         orderBy: [{ createdAt: 'desc' }],
       }),
     );
+  });
   it('returns 400 for a negative offset', async () => {
     const app = createApp();
     const res = await request(app).get('/api/v1/search/creators?q=test&offset=-1');
@@ -315,5 +313,86 @@ describe('searchCreators caching', () => {
     const result = await searchCreators('alice', 20, 0);
 
     expect(result.pagination.total).toBe(0);
+  });
+});
+
+describe('GET /api/v1/search/creators/trending', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFindMany.mockResolvedValue([]);
+    mockCount.mockResolvedValue(0);
+    mockRedisGet.mockResolvedValue(null);
+    mockRedisSet.mockResolvedValue('OK');
+  });
+
+  it('returns trending creators ordered by received tips', async () => {
+    mockFindMany.mockResolvedValue([
+      {
+        id: 'user-1',
+        username: 'alice',
+        displayName: 'Alice Star',
+        stellarAddress: 'GA1',
+        imageUrl: null,
+        bio: null,
+      },
+    ]);
+    mockCount.mockResolvedValue(1);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/search/creators/trending');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].username).toBe('alice');
+    expect(mockFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: { receivedTips: { _count: 'desc' } },
+      }),
+    );
+  });
+
+  it('applies limit and offset pagination', async () => {
+    mockFindMany.mockResolvedValue([]);
+    mockCount.mockResolvedValue(10);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/search/creators/trending?limit=5&offset=5');
+
+    expect(res.status).toBe(200);
+    expect(res.body.pagination).toEqual({
+      limit: 5,
+      offset: 5,
+      total: 10,
+      hasMore: true,
+    });
+  });
+
+  it('returns 400 for invalid limit', async () => {
+    const app = createApp();
+    const res = await request(app).get('/api/v1/search/creators/trending?limit=0');
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('getTrendingCreators service caching', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('queries the database and caches the result on a cache miss', async () => {
+    mockRedisGet.mockResolvedValue(null);
+    mockFindMany.mockResolvedValue([]);
+    mockCount.mockResolvedValue(0);
+
+    const { getTrendingCreators } = await import('./search.service.js');
+    await getTrendingCreators(20, 0);
+
+    expect(mockFindMany).toHaveBeenCalledTimes(1);
+    expect(mockRedisSet).toHaveBeenCalledWith(
+      'search:trending:20:0',
+      expect.any(String),
+      'EX',
+      expect.any(Number),
+    );
   });
 });

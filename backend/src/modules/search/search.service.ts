@@ -1,36 +1,15 @@
 import { prisma } from '../../db/prisma.js';
+import { redis } from '../../db/redis.js';
+import { env } from '../../config/env.js';
 import { logger } from '../../common/utils/logger.js';
 import type { SearchCreatorsResponse, SearchCreator } from './search.types.js';
 import type { SearchSort } from './search.schema.js';
 
-function buildWhere(query: string): Record<string, unknown> {
-  return {
-    deletedAt: null,
-    OR: [
-      { username: { contains: query, mode: 'insensitive' as const } },
-      { displayName: { contains: query, mode: 'insensitive' as const } },
-    ],
-  };
-}
-
-const selectFields = {
-  id: true,
-  username: true,
-  displayName: true,
-  stellarAddress: true,
-  imageUrl: true,
-  bio: true,
-} as const;
-import { redis } from '../../db/redis.js';
-import { env } from '../../config/env.js';
-import { logger } from '../../common/utils/logger.js';
-import type { SearchCreatorsResponse } from './search.types.js';
-
 const CACHE_PREFIX = 'search:creators:';
 const CACHE_TTL_SECONDS = env.SEARCH_CACHE_TTL_SECONDS ?? 60;
 
-function cacheKey(query: string, limit: number, offset: number): string {
-  return `${CACHE_PREFIX}${query.trim().toLowerCase()}:${limit}:${offset}`;
+function cacheKey(query: string, limit: number, offset: number, sort: string = 'relevance'): string {
+  return `${CACHE_PREFIX}${query.trim().toLowerCase()}:${limit}:${offset}:${sort}`;
 }
 
 async function readCache(key: string): Promise<SearchCreatorsResponse | null> {
@@ -51,6 +30,25 @@ async function writeCache(key: string, result: SearchCreatorsResponse): Promise<
   }
 }
 
+function buildWhere(query: string): Record<string, unknown> {
+  return {
+    deletedAt: null,
+    OR: [
+      { username: { contains: query, mode: 'insensitive' as const } },
+      { displayName: { contains: query, mode: 'insensitive' as const } },
+    ],
+  };
+}
+
+const selectFields = {
+  id: true,
+  username: true,
+  displayName: true,
+  stellarAddress: true,
+  imageUrl: true,
+  bio: true,
+} as const;
+
 /**
  * Searches creators by name or username using case-insensitive partial matching.
  * Supports relevance, recent, and popular sort orders with pagination.
@@ -65,53 +63,52 @@ export async function searchCreators(
 ): Promise<SearchCreatorsResponse> {
   logger.info({ query, limit, offset, sort }, 'Searching creators');
 
-  const where = buildWhere(query);
-
-  if (sort === 'relevance') {
-    return searchWithRelevanceRanking(query, where, limit, offset);
-  }
-
-  const orderBy = getOrderBy(sort);
-  const key = cacheKey(query, limit, offset);
+  const key = cacheKey(query, limit, offset, sort);
   const cached = await readCache(key);
   if (cached) {
     return cached;
   }
 
-  const where = {
-    deletedAt: null,
-    OR: [
-      { username: { contains: query, mode: 'insensitive' as const } },
-      { displayName: { contains: query, mode: 'insensitive' as const } },
-    ],
-  };
+  const where = buildWhere(query);
 
-  const [rows, total] = await Promise.all([
-    prisma.user.findMany({
-      where,
-      select: selectFields,
-      orderBy,
-      take: limit,
-      skip: offset,
-    }),
-    prisma.user.count({ where }),
-  ]);
+  let result: SearchCreatorsResponse;
 
-  return {
-    data: rows as unknown as SearchCreator[],
-    pagination: {
-      limit,
-      offset,
-      total,
-      hasMore: offset + rows.length < total,
-    },
-  };
+  if (sort === 'relevance') {
+    result = await searchWithRelevanceRanking(query, where, limit, offset);
+  } else {
+    const orderBy = getOrderBy(sort);
+    const [rows, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        select: selectFields,
+        orderBy,
+        take: limit,
+        skip: offset,
+      }),
+      prisma.user.count({ where }),
+    ]);
+
+    result = {
+      data: rows as unknown as SearchCreator[],
+      pagination: {
+        limit,
+        offset,
+        total,
+        hasMore: offset + rows.length < total,
+      },
+    };
+  }
+
+  await writeCache(key, result);
+  return result;
 }
 
-function getOrderBy(sort: Exclude<SearchSort, 'relevance'>): Record<string, string>[] {
+function getOrderBy(sort: Exclude<SearchSort, 'relevance'>): Record<string, unknown>[] {
   switch (sort) {
     case 'recent':
       return [{ createdAt: 'desc' as const }];
+    case 'popular':
+      return [{ receivedTips: { _count: 'desc' as const } }];
     default:
       return [{ createdAt: 'desc' as const }];
   }
@@ -160,8 +157,48 @@ async function searchWithRelevanceRanking(
 
   return {
     data: rows as unknown as SearchCreator[],
-  const result: SearchCreatorsResponse = {
-    data: rows,
+    pagination: {
+      limit,
+      offset,
+      total,
+      hasMore: offset + rows.length < total,
+    },
+  };
+}
+
+/**
+ * Gets trending creators based on received tips.
+ * Results are cached in Redis.
+ */
+export async function getTrendingCreators(
+  limit: number,
+  offset: number,
+): Promise<SearchCreatorsResponse> {
+  logger.info({ limit, offset }, 'Getting trending creators');
+
+  const key = `search:trending:${limit}:${offset}`;
+  const cached = await readCache(key);
+  if (cached) {
+    return cached;
+  }
+
+  const [rows, total] = await Promise.all([
+    prisma.user.findMany({
+      where: { deletedAt: null },
+      select: selectFields,
+      orderBy: {
+        receivedTips: {
+          _count: 'desc',
+        },
+      },
+      take: limit,
+      skip: offset,
+    }),
+    prisma.user.count({ where: { deletedAt: null } }),
+  ]);
+
+  const result = {
+    data: rows as unknown as SearchCreator[],
     pagination: {
       limit,
       offset,
