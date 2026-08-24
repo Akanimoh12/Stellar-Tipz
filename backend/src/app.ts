@@ -5,6 +5,9 @@ import pinoHttp from 'pino-http';
 import swaggerUi from 'swagger-ui-express';
 import { env } from './config/env.js';
 import { errorHandler, notFoundHandler } from './common/middleware/errorHandler.js';
+import { globalRateLimiter } from './common/middleware/rateLimiter.js';
+import { metricsController, metricsMiddleware } from './common/observability/metrics.js';
+import { getSentryRequestHandler, getSentryErrorHandler } from './common/observability/sentry.js';
 import { logger } from './common/utils/logger.js';
 import { openApiDocument } from './docs/openapi.js';
 import { requestId } from './common/middleware/requestId.js';
@@ -26,11 +29,13 @@ import { registerSubscriptionsDocs } from './modules/subscriptions/subscriptions
 import { subscriptionsRouter } from './modules/subscriptions/subscriptions.routes.js';
 import { refundsRouter } from './modules/refunds/refunds.routes.js';
 import { streaksRouter } from './modules/streaks/streaks.routes.js';
+import { adminRouter } from './modules/admin/admin.routes.js';
 
 /** Builds and configures the Express application without starting a listener. */
 export function createApp(): Express {
   const app = express();
 
+  app.use(getSentryRequestHandler());
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -43,7 +48,9 @@ export function createApp(): Express {
     }),
   );
   app.use(cors({ origin: env.CORS_ORIGIN.split(','), credentials: true }));
+  app.use(globalRateLimiter);
   app.use(requestId);
+  app.use(metricsMiddleware);
   app.use(express.json({ limit: '1mb' }));
   app.use(pinoHttp({ logger }));
 
@@ -60,6 +67,8 @@ export function createApp(): Express {
       time: new Date().toISOString(),
     });
   });
+
+  app.get('/metrics', metricsController);
 
   app.use(`${env.API_BASE_PATH}/auth`, authRouter);
   app.use(`${env.API_BASE_PATH}/profiles`, profilesRouter);
@@ -78,11 +87,13 @@ export function createApp(): Express {
   app.use(`${env.API_BASE_PATH}/subscriptions`, subscriptionsRouter);
   app.use(`${env.API_BASE_PATH}/refunds`, refundsRouter);
   app.use(`${env.API_BASE_PATH}/streaks`, streaksRouter);
+  app.use(`${env.API_BASE_PATH}/admin`, adminRouter);
 
   // Register OpenAPI path docs for feature modules.
   registerGoalsDocs();
   registerSubscriptionsDocs();
 
+  app.use(getSentryErrorHandler());
   app.use(notFoundHandler);
   app.use(errorHandler);
 
