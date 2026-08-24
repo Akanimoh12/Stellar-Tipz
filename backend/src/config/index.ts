@@ -51,6 +51,7 @@ export const config = {
   twitter: {
     bearerToken: env.X_API_BEARER_TOKEN,
     baseUrl: env.X_API_BASE_URL,
+    metricsRefreshCron: env.X_METRICS_REFRESH_CRON,
   },
 
   ipfs: {

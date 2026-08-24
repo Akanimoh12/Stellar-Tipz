@@ -2,6 +2,7 @@ import { Queue, Worker, Job } from 'bullmq';
 import { redis } from '../db/redis.js';
 import { logger } from '../common/utils/logger.js';
 import crypto from 'node:crypto';
+import { attachDeadLetterHandler } from './deadLetter.js';
 
 export const WEBHOOK_DELIVERY_QUEUE = 'webhook-delivery';
 
@@ -104,3 +105,5 @@ webhookDeliveryWorker.on('failed', (job: Job<WebhookDeliveryPayload> | undefined
     logger.error({ err: err.message }, 'Webhook worker error');
   }
 });
+
+attachDeadLetterHandler(webhookDeliveryWorker, WEBHOOK_DELIVERY_QUEUE);

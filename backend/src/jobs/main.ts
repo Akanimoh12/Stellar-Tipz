@@ -12,6 +12,8 @@ import {
   scheduleSubscriptionCharge,
   createLeaderboardSnapshotWorker,
   scheduleLeaderboardSnapshot,
+  createXMetricsRefreshWorker,
+  scheduleXMetricsRefresh,
 } from './index.js';
 
 /**
@@ -57,6 +59,15 @@ export async function bootstrapJobs(): Promise<void> {
     },
   });
   await scheduleLeaderboardSnapshot();
+
+  const xMetricsRefreshWorker = createXMetricsRefreshWorker();
+  registerClosable({
+    name: 'XMetricsRefreshWorker',
+    close: async () => {
+      await xMetricsRefreshWorker.close();
+    },
+  });
+  await scheduleXMetricsRefresh();
 
   logger.info('Jobs process started');
 

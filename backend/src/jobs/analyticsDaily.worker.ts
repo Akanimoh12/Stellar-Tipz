@@ -5,6 +5,7 @@ import { logger } from '../common/utils/logger.js';
 import { computeDailyAnalytics } from '../modules/analytics/analytics.service.js';
 import { ANALYTICS_DAILY_QUEUE, getAnalyticsDailyQueue } from './analyticsDaily.queue.js';
 import { scheduleRepeatable } from './scheduler.js';
+import { attachDeadLetterHandler } from './deadLetter.js';
 
 export async function runDailyAnalyticsRollup(): Promise<{ date: string; totalTips: number; totalVolume: string }> {
   // Compute for yesterday in UTC so the job can run anytime after midnight
@@ -29,6 +30,7 @@ export function createAnalyticsDailyWorker(): Worker {
   worker.on('failed', (job, err) => {
     logger.error({ err, jobId: job?.id }, 'Daily analytics rollup job failed');
   });
+  attachDeadLetterHandler(worker, ANALYTICS_DAILY_QUEUE);
 
   return worker;
 }
