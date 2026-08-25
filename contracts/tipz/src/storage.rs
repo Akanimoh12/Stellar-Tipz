@@ -215,6 +215,8 @@ pub enum ExtendedDataKey {
     MigrationState,
     /// Active subscriptions list by subscriber (Vec<(subscriber, creator)>)
     ActiveSubscriptions,
+    /// Minimum explicit withdrawal amount in stroops.
+    MinWithdrawalAmount,
 }
 
 /// Storage keys for compact performance caches.
@@ -430,6 +432,14 @@ pub fn set_min_tip_amount(env: &Env, amount: i128) {
     update_runtime_config(env, |config| {
         config.min_tip_amount = amount;
     });
+}
+
+pub fn get_min_withdrawal_amount(env: &Env) -> i128 {
+    env.storage().instance().get(&ExtendedDataKey::MinWithdrawalAmount).unwrap_or(0_i128)
+}
+
+pub fn set_min_withdrawal_amount(env: &Env, amount: i128) {
+    env.storage().instance().set(&ExtendedDataKey::MinWithdrawalAmount, &amount);
 }
 
 /// Default domain re-verification interval: 30 days.
@@ -1492,6 +1502,7 @@ pub fn get_refund_config(env: &Env) -> crate::types::RefundConfig {
             request_window_secs: DEFAULT_REFUND_REQUEST_WINDOW_SECS,
             response_window_secs: DEFAULT_REFUND_RESPONSE_WINDOW_SECS,
             non_refundable_fee_bps: DEFAULT_NON_REFUNDABLE_FEE_BPS,
+            request_ttl_ledgers: 518400,
         })
 }
 

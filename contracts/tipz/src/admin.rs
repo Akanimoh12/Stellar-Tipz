@@ -143,6 +143,7 @@ pub fn initialize(
     storage::set_native_token(env, native_token);
     storage::set_paused(env, false);
     storage::set_min_tip_amount(env, 1_000_000_i128);
+    storage::set_min_withdrawal_amount(env, 1_000_000_i128);
     storage::set_version(env, crate::CONTRACT_VERSION);
     storage::set_runtime_config(
         env,
@@ -450,7 +451,7 @@ pub fn propose_admin_change(
         return Err(ContractError::NotAuthorized);
     }
     if storage::get_pending_admin_change(env).is_some() {
-        return Err(ContractError::AdminChangeAlreadyPending);
+        return Err(ContractError::AdminChangePending);
     }
     let now = env.ledger().timestamp();
     let confirmable_after = now
@@ -493,7 +494,7 @@ pub fn confirm_admin_change(env: &Env, caller: &Address) -> Result<(), ContractE
         return Err(ContractError::AdminProposalExpired);
     }
     if now < proposal.confirmable_after {
-        return Err(ContractError::AdminChangeTimelockNotMet);
+        return Err(ContractError::AdminTimelockNotMet);
     }
     let old_admin = storage::get_admin(env);
     storage::set_admin(env, caller);
@@ -671,6 +672,17 @@ pub fn set_min_tip_amount(env: &Env, caller: &Address, amount: i128) -> Result<(
         i128_to_string(env, old),
         i128_to_string(env, amount),
     );
+    Ok(())
+}
+
+pub fn set_min_withdrawal_amount(env: &Env, caller: &Address, amount: i128) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    require_admin(env, caller)?;
+    if amount < 0 { return Err(ContractError::InvalidAmount); }
+    let old = storage::get_min_withdrawal_amount(env);
+    storage::set_min_withdrawal_amount(env, amount);
+    events::emit_min_withdrawal_amount_updated(env, old, amount);
+    log_admin_action(env, caller, Symbol::new(env, "set_min_withdrawal"), i128_to_string(env, old), i128_to_string(env, amount));
     Ok(())
 }
 

@@ -428,15 +428,8 @@ pub fn withdraw_tips(env: &Env, caller: &Address, amount: i128) -> Result<(), Co
         return Err(ContractError::NotRegistered);
     }
 
-    if amount <= 0 {
-        return Err(ContractError::InvalidAmount);
-    }
-
     let mut profile = storage::get_profile(env, caller);
-
-    if profile.balance < amount {
-        return Err(ContractError::InsufficientBalance);
-    }
+    let amount = crate::validation::validate_withdrawal_amount(amount, storage::get_min_withdrawal_amount(env), profile.balance)?;
 
     // Calculate fee and net amount
     let fee_bps = storage::get_fee_bps(env);
@@ -496,7 +489,7 @@ pub fn emergency_withdraw_tips(
     let threshold = paused_at.saturating_add(crate::admin::EMERGENCY_WITHDRAWAL_DELAY_SECS);
 
     if now < threshold {
-        return Err(ContractError::EmergencyWithdrawalNotAllowed);
+        return Err(ContractError::EmergencyNotAllowed);
     }
 
     if !storage::has_profile(env, caller) {
