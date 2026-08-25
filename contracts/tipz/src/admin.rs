@@ -10,9 +10,12 @@ use crate::credit;
 use crate::errors::ContractError;
 use crate::events;
 use crate::storage::{self, DataKey, ExtendedDataKey};
-use crate::types::{
-    AdminAuditEntry, AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip,
-};
+use crate::types::{AdminAuditEntry, AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip};
+
+/// Documented minimum fee-change delay in ledgers.
+pub const MIN_FEE_CHANGE_DELAY_LEDGERS: u32 = 24;
+/// Default fee-change delay in ledgers.
+pub const DEFAULT_FEE_CHANGE_DELAY_LEDGERS: u32 = 24 * 12;
 
 pub fn u32_to_string(env: &Env, val: u32) -> String {
     let mut buf = [0u8; 10];
@@ -151,6 +154,7 @@ pub fn initialize(
             admin: admin.clone(),
             fee_collector: fee_collector.clone(),
             fee_bps,
+            fee_change_delay_ledgers: DEFAULT_FEE_CHANGE_DELAY_LEDGERS,
             native_token: native_token.clone(),
             paused: false,
             min_tip_amount: 1_000_000_i128,
@@ -379,21 +383,135 @@ pub fn bump_ttl(env: &Env, caller: &Address) -> Result<(), ContractError> {
 
 /// Update the withdrawal fee in basis points (max 1000 = 10%). Admin only.
 pub fn set_fee(env: &Env, caller: &Address, fee_bps: u32) -> Result<(), ContractError> {
+    propose_fee_change(env, caller, fee_bps)?;
+    apply_fee_change_inner(env)
+}
+
+/// Update the fee-change delay in ledgers. Admin only.
+///
+/// The delay is intentionally bounded below by [`MIN_FEE_CHANGE_DELAY_LEDGERS`] so
+/// an admin cannot shrink the warning window to zero and surprise creators.
+pub fn set_fee_change_delay(
+    env: &Env,
+    caller: &Address,
+    delay_ledgers: u32,
+) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
     require_no_multisig(env)?;
+    if delay_ledgers < MIN_FEE_CHANGE_DELAY_LEDGERS {
+        return Err(ContractError::InvalidInput);
+    }
+    let old_delay = storage::get_fee_change_delay_ledgers(env);
+    storage::set_fee_change_delay_ledgers(env, delay_ledgers);
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "set_fee_delay"),
+        u32_to_string(env, old_delay),
+        u32_to_string(env, delay_ledgers),
+    );
+    Ok(())
+}
+
+/// Propose a withdrawal-fee change.
+///
+/// Fee increases are timelocked; decreases may be applied immediately, but
+/// still pass through the same proposal record so clients can warn users.
+pub fn propose_fee_change(
+    env: &Env,
+    caller: &Address,
+    fee_bps: u32,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    require_admin(env, caller)?;
+    require_no_multisig(env)?;
+    let (old_bps, new_bps) = propose_fee_change_inner(env, fee_bps)?;
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "propose_fee_change"),
+        u32_to_string(env, old_bps),
+        u32_to_string(env, new_bps),
+    );
+    Ok(())
+}
+
+/// Internal fee proposal helper used by both direct admin calls and multisig-executed actions.
+pub fn propose_fee_change_inner(env: &Env, fee_bps: u32) -> Result<(u32, u32), ContractError> {
     if fee_bps > 1000 {
         return Err(ContractError::InvalidFee);
     }
     let old_bps = storage::get_fee_bps(env);
-    storage::set_fee_bps(env, fee_bps);
-    events::emit_fee_updated(env, old_bps, fee_bps);
+    let current_ledger = env.ledger().sequence();
+    let increase = fee_bps > old_bps;
+    let delay = storage::get_fee_change_delay_ledgers(env);
+    if delay < MIN_FEE_CHANGE_DELAY_LEDGERS {
+        return Err(ContractError::InvalidInput);
+    }
+    if storage::get_pending_fee_change(env).is_some() {
+        return Err(ContractError::InvalidInput);
+    }
+    let effective_ledger = if increase {
+        current_ledger
+            .checked_add(delay)
+            .ok_or(ContractError::OverflowError)?
+    } else {
+        current_ledger
+    };
+    storage::set_pending_fee_change(
+        env,
+        &(fee_bps, effective_ledger, current_ledger, !increase),
+    );
+    events::emit_fee_change_proposed(env, old_bps, fee_bps, effective_ledger, !increase);
+    Ok((old_bps, fee_bps))
+}
+
+/// Apply a pending withdrawal-fee change.
+pub fn apply_fee_change(env: &Env, caller: &Address) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    require_admin(env, caller)?;
+    apply_fee_change_inner(env)
+}
+
+fn apply_fee_change_inner(env: &Env) -> Result<(), ContractError> {
+    let pending = storage::get_pending_fee_change(env).ok_or(ContractError::NotFound)?;
+    let current_ledger = env.ledger().sequence();
+    if !pending.3 && current_ledger < pending.1 {
+        return Err(ContractError::InvalidInput);
+    }
+    if pending.0 > 1000 {
+        return Err(ContractError::InvalidFee);
+    }
+    let old_bps = storage::get_fee_bps(env);
+    storage::set_fee_bps(env, pending.0);
+    storage::clear_pending_fee_change(env);
+    events::emit_fee_updated(env, old_bps, pending.0);
+    events::emit_fee_change_applied(env, old_bps, pending.0);
+    log_admin_action(
+        env,
+        &env.current_contract_address(),
+        Symbol::new(env, "apply_fee_change"),
+        u32_to_string(env, old_bps),
+        u32_to_string(env, pending.0),
+    );
+    Ok(())
+}
+
+/// Cancel a pending withdrawal-fee change.
+pub fn cancel_fee_change(env: &Env, caller: &Address) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    require_admin(env, caller)?;
+    require_no_multisig(env)?;
+    let pending = storage::get_pending_fee_change(env).ok_or(ContractError::NotFound)?;
+    storage::clear_pending_fee_change(env);
+    events::emit_fee_change_cancelled(env, caller, pending.0);
     log_admin_action(
         env,
         caller,
-        Symbol::new(env, "set_fee"),
-        u32_to_string(env, old_bps),
-        u32_to_string(env, fee_bps),
+        Symbol::new(env, "cancel_fee_change"),
+        u32_to_string(env, pending.0),
+        String::from_str(env, "cancelled"),
     );
     Ok(())
 }

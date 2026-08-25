@@ -11,7 +11,7 @@
 //! All callers should go through the helpers in this module instead of
 //! accessing raw storage directly.
 
-use soroban_sdk::{contracttype, Address, Env, String, Symbol};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
 
 use crate::errors::ContractError;
 use crate::types::{
@@ -235,6 +235,7 @@ pub struct RuntimeConfig {
     pub admin: Address,
     pub fee_collector: Address,
     pub fee_bps: u32,
+    pub fee_change_delay_ledgers: u32,
     pub native_token: Address,
     pub paused: bool,
     pub min_tip_amount: i128,
@@ -434,8 +435,10 @@ pub fn set_min_tip_amount(env: &Env, amount: i128) {
     });
 }
 
+pub const DEFAULT_MIN_WITHDRAWAL_AMOUNT: i128 = 1_000_000;
+
 pub fn get_min_withdrawal_amount(env: &Env) -> i128 {
-    env.storage().instance().get(&ExtendedDataKey::MinWithdrawalAmount).unwrap_or(0_i128)
+    env.storage().instance().get(&ExtendedDataKey::MinWithdrawalAmount).unwrap_or(DEFAULT_MIN_WITHDRAWAL_AMOUNT)
 }
 
 pub fn set_min_withdrawal_amount(env: &Env, amount: i128) {
@@ -727,6 +730,46 @@ pub fn set_fee_bps(env: &Env, fee_bps: u32) {
     update_runtime_config(env, |config| {
         config.fee_bps = fee_bps;
     });
+}
+
+/// Returns the configured minimum fee-change delay in ledgers.
+pub fn get_fee_change_delay_ledgers(env: &Env) -> u32 {
+    if let Some(config) = get_runtime_config(env) {
+        return config.fee_change_delay_ledgers;
+    }
+    env.storage()
+        .instance()
+        .get(&symbol_short!("fee_delay"))
+        .unwrap_or(crate::admin::DEFAULT_FEE_CHANGE_DELAY_LEDGERS)
+}
+
+/// Sets the configured minimum fee-change delay in ledgers.
+pub fn set_fee_change_delay_ledgers(env: &Env, delay_ledgers: u32) {
+    env.storage()
+        .instance()
+        .set(&symbol_short!("fee_delay"), &delay_ledgers);
+    update_runtime_config(env, |config| {
+        config.fee_change_delay_ledgers = delay_ledgers;
+    });
+}
+
+/// Returns the pending fee change, if any.
+pub fn get_pending_fee_change(env: &Env) -> Option<(u32, u32, u32, bool)> {
+    env.storage()
+        .instance()
+        .get(&symbol_short!("fee_pend"))
+}
+
+/// Stores the pending fee change.
+pub fn set_pending_fee_change(env: &Env, pending: &(u32, u32, u32, bool)) {
+    env.storage()
+        .instance()
+        .set(&symbol_short!("fee_pend"), pending);
+}
+
+/// Clears the pending fee change.
+pub fn clear_pending_fee_change(env: &Env) {
+    env.storage().instance().remove(&symbol_short!("fee_pend"));
 }
 
 /// Returns the maximum active subscriptions per subscriber (default 50).

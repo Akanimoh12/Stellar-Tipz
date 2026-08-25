@@ -61,6 +61,8 @@ pub struct Proposal {
     pub proposer: Address,
     /// Whether the proposal has been cancelled
     pub cancelled: bool,
+    /// Configuration epoch when the proposal was created (#1154).
+    pub epoch: u32,
 }
 
 /// Set the multi-signature configuration (admin only)
@@ -142,6 +144,7 @@ pub fn propose_action(env: &Env, signer: &Address, action: Action) -> Result<u32
         executed: false,
         proposer: signer.clone(),
         cancelled: false,
+        epoch: config.epoch,
     };
 
     // Store proposal
@@ -311,12 +314,7 @@ fn execute_proposal_internal(
             storage::set_version(env, new_version);
         }
         Action::SetFee(fee_bps) => {
-            if fee_bps > 1000 {
-                return Err(ContractError::InvalidFee);
-            }
-            let old_bps = storage::get_fee_bps(env);
-            storage::set_fee_bps(env, fee_bps);
-            crate::events::emit_fee_updated(env, old_bps, fee_bps);
+            crate::admin::propose_fee_change_inner(env, fee_bps)?;
         }
         Action::SetAdmin(new_admin) => {
             let old_admin = storage::get_admin(env);

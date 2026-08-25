@@ -81,12 +81,12 @@ fn test_multisig_fee_change() {
     // Propose fee change to 500 bps (5%)
     let proposal_id = client.propose_action(&signer1, &Action::SetFee(500));
 
-    // Approve and execute
+    // Approve and create the pending fee-change proposal.
     client.approve_action(&signer2, &proposal_id);
 
-    // Verify fee was changed
-    let config = client.get_config();
-    assert_eq!(config.fee_bps, 500);
+    let pending = client.get_pending_fee_change().unwrap();
+    assert_eq!(pending.0, 500);
+    assert_eq!(client.get_config().fee_bps, 200);
 }
 
 #[test]
