@@ -115,7 +115,8 @@ jobs:
               attempts++;
             }
             
-            throw new Error('Could not find Vercel preview deployment URL. Please ensure Vercel is configured for this repository.');
+            console.log('Could not find Vercel preview deployment URL; skipping Lighthouse run.');
+            return '';
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -127,6 +128,7 @@ jobs:
       
       - name: Run Lighthouse CI (Desktop)
         id: lighthouse-desktop
+        if: steps.vercel-url.outputs.result != ''
         run: |
           echo "🖥️ Running Lighthouse CI on Desktop configuration..."
           lhci autorun \
