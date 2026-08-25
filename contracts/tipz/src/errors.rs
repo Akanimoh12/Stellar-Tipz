@@ -54,4 +54,7 @@ pub enum ContractError {
     InvalidMigrationVersion = 46,
     NoRefundRequest = 47,
     InvalidMessage = 48,
+    SubscriptionLimitReached = 49,
+    RefundRequestExpired = 50,
+    ProposalExpired = 51,
 }
