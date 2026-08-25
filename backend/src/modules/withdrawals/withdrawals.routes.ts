@@ -3,6 +3,7 @@ import { requireAuth } from '../../common/middleware/requireAuth.js';
 import { env } from '../../config/env.js';
 import { mergeOpenApiPaths } from '../../docs/openapi.js';
 import * as withdrawalsController from './withdrawals.controller.js';
+import * as payoutsController from './payouts.controller.js';
 
 export const withdrawalsRouter = Router();
 
@@ -12,6 +13,10 @@ withdrawalsRouter.post('/submit', requireAuth, withdrawalsController.submitWithd
 
 export const balancesRouter = Router();
 balancesRouter.get('/me', requireAuth, withdrawalsController.getMyBalance);
+
+// Scheduled (auto) payouts — opt-in creator configuration.
+withdrawalsRouter.get('/payout-schedule', requireAuth, payoutsController.getMyPayoutSchedule);
+withdrawalsRouter.put('/payout-schedule', requireAuth, payoutsController.updateMyPayoutSchedule);
 
 const wdBase = `${env.API_BASE_PATH}/withdrawals`;
 const balBase = `${env.API_BASE_PATH}/balances`;
@@ -204,6 +209,71 @@ mergeOpenApiPaths({
             },
           },
         },
+        '401': { description: 'Unauthorized' },
+      },
+    },
+  },
+  [`${wdBase}/payout-schedule`]: {
+    get: {
+      tags: ['Withdrawals'],
+      summary: 'Get my scheduled-payout configuration',
+      description:
+        'Returns the authenticated creator’s opt-in scheduled (auto) payout settings, or null if not configured.',
+      security: [{ bearerAuth: [] }],
+      responses: {
+        '200': {
+          description: 'Scheduled payout configuration',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: {
+                    nullable: true,
+                    type: 'object',
+                    properties: {
+                      enabled: { type: 'boolean' },
+                      thresholdStroops: { type: 'string' },
+                      cadence: { type: 'string', enum: ['MANUAL', 'DAILY', 'WEEKLY', 'MONTHLY'] },
+                      nextRunAt: { type: 'string', format: 'date-time' },
+                      lastStatus: { type: 'string', nullable: true },
+                      consecutiveFailures: { type: 'integer' },
+                      paused: { type: 'boolean' },
+                    },
+                  },
+                },
+                required: ['data'],
+              },
+            },
+          },
+        },
+        '401': { description: 'Unauthorized' },
+      },
+    },
+    put: {
+      tags: ['Withdrawals'],
+      summary: 'Update my scheduled-payout configuration',
+      description:
+        'Opt in to (or out of) scheduled payouts. Set `enabled: false` to opt out. `thresholdStroops` is the minimum accrued balance required before a payout, and `cadence` controls recurring scheduling (MANUAL = pay as soon as the threshold is met).',
+      security: [{ bearerAuth: [] }],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                enabled: { type: 'boolean' },
+                thresholdStroops: { type: 'string', description: 'Minimum balance (stroops) to trigger a payout' },
+                cadence: { type: 'string', enum: ['MANUAL', 'DAILY', 'WEEKLY', 'MONTHLY'] },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        '200': { description: 'Configuration updated' },
+        '400': { description: 'Invalid input' },
         '401': { description: 'Unauthorized' },
       },
     },

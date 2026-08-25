@@ -29,6 +29,13 @@ model User {
   updatedAt      DateTime @updatedAt
   /// Soft-delete marker: non-null means the record is logically deleted.
   deletedAt              DateTime?
+  /// Non-null means the creator voluntarily deactivated their account.
+  deactivatedAt          DateTime?
+  /// Non-null means an admin blocked this creator (excluded from discovery).
+  blockedAt              DateTime?
+  /// True when a moderator flagged the creator as unverified/suspicious. Such
+  /// creators are excluded from public discovery surfaces.
+  flaggedUnverified      Boolean   @default(false)
   apiKeys                ApiKey[]
   refreshTokens          RefreshToken[]
   goals                  Goal[]
@@ -44,6 +51,7 @@ model User {
   leaderboardSnapshots   LeaderboardSnapshot[]
   streak                 Streak?
   webhookSubscriptions   WebhookSubscription[]
+  payoutSchedule          PayoutSchedule?
 
   @@index([createdAt])
 }
@@ -129,6 +137,45 @@ model Withdrawal {
   @@index([userId])
 }
 
+/// Per-creator opt-in configuration for scheduled (auto) payouts.
+/// A creator enables this to have accrued tip balance automatically withdrawn
+/// once it reaches `thresholdStroops` and/or on a recurring `cadence`.
+model PayoutSchedule {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Master switch for scheduled payouts.
+  enabled     Boolean  @default(false)
+  /// Minimum accrued balance (stroops) required before a payout is attempted.
+  thresholdStroops BigInt @default(0)
+  /// Recurring cadence. MANUAL means "pay out as soon as the threshold is met"
+  /// (re-checked every job run, subject to a cooldown).
+  cadence     PayoutCadence @default(MANUAL)
+  /// Next time the scheduler may attempt a payout for this creator.
+  nextRunAt   DateTime @default(now())
+  /// Last time a payout attempt (success or failure) was recorded.
+  lastRunAt   DateTime?
+  /// Status of the most recent payout attempt.
+  lastStatus  String?
+  /// Consecutive failures; reset to 0 on success. After `maxAttempts` the
+  /// schedule is paused and the creator is notified.
+  consecutiveFailures Int @default(0)
+  /// Set true after repeated failures; creator must re-enable to resume.
+  paused      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([enabled, paused, nextRunAt])
+}
+
+/// Recurring cadence for scheduled payouts.
+enum PayoutCadence {
+  MANUAL
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
 /// Raw decoded on-chain event persisted for audit and replay.
 /// Unique constraint on (txHash, topic, ledger) ensures idempotent processing.
 model EventLog {
@@ -189,6 +236,8 @@ model NotificationPreference {
   tipReceived         Boolean  @default(true)
   goalReached         Boolean  @default(true)
   subscriptionCharged Boolean  @default(true)
+  /// Whether the creator wants to be notified when a scheduled payout fails.
+  payoutFailed        Boolean  @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 }

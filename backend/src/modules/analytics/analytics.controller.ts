@@ -1,8 +1,14 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { BadRequestError } from '../../common/errors/AppError.js';
-import { analyticsDailyQuerySchema, volumeQuerySchema, topTippersQuerySchema, activeUsersQuerySchema } from './analytics.schema.js';
-import { analyticsDailyQuerySchema, volumeQuerySchema, topTippersQuerySchema, creatorUsernameParamSchema, creatorAnalyticsQuerySchema } from './analytics.schema.js';
+import {
+  analyticsDailyQuerySchema,
+  volumeQuerySchema,
+  topTippersQuerySchema,
+  activeUsersQuerySchema,
+  creatorUsernameParamSchema,
+  creatorAnalyticsQuerySchema,
+} from './analytics.schema.js';
 import * as analyticsService from './analytics.service.js';
 import { getTipVolume, getTopTippers, getCreatorAnalytics } from './analytics.service.js';
 
@@ -95,6 +101,12 @@ export async function getActiveUsersController(
   } catch (error) {
     if (error instanceof z.ZodError) {
       next(new BadRequestError('Invalid query parameters', error.issues));
+    } else {
+      next(error);
+    }
+  }
+}
+
 /** GET /analytics/creators/:username — creator-specific analytics (issue #1006). */
 export async function getCreatorAnalyticsController(
   req: Request,
