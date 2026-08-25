@@ -35,6 +35,10 @@ pub struct MultisigConfig {
     pub required_signatures: u32,
     /// List of authorized signers
     pub signers: Vec<Address>,
+    /// Monotonically increasing counter bumped on every config change.
+    /// Proposals record the epoch they were created under; a config change
+    /// invalidates approvals collected under a prior epoch (#1154).
+    pub epoch: u32,
 }
 
 /// Proposal state
@@ -73,9 +77,12 @@ pub fn set_multisig_config(
         return Err(ContractError::InvalidAmount);
     }
 
+    let epoch = get_multisig_config(env).map(|c| c.epoch + 1).unwrap_or(0);
+
     let config = MultisigConfig {
         required_signatures,
         signers,
+        epoch,
     };
 
     env.storage()
@@ -99,7 +106,6 @@ pub fn get_multisig_config(env: &Env) -> Option<MultisigConfig> {
 }
 
 /// Check if multi-sig is enabled
-#[allow(dead_code)]
 pub fn is_multisig_enabled(env: &Env) -> bool {
     get_multisig_config(env).is_some()
 }
@@ -194,6 +200,11 @@ pub fn approve_action(env: &Env, signer: &Address, proposal_id: u32) -> Result<(
         return Err(ContractError::ProposalExpired);
     }
 
+    // Reject if the signer set/threshold changed since this proposal was created (#1154)
+    if proposal.epoch != config.epoch {
+        return Err(ContractError::ProposalEpochMismatch);
+    }
+
     // Check if already approved by this signer
     if proposal.approvals.contains(signer) {
         return Err(ContractError::AlreadyVerified);
@@ -271,6 +282,11 @@ fn execute_proposal_internal(
     // Verify we have enough approvals
     if proposal.approvals.len() < config.required_signatures {
         return Err(ContractError::NotAuthorized);
+    }
+
+    // Reject if the signer set/threshold changed since this proposal was created (#1154)
+    if proposal.epoch != config.epoch {
+        return Err(ContractError::ProposalEpochMismatch);
     }
 
     // Mark as executed
