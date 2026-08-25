@@ -266,8 +266,8 @@ fn test_admin_rotation() {
     assert!(res.is_err());
 
     // New admin can act
-    client.set_fee(&new_admin, &300);
-    assert_eq!(client.get_stats().fee_bps, 300);
+    client.set_fee(&new_admin, &100);
+    assert_eq!(client.get_stats().fee_bps, 100);
 }
 
 #[test]
@@ -290,8 +290,12 @@ fn test_fee_change_mid_tip() {
     );
 
     // Fee is 200 bps (2%)
-    // Change fee to 500 bps (5%)
-    client.set_fee(&admin, &500);
+    // Change fee to 500 bps (5%) using the new timelock flow.
+    env.ledger().set_sequence_number(env.ledger().sequence() + 100);
+    client.propose_fee_change(&admin, &500);
+    let pending = client.get_pending_fee_change().unwrap();
+    env.ledger().set_sequence_number(pending.effective_ledger);
+    client.apply_fee_change(&admin);
 
     let fee_collector_balance_before = token_client.balance(&fee_collector);
 

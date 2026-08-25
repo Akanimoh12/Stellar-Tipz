@@ -78,5 +78,6 @@ impl ContractError {
     pub const RefundRequestExpired: Self = Self::RefundReqExpired;
     pub const MultisigRequired: Self = Self::InvalidInput;
     pub const WdrBelowMin: Self = Self::ProposalExpired;
+    pub const WithdrawalBelowMinimum: Self = Self::WdrBelowMin;
     pub const ProposalEpochMismatch: Self = Self::ProposalExpired;
 }

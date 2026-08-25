@@ -113,9 +113,8 @@ fn test_non_admin_cannot_set_fee_collector() {
 #[test]
 fn test_admin_can_update_fees() {
     let ctx = setup();
-    ctx.client.set_fee(&ctx.admin, &300_u32);
-    let stats = ctx.client.get_stats();
-    let _ = stats; // fee is applied at withdrawal; confirms no panic
+    ctx.client.set_fee(&ctx.admin, &100_u32);
+    assert_eq!(ctx.client.get_config().fee_bps, 100);
 }
 
 #[test]

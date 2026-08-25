@@ -271,6 +271,16 @@ impl TipzContract {
         storage::get_paused_at(&env)
     }
 
+    /// Return the currently pending fee change, if any.
+    pub fn get_pending_fee_change(env: Env) -> Option<(u32, u32, u32, bool)> {
+        storage::get_pending_fee_change(&env)
+    }
+
+    /// Return the configured minimum fee-change delay in ledgers.
+    pub fn get_fee_change_delay_ledgers(env: Env) -> u32 {
+        storage::get_fee_change_delay_ledgers(&env)
+    }
+
     /// Returns the required pause delay (7 days) before emergency withdrawal is unlocked.
     pub fn get_emergency_withdrawal_delay(_env: Env) -> u64 {
         admin::EMERGENCY_WITHDRAWAL_DELAY_SECS
@@ -477,6 +487,34 @@ impl TipzContract {
     /// Emits a `FeeUpdated` event with `(old_bps, new_bps)`.
     pub fn set_fee(env: Env, caller: Address, fee_bps: u32) -> Result<(), ContractError> {
         admin::set_fee(&env, &caller, fee_bps)
+    }
+
+    /// Propose a withdrawal fee change with a timelock for increases.
+    pub fn propose_fee_change(
+        env: Env,
+        caller: Address,
+        fee_bps: u32,
+    ) -> Result<(), ContractError> {
+        admin::propose_fee_change(&env, &caller, fee_bps)
+    }
+
+    /// Apply a pending withdrawal fee change.
+    pub fn apply_fee_change(env: Env, caller: Address) -> Result<(), ContractError> {
+        admin::apply_fee_change(&env, &caller)
+    }
+
+    /// Cancel a pending withdrawal fee change.
+    pub fn cancel_fee_change(env: Env, caller: Address) -> Result<(), ContractError> {
+        admin::cancel_fee_change(&env, &caller)
+    }
+
+    /// Update the configured fee-change delay in ledgers. Admin only.
+    pub fn set_fee_change_delay(
+        env: Env,
+        caller: Address,
+        delay_ledgers: u32,
+    ) -> Result<(), ContractError> {
+        admin::set_fee_change_delay(&env, &caller, delay_ledgers)
     }
 
     /// Update the fee collector address. Admin only.

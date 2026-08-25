@@ -41,8 +41,8 @@ fn test_set_fee_allowed_when_multisig_disabled() {
     let admin = Address::generate(&env);
     let client = setup_test_contract(&env, &admin);
 
-    client.set_fee(&admin, &500);
-    assert_eq!(client.get_config().fee_bps, 500);
+    client.set_fee(&admin, &100);
+    assert_eq!(client.get_config().fee_bps, 100);
 }
 
 #[test]
