@@ -137,6 +137,19 @@ pub struct AdminChangeProposal {
     pub new_admin: Address,
     /// Unix timestamp after which `confirm_admin_change` may succeed.
     pub confirmable_after: u64,
+    /// Unix timestamp after which proposal expires.
+    pub expires_at: u64,
+}
+
+/// State tracking for versioned storage migrations.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct MigrationState {
+    pub from_version: u32,
+    pub target_version: u32,
+    pub current_step: u32,
+    pub processed_count: u32,
+    pub is_completed: bool,
 }
 
 /// One recorded completed admin handoff (two-step confirm or direct `set_admin`).

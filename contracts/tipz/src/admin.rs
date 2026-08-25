@@ -403,37 +403,24 @@ pub fn set_fee_collector(
     Ok(())
 }
 
+/// Proposal expiration window after which pending admin proposal expires (7 days).
+pub const ADMIN_PROPOSAL_EXPIRY_SECS: u64 = 7 * 86_400;
+
+/// Time-delayed emergency withdrawal pause threshold (7 days).
+/// Documented security rationale: 7 days gives the core team and security responders sufficient
+/// window to assess and remediate high-severity smart contract exploits before creators may unlock
+/// funds during a contract pause.
+pub const EMERGENCY_WITHDRAWAL_DELAY_SECS: u64 = 7 * 86_400;
+
 /// Transfer the admin role to a new address. Admin only.
-pub fn set_admin(env: &Env, caller: &Address, new_admin: &Address) -> Result<(), ContractError> {
+/// Note: Single-step transfer is disabled to enforce two-step proposal flow everywhere (#1179).
+pub fn set_admin(env: &Env, caller: &Address, _new_admin: &Address) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
-    let old_admin = storage::get_admin(env);
-    if new_admin == &old_admin {
-        return Err(ContractError::NotAuthorized);
-    }
-    storage::remove_pending_admin_change(env);
-    storage::set_admin(env, new_admin);
-    events::emit_admin_changed(env, &old_admin, new_admin);
-    let now = env.ledger().timestamp();
-    storage::append_admin_change_history(
-        env,
-        &AdminChangeHistoryEntry {
-            old_admin: old_admin.clone(),
-            new_admin: new_admin.clone(),
-            confirmed_at: now,
-        },
-    );
-    log_admin_action(
-        env,
-        caller,
-        Symbol::new(env, "set_admin"),
-        String::from_str(env, "old_admin"),
-        String::from_str(env, "new_admin"),
-    );
-    Ok(())
+    Err(ContractError::NotAuthorized)
 }
 
-/// Propose a new admin with a 48-hour time lock. Current admin only.
+/// Propose a new admin with a 48-hour time lock and 7-day expiration. Current admin only.
 ///
 /// At most one pending proposal: cancel it before proposing a different successor.
 pub fn propose_admin_change(
@@ -454,9 +441,13 @@ pub fn propose_admin_change(
     let confirmable_after = now
         .checked_add(ADMIN_CHANGE_TIMELOCK_SECS)
         .ok_or(ContractError::OverflowError)?;
+    let expires_at = confirmable_after
+        .checked_add(ADMIN_PROPOSAL_EXPIRY_SECS)
+        .ok_or(ContractError::OverflowError)?;
     let proposal = AdminChangeProposal {
         new_admin: new_admin.clone(),
         confirmable_after,
+        expires_at,
     };
     storage::set_pending_admin_change(env, &proposal);
     events::emit_admin_change_proposed(env, &current, new_admin, confirmable_after);
@@ -482,6 +473,10 @@ pub fn confirm_admin_change(env: &Env, caller: &Address) -> Result<(), ContractE
     }
     caller.require_auth();
     let now = env.ledger().timestamp();
+    if now > proposal.expires_at {
+        storage::remove_pending_admin_change(env);
+        return Err(ContractError::AdminProposalExpired);
+    }
     if now < proposal.confirmable_after {
         return Err(ContractError::AdminChangeTimelockNotMet);
     }

@@ -207,6 +207,10 @@ pub enum ExtendedDataKey {
     CreatorScheduledTipCount(Address),
     /// Index: (creator, local_index) -> scheduled_tip_id
     CreatorScheduledTip(Address, u32),
+    /// Unix timestamp when contract was paused.
+    PausedAt,
+    /// State tracking for storage migration harness.
+    MigrationState,
 }
 
 /// Storage keys for compact performance caches.
@@ -364,12 +368,39 @@ pub fn is_paused(env: &Env) -> bool {
         .unwrap_or(false)
 }
 
-/// Sets the paused flag.
+/// Returns the timestamp when the contract was paused, or None if not paused.
+pub fn get_paused_at(env: &Env) -> Option<u64> {
+    env.storage().instance().get(&ExtendedDataKey::PausedAt)
+}
+
+/// Sets the paused flag and tracks paused_at timestamp.
 pub fn set_paused(env: &Env, paused: bool) {
     env.storage().instance().set(&DataKey::Paused, &paused);
     update_runtime_config(env, |config| {
         config.paused = paused;
     });
+    if paused {
+        if get_paused_at(env).is_none() {
+            env.storage()
+                .instance()
+                .set(&ExtendedDataKey::PausedAt, &env.ledger().timestamp());
+        }
+    } else {
+        env.storage().instance().remove(&ExtendedDataKey::PausedAt);
+    }
+}
+
+/// Storage migration state accessors
+pub fn get_migration_state(env: &Env) -> Option<crate::types::MigrationState> {
+    env.storage().instance().get(&ExtendedDataKey::MigrationState)
+}
+
+pub fn set_migration_state(env: &Env, state: &crate::types::MigrationState) {
+    env.storage().instance().set(&ExtendedDataKey::MigrationState, state);
+}
+
+pub fn remove_migration_state(env: &Env) {
+    env.storage().instance().remove(&ExtendedDataKey::MigrationState);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

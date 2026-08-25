@@ -260,7 +260,7 @@ pub fn deactivate_profile(
     }
 
     if storage::is_profile_deactivated(env, &creator) {
-        return Err(ContractError::AlreadyDeactivated);
+        return Err(ContractError::ProfileDeactivated);
     }
 
     let now = env.ledger().timestamp();
@@ -623,7 +623,7 @@ pub fn cleanup_inactive_profile(
     }
 
     if !is_profile_inactive_eligible(env, &target) {
-        return Err(ContractError::ProfileInactive);
+        return Err(ContractError::ProfileNotDeactivated);
     }
 
     let profile = storage::get_profile(env, &target);

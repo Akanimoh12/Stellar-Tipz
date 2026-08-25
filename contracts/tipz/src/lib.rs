@@ -20,6 +20,7 @@ mod events;
 mod fees;
 mod goals;
 mod leaderboard;
+mod migrations;
 mod multisig;
 mod multitoken;
 mod profile;
@@ -42,7 +43,7 @@ use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
 use crate::errors::ContractError;
 use crate::types::{
     AdminAuditEntry, AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip, ContractConfig,
-    ContractStats, CreditBreakdown, CreditTier, LeaderboardEntry, Profile,
+    ContractStats, CreditBreakdown, CreditTier, LeaderboardEntry, MigrationState, Profile,
     ProfileWithDeactivation, Tip,
 };
 
@@ -254,6 +255,40 @@ impl TipzContract {
     /// Withdraw accumulated tips (fee deducted).
     pub fn withdraw_tips(env: Env, caller: Address, amount: i128) -> Result<(), ContractError> {
         tips::withdraw_tips(&env, &caller, amount)
+    }
+
+    /// Time-delayed emergency withdrawal for creators during an extended contract pause (#1178).
+    pub fn emergency_withdraw_tips(
+        env: Env,
+        caller: Address,
+        amount: i128,
+    ) -> Result<(), ContractError> {
+        tips::emergency_withdraw_tips(&env, &caller, amount)
+    }
+
+    /// Returns the timestamp when contract was paused, or None if active.
+    pub fn get_paused_at(env: Env) -> Option<u64> {
+        storage::get_paused_at(&env)
+    }
+
+    /// Returns the required pause delay (7 days) before emergency withdrawal is unlocked.
+    pub fn get_emergency_withdrawal_delay(_env: Env) -> u64 {
+        admin::EMERGENCY_WITHDRAWAL_DELAY_SECS
+    }
+
+    /// Execute or resume a versioned storage migration to target_version (#1173). Admin only.
+    pub fn migrate(
+        env: Env,
+        caller: Address,
+        target_version: u32,
+        batch_size: u32,
+    ) -> Result<MigrationState, ContractError> {
+        migrations::migrate(&env, &caller, target_version, batch_size)
+    }
+
+    /// Returns the current active migration state, if any.
+    pub fn get_migration_state(env: Env) -> Option<MigrationState> {
+        storage::get_migration_state(&env)
     }
 
     /// Get a single tip record by its ID.

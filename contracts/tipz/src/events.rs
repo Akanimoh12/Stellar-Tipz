@@ -285,6 +285,27 @@ pub fn emit_contract_unpaused(env: &Env, admin: &Address) {
         (admin.clone(),),
     );
 }
+
+pub fn emit_emergency_withdrawal(env: &Env, creator: &Address, amount: i128) {
+    env.events().publish(
+        (symbol_short!("creator"), symbol_short!("emerg_wdr")),
+        (creator.clone(), amount),
+    );
+}
+
+pub fn emit_migration_started(env: &Env, from_version: u32, target_version: u32) {
+    env.events().publish(
+        (symbol_short!("migrate"), symbol_short!("started")),
+        (from_version, target_version),
+    );
+}
+
+pub fn emit_migration_completed(env: &Env, from_version: u32, target_version: u32) {
+    env.events().publish(
+        (symbol_short!("migrate"), symbol_short!("completed")),
+        (from_version, target_version),
+    );
+}
 pub fn emit_min_tip_amount_updated(env: &Env, old_min: i128, new_min: i128) {
     env.events().publish(
         (symbol_short!("tip"), symbol_short!("min")),

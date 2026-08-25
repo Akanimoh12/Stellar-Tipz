@@ -473,6 +473,59 @@ pub fn withdraw_tips(env: &Env, caller: &Address, amount: i128) -> Result<(), Co
     Ok(())
 }
 
+/// Time-delayed emergency withdrawal that survives contract pause (#1178).
+///
+/// If the contract remains paused past `EMERGENCY_WITHDRAWAL_DELAY_SECS` (7 days),
+/// creators may withdraw their accrued tips fee-free even while paused.
+pub fn emergency_withdraw_tips(
+    env: &Env,
+    caller: &Address,
+    amount: i128,
+) -> Result<(), ContractError> {
+    caller.require_auth();
+
+    if !storage::is_paused(env) {
+        return Err(ContractError::ContractNotPaused);
+    }
+
+    let paused_at = storage::get_paused_at(env).ok_or(ContractError::ContractNotPaused)?;
+    let now = env.ledger().timestamp();
+    let threshold = paused_at.saturating_add(crate::admin::EMERGENCY_WITHDRAWAL_DELAY_SECS);
+
+    if now < threshold {
+        return Err(ContractError::EmergencyWithdrawalNotAllowed);
+    }
+
+    if !storage::has_profile(env, caller) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    if amount <= 0 {
+        return Err(ContractError::InvalidAmount);
+    }
+
+    let mut profile = storage::get_profile(env, caller);
+    if profile.balance < amount {
+        return Err(ContractError::InsufficientBalance);
+    }
+
+    let contract_address = env.current_contract_address();
+
+    // Transfer full requested amount without charging fees (fee-free emergency exit)
+    token::transfer_xlm(env, &contract_address, caller, amount)?;
+
+    profile.balance -= amount;
+    storage::set_profile(env, &profile);
+
+    storage::bump_profile_ttl(env, caller);
+    storage::bump_username_ttl(env, &profile.username);
+
+    // Emit distinct emergency withdrawal event
+    crate::events::emit_emergency_withdrawal(env, caller, amount);
+
+    Ok(())
+}
+
 /// Schedule a tip for future delivery.
 ///
 /// The tip amount is locked in the contract until the delivery time.
@@ -709,7 +762,7 @@ pub fn cancel_scheduled_tip(
         .ok_or(ContractError::NotFound)?;
 
     if scheduled_tip.sender != *caller {
-        return Err(ContractError::Unauthorized);
+        return Err(ContractError::NotAuthorized);
     }
 
     if scheduled_tip.delivered {
