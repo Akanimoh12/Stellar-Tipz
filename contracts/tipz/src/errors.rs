@@ -54,4 +54,8 @@ pub enum ContractError {
     InvalidMigrationVersion = 46,
     NoRefundRequest = 47,
     InvalidMessage = 48,
+    /// A privileged action was called directly while multisig approval is required for it (#1155)
+    MultisigRequired = 49,
+    /// A proposal's approvals were collected under a signer set/threshold that has since changed (#1154)
+    ProposalEpochMismatch = 50,
 }

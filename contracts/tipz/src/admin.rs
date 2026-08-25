@@ -107,6 +107,19 @@ pub fn require_not_paused(env: &Env) -> Result<(), ContractError> {
     Ok(())
 }
 
+/// Guard for privileged actions that must route through multisig once it is enabled (#1155).
+///
+/// Covers: fee changes, admin transfer, pause/unpause, and upgrade. When multisig is
+/// enabled these entrypoints error instead of executing directly; callers must instead
+/// go through `propose_action`/`approve_action` in `multisig.rs`. With multisig disabled,
+/// this is a no-op and behaviour is unchanged.
+fn require_no_multisig(env: &Env) -> Result<(), ContractError> {
+    if crate::multisig::is_multisig_enabled(env) {
+        return Err(ContractError::MultisigRequired);
+    }
+    Ok(())
+}
+
 /// Initialize the contract. Can only be called once.
 pub fn initialize(
     env: &Env,
@@ -367,6 +380,7 @@ pub fn bump_ttl(env: &Env, caller: &Address) -> Result<(), ContractError> {
 pub fn set_fee(env: &Env, caller: &Address, fee_bps: u32) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
+    require_no_multisig(env)?;
     if fee_bps > 1000 {
         return Err(ContractError::InvalidFee);
     }
@@ -430,6 +444,7 @@ pub fn propose_admin_change(
 ) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
+    require_no_multisig(env)?;
     let current = storage::get_admin(env);
     if new_admin == &current {
         return Err(ContractError::NotAuthorized);
@@ -611,6 +626,7 @@ pub fn get_admin_audit_history(
 pub fn pause(env: &Env, caller: &Address) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
+    require_no_multisig(env)?;
     storage::set_paused(env, true);
     events::emit_contract_paused(env, caller);
     log_admin_action(
@@ -626,6 +642,7 @@ pub fn pause(env: &Env, caller: &Address) -> Result<(), ContractError> {
 pub fn unpause(env: &Env, caller: &Address) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
+    require_no_multisig(env)?;
     storage::set_paused(env, false);
     events::emit_contract_unpaused(env, caller);
     log_admin_action(
@@ -772,6 +789,7 @@ pub fn upgrade(
 ) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
+    require_no_multisig(env)?;
     let proposed = get_proposed_upgrade(env).ok_or(ContractError::NotFound)?;
     if proposed != new_wasm_hash.clone() {
         return Err(ContractError::InvalidInput);
