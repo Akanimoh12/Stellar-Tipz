@@ -662,6 +662,119 @@ state commits).
 | INV-P-3   | `test_profiles.rs`        | `test_deregister_clears_state`                 |
 
 
+### Invariant–Test Mapping
+
+| Invariant | Test file                 | Test function                                  |
+| --------- | ------------------------- | ---------------------------------------------- |
+| INV-S-1   | `test_security.rs`        | `test_double_initialize`                       |
+| INV-S-2   | `test_profiles.rs`        | `test_profile_username_consistency`            |
+| INV-S-3   | `test_profiles.rs`        | `test_total_creators_counter`                  |
+| INV-S-4   | `test_tipping.rs`         | `test_tip_count_monotonic`                     |
+| INV-S-5   | `test_security.rs`        | `test_paused_contract`                         |
+| INV-C-1   | `test_credit.rs`          | `test_credit_score_bounds`                     |
+| INV-C-2   | `test_credit.rs`          | `test_credit_non_decreasing_on_tip`            |
+| INV-C-3   | `test_credit.rs`          | `test_credit_breakdown_non_negative`           |
+| INV-F-1   | `test_admin.rs`           | `test_fee_bounds`                              |
+| INV-F-2   | `test_tipping.rs`         | `test_withdrawal_fee_arithmetic`               |
+| INV-F-3   | `test_tipping.rs`         | `test_fees_leq_volume`                         |
+| INV-F-4   | `test_tipping.rs`         | `test_fees_monotonic`                          |
+| INV-L-1   | `test_leaderboard.rs`     | `test_leaderboard_sorted`                      |
+| INV-L-2   | `test_leaderboard.rs`     | `test_leaderboard_registered_only`             |
+| INV-L-3   | `test_leaderboard.rs`     | `test_leaderboard_profile_consistency`         |
+| INV-P-1   | `test_profiles.rs`        | `test_username_unique`                         |
+| INV-P-2   | `test_profiles.rs`        | `test_address_unique`                          |
+| INV-P-3   | `test_profiles.rs`        | `test_deregister_clears_state`                 |
+
+### Event Schema Versioning
+
+All on-chain events carry a schema version in their data tuple, enabling
+the indexer to branch on version and log loudly on unknown versions. The
+following catalogue documents every event type and its version:
+
+| Event Topic | Data Fields (with version) | Description |
+|-------------|---------------------------|-------------|
+| `profile, register` | `(1, owner: Address, username: String)` — version 1 | Emitted when a creator registers a profile |
+| `profile, updated` | `(1, owner: Address)` — version 1 | Emitted when a creator updates their profile |
+| `profile, deregist` | `(1, owner: Address, username: String)` — version 1 | Emitted when a creator deregisters their profile |
+| `profile, deact` | `(1, creator: Address, actor: Address)` — version 1 | Emitted when a profile is temporarily deactivated |
+| `profile, react` | `(1, creator: Address, actor: Address)` — version 1 | Emitted when a profile is reactivated |
+| `tip, sent` | `(1, id: u32, tipper: Address, creator: Address, amount: i128, message: String, timestamp: u64, is_anonymous: bool, is_encrypted: bool)` — version 1 | Emitted when a tip is sent |
+| `tip, withdrawn` | `(1, creator: Address, amount: i128, fee: i128)` — version 1 | Emitted when tips are withdrawn |
+| `tipper, blocked` | `(1, creator: Address, tipper: Address)` — version 1 | Emitted when a tipper is blocked |
+| `tipper, unblocked` | `(1, creator: Address, tipper: Address)` — version 1 | Emitted when a tipper is unblocked |
+| `credit, updated` | `(1, creator: Address, old_score: u32, new_score: u32)` — version 1 | Emitted when credit score updates |
+| `streak, milestone` | `(1, supporter: Address, creator: Address, current: u32)` — version 1 | Emitted when a supporter reaches a streak milestone |
+| `admin, audit` | `(1, id: u32, actor: Address, action_kind: Symbol, before_value: String, after_value: String, ledger_sequence: u32, timestamp: u64)` — version 1 | Emitted for admin audit log entries |
+| `sch_tip, created` | `(1, id: u32, sender: Address, creator: Address, amount: i128, deliver_at: u64)` — version 1 | Emitted when a scheduled tip is created |
+| `sch_tip, deliver` | `(1, id: u32, creator: Address)` — version 1 | Emitted when a scheduled tip is delivered |
+| `sch_tip, cancel` | `(1, id: u32, sender: Address, refund_amount: i128, cancellation_fee: i128)` — version 1 | Emitted when a scheduled tip is cancelled |
+| `admin, changed` | `(1, old_admin: Address, new_admin: Address)` — version 1 | Emitted when admin role changes |
+| `admin, proposed` | `(1, current_admin: Address, proposed_admin: Address)` — version 1 | Emitted when admin proposes a new admin |
+| `admin, accepted` | `(1, new_admin: Address)` — version 1 | Emitted when proposed admin accepts the role |
+| `admin, proposal_cancelled` | `(1, current_admin: Address)` — version 1 | Emitted when admin cancels a pending proposal |
+| `admin, chgprop` | `(1, current_admin: Address, new_admin: Address, confirmable_after: u64)` — version 1 | Emitted when admin change is proposed |
+| `admin, chgconf` | `(1, old_admin: Address, new_admin: Address)` — version 1 | Emitted when admin change is confirmed |
+| `upgrade, proposed` | `(1, wasm_hash: BytesN<32>)` — version 1 | Emitted when WASM hash is proposed for upgrade |
+| `upgrade, cancelled` | `(1, admin: Address)` — version 1 | Emitted when upgrade is cancelled |
+| `fee, updated` | `(1, old_bps: u32, new_bps: u32)` — version 1 | Emitted when fee percentage changes |
+| `fee, proposed` | `(1, old_bps: u32, new_bps: u32, effective_ledger: u32, immediate: bool)` — version 1 | Emitted when fee change is proposed |
+| `fee, applied` | `(1, old_bps: u32, new_bps: u32)` — version 1 | Emitted when fee change is applied |
+| `fee, cancelled` | `(1, actor: Address, new_bps: u32)` — version 1 | Emitted when fee change is cancelled |
+| `fee, collector` | `(1, new_collector: Address)` — version 1 | Emitted when fee collector changes |
+| `fee, collected` | `(1, operation: String, payer: Address, gross: i128, fee: i128, net: i128, fee_bps: u32)` — version 1 | Emitted for each fee-bearing operation |
+| `contract, paused` | `(1, admin: Address)` — version 1 | Emitted when contract is paused |
+| `contract, unpaused` | `(1, admin: Address)` — version 1 | Emitted when contract is unpaused |
+| `emerg_wdr, creator, amount` | `(1, creator: Address, amount: i128)` — version 1 | Emitted for emergency withdrawals |
+| `migrate, started` | `(1, from_version: u32, target_version: u32)` — version 1 | Emitted when contract migration starts |
+| `migrate, completed` | `(1, from_version: u32, target_version: u32)` — version 1 | Emitted when contract migration completes |
+| `tip, min` | `(1, old_min: i128, new_min: i128)` — version 1 | Emitted when minimum tip amount changes |
+| `withdraw, min` | `(1, old_min: i128, new_min: i128)` — version 1 | Emitted when minimum withdrawal amount changes |
+| `batch, skipped` | `(1, creator: Address, reason: u32)` — version 1 | Emitted when batch X-metrics update skips an address |
+| `batch, done` | `(1, processed: u32, skipped_count: u32, skipped_entries: Vec<BatchSkip>)` — version 1 | Emitted when batch X-metrics update completes |
+| `verify, requested` | `(1, creator: Address, verification_type: VerificationType)` — version 1 | Emitted when verification is requested |
+| `verify, approved` | `(1, creator: Address, verification_type: VerificationType)` — version 1 | Emitted when verification is approved |
+| `verify, revoked` | `(1, creator: Address)` — version 1 | Emitted when verification is revoked |
+| `sub, created` | `(1, subscriber: Address, creator: Address, amount: i128, interval_days: u32)` — version 1 | Emitted when a subscription is created |
+| `sub, cancel` | `(1, subscriber: Address, creator: Address)` — version 1 | Emitted when a subscription is cancelled |
+| `sub, exec` | `(1, subscriber: Address, creator: Address, amount: i128)` — version 1 | Emitted when a subscription is executed |
+| `wd, sched` | `(1, creator: Address, id: u32, amount: i128, unlock_at: u64)` — version 1 | Emitted when a withdrawal is scheduled |
+| `wd, exec` | `(1, creator: Address, id: u32, amount: i128)` — version 1 | Emitted when a withdrawal is executed |
+| `wd, cancel` | `(1, creator: Address, id: u32)` — version 1 | Emitted when a withdrawal is cancelled |
+| `fee, split` | `(1, ops_pct: u32, pool_pct: u32)` — version 1 | Emitted when fee split is updated |
+| `fee, dist` | `(1, amount: i128, to_ops: bool)` — version 1 | Emitted when fees are distributed |
+| `pool, dist` | `(1, total_amount: i128, recipient_count: u32)` — version 1 | Emitted when pool distribution occurs |
+| `proposal, created` | `(1, proposal_id: u32, proposer: Address, action: MultisigAction)` — version 1 | Emitted when a multisig proposal is created |
+| `proposal, approved` | `(1, proposal_id: u32, approver: Address)` — version 1 | Emitted when a multisig proposal is approved |
+| `proposal, executed` | `(1, proposal_id: u32)` — version 1 | Emitted when a multisig proposal is executed |
+| `proposal, cancelled` | `(1, proposal_id: u32, proposer: Address)` — version 1 | Emitted when a multisig proposal is cancelled |
+| `donation, config` | `(1, creator: Address)` — version 1 | Emitted when donation page config updates |
+| `profile, min_tip` | `(1, creator: Address, amount: Option<i128>)` — version 1 | Emitted when creator's minimum tip changes |
+| `domain, set` | `(1, creator: Address, domain: String)` — version 1 | Emitted when domain is set for verification |
+| `domain, verify` | `(1, creator: Address, domain: String)` — version 1 | Emitted when domain verification is confirmed |
+| `domain, expired` | `(1, creator: Address)` — version 1 | Emitted when domain verification expires |
+| `goal, set` | `(1, creator: Address, target: i128, description: String, deadline: u64)` — version 1 | Emitted when a goal is set |
+| `goal, reached` | `(1, creator: Address, target: i128, raised: i128)` — version 1 | Emitted when a goal is reached |
+| `goal, completed` | `(1, creator: Address, goal_id: u64, target: i128, final_amount: i128, ledger: u32)` — version 1 | Emitted when a goal is completed |
+| `goal, cancelled` | `(1, creator: Address)` — version 1 | Emitted when a goal is cancelled |
+| `token, added` | `(1, token: Address, oracle: Option<Address>)` — version 1 | Emitted when a token is added to the whitelist |
+| `token, removed` | `(1, token: Address)` — version 1 | Emitted when a token is removed from the whitelist |
+| `tip, token` | `(1, tip_id: u32, tipper: Address, creator: Address, amount: i128, token: Address, message: String, timestamp: u64)` — version 1 | Emitted when a token tip is sent |
+| `refund, request` | `(1, tip_id: u32, tipper: Address, creator: Address, amount: i128, refund_amount: i128, non_refundable_fee: i128)` — version 1 | Emitted when a refund is requested |
+| `refund, approved` | `(1, tip_id: u32, creator: Address, tipper: Address, refund_amount: i128)` — version 1 | Emitted when a refund is approved |
+| `refund, rejected` | `(1, tip_id: u32, creator: Address, tipper: Address)` — version 1 | Emitted when a refund is rejected |
+| `refund, auto` | `(1, tip_id: u32, tipper: Address, refund_amount: i128)` — version 1 | Emitted when a refund is auto-approved |
+| `refund, expired` | `(1, tip_id: u32, tipper: Address)` — version 1 | Emitted when a refund expires |
+| `subscription, failed` | `(1, subscriber: Address, creator: Address)` — version 1 | Emitted when a subscription charge fails |
+| `subscription, cancelled` | — version 1 | Emitted when a scheduled tip is cancelled (note: this was merged into `sch_tip, cancel`) |
+
+#### Additive vs Breaking Event Changes Policy
+
+- **Additive changes**: Adding new data fields to an event, or adding a new event type, are always allowed. Indexers can choose to ignore unknown fields or new event types without breaking.
+- **Breaking changes**: Removing or reordering existing data fields, or changing the schema version in a way that indexers must handle, requires a contract upgrade coordination. The indexer must be updated in tandem with the contract.
+- **Version branching**: The indexer must check the schema version first. If the version is recognized, it processes the event using the known schema. If the version is unknown, it logs a loud warning (including the event topic and version) and skips event-specific processing, preserving historical event integrity.
+
+---
+
 ### Verification Renewal
 
 Verification approvals expire after the configured domain re-verification
