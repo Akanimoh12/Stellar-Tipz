@@ -470,6 +470,9 @@ pub fn withdraw_tips(env: &Env, caller: &Address, amount: i128) -> Result<(), Co
     // Emit withdrawal event: (creator, net, fee)
     crate::events::emit_tips_withdrawn(env, caller, net, fee);
 
+    // Emit fee collection event with operation kind and fee_bps for historical reconciliation
+    crate::events::emit_fee_collected(env, "withdrawal", caller, amount, fee, net, fee_bps);
+
     Ok(())
 }
 

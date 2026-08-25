@@ -228,6 +228,33 @@ pub fn emit_fee_collector_updated(env: &Env, new_collector: &Address) {
         (new_collector.clone(),),
     );
 }
+
+/// Topics : `("fee", "collected")`
+/// Data   : `(operation: String, payer: Address, gross: i128, fee: i128, net: i128, fee_bps: u32)`
+///
+/// Emitted for each fee-bearing operation (withdrawals, refunds, etc.).
+/// Captures the fee_bps at time of charge so historical events are self-describing.
+pub fn emit_fee_collected(
+    env: &Env,
+    operation: &str,
+    payer: &Address,
+    gross: i128,
+    fee: i128,
+    net: i128,
+    fee_bps: u32,
+) {
+    env.events().publish(
+        (symbol_short!("fee"), symbol_short!("collected")),
+        (
+            String::from_str(env, operation),
+            payer.clone(),
+            gross,
+            fee,
+            net,
+            fee_bps,
+        ),
+    );
+}
 pub fn emit_contract_paused(env: &Env, admin: &Address) {
     env.events().publish(
         (symbol_short!("contract"), symbol_short!("paused")),

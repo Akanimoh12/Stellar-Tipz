@@ -266,6 +266,9 @@ pub fn withdraw_token(
 
     events::emit_tips_withdrawn(env, caller, net, fee);
 
+    // Emit fee collection event for token withdrawal
+    events::emit_fee_collected(env, "token_withdrawal", caller, amount, fee, net, fee_bps);
+
     Ok(())
 }
 
