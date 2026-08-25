@@ -45,7 +45,7 @@ pub fn setup_test_contract<'a>(env: &'a Env, admin: &'a Address) -> TipzContract
 }
 
 /// Setup test contract with all necessary components for testing
-pub fn setup_test_contract(env: &Env) -> (TipzContractClient, Address, Address, Address) {
+pub fn setup_test_contract_default(env: &Env) -> (TipzContractClient, Address, Address, Address) {
     let contract_id = env.register_contract(None, TipzContract);
     let client = TipzContractClient::new(env, &contract_id);
     let admin = Address::generate(env);

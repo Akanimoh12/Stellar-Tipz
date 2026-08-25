@@ -4,7 +4,7 @@
 
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
-use crate::test::test_init::setup_test_contract;
+use crate::test::test_init::setup_test_contract_default;
 use crate::TipzContractClient;
 
 #[test]
@@ -12,7 +12,7 @@ fn test_add_accepted_token() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, admin, _fee_collector, _native_token) = setup_test_contract_default(&env);
 
     let usdc_token = Address::generate(&env);
     let oracle = Address::generate(&env);
@@ -31,7 +31,7 @@ fn test_reject_non_whitelisted_token() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, _admin, _fee_collector, _native_token) = setup_test_contract_default(&env);
 
     let creator = Address::generate(&env);
     let tipper = Address::generate(&env);
@@ -65,7 +65,7 @@ fn test_tip_with_usdc() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, admin, _fee_collector, native_token) = setup_test_contract(&env);
+    let (client, admin, _fee_collector, native_token) = setup_test_contract_default(&env);
 
     let creator = Address::generate(&env);
     let tipper = Address::generate(&env);
@@ -109,7 +109,7 @@ fn test_withdraw_specific_token() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, admin, _fee_collector, _native_token) = setup_test_contract_default(&env);
 
     let creator = Address::generate(&env);
     let tipper = Address::generate(&env);
@@ -156,7 +156,7 @@ fn test_remove_accepted_token() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, admin, _fee_collector, _native_token) = setup_test_contract_default(&env);
 
     let usdc_token = Address::generate(&env);
 

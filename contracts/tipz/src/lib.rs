@@ -20,6 +20,7 @@ mod events;
 mod fees;
 mod goals;
 mod leaderboard;
+mod migrations;
 mod multisig;
 mod multitoken;
 mod profile;
@@ -41,8 +42,9 @@ use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
 
 use crate::errors::ContractError;
 use crate::types::{
-    AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip, ContractConfig, ContractStats,
-    CreditBreakdown, CreditTier, LeaderboardEntry, Profile, ProfileWithDeactivation, Tip,
+    AdminAuditEntry, AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip, ContractConfig,
+    ContractStats, CreditBreakdown, CreditTier, LeaderboardEntry, MigrationState, Profile,
+    ProfileWithDeactivation, Tip,
 };
 
 /// The current contract interface version, stored on-chain during initialization.
@@ -255,6 +257,40 @@ impl TipzContract {
         tips::withdraw_tips(&env, &caller, amount)
     }
 
+    /// Time-delayed emergency withdrawal for creators during an extended contract pause (#1178).
+    pub fn emergency_withdraw_tips(
+        env: Env,
+        caller: Address,
+        amount: i128,
+    ) -> Result<(), ContractError> {
+        tips::emergency_withdraw_tips(&env, &caller, amount)
+    }
+
+    /// Returns the timestamp when contract was paused, or None if active.
+    pub fn get_paused_at(env: Env) -> Option<u64> {
+        storage::get_paused_at(&env)
+    }
+
+    /// Returns the required pause delay (7 days) before emergency withdrawal is unlocked.
+    pub fn get_emergency_withdrawal_delay(_env: Env) -> u64 {
+        admin::EMERGENCY_WITHDRAWAL_DELAY_SECS
+    }
+
+    /// Execute or resume a versioned storage migration to target_version (#1173). Admin only.
+    pub fn migrate(
+        env: Env,
+        caller: Address,
+        target_version: u32,
+        batch_size: u32,
+    ) -> Result<MigrationState, ContractError> {
+        migrations::migrate(&env, &caller, target_version, batch_size)
+    }
+
+    /// Returns the current active migration state, if any.
+    pub fn get_migration_state(env: Env) -> Option<MigrationState> {
+        storage::get_migration_state(&env)
+    }
+
     /// Get a single tip record by its ID.
     ///
     /// Returns [`ContractError::NotFound`] when the tip does not exist or its
@@ -407,6 +443,13 @@ impl TipzContract {
     ) -> Result<(), ContractError> {
         admin::require_admin(&env, &caller)?;
         leaderboard::reset_leaderboard(&env, period);
+        admin::log_admin_action(
+            &env,
+            &caller,
+            soroban_sdk::Symbol::new(&env, "reset_leaderboard"),
+            String::from_str(&env, ""),
+            String::from_str(&env, "reset"),
+        );
         Ok(())
     }
 
@@ -487,6 +530,23 @@ impl TipzContract {
         offset: u32,
     ) -> Result<Vec<AdminChangeHistoryEntry>, ContractError> {
         admin::get_admin_change_history(&env, limit, offset)
+    }
+
+    /// Return admin audit log entries, newest first (`offset` skips from the newest).
+    pub fn get_admin_audit_history(
+        env: Env,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<AdminAuditEntry>, ContractError> {
+        admin::get_admin_audit_history(&env, limit, offset)
+    }
+
+    /// Return total count of admin audit log entries recorded over time.
+    pub fn get_admin_audit_count(env: Env) -> Result<u32, ContractError> {
+        if !storage::is_initialized(&env) {
+            return Err(ContractError::NotInitialized);
+        }
+        Ok(storage::get_admin_audit_count(&env))
     }
 
     /// Get global contract statistics.
@@ -635,6 +695,13 @@ impl TipzContract {
                 max_ops,
                 window_secs,
             },
+        );
+        admin::log_admin_action(
+            &env,
+            &caller,
+            soroban_sdk::Symbol::new(&env, "set_rate_limit_config"),
+            String::from_str(&env, ""),
+            admin::u32_to_string(&env, max_ops),
         );
         Ok(())
     }

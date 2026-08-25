@@ -137,6 +137,51 @@ pub fn emit_streak_milestone(env: &Env, supporter: &Address, creator: &Address, 
 
 // ── Admin events ──────────────────────────────────────────────────────────────
 
+/// Emit an `AdminAuditLog` event mirroring an admin audit entry for indexers.
+///
+/// Topics : `("admin", "audit")`
+/// Data   : `(id, actor, action_kind, before_value, after_value, ledger_sequence, timestamp)`
+pub fn emit_admin_audit_log(env: &Env, entry: &crate::types::AdminAuditEntry) {
+    env.events().publish(
+        (symbol_short!("admin"), symbol_short!("audit")),
+        entry.clone(),
+    );
+}
+
+pub fn emit_scheduled_tip_created(
+    env: &Env,
+    id: u32,
+    sender: &Address,
+    creator: &Address,
+    amount: i128,
+    deliver_at: u64,
+) {
+    env.events().publish(
+        (symbol_short!("sch_tip"), symbol_short!("created")),
+        (id, sender.clone(), creator.clone(), amount, deliver_at),
+    );
+}
+
+pub fn emit_scheduled_tip_delivered(env: &Env, id: u32, creator: &Address) {
+    env.events().publish(
+        (symbol_short!("sch_tip"), symbol_short!("deliver")),
+        (id, creator.clone()),
+    );
+}
+
+pub fn emit_scheduled_tip_cancelled(
+    env: &Env,
+    id: u32,
+    sender: &Address,
+    refund_amount: i128,
+    cancellation_fee: i128,
+) {
+    env.events().publish(
+        (symbol_short!("sch_tip"), symbol_short!("cancel")),
+        (id, sender.clone(), refund_amount, cancellation_fee),
+    );
+}
+
 /// Topics : `("admin", "changed")`
 /// Data   : `(old_admin: Address, new_admin: Address)`
 pub fn emit_admin_changed(env: &Env, old_admin: &Address, new_admin: &Address) {
@@ -238,6 +283,27 @@ pub fn emit_contract_unpaused(env: &Env, admin: &Address) {
     env.events().publish(
         (symbol_short!("contract"), symbol_short!("unpaused")),
         (admin.clone(),),
+    );
+}
+
+pub fn emit_emergency_withdrawal(env: &Env, creator: &Address, amount: i128) {
+    env.events().publish(
+        (symbol_short!("creator"), symbol_short!("emerg_wdr")),
+        (creator.clone(), amount),
+    );
+}
+
+pub fn emit_migration_started(env: &Env, from_version: u32, target_version: u32) {
+    env.events().publish(
+        (symbol_short!("migrate"), symbol_short!("started")),
+        (from_version, target_version),
+    );
+}
+
+pub fn emit_migration_completed(env: &Env, from_version: u32, target_version: u32) {
+    env.events().publish(
+        (symbol_short!("migrate"), symbol_short!("completed")),
+        (from_version, target_version),
     );
 }
 pub fn emit_min_tip_amount_updated(env: &Env, old_min: i128, new_min: i128) {

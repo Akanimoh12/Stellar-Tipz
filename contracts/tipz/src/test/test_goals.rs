@@ -8,7 +8,7 @@ use soroban_sdk::{
     Address, Env, String, Symbol,
 };
 
-use crate::test::test_init::setup_test_contract;
+use crate::test::test_init::setup_test_contract_default;
 use crate::TipzContractClient;
 
 /// Find the `goal_completed` event in `env.events().all()` and return its data.
@@ -52,7 +52,7 @@ fn test_set_and_track_goal() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, _admin, _fee_collector, _native_token) = setup_test_contract_default(&env);
 
     let creator = Address::generate(&env);
     let tipper = Address::generate(&env);
@@ -88,7 +88,7 @@ fn test_goal_reached_event() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, _admin, _fee_collector, _native_token) = setup_test_contract_default(&env);
 
     let creator = Address::generate(&env);
     let tipper = Address::generate(&env);
@@ -121,7 +121,7 @@ fn test_cancel_goal() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, _admin, _fee_collector, _native_token) = setup_test_contract_default(&env);
 
     let creator = Address::generate(&env);
 
@@ -153,7 +153,7 @@ fn test_get_goal_when_none_exists() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, _admin, _fee_collector, _native_token) = setup_test_contract_default(&env);
 
     let creator = Address::generate(&env);
 
@@ -176,7 +176,7 @@ fn test_multiple_sequential_goals() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, _admin, _fee_collector, _native_token) = setup_test_contract_default(&env);
 
     let creator = Address::generate(&env);
 

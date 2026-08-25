@@ -268,5 +268,12 @@ pub fn set_refund_config(
 ) -> Result<(), ContractError> {
     crate::admin::require_admin(env, admin)?;
     storage::set_refund_config(env, &config);
+    crate::admin::log_admin_action(
+        env,
+        admin,
+        soroban_sdk::Symbol::new(env, "set_refund_config"),
+        soroban_sdk::String::from_str(env, ""),
+        soroban_sdk::String::from_str(env, "config_updated"),
+    );
     Ok(())
 }

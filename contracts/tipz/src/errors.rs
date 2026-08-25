@@ -23,49 +23,35 @@ pub enum ContractError {
     BalanceNotZero = 15,
     OverflowError = 16,
     NotFound = 17,
-    AlreadyDeactivated = 18,
-    ProfileDeactivated = 19,
-    ProfileNotDeactivated = 20,
-    MessageTooLong = 21,
-    InvalidImageUrl = 22,
-    BatchTooLarge = 23,
-    InvalidFee = 24,
-    CannotTipSelf = 25,
-    NotVerified = 26,
-    AlreadyVerified = 27,
-    Unauthorized = 28,
-    RateLimitExceeded = 29,
-    InvalidXHandle = 30,
-    TipBelowMinimum = 31,
-    ProfileNotActive = 32,
-    /// Tip message contains invalid control characters
-    InvalidMessage = 33,
-    /// Tip amount is below the creator's custom minimum
-    BelowCreatorMinimum = 34,
-    /// Domain format is invalid or empty when required
-    InvalidDomain = 35,
-    /// Generic invalid input error
-    InvalidInput = 36,
-    /// Token is not in the accepted whitelist
-    TokenNotAccepted = 37,
-    /// Maximum number of registered profiles reached (DoS protection)
-    MaxProfilesReached = 38,
-    /// Profile is inactive beyond the cleanup threshold
-    ProfileInactive = 39,
-    /// Refund request window has expired
-    RefundWindowExpired = 38,
-    /// Refund has already been requested for this tip
-    RefundAlreadyRequested = 39,
-    /// Refund has already been processed
-    RefundAlreadyProcessed = 40,
-    /// No refund request exists for this tip
-    NoRefundRequest = 41,
-    /// Only the tipper can request a refund
-    NotTipper = 42,
-    /// Only the creator can approve/reject a refund
-    NotCreator = 43,
-    /// Tipper is blocked by the creator
-    TipperBlocked = 44,
-    /// Creator blocklist reached its configured cap
-    BlocklistLimitReached = 45,
+    ProfileDeactivated = 18,
+    ProfileNotDeactivated = 19,
+    MessageTooLong = 20,
+    InvalidImageUrl = 21,
+    BatchTooLarge = 22,
+    InvalidFee = 23,
+    CannotTipSelf = 24,
+    NotVerified = 25,
+    AlreadyVerified = 26,
+    RateLimitExceeded = 27,
+    TipBelowMinimum = 28,
+    BelowCreatorMinimum = 29,
+    InvalidDomain = 30,
+    InvalidInput = 31,
+    TokenNotAccepted = 32,
+    MaxProfilesReached = 33,
+    RefundWindowExpired = 34,
+    RefundAlreadyRequested = 35,
+    RefundAlreadyProcessed = 36,
+    NotTipper = 37,
+    NotCreator = 38,
+    TipperBlocked = 39,
+    BlocklistLimitReached = 40,
+    ContractNotPaused = 41,
+    EmergencyWithdrawalNotAllowed = 42,
+    AdminProposalExpired = 43,
+    MigrationAlreadyCompleted = 44,
+    MigrationDowngradeRejected = 45,
+    InvalidMigrationVersion = 46,
+    NoRefundRequest = 47,
+    InvalidMessage = 48,
 }
