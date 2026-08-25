@@ -14,11 +14,12 @@ import type {
 /** Maps a notification type to the preference field gating its delivery. */
 const PREFERENCE_FIELD_BY_TYPE: Record<
   NotificationType,
-  'tipReceived' | 'goalReached' | 'subscriptionCharged'
+  'tipReceived' | 'goalReached' | 'subscriptionCharged' | 'payoutFailed'
 > = {
   tip_received: 'tipReceived',
   goal_reached: 'goalReached',
   subscription_charged: 'subscriptionCharged',
+  payout_failed: 'payoutFailed',
 };
 
 function formatNotification(n: {

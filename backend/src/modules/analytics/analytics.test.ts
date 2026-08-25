@@ -13,12 +13,9 @@ const { mockFindMany, mockCount, mockTipFindMany, mockUserFindMany, mockUpsert }
 
 vi.mock('../../db/prisma.js', () => ({
   prisma: {
-    analyticsDaily: { findMany: mockFindMany, count: mockCount },
-    tip: { findMany: vi.fn(), groupBy: vi.fn() },
-    user: { findUnique: vi.fn(), findMany: vi.fn() },
     analyticsDaily: { findMany: mockFindMany, count: mockCount, upsert: mockUpsert },
-    tip: { findMany: mockTipFindMany },
-    user: { findMany: mockUserFindMany },
+    tip: { findMany: mockTipFindMany, groupBy: vi.fn() },
+    user: { findUnique: vi.fn(), findMany: mockUserFindMany },
     $disconnect: vi.fn(),
   },
 }));
@@ -216,6 +213,9 @@ describe('GET /api/v1/analytics/active-users', () => {
     const res = await request(app).get('/api/v1/analytics/active-users?granularity=week');
 
     expect(res.status).toBe(200);
+  });
+});
+
 describe('computeDailyAnalytics', () => {
   beforeEach(resetMocks);
 

@@ -1,10 +1,23 @@
 import { prisma } from '../../db/prisma.js';
 import { logger } from '../../common/utils/logger.js';
 import { NotFoundError } from '../../common/errors/AppError.js';
-import type { AnalyticsDailyEntry, AnalyticsDailyResponse, AnalyticsSummary } from './analytics.types.js';
-import type { TipVolumeResponse, TopTipperEntry, TopTippersResponse } from './analytics.types.js';
-import type { ActiveUsersResponse } from './analytics.types.js';
-import type { CreatorAnalyticsResponse, CreatorAnalyticsSummary, CreatorAnalyticsEntry, CreatorTopTipperEntry } from './analytics.types.js';
+import type {
+  AnalyticsDailyEntry,
+  AnalyticsDailyResponse,
+  AnalyticsSummary,
+} from './analytics.types.js';
+import type {
+  TipVolumeResponse,
+  TopTipperEntry,
+  TopTippersResponse,
+} from './analytics.types.js';
+import type { ActiveUsersResponse, ActiveUsersEntry } from './analytics.types.js';
+import type {
+  CreatorAnalyticsResponse,
+  CreatorAnalyticsSummary,
+  CreatorAnalyticsEntry,
+  CreatorTopTipperEntry,
+} from './analytics.types.js';
 
 /**
  * Returns paginated daily analytics rows, optionally filtered by date range.
@@ -214,7 +227,51 @@ export async function getActiveUsers(
   endDate?: string,
 ): Promise<ActiveUsersResponse> {
   logger.info({ granularity, startDate, endDate }, 'Fetching active users time-series');
-  return { entries: [], granularity, startDate: startDate ?? '', endDate: endDate ?? '' };
+
+  const now = new Date();
+  const start = startDate ? new Date(startDate) : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const end = endDate ? new Date(endDate) : now;
+
+  const rows = await prisma.analyticsDaily.findMany({
+    where: { date: { gte: start, lte: end } },
+    orderBy: { date: 'asc' },
+  });
+
+  const buckets = new Map<string, number>();
+
+  for (const row of rows) {
+    let key: string;
+    const d = new Date(row.date);
+
+    switch (granularity) {
+      case 'week': {
+        const startOfWeek = new Date(d);
+        startOfWeek.setDate(d.getDate() - d.getDay());
+        key = startOfWeek.toISOString().slice(0, 10);
+        break;
+      }
+      case 'month':
+        key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        break;
+      default:
+        key = d.toISOString().slice(0, 10);
+        break;
+    }
+
+    buckets.set(key, (buckets.get(key) ?? 0) + row.activeUsers);
+  }
+
+  const entries: ActiveUsersEntry[] = Array.from(buckets.entries()).map(([date, activeUsers]) => ({
+    date,
+    activeUsers,
+  }));
+
+  return {
+    entries,
+    granularity,
+    startDate: start.toISOString(),
+    endDate: end.toISOString(),
+  };
 }
 
 /**
@@ -262,10 +319,7 @@ export async function computeDailyAnalytics(date: string): Promise<AnalyticsDail
   ]);
 
   const totalTips = completedTips.length;
-  const totalVolume = completedTips.reduce(
-    (sum, tip) => sum + tip.amountStroops,
-    BigInt(0),
-  );
+  const totalVolume = completedTips.reduce((sum, tip) => sum + tip.amountStroops, BigInt(0));
   const newUsersCount = newUsers.length;
 
   const activeAddresses = new Set<string>();
@@ -290,7 +344,10 @@ export async function computeDailyAnalytics(date: string): Promise<AnalyticsDail
     },
   });
 
-  logger.info({ date, totalTips, totalVolume: totalVolume.toString(), newUsers: newUsersCount, activeUsers }, 'Daily analytics computed');
+  logger.info(
+    { date, totalTips, totalVolume: totalVolume.toString(), newUsers: newUsersCount, activeUsers },
+    'Daily analytics computed',
+  );
 
   return {
     date: upserted.date.toISOString().slice(0, 10),
@@ -339,9 +396,8 @@ export async function getCreatorAnalytics(
   const totalTipsReceived = tips.length;
   const totalVolumeReceived = tips.reduce((sum, tip) => sum + tip.amountStroops, BigInt(0));
   const uniqueTippers = new Set(tips.map((tip) => tip.fromAddress)).size;
-  const averageTipSize = totalTipsReceived > 0
-    ? (totalVolumeReceived / BigInt(totalTipsReceived)).toString()
-    : '0';
+  const averageTipSize =
+    totalTipsReceived > 0 ? (totalVolumeReceived / BigInt(totalTipsReceived)).toString() : '0';
 
   const firstTipDate = tips.length > 0 ? tips[0].createdAt.toISOString().slice(0, 10) : null;
   const lastTipDate = tips.length > 0 ? tips[tips.length - 1].createdAt.toISOString().slice(0, 10) : null;

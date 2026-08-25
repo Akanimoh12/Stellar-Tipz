@@ -41,6 +41,27 @@ export {
   scheduleLeaderboardSnapshot,
 } from './leaderboardSnapshot.worker.js';
 
+export { DISCOVERY_QUEUE, getDiscoveryQueue } from './discovery.queue.js';
+export {
+  refreshDiscoveryCache,
+  createDiscoveryWorker,
+  scheduleDiscovery,
+} from './discovery.worker.js';
+
+export { PLATFORM_STATS_QUEUE, getPlatformStatsQueue } from './platformStats.queue.js';
+export {
+  refreshPlatformStats,
+  createPlatformStatsWorker,
+  schedulePlatformStats,
+} from './platformStats.worker.js';
+
+export { PAYOUT_QUEUE, getPayoutQueue } from './payout.queue.js';
+export {
+  runPayoutSweep,
+  createPayoutWorker,
+  schedulePayouts,
+} from './payout.worker.js';
+
 export {
   X_METRICS_REFRESH_QUEUE,
   getXMetricsRefreshQueue,

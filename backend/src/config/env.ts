@@ -97,6 +97,40 @@ const envSchema = z.object({
   IPFS_API_URL: z.string().optional(),
   IPFS_GATEWAY_URL: z.string().default('https://ipfs.io/ipfs/'),
 
+  /** Creator discovery — trending formula tuning. */
+  DISCOVERY_TRENDING_WINDOW_DAYS: z.coerce.number().int().positive().default(14),
+  /** Exponential-decay half-life (in days) for recency weighting. */
+  DISCOVERY_TRENDING_HALFLIFE_DAYS: z.coerce.number().int().positive().default(7),
+  DISCOVERY_TRENDING_TOP_N: z.coerce.number().int().positive().default(50),
+  DISCOVERY_SIMILAR_TOP_N: z.coerce.number().int().positive().default(20),
+  DISCOVERY_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  DISCOVERY_SCHEDULE_CRON: z.string().default('*/15 * * * *'),
+
+  /** Public platform-stats endpoint tuning. */
+  PLATFORM_STATS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  PLATFORM_STATS_SCHEDULE_CRON: z.string().default('*/10 * * * *'),
+
+  /**
+   * Secret key for the platform's payout keeper account. Used only by the
+   * scheduled-payout job to invoke the contract's `execute_scheduled_withdrawal`
+   * on behalf of creators who have explicitly opted in (on-chain authorization).
+   * Optional so the app/tests can run without it; the job throws a clear error
+   * per-creator if it is unset. The keeper never holds creator funds or keys.
+   */
+  PAYOUT_KEEPER_SECRET_KEY: z.string().optional(),
+  PAYOUT_SCHEDULE_CRON: z.string().default('*/30 * * * *'),
+  /** Maximum payout attempts before the creator is notified and payout paused. */
+  PAYOUT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  /** Base backoff (seconds) for payout retries; grows exponentially. */
+  PAYOUT_BACKOFF_BASE_SECONDS: z.coerce.number().int().positive().default(60),
+  /** Floor on a scheduled payout amount, in stroops. */
+  PAYOUT_MIN_AMOUNT_STROOPS: z.coerce.number().int().positive().default(10_000_000),
+
+  /** OG image generation limits (memory/timeout guardrails). */
+  OG_IMAGE_TIMEOUT_MS: z.coerce.number().int().positive().default(3000),
+  OG_IMAGE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
+  OG_IMAGE_CONCURRENCY: z.coerce.number().int().positive().default(4),
+
   LOG_LEVEL: z.string().default('info'),
   SENTRY_DSN: z.string().optional(),
 });

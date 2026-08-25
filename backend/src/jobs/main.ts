@@ -14,6 +14,12 @@ import {
   scheduleLeaderboardSnapshot,
   createXMetricsRefreshWorker,
   scheduleXMetricsRefresh,
+  createDiscoveryWorker,
+  scheduleDiscovery,
+  createPlatformStatsWorker,
+  schedulePlatformStats,
+  createPayoutWorker,
+  schedulePayouts,
 } from './index.js';
 
 /**
@@ -68,6 +74,33 @@ export async function bootstrapJobs(): Promise<void> {
     },
   });
   await scheduleXMetricsRefresh();
+
+  const discoveryWorker = createDiscoveryWorker();
+  registerClosable({
+    name: 'DiscoveryWorker',
+    close: async () => {
+      await discoveryWorker.close();
+    },
+  });
+  await scheduleDiscovery();
+
+  const platformStatsWorker = createPlatformStatsWorker();
+  registerClosable({
+    name: 'PlatformStatsWorker',
+    close: async () => {
+      await platformStatsWorker.close();
+    },
+  });
+  await schedulePlatformStats();
+
+  const payoutWorker = createPayoutWorker();
+  registerClosable({
+    name: 'PayoutWorker',
+    close: async () => {
+      await payoutWorker.close();
+    },
+  });
+  await schedulePayouts();
 
   logger.info('Jobs process started');
 
