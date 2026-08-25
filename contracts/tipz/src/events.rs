@@ -700,3 +700,30 @@ pub fn emit_refund_auto_approved(env: &Env, tip_id: u32, tipper: &Address, refun
         (tip_id, tipper.clone(), refund_amount),
     );
 }
+
+/// Topics : `("refund", "expired")`
+/// Data   : `(tip_id: u32, tipper: Address)`
+pub fn emit_refund_expired(env: &Env, tip_id: u32, tipper: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "refund"), symbol_short!("expd")),
+        (tip_id, tipper.clone()),
+    );
+}
+
+/// Topics : `("subscription", "failed")`
+/// Data   : `(subscriber: Address, creator: Address)`
+pub fn emit_subscription_charge_failed(env: &Env, subscriber: &Address, creator: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "subscription"), symbol_short!("fail")),
+        (subscriber.clone(), creator.clone()),
+    );
+}
+
+/// Topics : `("proposal", "cancelled")`
+/// Data   : `(proposal_id: u32, proposer: Address)`
+pub fn emit_proposal_cancelled(env: &Env, proposal_id: u32, proposer: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "proposal"), symbol_short!("canc")),
+        (proposal_id, proposer.clone()),
+    );
+}

@@ -581,6 +581,7 @@ impl TipzContract {
             total_fees_collected: storage::get_total_fees(&env),
             is_initialized: storage::is_initialized(&env),
             version: storage::get_version(&env),
+            subscription_limit: storage::get_subscription_limit(&env),
         })
     }
 
@@ -781,6 +782,10 @@ impl TipzContract {
         subscription::execute_due_subscription(&env, subscriber, creator)
     }
 
+    pub fn execute_subscriptions(env: Env, limit: u32) -> Result<u32, ContractError> {
+        subscription::execute_subscriptions(&env, limit)
+    }
+
     pub fn get_subscriptions(env: Env, subscriber: Address) -> Vec<crate::types::Subscription> {
         subscription::get_subscriptions(&env, subscriber)
     }
@@ -824,6 +829,15 @@ impl TipzContract {
         proposal_id: u32,
     ) -> Result<(), ContractError> {
         multisig::approve_action(&env, &signer, proposal_id)
+    }
+
+    /// Cancel a proposal (only the proposer can cancel)
+    pub fn cancel_proposal(
+        env: Env,
+        proposer: Address,
+        proposal_id: u32,
+    ) -> Result<(), ContractError> {
+        multisig::cancel_proposal(&env, &proposer, proposal_id)
     }
 
     /// Get all pending proposals
@@ -1116,6 +1130,16 @@ impl TipzContract {
         tip_ids: soroban_sdk::Vec<u32>,
     ) -> Result<u32, ContractError> {
         refund::process_pending_refunds(&env, tip_ids)
+    }
+
+    /// Expire a pending refund request that has exceeded the TTL.
+    ///
+    /// This removes the expired refund request from storage.
+    ///
+    /// # Parameters
+    /// - `tip_id` - The ID of the tip with the refund request to expire
+    pub fn expire_refund(env: Env, tip_id: u32) -> Result<(), ContractError> {
+        refund::expire_refund(&env, tip_id)
     }
 
     /// Get refund request by tip ID.

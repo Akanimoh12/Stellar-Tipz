@@ -197,6 +197,48 @@ pub fn process_pending_refunds(env: &Env, tip_ids: soroban_sdk::Vec<u32>) -> Res
     Ok(processed_count)
 }
 
+/// Expire a pending refund request that has exceeded the TTL.
+///
+/// This can be called by anyone to clean up expired refund requests.
+/// Expired requests are removed from storage.
+///
+/// # Parameters
+/// - `tip_id` - The ID of the tip with the refund request to expire
+///
+/// # Errors
+/// - [`ContractError::NoRefundRequest`] - No refund request exists
+/// - [`ContractError::RefundAlreadyProcessed`] - Request is not pending
+/// - [`ContractError::RefundRequestExpired`] - Request has not yet expired
+pub fn expire_refund(env: &Env, tip_id: u32) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    crate::admin::require_not_paused(env)?;
+
+    let request = storage::get_refund_request(env, tip_id)
+        .ok_or(ContractError::NoRefundRequest)?;
+
+    // Only pending requests can expire
+    if request.status != RefundStatus::Pending {
+        return Err(ContractError::RefundAlreadyProcessed);
+    }
+
+    let config = storage::get_refund_config(env);
+    let current_ledger = env.ledger().sequence();
+    let request_ledger_age = current_ledger.saturating_sub(request.requested_at as u32);
+
+    // Check if request has expired
+    if request_ledger_age < config.request_ttl_ledgers {
+        return Err(ContractError::RefundRequestExpired);
+    }
+
+    // Remove the expired request from storage
+    storage::remove_refund_request(env, tip_id);
+
+    // Emit expiry event
+    crate::events::emit_refund_expired(env, tip_id, &request.tipper);
+
+    Ok(())
+}
+
 /// Internal function to process a refund (transfer funds and update state).
 fn process_refund_internal(
     env: &Env,
