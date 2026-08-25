@@ -275,6 +275,18 @@ fn process_refund_internal(
 
     // Non-refundable fee stays in contract (already collected)
 
+    // Emit fee collection event for the non-refundable fee
+    let fee_bps = storage::get_fee_bps(env);
+    crate::events::emit_fee_collected(
+        env,
+        "refund",
+        &request.tipper,
+        request.amount,
+        request.non_refundable_fee,
+        request.refund_amount,
+        fee_bps,
+    );
+
     // Update refund request status
     request.status = new_status;
     request.processed_at = Some(now);
