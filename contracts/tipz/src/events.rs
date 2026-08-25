@@ -273,6 +273,33 @@ pub fn emit_fee_collector_updated(env: &Env, new_collector: &Address) {
         (new_collector.clone(),),
     );
 }
+
+/// Topics : `("fee", "collected")`
+/// Data   : `(operation: String, payer: Address, gross: i128, fee: i128, net: i128, fee_bps: u32)`
+///
+/// Emitted for each fee-bearing operation (withdrawals, refunds, etc.).
+/// Captures the fee_bps at time of charge so historical events are self-describing.
+pub fn emit_fee_collected(
+    env: &Env,
+    operation: &str,
+    payer: &Address,
+    gross: i128,
+    fee: i128,
+    net: i128,
+    fee_bps: u32,
+) {
+    env.events().publish(
+        (symbol_short!("fee"), symbol_short!("collected")),
+        (
+            String::from_str(env, operation),
+            payer.clone(),
+            gross,
+            fee,
+            net,
+            fee_bps,
+        ),
+    );
+}
 pub fn emit_contract_paused(env: &Env, admin: &Address) {
     env.events().publish(
         (symbol_short!("contract"), symbol_short!("paused")),
@@ -698,5 +725,32 @@ pub fn emit_refund_auto_approved(env: &Env, tip_id: u32, tipper: &Address, refun
     env.events().publish(
         (Symbol::new(env, "refund"), symbol_short!("auto")),
         (tip_id, tipper.clone(), refund_amount),
+    );
+}
+
+/// Topics : `("refund", "expired")`
+/// Data   : `(tip_id: u32, tipper: Address)`
+pub fn emit_refund_expired(env: &Env, tip_id: u32, tipper: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "refund"), symbol_short!("expd")),
+        (tip_id, tipper.clone()),
+    );
+}
+
+/// Topics : `("subscription", "failed")`
+/// Data   : `(subscriber: Address, creator: Address)`
+pub fn emit_subscription_charge_failed(env: &Env, subscriber: &Address, creator: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "subscription"), symbol_short!("fail")),
+        (subscriber.clone(), creator.clone()),
+    );
+}
+
+/// Topics : `("proposal", "cancelled")`
+/// Data   : `(proposal_id: u32, proposer: Address)`
+pub fn emit_proposal_cancelled(env: &Env, proposal_id: u32, proposer: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "proposal"), symbol_short!("canc")),
+        (proposal_id, proposer.clone()),
     );
 }

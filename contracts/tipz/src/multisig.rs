@@ -57,8 +57,10 @@ pub struct Proposal {
     pub expires_at: u64,
     /// Whether the proposal has been executed
     pub executed: bool,
-    /// Multisig config epoch this proposal was created under (#1154)
-    pub epoch: u32,
+    /// Address that originally proposed the action
+    pub proposer: Address,
+    /// Whether the proposal has been cancelled
+    pub cancelled: bool,
 }
 
 /// Set the multi-signature configuration (admin only)
@@ -138,7 +140,8 @@ pub fn propose_action(env: &Env, signer: &Address, action: Action) -> Result<u32
         created_at: now,
         expires_at: now + DEFAULT_PROPOSAL_EXPIRY,
         executed: false,
-        epoch: config.epoch,
+        proposer: signer.clone(),
+        cancelled: false,
     };
 
     // Store proposal
@@ -183,13 +186,18 @@ pub fn approve_action(env: &Env, signer: &Address, proposal_id: u32) -> Result<(
 
     // Check if already executed
     if proposal.executed {
-        return Err(ContractError::AlreadyVerified); // Reusing error for "already executed"
+        return Err(ContractError::AlreadyVerified);
+    }
+
+    // Check if cancelled
+    if proposal.cancelled {
+        return Err(ContractError::ProposalExpired);
     }
 
     // Check if expired
     let now = env.ledger().timestamp();
     if now > proposal.expires_at {
-        return Err(ContractError::NotFound); // Proposal expired
+        return Err(ContractError::ProposalExpired);
     }
 
     // Reject if the signer set/threshold changed since this proposal was created (#1154)
@@ -199,7 +207,7 @@ pub fn approve_action(env: &Env, signer: &Address, proposal_id: u32) -> Result<(
 
     // Check if already approved by this signer
     if proposal.approvals.contains(signer) {
-        return Err(ContractError::AlreadyVerified); // Already approved
+        return Err(ContractError::AlreadyVerified);
     }
 
     // Add approval
@@ -217,6 +225,44 @@ pub fn approve_action(env: &Env, signer: &Address, proposal_id: u32) -> Result<(
     if proposal.approvals.len() >= config.required_signatures {
         execute_proposal_internal(env, proposal_id, &config)?;
     }
+
+    Ok(())
+}
+
+/// Cancel a proposal (only the proposer can cancel)
+pub fn cancel_proposal(env: &Env, proposer: &Address, proposal_id: u32) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    proposer.require_auth();
+
+    let mut proposal: Proposal = env
+        .storage()
+        .instance()
+        .get(&DataKey::Proposal(proposal_id))
+        .ok_or(ContractError::NotFound)?;
+
+    // Check if already executed
+    if proposal.executed {
+        return Err(ContractError::AlreadyVerified);
+    }
+
+    // Check if already cancelled
+    if proposal.cancelled {
+        return Err(ContractError::AlreadyVerified);
+    }
+
+    // Only the proposer can cancel
+    if proposal.proposer != *proposer {
+        return Err(ContractError::NotAuthorized);
+    }
+
+    // Cancel the proposal
+    proposal.cancelled = true;
+    env.storage()
+        .instance()
+        .set(&DataKey::Proposal(proposal_id), &proposal);
+
+    // Emit event
+    crate::events::emit_proposal_cancelled(env, proposal_id, proposer);
 
     Ok(())
 }
@@ -285,7 +331,7 @@ fn execute_proposal_internal(
     Ok(())
 }
 
-/// Get all pending (non-executed, non-expired) proposals
+/// Get all pending (non-executed, non-expired, non-cancelled) proposals
 pub fn get_pending_proposals(env: &Env) -> Vec<Proposal> {
     let next_id: u32 = env
         .storage()
@@ -302,7 +348,7 @@ pub fn get_pending_proposals(env: &Env) -> Vec<Proposal> {
             .instance()
             .get::<DataKey, Proposal>(&DataKey::Proposal(id))
         {
-            if !proposal.executed && now <= proposal.expires_at {
+            if !proposal.executed && !proposal.cancelled && now <= proposal.expires_at {
                 pending.push_back(proposal);
             }
         }

@@ -164,6 +164,8 @@ pub enum DataKey {
     RateLimitConfig,
     /// Tips received by a creator during a specific period (Address, Period, StartTimestamp)
     CreatorPeriodVolume(Address, crate::types::LeaderboardPeriod, u64),
+    /// Maximum active subscriptions per subscriber
+    SubscriptionLimit,
 }
 
 /// Extended storage keys for new features (separate enum to avoid size limits)
@@ -211,6 +213,8 @@ pub enum ExtendedDataKey {
     PausedAt,
     /// State tracking for storage migration harness.
     MigrationState,
+    /// Active subscriptions list by subscriber (Vec<(subscriber, creator)>)
+    ActiveSubscriptions,
 }
 
 /// Storage keys for compact performance caches.
@@ -713,6 +717,19 @@ pub fn set_fee_bps(env: &Env, fee_bps: u32) {
     update_runtime_config(env, |config| {
         config.fee_bps = fee_bps;
     });
+}
+
+/// Returns the maximum active subscriptions per subscriber (default 50).
+pub fn get_subscription_limit(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::SubscriptionLimit)
+        .unwrap_or(50)
+}
+
+/// Sets the maximum active subscriptions per subscriber.
+pub fn set_subscription_limit(env: &Env, limit: u32) {
+    env.storage().instance().set(&DataKey::SubscriptionLimit, &limit);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1508,6 +1525,37 @@ pub fn remove_refund_request(env: &Env, tip_id: u32) {
     env.storage()
         .temporary()
         .remove(&ExtendedDataKey::RefundRequest(tip_id));
+}
+
+/// Get the list of active subscriptions (subscriber, creator) pairs
+pub fn get_active_subscriptions(env: &Env) -> soroban_sdk::Vec<(Address, Address)> {
+    env.storage()
+        .persistent()
+        .get(&ExtendedDataKey::ActiveSubscriptions)
+        .unwrap_or_else(|| soroban_sdk::Vec::new(env))
+}
+
+/// Add a subscription to the active subscriptions list
+pub fn add_active_subscription(env: &Env, subscriber: &Address, creator: &Address) {
+    let mut subs = get_active_subscriptions(env);
+    subs.push_back((subscriber.clone(), creator.clone()));
+    env.storage()
+        .persistent()
+        .set(&ExtendedDataKey::ActiveSubscriptions, &subs);
+}
+
+/// Remove a subscription from the active subscriptions list
+pub fn remove_active_subscription(env: &Env, subscriber: &Address, creator: &Address) {
+    let mut subs = get_active_subscriptions(env);
+    let mut new_subs = soroban_sdk::Vec::new(env);
+    for (sub, crt) in subs.iter() {
+        if !(sub == *subscriber && crt == *creator) {
+            new_subs.push_back((sub, crt));
+        }
+    }
+    env.storage()
+        .persistent()
+        .set(&ExtendedDataKey::ActiveSubscriptions, &new_subs);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

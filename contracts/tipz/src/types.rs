@@ -362,6 +362,8 @@ pub struct ContractConfig {
     pub is_initialized: bool,
     /// On-chain contract version
     pub version: u32,
+    /// Maximum active subscriptions per subscriber (default 50)
+    pub subscription_limit: u32,
 }
 
 /// Donation page configuration for a creator
@@ -522,4 +524,6 @@ pub struct RefundConfig {
     pub response_window_secs: u64,
     /// Non-refundable fee percentage in basis points (default 200 = 2%)
     pub non_refundable_fee_bps: u32,
+    /// Time window in seconds for pending refund requests before auto-expiry (default 30 days = 2592000)
+    pub request_ttl_ledgers: u32,
 }
