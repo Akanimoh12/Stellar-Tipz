@@ -77,9 +77,13 @@ jobs:
             
             report += `**Total Bundle Size:** ${(totalSize / 1024).toFixed(2)} KB\n`;
             
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: report
-            });
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: report
+              });
+            } catch (error) {
+              console.log(`Skipping PR comment: ${error.message}`);
+            }
