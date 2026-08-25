@@ -95,6 +95,12 @@ export async function getActiveUsersController(
   } catch (error) {
     if (error instanceof z.ZodError) {
       next(new BadRequestError('Invalid query parameters', error.issues));
+    } else {
+      next(error);
+    }
+  }
+}
+
 /** GET /analytics/creators/:username — creator-specific analytics (issue #1006). */
 export async function getCreatorAnalyticsController(
   req: Request,

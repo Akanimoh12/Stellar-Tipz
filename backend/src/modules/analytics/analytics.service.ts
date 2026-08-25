@@ -214,6 +214,10 @@ export async function getActiveUsers(
   endDate?: string,
 ): Promise<ActiveUsersResponse> {
   logger.info({ granularity, startDate, endDate }, 'Fetching active users time-series');
+  return { entries: [], granularity, startDate: startDate ?? '', endDate: endDate ?? '' };
+}
+
+/**
  * Compute and upsert daily analytics for a given calendar date.
  *
  * Queries completed tips and registered users for that day, then upserts a
@@ -322,19 +326,6 @@ export async function getCreatorAnalytics(
   const start = startDate ? new Date(startDate) : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const end = endDate ? new Date(endDate) : now;
 
-  const rows = await prisma.analyticsDaily.findMany({
-    where: {
-      date: { gte: start, lte: end },
-    },
-    select: { date: true, activeUsers: true },
-    orderBy: { date: 'asc' },
-  });
-
-  const buckets = new Map<string, number>();
-
-  for (const row of rows) {
-    let key: string;
-    const d = new Date(row.date);
   const tips = await prisma.tip.findMany({
     where: {
       toAddress: user.stellarAddress,
@@ -386,23 +377,6 @@ export async function getCreatorAnalytics(
     }
 
     const existing = buckets.get(key);
-    if (existing !== undefined) {
-      buckets.set(key, existing + row.activeUsers);
-    } else {
-      buckets.set(key, row.activeUsers);
-    }
-  }
-
-  const entries = Array.from(buckets.entries()).map(([date, activeUsers]) => ({
-    date,
-    activeUsers,
-  }));
-
-  return {
-    entries,
-    granularity,
-    startDate: start.toISOString(),
-    endDate: end.toISOString(),
     if (existing) {
       existing.totalStroops += tip.amountStroops;
       existing.count += 1;
