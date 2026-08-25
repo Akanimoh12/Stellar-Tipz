@@ -1,6 +1,6 @@
 //! Data types for the Tipz contract.
 
-use soroban_sdk::{contracttype, Address, String};
+use soroban_sdk::{contracttype, Address, String, Symbol};
 
 /// Maximum number of registered profiles to prevent storage DoS attacks.
 pub const MAX_PROFILES: u32 = 10_000;
@@ -146,6 +146,26 @@ pub struct AdminChangeHistoryEntry {
     pub old_admin: Address,
     pub new_admin: Address,
     pub confirmed_at: u64,
+}
+
+/// Recorded entry for an admin/privileged action in the ring-buffered audit trail.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdminAuditEntry {
+    /// Monotonically increasing audit log entry ID
+    pub id: u32,
+    /// Address of the actor performing the action
+    pub actor: Address,
+    /// Type of action performed
+    pub action_kind: Symbol,
+    /// Value before the action was taken
+    pub before_value: String,
+    /// Value after the action was taken
+    pub after_value: String,
+    /// Ledger sequence number at time of action
+    pub ledger_sequence: u32,
+    /// Ledger timestamp at time of action
+    pub timestamp: u64,
 }
 
 /// Recurring tip subscription record.

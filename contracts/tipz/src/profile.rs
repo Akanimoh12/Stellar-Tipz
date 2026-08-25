@@ -272,6 +272,15 @@ pub fn deactivate_profile(
     storage::bump_username_ttl(env, &username);
 
     events::emit_profile_deactivated(env, &creator, &caller);
+    if caller != creator {
+        crate::admin::log_admin_action(
+            env,
+            &caller,
+            soroban_sdk::Symbol::new(env, "deactivate_profile"),
+            soroban_sdk::String::from_str(env, "active"),
+            soroban_sdk::String::from_str(env, "deactivated"),
+        );
+    }
     Ok(())
 }
 
@@ -306,6 +315,15 @@ pub fn reactivate_profile(
     storage::bump_username_ttl(env, &profile.username);
 
     events::emit_profile_reactivated(env, &creator, &caller);
+    if caller != creator {
+        crate::admin::log_admin_action(
+            env,
+            &caller,
+            soroban_sdk::Symbol::new(env, "reactivate_profile"),
+            soroban_sdk::String::from_str(env, "deactivated"),
+            soroban_sdk::String::from_str(env, "active"),
+        );
+    }
     Ok(())
 }
 
@@ -621,6 +639,14 @@ pub fn cleanup_inactive_profile(
     storage::reset_tipper_tip_index(env, &target);
 
     events::emit_profile_deregistered(env, &target, &username);
+
+    crate::admin::log_admin_action(
+        env,
+        &admin,
+        soroban_sdk::Symbol::new(env, "cleanup_profile"),
+        soroban_sdk::String::from_str(env, "inactive"),
+        username.clone(),
+    );
 
     Ok(username)
 }

@@ -41,6 +41,14 @@ pub fn add_accepted_token(
 
     events::emit_token_added(env, token, &oracle);
 
+    crate::admin::log_admin_action(
+        env,
+        admin,
+        soroban_sdk::Symbol::new(env, "add_accepted_token"),
+        soroban_sdk::String::from_str(env, ""),
+        soroban_sdk::String::from_str(env, "added"),
+    );
+
     Ok(())
 }
 
@@ -59,6 +67,14 @@ pub fn remove_accepted_token(
     }
 
     events::emit_token_removed(env, token);
+
+    crate::admin::log_admin_action(
+        env,
+        admin,
+        soroban_sdk::Symbol::new(env, "remove_accepted_token"),
+        soroban_sdk::String::from_str(env, "enabled"),
+        soroban_sdk::String::from_str(env, "disabled"),
+    );
 
     Ok(())
 }

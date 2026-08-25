@@ -11,7 +11,7 @@
 //! All callers should go through the helpers in this module instead of
 //! accessing raw storage directly.
 
-use soroban_sdk::{contracttype, Address, Env, String};
+use soroban_sdk::{contracttype, Address, Env, String, Symbol};
 
 use crate::errors::ContractError;
 use crate::types::{
@@ -158,20 +158,12 @@ pub enum DataKey {
     CreatorLastActive(Address),
     /// Supporter streak by (supporter, creator)
     Streak(Address, Address),
-    /// When set, profile is deactivated (unix timestamp); absent means active
-    ProfileDeactivatedAt(Address),
     /// Rate limit status by address
     RateLimit(Address),
     /// Global rate limit configuration
     RateLimitConfig,
     /// Tips received by a creator during a specific period (Address, Period, StartTimestamp)
     CreatorPeriodVolume(Address, crate::types::LeaderboardPeriod, u64),
-    /// Creator-level blocked tipper entry `(creator, tipper)`.
-    CreatorBlockedTipper(Address, Address),
-    /// Active blocked-tipper count for a creator.
-    CreatorBlockedTipperCount(Address),
-    /// Proposed contract upgrade WASM hash awaiting execution.
-    ProposedUpgradeHash,
 }
 
 /// Extended storage keys for new features (separate enum to avoid size limits)
@@ -191,6 +183,30 @@ pub enum ExtendedDataKey {
     RefundRequest(u32),
     /// Refund configuration
     RefundConfig,
+    /// Bounded ring-buffered log of all privileged admin actions.
+    AdminAuditLog,
+    /// Counter for total recorded admin audit entries over time.
+    AdminAuditCount,
+    /// When set, profile is deactivated (unix timestamp); absent means active
+    ProfileDeactivatedAt(Address),
+    /// Creator-level blocked tipper entry `(creator, tipper)`.
+    CreatorBlockedTipper(Address, Address),
+    /// Active blocked-tipper count for a creator.
+    CreatorBlockedTipperCount(Address),
+    /// Proposed contract upgrade WASM hash awaiting execution.
+    ProposedUpgradeHash,
+    /// Scheduled tip counter
+    ScheduledTipCount,
+    /// Scheduled tip record by ID
+    ScheduledTip(u32),
+    /// Number of scheduled tips sent by a sender
+    SenderScheduledTipCount(Address),
+    /// Index: (sender, local_index) -> scheduled_tip_id
+    SenderScheduledTip(Address, u32),
+    /// Number of scheduled tips for a creator
+    CreatorScheduledTipCount(Address),
+    /// Index: (creator, local_index) -> scheduled_tip_id
+    CreatorScheduledTip(Address, u32),
 }
 
 /// Storage keys for compact performance caches.
@@ -468,12 +484,12 @@ pub fn remove_pending_admin_change(env: &Env) {
 pub fn is_profile_deactivated(env: &Env, address: &Address) -> bool {
     env.storage()
         .persistent()
-        .has(&DataKey::ProfileDeactivatedAt(address.clone()))
+        .has(&ExtendedDataKey::ProfileDeactivatedAt(address.clone()))
 }
 
 /// Ledger timestamp when the profile was deactivated, if deactivated.
 pub fn get_profile_deactivated_at(env: &Env, address: &Address) -> Option<u64> {
-    let key = DataKey::ProfileDeactivatedAt(address.clone());
+    let key = ExtendedDataKey::ProfileDeactivatedAt(address.clone());
     let at = env.storage().persistent().get(&key);
     if at.is_some() {
         extend_persistent_ttl(env, &key, PersistentTier::Standard);
@@ -482,13 +498,13 @@ pub fn get_profile_deactivated_at(env: &Env, address: &Address) -> Option<u64> {
 }
 
 pub fn set_profile_deactivated_at(env: &Env, address: &Address, at: u64) {
-    let key = DataKey::ProfileDeactivatedAt(address.clone());
+    let key = ExtendedDataKey::ProfileDeactivatedAt(address.clone());
     env.storage().persistent().set(&key, &at);
     extend_persistent_ttl(env, &key, PersistentTier::Standard);
 }
 
 pub fn clear_profile_deactivation(env: &Env, address: &Address) {
-    let key = DataKey::ProfileDeactivatedAt(address.clone());
+    let key = ExtendedDataKey::ProfileDeactivatedAt(address.clone());
     if env.storage().persistent().has(&key) {
         env.storage().persistent().remove(&key);
     }
@@ -499,7 +515,7 @@ pub fn clear_profile_deactivation(env: &Env, address: &Address) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 pub fn is_creator_blocked_tipper(env: &Env, creator: &Address, tipper: &Address) -> bool {
-    let key = DataKey::CreatorBlockedTipper(creator.clone(), tipper.clone());
+    let key = ExtendedDataKey::CreatorBlockedTipper(creator.clone(), tipper.clone());
     let blocked = env.storage().persistent().has(&key);
     if blocked {
         extend_persistent_ttl(env, &key, PersistentTier::Standard);
@@ -508,7 +524,7 @@ pub fn is_creator_blocked_tipper(env: &Env, creator: &Address, tipper: &Address)
 }
 
 pub fn get_creator_blocked_tipper_count(env: &Env, creator: &Address) -> u32 {
-    let key = DataKey::CreatorBlockedTipperCount(creator.clone());
+    let key = ExtendedDataKey::CreatorBlockedTipperCount(creator.clone());
     let count = env.storage().persistent().get(&key).unwrap_or(0_u32);
     if count > 0 {
         extend_persistent_ttl(env, &key, PersistentTier::Standard);
@@ -517,9 +533,9 @@ pub fn get_creator_blocked_tipper_count(env: &Env, creator: &Address) -> u32 {
 }
 
 pub fn set_creator_blocked_tipper(env: &Env, creator: &Address, tipper: &Address, blocked_at: u64) {
-    let entry_key = DataKey::CreatorBlockedTipper(creator.clone(), tipper.clone());
+    let entry_key = ExtendedDataKey::CreatorBlockedTipper(creator.clone(), tipper.clone());
     if !env.storage().persistent().has(&entry_key) {
-        let count_key = DataKey::CreatorBlockedTipperCount(creator.clone());
+        let count_key = ExtendedDataKey::CreatorBlockedTipperCount(creator.clone());
         let count = get_creator_blocked_tipper_count(env, creator);
         env.storage().persistent().set(&count_key, &(count + 1));
         extend_persistent_ttl(env, &count_key, PersistentTier::Standard);
@@ -529,10 +545,10 @@ pub fn set_creator_blocked_tipper(env: &Env, creator: &Address, tipper: &Address
 }
 
 pub fn remove_creator_blocked_tipper(env: &Env, creator: &Address, tipper: &Address) {
-    let entry_key = DataKey::CreatorBlockedTipper(creator.clone(), tipper.clone());
+    let entry_key = ExtendedDataKey::CreatorBlockedTipper(creator.clone(), tipper.clone());
     if env.storage().persistent().has(&entry_key) {
         env.storage().persistent().remove(&entry_key);
-        let count_key = DataKey::CreatorBlockedTipperCount(creator.clone());
+        let count_key = ExtendedDataKey::CreatorBlockedTipperCount(creator.clone());
         let count = get_creator_blocked_tipper_count(env, creator);
         env.storage()
             .persistent()
@@ -542,8 +558,59 @@ pub fn remove_creator_blocked_tipper(env: &Env, creator: &Address, tipper: &Addr
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Admin change history
+// Admin change history & Audit log
 // ──────────────────────────────────────────────────────────────────────────────
+
+/// Maximum capacity of the ring-buffered admin audit log.
+pub const ADMIN_AUDIT_LOG_CAPACITY: u32 = 100;
+
+pub fn load_admin_audit_log(env: &Env) -> soroban_sdk::Vec<crate::types::AdminAuditEntry> {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::AdminAuditLog)
+        .unwrap_or_else(|| soroban_sdk::Vec::new(env))
+}
+
+pub fn get_admin_audit_count(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::AdminAuditCount)
+        .unwrap_or(0)
+}
+
+/// Append an admin audit entry to the ring-buffered log.
+/// Wraps around by dropping the oldest entry when capacity is reached.
+pub fn append_admin_audit_entry(
+    env: &Env,
+    actor: &Address,
+    action_kind: Symbol,
+    before_value: &String,
+    after_value: &String,
+) -> crate::types::AdminAuditEntry {
+    let count = get_admin_audit_count(env);
+    let next_id = count.saturating_add(1);
+
+    let entry = crate::types::AdminAuditEntry {
+        id: next_id,
+        actor: actor.clone(),
+        action_kind,
+        before_value: before_value.clone(),
+        after_value: after_value.clone(),
+        ledger_sequence: env.ledger().sequence(),
+        timestamp: env.ledger().timestamp(),
+    };
+
+    let mut log = load_admin_audit_log(env);
+    if log.len() >= ADMIN_AUDIT_LOG_CAPACITY {
+        log.pop_front();
+    }
+    log.push_back(entry.clone());
+
+    env.storage().instance().set(&ExtendedDataKey::AdminAuditLog, &log);
+    env.storage().instance().set(&ExtendedDataKey::AdminAuditCount, &next_id);
+
+    entry
+}
 
 fn load_admin_change_history(env: &Env) -> soroban_sdk::Vec<crate::types::AdminChangeHistoryEntry> {
     env.storage()
@@ -559,6 +626,9 @@ pub fn get_admin_change_history_next_id(env: &Env) -> u32 {
 /// Append a completed admin change to history (sequential ids, newest has highest id).
 pub fn append_admin_change_history(env: &Env, entry: &crate::types::AdminChangeHistoryEntry) {
     let mut history = load_admin_change_history(env);
+    if history.len() >= ADMIN_AUDIT_LOG_CAPACITY {
+        history.pop_front();
+    }
     history.push_back(entry.clone());
     env.storage()
         .instance()
@@ -2018,4 +2088,99 @@ pub fn add_token_balance(
         .ok_or(ContractError::OverflowError)?;
     set_token_balance(env, creator, token, new_balance);
     Ok(new_balance)
+}
+
+pub fn increment_scheduled_tip_count(env: &Env) -> u32 {
+    let count: u32 = env
+        .storage()
+        .instance()
+        .get(&ExtendedDataKey::ScheduledTipCount)
+        .unwrap_or(0);
+    let next = count + 1;
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::ScheduledTipCount, &next);
+    next
+}
+
+pub fn get_scheduled_tip(env: &Env, id: u32) -> Option<crate::types::ScheduledTip> {
+    env.storage()
+        .persistent()
+        .get(&ExtendedDataKey::ScheduledTip(id))
+}
+
+pub fn set_scheduled_tip(env: &Env, id: u32, tip: &crate::types::ScheduledTip) {
+    env.storage()
+        .persistent()
+        .set(&ExtendedDataKey::ScheduledTip(id), tip);
+}
+
+pub fn add_sender_scheduled_tip(env: &Env, sender: &Address, id: u32) {
+    let count: u32 = env
+        .storage()
+        .persistent()
+        .get(&ExtendedDataKey::SenderScheduledTipCount(sender.clone()))
+        .unwrap_or(0);
+    env.storage().persistent().set(
+        &ExtendedDataKey::SenderScheduledTip(sender.clone(), count),
+        &id,
+    );
+    env.storage().persistent().set(
+        &ExtendedDataKey::SenderScheduledTipCount(sender.clone()),
+        &(count + 1),
+    );
+}
+
+pub fn add_creator_scheduled_tip(env: &Env, creator: &Address, id: u32) {
+    let count: u32 = env
+        .storage()
+        .persistent()
+        .get(&ExtendedDataKey::CreatorScheduledTipCount(
+            creator.clone(),
+        ))
+        .unwrap_or(0);
+    env.storage().persistent().set(
+        &ExtendedDataKey::CreatorScheduledTip(creator.clone(), count),
+        &id,
+    );
+    env.storage().persistent().set(
+        &ExtendedDataKey::CreatorScheduledTipCount(creator.clone()),
+        &(count + 1),
+    );
+}
+
+pub fn get_sender_scheduled_tip_ids(env: &Env, sender: &Address) -> soroban_sdk::Vec<u32> {
+    let count: u32 = env
+        .storage()
+        .persistent()
+        .get(&ExtendedDataKey::SenderScheduledTipCount(sender.clone()))
+        .unwrap_or(0);
+    let mut vec = soroban_sdk::Vec::new(env);
+    for i in 0..count {
+        if let Some(id) = env.storage().persistent().get(
+            &ExtendedDataKey::SenderScheduledTip(sender.clone(), i),
+        ) {
+            vec.push_back(id);
+        }
+    }
+    vec
+}
+
+pub fn get_creator_scheduled_tip_ids(env: &Env, creator: &Address) -> soroban_sdk::Vec<u32> {
+    let count: u32 = env
+        .storage()
+        .persistent()
+        .get(&ExtendedDataKey::CreatorScheduledTipCount(
+            creator.clone(),
+        ))
+        .unwrap_or(0);
+    let mut vec = soroban_sdk::Vec::new(env);
+    for i in 0..count {
+        if let Some(id) = env.storage().persistent().get(
+            &ExtendedDataKey::CreatorScheduledTip(creator.clone(), i),
+        ) {
+            vec.push_back(id);
+        }
+    }
+    vec
 }

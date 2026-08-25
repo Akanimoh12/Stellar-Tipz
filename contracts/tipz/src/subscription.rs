@@ -130,6 +130,7 @@ pub fn execute_due_subscription(
             sub.amount,
             &String::from_str(env, "Recurring Tip"),
             false, // Subscriptions are not anonymous
+            false, // Subscriptions are not encrypted
         )?;
 
         // Update next_due

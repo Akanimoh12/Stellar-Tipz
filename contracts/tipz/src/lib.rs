@@ -41,8 +41,9 @@ use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
 
 use crate::errors::ContractError;
 use crate::types::{
-    AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip, ContractConfig, ContractStats,
-    CreditBreakdown, CreditTier, LeaderboardEntry, Profile, ProfileWithDeactivation, Tip,
+    AdminAuditEntry, AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip, ContractConfig,
+    ContractStats, CreditBreakdown, CreditTier, LeaderboardEntry, Profile,
+    ProfileWithDeactivation, Tip,
 };
 
 /// The current contract interface version, stored on-chain during initialization.
@@ -407,6 +408,13 @@ impl TipzContract {
     ) -> Result<(), ContractError> {
         admin::require_admin(&env, &caller)?;
         leaderboard::reset_leaderboard(&env, period);
+        admin::log_admin_action(
+            &env,
+            &caller,
+            soroban_sdk::Symbol::new(&env, "reset_leaderboard"),
+            String::from_str(&env, ""),
+            String::from_str(&env, "reset"),
+        );
         Ok(())
     }
 
@@ -487,6 +495,23 @@ impl TipzContract {
         offset: u32,
     ) -> Result<Vec<AdminChangeHistoryEntry>, ContractError> {
         admin::get_admin_change_history(&env, limit, offset)
+    }
+
+    /// Return admin audit log entries, newest first (`offset` skips from the newest).
+    pub fn get_admin_audit_history(
+        env: Env,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<AdminAuditEntry>, ContractError> {
+        admin::get_admin_audit_history(&env, limit, offset)
+    }
+
+    /// Return total count of admin audit log entries recorded over time.
+    pub fn get_admin_audit_count(env: Env) -> Result<u32, ContractError> {
+        if !storage::is_initialized(&env) {
+            return Err(ContractError::NotInitialized);
+        }
+        Ok(storage::get_admin_audit_count(&env))
     }
 
     /// Get global contract statistics.
@@ -635,6 +660,13 @@ impl TipzContract {
                 max_ops,
                 window_secs,
             },
+        );
+        admin::log_admin_action(
+            &env,
+            &caller,
+            soroban_sdk::Symbol::new(&env, "set_rate_limit_config"),
+            String::from_str(&env, ""),
+            admin::u32_to_string(&env, max_ops),
         );
         Ok(())
     }

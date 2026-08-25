@@ -3,6 +3,7 @@
 mod test_access_control;
 mod test_mutation_coverage;
 mod test_admin;
+mod test_admin_audit;
 mod test_anonymous_tips;
 mod test_benchmark;
 mod test_budget;

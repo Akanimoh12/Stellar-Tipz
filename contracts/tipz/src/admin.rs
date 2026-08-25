@@ -4,13 +4,89 @@
 //! - Fee management
 //! - Admin role transfer
 
-use soroban_sdk::{Address, BytesN, Env, Vec};
+use soroban_sdk::{Address, BytesN, Env, String, Symbol, Vec};
 
 use crate::credit;
 use crate::errors::ContractError;
 use crate::events;
-use crate::storage::{self, DataKey};
-use crate::types::{AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip};
+use crate::storage::{self, DataKey, ExtendedDataKey};
+use crate::types::{
+    AdminAuditEntry, AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip,
+};
+
+pub fn u32_to_string(env: &Env, val: u32) -> String {
+    let mut buf = [0u8; 10];
+    let mut i = buf.len();
+    let mut num = val;
+    if num == 0 {
+        return String::from_str(env, "0");
+    }
+    while num > 0 {
+        i -= 1;
+        buf[i] = b'0' + (num % 10) as u8;
+        num /= 10;
+    }
+    let s = core::str::from_utf8(&buf[i..]).unwrap_or("0");
+    String::from_str(env, s)
+}
+
+pub fn u64_to_string(env: &Env, val: u64) -> String {
+    let mut buf = [0u8; 20];
+    let mut i = buf.len();
+    let mut num = val;
+    if num == 0 {
+        return String::from_str(env, "0");
+    }
+    while num > 0 {
+        i -= 1;
+        buf[i] = b'0' + (num % 10) as u8;
+        num /= 10;
+    }
+    let s = core::str::from_utf8(&buf[i..]).unwrap_or("0");
+    String::from_str(env, s)
+}
+
+pub fn i128_to_string(env: &Env, val: i128) -> String {
+    let mut buf = [0u8; 40];
+    let mut i = buf.len();
+    let is_neg = val < 0;
+    let mut num = if is_neg { -val } else { val };
+    if num == 0 {
+        return String::from_str(env, "0");
+    }
+    while num > 0 {
+        i -= 1;
+        buf[i] = b'0' + (num % 10) as u8;
+        num /= 10;
+    }
+    if is_neg {
+        i -= 1;
+        buf[i] = b'-';
+    }
+    let s = core::str::from_utf8(&buf[i..]).unwrap_or("0");
+    String::from_str(env, s)
+}
+
+pub fn bool_to_string(env: &Env, val: bool) -> String {
+    if val {
+        String::from_str(env, "true")
+    } else {
+        String::from_str(env, "false")
+    }
+}
+
+/// Record a privileged admin action in the ring-buffered audit log and emit an audit event.
+pub fn log_admin_action(
+    env: &Env,
+    actor: &Address,
+    action_kind: Symbol,
+    before_value: String,
+    after_value: String,
+) {
+    let entry =
+        storage::append_admin_audit_entry(env, actor, action_kind, &before_value, &after_value);
+    events::emit_admin_audit_log(env, &entry);
+}
 
 pub fn require_admin(env: &Env, caller: &Address) -> Result<(), ContractError> {
     if !storage::is_initialized(env) {
@@ -156,6 +232,13 @@ pub fn update_x_metrics(
         return Err(ContractError::NotRegistered);
     }
     apply_x_metrics_to_profile(env, creator, x_followers, x_engagement_avg);
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "update_x_metrics"),
+        String::from_str(env, ""),
+        u32_to_string(env, x_followers),
+    );
     Ok(())
 }
 
@@ -256,6 +339,13 @@ pub fn batch_update_x_metrics(
     }
     let skipped_count = skipped.len();
     events::emit_x_metrics_batch_completed(env, processed, skipped_count, skipped.clone());
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "update_x_metrics"),
+        String::from_str(env, "batch"),
+        u32_to_string(env, processed),
+    );
     Ok(skipped)
 }
 
@@ -263,6 +353,13 @@ pub fn batch_update_x_metrics(
 pub fn bump_ttl(env: &Env, caller: &Address) -> Result<(), ContractError> {
     require_admin(env, caller)?;
     storage::extend_instance_ttl(env);
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "bump_ttl"),
+        String::from_str(env, ""),
+        String::from_str(env, "bumped"),
+    );
     Ok(())
 }
 
@@ -276,6 +373,13 @@ pub fn set_fee(env: &Env, caller: &Address, fee_bps: u32) -> Result<(), Contract
     let old_bps = storage::get_fee_bps(env);
     storage::set_fee_bps(env, fee_bps);
     events::emit_fee_updated(env, old_bps, fee_bps);
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "set_fee"),
+        u32_to_string(env, old_bps),
+        u32_to_string(env, fee_bps),
+    );
     Ok(())
 }
 
@@ -289,6 +393,13 @@ pub fn set_fee_collector(
     require_admin(env, caller)?;
     storage::set_fee_collector(env, new_collector);
     events::emit_fee_collector_updated(env, new_collector);
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "set_fee_collector"),
+        String::from_str(env, "old_collector"),
+        String::from_str(env, "new_collector"),
+    );
     Ok(())
 }
 
@@ -311,6 +422,13 @@ pub fn set_admin(env: &Env, caller: &Address, new_admin: &Address) -> Result<(),
             new_admin: new_admin.clone(),
             confirmed_at: now,
         },
+    );
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "set_admin"),
+        String::from_str(env, "old_admin"),
+        String::from_str(env, "new_admin"),
     );
     Ok(())
 }
@@ -342,6 +460,13 @@ pub fn propose_admin_change(
     };
     storage::set_pending_admin_change(env, &proposal);
     events::emit_admin_change_proposed(env, &current, new_admin, confirmable_after);
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "propose_admin_change"),
+        String::from_str(env, "current_admin"),
+        String::from_str(env, "proposed_admin"),
+    );
     Ok(())
 }
 
@@ -373,6 +498,13 @@ pub fn confirm_admin_change(env: &Env, caller: &Address) -> Result<(), ContractE
             confirmed_at: now,
         },
     );
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "confirm_admin_change"),
+        String::from_str(env, "old_admin"),
+        String::from_str(env, "new_admin"),
+    );
     Ok(())
 }
 
@@ -385,6 +517,13 @@ pub fn cancel_admin_change(env: &Env, caller: &Address) -> Result<(), ContractEr
     }
     storage::remove_pending_admin_change(env);
     events::emit_admin_proposal_cancelled(env, caller);
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "cancel_admin_change"),
+        String::from_str(env, "pending"),
+        String::from_str(env, "cancelled"),
+    );
     Ok(())
 }
 
@@ -433,11 +572,59 @@ pub fn get_admin_change_history(
     Ok(out)
 }
 
+/// Maximum entries returned by [`get_admin_audit_history`] in one call.
+pub const MAX_ADMIN_AUDIT_HISTORY_RETURN: u32 = 50;
+
+/// Return recent admin audit log entries, newest first.
+pub fn get_admin_audit_history(
+    env: &Env,
+    limit: u32,
+    offset: u32,
+) -> Result<soroban_sdk::Vec<AdminAuditEntry>, ContractError> {
+    if !storage::is_initialized(env) {
+        return Err(ContractError::NotInitialized);
+    }
+    let log = storage::load_admin_audit_log(env);
+    let n = log.len();
+    let mut out: soroban_sdk::Vec<AdminAuditEntry> = soroban_sdk::Vec::new(env);
+    if n == 0 {
+        return Ok(out);
+    }
+    let cap = if limit == 0 || limit > MAX_ADMIN_AUDIT_HISTORY_RETURN {
+        MAX_ADMIN_AUDIT_HISTORY_RETURN
+    } else {
+        limit
+    };
+    if offset >= n {
+        return Ok(out);
+    }
+    let mut cur = n - 1 - offset;
+    let mut taken: u32 = 0;
+    while taken < cap {
+        if let Some(entry) = log.get(cur) {
+            out.push_back(entry);
+        }
+        if cur == 0 {
+            break;
+        }
+        cur -= 1;
+        taken += 1;
+    }
+    Ok(out)
+}
+
 pub fn pause(env: &Env, caller: &Address) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
     storage::set_paused(env, true);
     events::emit_contract_paused(env, caller);
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "pause"),
+        bool_to_string(env, false),
+        bool_to_string(env, true),
+    );
     Ok(())
 }
 
@@ -446,6 +633,13 @@ pub fn unpause(env: &Env, caller: &Address) -> Result<(), ContractError> {
     require_admin(env, caller)?;
     storage::set_paused(env, false);
     events::emit_contract_unpaused(env, caller);
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "unpause"),
+        bool_to_string(env, true),
+        bool_to_string(env, false),
+    );
     Ok(())
 }
 
@@ -458,6 +652,13 @@ pub fn set_min_tip_amount(env: &Env, caller: &Address, amount: i128) -> Result<(
     let old = storage::get_min_tip_amount(env);
     storage::set_min_tip_amount(env, amount);
     events::emit_min_tip_amount_updated(env, old, amount);
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "set_min_tip_amount"),
+        i128_to_string(env, old),
+        i128_to_string(env, amount),
+    );
     Ok(())
 }
 
@@ -494,6 +695,13 @@ pub fn verify_domain(env: &Env, caller: &Address, creator: &Address) -> Result<(
     storage::bump_username_ttl(env, &profile.username);
 
     events::emit_domain_verified(env, creator, &profile.domain);
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "verify_domain"),
+        String::from_str(env, "unverified"),
+        profile.domain.clone(),
+    );
     Ok(())
 }
 
@@ -508,7 +716,15 @@ pub fn set_domain_reverify_interval(
     if interval_secs == 0 {
         return Err(ContractError::InvalidAmount);
     }
+    let old_interval = storage::get_domain_reverification_interval(env);
     storage::set_domain_reverification_interval(env, interval_secs);
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "set_domain_reverify_interval"),
+        u64_to_string(env, old_interval),
+        u64_to_string(env, interval_secs),
+    );
     Ok(())
 }
 
@@ -522,20 +738,34 @@ pub fn propose_upgrade(
     require_admin(env, caller)?;
     env.storage()
         .instance()
-        .set(&DataKey::ProposedUpgradeHash, new_wasm_hash);
+        .set(&ExtendedDataKey::ProposedUpgradeHash, new_wasm_hash);
     events::emit_upgrade_proposed(env, new_wasm_hash);
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "propose_upgrade"),
+        String::from_str(env, ""),
+        String::from_str(env, "proposed"),
+    );
     Ok(new_wasm_hash.clone())
 }
 
 pub fn get_proposed_upgrade(env: &Env) -> Option<BytesN<32>> {
-    env.storage().instance().get(&DataKey::ProposedUpgradeHash)
+    env.storage().instance().get(&ExtendedDataKey::ProposedUpgradeHash)
 }
 
 pub fn cancel_upgrade(env: &Env, caller: &Address) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
-    env.storage().instance().remove(&DataKey::ProposedUpgradeHash);
+    env.storage().instance().remove(&ExtendedDataKey::ProposedUpgradeHash);
     events::emit_upgrade_cancelled(env, caller);
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "cancel_upgrade"),
+        String::from_str(env, "proposed"),
+        String::from_str(env, "cancelled"),
+    );
     Ok(())
 }
 
@@ -553,8 +783,16 @@ pub fn upgrade(
     }
     env.deployer()
         .update_current_contract_wasm(new_wasm_hash.clone());
-    env.storage().instance().remove(&DataKey::ProposedUpgradeHash);
-    let new_version = storage::get_version(env) + 1;
+    env.storage().instance().remove(&ExtendedDataKey::ProposedUpgradeHash);
+    let old_version = storage::get_version(env);
+    let new_version = old_version + 1;
     storage::set_version(env, new_version);
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "upgrade"),
+        u32_to_string(env, old_version),
+        u32_to_string(env, new_version),
+    );
     Ok(())
 }

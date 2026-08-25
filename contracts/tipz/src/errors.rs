@@ -53,19 +53,19 @@ pub enum ContractError {
     /// Profile is inactive beyond the cleanup threshold
     ProfileInactive = 39,
     /// Refund request window has expired
-    RefundWindowExpired = 38,
+    RefundWindowExpired = 46,
     /// Refund has already been requested for this tip
-    RefundAlreadyRequested = 39,
+    RefundAlreadyRequested = 47,
     /// Refund has already been processed
-    RefundAlreadyProcessed = 40,
+    RefundAlreadyProcessed = 48,
     /// No refund request exists for this tip
-    NoRefundRequest = 41,
+    NoRefundRequest = 49,
     /// Only the tipper can request a refund
-    NotTipper = 42,
+    NotTipper = 50,
     /// Only the creator can approve/reject a refund
-    NotCreator = 43,
+    NotCreator = 51,
     /// Tipper is blocked by the creator
-    TipperBlocked = 44,
+    TipperBlocked = 52,
     /// Creator blocklist reached its configured cap
-    BlocklistLimitReached = 45,
+    BlocklistLimitReached = 53,
 }

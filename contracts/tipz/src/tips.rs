@@ -13,7 +13,7 @@ use crate::leaderboard;
 use crate::storage::{self, DataKey};
 use crate::streaks;
 use crate::token;
-use crate::types::{Tip, MAX_CREATOR_BLOCKED_TIPPERS};
+use crate::types::{ScheduledTip, Tip, MAX_CREATOR_BLOCKED_TIPPERS};
 use crate::validation::{validate_message, validate_tip_for_creator};
 
 /// Create a new [`Tip`] record and store it in temporary storage.

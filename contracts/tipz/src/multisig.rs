@@ -78,6 +78,14 @@ pub fn set_multisig_config(
         .instance()
         .set(&DataKey::MultisigConfig, &config);
 
+    crate::admin::log_admin_action(
+        env,
+        admin,
+        soroban_sdk::Symbol::new(env, "set_multisig_config"),
+        soroban_sdk::String::from_str(env, ""),
+        crate::admin::u32_to_string(env, required_signatures),
+    );
+
     Ok(())
 }
 
