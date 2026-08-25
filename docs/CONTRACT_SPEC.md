@@ -2,6 +2,8 @@
 
 > Technical reference for the Stellar Tipz Soroban smart contract.
 
+Machine-readable ABI/spec source of truth: [`contracts/abi/tipz_contract.spec.json`](../contracts/abi/tipz_contract.spec.json).
+
 ---
 
 ## Overview
