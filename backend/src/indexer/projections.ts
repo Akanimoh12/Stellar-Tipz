@@ -21,6 +21,7 @@ const PROJECTIONS: Record<string, (event: DecodedEvent, isNewEvent: boolean) => 
   profile_updated: projectProfileUpdated,
   goal_set: projectGoalSet,
   goal_reached: projectGoalReached,
+  goal_completed: projectGoalCompleted,
   goal_cancel: projectGoalCancelled,
   sub_created: projectSubscriptionCreated,
   sub_exec: projectSubscriptionCharged,
@@ -342,6 +343,44 @@ async function projectGoalReached(event: DecodedEvent): Promise<void> {
       logger.error({ err, userId }, 'Failed to notify creator of goal reached');
     }
   }
+}
+
+/**
+ * Project a `("goal", "completed")` event — data `(creator, goal_id, target,
+ * final_amount, ledger)`. Emitted exactly once when a goal transitions to
+ * completed. The upsert is idempotent on replay.
+ */
+async function projectGoalCompleted(event: DecodedEvent): Promise<void> {
+  const [creator, goalIdRaw, target, finalAmount, ledger] = tupleArgs(event.value);
+  const targetStroops = toBigInt(target);
+  const raisedStroops = toBigInt(finalAmount);
+  if (typeof creator !== 'string' || targetStroops === null || raisedStroops === null) {
+    return warnUnparseable(event, 'goal_completed');
+  }
+
+  const userId = await ensureUserId(creator);
+
+  await prisma.goal.upsert({
+    where: { id: goalId(userId) },
+    create: {
+      id: goalId(userId),
+      userId,
+      title: '',
+      targetStroops,
+      raisedStroops,
+      status: 'COMPLETED',
+    },
+    update: { targetStroops, raisedStroops, status: 'COMPLETED' },
+  });
+
+  // Publish to realtime subscribers
+  await publishProjection('goal_completed', {
+    userId,
+    goalId: goalIdRaw,
+    targetStroops: targetStroops.toString(),
+    raisedStroops: raisedStroops.toString(),
+    ledger,
+  });
 }
 
 /** Project a `("goal", "cancel")` event — data `(creator,)`. */
