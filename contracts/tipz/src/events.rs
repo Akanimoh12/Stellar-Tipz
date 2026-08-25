@@ -509,6 +509,22 @@ pub fn emit_goal_reached(env: &Env, creator: &Address, target: i128, raised: i12
     );
 }
 
+/// Topics : `("goal", "completed")`
+/// Data   : `(creator: Address, goal_id: u64, target: i128, final_amount: i128, ledger: u32)`
+pub fn emit_goal_completed(
+    env: &Env,
+    creator: &Address,
+    goal_id: u64,
+    target: i128,
+    final_amount: i128,
+    ledger: u32,
+) {
+    env.events().publish(
+        (Symbol::new(env, "goal"), symbol_short!("completed")),
+        (creator.clone(), goal_id, target, final_amount, ledger),
+    );
+}
+
 /// Topics : `("goal", "cancel")`
 pub fn emit_goal_cancelled(env: &Env, creator: &Address) {
     env.events().publish(

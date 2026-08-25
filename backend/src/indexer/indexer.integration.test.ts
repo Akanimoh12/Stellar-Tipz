@@ -18,6 +18,7 @@ import {
   profileUpdatedEvent,
   goalSetEvent,
   goalReachedEvent,
+  goalCompletedEvent,
   goalCancelEvent,
   subCreatedEvent,
   subExecEvent,
@@ -333,6 +334,30 @@ describe('fixture: goal_reached', () => {
   it('is idempotent — replay sets the same absolute update', async () => {
     await projectEvent(goalReachedEvent);
     await projectEvent(goalReachedEvent);
+
+    expect(mockGoalUpsert.mock.calls[0][0].update).toEqual(
+      mockGoalUpsert.mock.calls[1][0].update,
+    );
+  });
+});
+
+// ── goal_completed projection ─────────────────────────────────────────────────
+
+describe('fixture: goal_completed', () => {
+  it('marks the goal COMPLETED with absolute raised amount', async () => {
+    await projectEvent(goalCompletedEvent);
+
+    expect(mockGoalUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'goal_u_' + ADDR_A },
+        update: { targetStroops: 5000000n, raisedStroops: 5000000n, status: 'COMPLETED' },
+      }),
+    );
+  });
+
+  it('is idempotent — replay sets the same absolute update', async () => {
+    await projectEvent(goalCompletedEvent);
+    await projectEvent(goalCompletedEvent);
 
     expect(mockGoalUpsert.mock.calls[0][0].update).toEqual(
       mockGoalUpsert.mock.calls[1][0].update,

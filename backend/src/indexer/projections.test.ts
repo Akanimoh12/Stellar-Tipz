@@ -273,6 +273,46 @@ describe('projectEvent — goals (#899)', () => {
     await projectEvent(event('goal_set', [ADDR_A, 'not-a-number', 'x', '0']));
     expect(mockGoalUpsert).not.toHaveBeenCalled();
   });
+
+  it('projects a goal_completed event with COMPLETED status', async () => {
+    await projectEvent(event('goal_completed', [ADDR_A, '1735000000', '5000', '5000', '105']));
+    expect(mockGoalUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'goal_u_' + ADDR_A },
+        create: expect.objectContaining({
+          id: 'goal_u_' + ADDR_A,
+          userId: 'u_' + ADDR_A,
+          targetStroops: 5000n,
+          raisedStroops: 5000n,
+          status: 'COMPLETED',
+        }),
+        update: { targetStroops: 5000n, raisedStroops: 5000n, status: 'COMPLETED' },
+      }),
+    );
+  });
+
+  it('publishes a realtime projection for goal_completed', async () => {
+    await projectEvent(event('goal_completed', [ADDR_A, '1735000000', '5000', '5000', '105']));
+    expect(mockPublishProjection).toHaveBeenCalledWith(
+      'goal_completed',
+      expect.objectContaining({
+        userId: 'u_' + ADDR_A,
+        targetStroops: '5000',
+        raisedStroops: '5000',
+      }),
+    );
+  });
+
+  it('goal_completed is idempotent on replay', async () => {
+    await projectEvent(event('goal_completed', [ADDR_A, '1735000000', '5000', '5000', '105']));
+    await projectEvent(event('goal_completed', [ADDR_A, '1735000000', '5000', '5000', '105']));
+    expect(mockGoalUpsert.mock.calls[0][0].update).toEqual(mockGoalUpsert.mock.calls[1][0].update);
+  });
+
+  it('skips a goal_completed with unparseable data', async () => {
+    await projectEvent(event('goal_completed', [ADDR_A, 'x', 'not-a-number', '5000', '105']));
+    expect(mockGoalUpsert).not.toHaveBeenCalled();
+  });
 });
 
 describe('projectEvent — subscriptions (#900)', () => {
