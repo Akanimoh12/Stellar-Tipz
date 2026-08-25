@@ -346,6 +346,20 @@ pub fn emit_contract_unpaused(env: &Env, admin: &Address) {
     );
 }
 
+/// Topics : `("breaker", "tripped")`
+/// Data   : `(attempted_amount, rolling_total, threshold)`
+pub fn emit_circuit_breaker_tripped(
+    env: &Env,
+    attempted_amount: i128,
+    rolling_total: i128,
+    threshold: i128,
+) {
+    env.events().publish(
+        (symbol_short!("breaker"), symbol_short!("tripped")),
+        (attempted_amount, rolling_total, threshold),
+    );
+}
+
 pub fn emit_emergency_withdrawal(env: &Env, creator: &Address, amount: i128) {
     env.events().publish(
         (symbol_short!("creator"), symbol_short!("emerg_wdr")),

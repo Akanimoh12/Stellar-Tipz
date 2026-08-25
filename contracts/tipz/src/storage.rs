@@ -15,6 +15,7 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
 
 use crate::errors::ContractError;
 use crate::types::{
+    CircuitBreakerConfig, CircuitBreakerStatus,
     LeaderboardEntry, LeaderboardPeriod, Profile, RateLimitConfig, RateLimitStatus,
 };
 
@@ -166,6 +167,10 @@ pub enum DataKey {
     CreatorPeriodVolume(Address, crate::types::LeaderboardPeriod, u64),
     /// Maximum active subscriptions per subscriber
     SubscriptionLimit,
+    /// Withdrawal circuit breaker configuration.
+    CircuitBreakerConfig,
+    /// Withdrawal circuit breaker fixed-bucket state.
+    CircuitBreakerStatus,
 }
 
 /// Extended storage keys for new features (separate enum to avoid size limits)
@@ -787,6 +792,66 @@ pub fn get_subscription_limit(env: &Env) -> u32 {
 /// Sets the maximum active subscriptions per subscriber.
 pub fn set_subscription_limit(env: &Env, limit: u32) {
     env.storage().instance().set(&DataKey::SubscriptionLimit, &limit);
+}
+
+pub const MAX_CIRCUIT_BREAKER_BUCKETS: u32 = 24;
+pub const DEFAULT_CIRCUIT_BREAKER_BUCKETS: u32 = 12;
+pub const DEFAULT_CIRCUIT_BREAKER_WINDOW_SECS: u64 = 3600;
+
+pub fn default_circuit_breaker_config() -> CircuitBreakerConfig {
+    CircuitBreakerConfig {
+        enabled: false,
+        threshold: 0,
+        window_secs: DEFAULT_CIRCUIT_BREAKER_WINDOW_SECS,
+        bucket_count: DEFAULT_CIRCUIT_BREAKER_BUCKETS,
+    }
+}
+
+pub fn get_circuit_breaker_config(env: &Env) -> CircuitBreakerConfig {
+    env.storage()
+        .instance()
+        .get(&DataKey::CircuitBreakerConfig)
+        .unwrap_or_else(default_circuit_breaker_config)
+}
+
+pub fn set_circuit_breaker_config(env: &Env, config: &CircuitBreakerConfig) {
+    env.storage()
+        .instance()
+        .set(&DataKey::CircuitBreakerConfig, config);
+}
+
+pub fn get_circuit_breaker_status(env: &Env) -> CircuitBreakerStatus {
+    env.storage()
+        .instance()
+        .get(&DataKey::CircuitBreakerStatus)
+        .unwrap_or_else(|| empty_circuit_breaker_status(env, DEFAULT_CIRCUIT_BREAKER_BUCKETS))
+}
+
+pub fn set_circuit_breaker_status(env: &Env, status: &CircuitBreakerStatus) {
+    env.storage()
+        .instance()
+        .set(&DataKey::CircuitBreakerStatus, status);
+}
+
+pub fn reset_circuit_breaker_status(env: &Env, bucket_count: u32) {
+    let count = bucket_count.clamp(1, MAX_CIRCUIT_BREAKER_BUCKETS);
+    set_circuit_breaker_status(env, &empty_circuit_breaker_status(env, count));
+}
+
+fn empty_circuit_breaker_status(env: &Env, bucket_count: u32) -> CircuitBreakerStatus {
+    let count = bucket_count.clamp(1, MAX_CIRCUIT_BREAKER_BUCKETS);
+    let mut bucket_starts = soroban_sdk::Vec::new(env);
+    let mut bucket_volumes = soroban_sdk::Vec::new(env);
+    for _ in 0..count {
+        bucket_starts.push_back(0);
+        bucket_volumes.push_back(0);
+    }
+    CircuitBreakerStatus {
+        bucket_starts,
+        bucket_volumes,
+        tripped: false,
+        tripped_at: None,
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

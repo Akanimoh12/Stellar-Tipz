@@ -147,6 +147,9 @@ pub fn initialize(
     storage::set_paused(env, false);
     storage::set_min_tip_amount(env, 1_000_000_i128);
     storage::set_min_withdrawal_amount(env, 1_000_000_i128);
+    let breaker_config = storage::default_circuit_breaker_config();
+    storage::set_circuit_breaker_config(env, &breaker_config);
+    storage::reset_circuit_breaker_status(env, breaker_config.bucket_count);
     storage::set_version(env, crate::CONTRACT_VERSION);
     storage::set_runtime_config(
         env,

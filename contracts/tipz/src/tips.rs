@@ -439,6 +439,8 @@ pub fn withdraw_tips(env: &Env, caller: &Address, amount: i128) -> Result<(), Co
     let contract_address = env.current_contract_address();
     let fee_collector = storage::get_fee_collector(env);
 
+    crate::circuit_breaker::record_withdrawal_or_trip(env, amount)?;
+
     // Transfer net amount to creator
     token::transfer_xlm(env, &contract_address, caller, net)?;
 

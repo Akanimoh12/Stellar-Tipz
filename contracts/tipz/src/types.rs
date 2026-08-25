@@ -402,6 +402,34 @@ pub struct RateLimitStatus {
     pub last_op_time: u64,
 }
 
+/// Withdrawal circuit breaker configuration.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CircuitBreakerConfig {
+    /// Whether withdrawal volume tracking can auto-pause the contract.
+    pub enabled: bool,
+    /// Maximum gross withdrawal volume allowed in one rolling window.
+    pub threshold: i128,
+    /// Rolling window length in seconds.
+    pub window_secs: u64,
+    /// Fixed number of buckets used to approximate the rolling window.
+    pub bucket_count: u32,
+}
+
+/// Withdrawal circuit breaker state.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CircuitBreakerStatus {
+    /// Start timestamp for each active bucket.
+    pub bucket_starts: soroban_sdk::Vec<u64>,
+    /// Gross withdrawal volume stored in each bucket.
+    pub bucket_volumes: soroban_sdk::Vec<i128>,
+    /// True when the breaker was responsible for pausing the contract.
+    pub tripped: bool,
+    /// Timestamp when the breaker last tripped.
+    pub tripped_at: Option<u64>,
+}
+
 /// Goal tracking for creators
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
