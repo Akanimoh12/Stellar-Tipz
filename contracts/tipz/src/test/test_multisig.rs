@@ -5,6 +5,7 @@ use soroban_sdk::{
     vec, Address, Env,
 };
 
+use crate::errors::ContractError;
 use crate::multisig::Action;
 use crate::test::test_init::setup_test_contract;
 use crate::TipzContractClient;
@@ -80,12 +81,12 @@ fn test_multisig_fee_change() {
     // Propose fee change to 500 bps (5%)
     let proposal_id = client.propose_action(&signer1, &Action::SetFee(500));
 
-    // Approve and execute
+    // Approve and create the pending fee-change proposal.
     client.approve_action(&signer2, &proposal_id);
 
-    // Verify fee was changed
-    let config = client.get_config();
-    assert_eq!(config.fee_bps, 500);
+    let pending = client.get_pending_fee_change().unwrap();
+    assert_eq!(pending.0, 500);
+    assert_eq!(client.get_config().fee_bps, 200);
 }
 
 #[test]
@@ -175,5 +176,86 @@ fn test_single_signature_auto_execute() {
     client.propose_action(&signer1, &Action::Pause);
 
     // Should be paused immediately
+    assert!(client.is_paused());
+}
+
+// ── Proposal epoch invalidation (#1154) ──────────────────────────────────
+
+#[test]
+fn test_approve_fails_after_signer_set_change() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+    let signer3 = Address::generate(&env);
+
+    let client = setup_test_contract(&env, &admin);
+
+    let signers = vec![&env, signer1.clone(), signer2.clone(), signer3.clone()];
+    client.set_multisig_config(&admin, &2, &signers);
+
+    // 1 of 2 approvals so far, proposal is still pending
+    let proposal_id = client.propose_action(&signer1, &Action::Pause);
+    assert!(!client.is_paused());
+
+    // Signer set changes before the second approval lands
+    let new_signers = vec![&env, signer1.clone(), signer2.clone()];
+    client.set_multisig_config(&admin, &2, &new_signers);
+
+    // The stale approval can no longer push this proposal through
+    let result = client.try_approve_action(&signer2, &proposal_id);
+    assert_eq!(result, Err(Ok(ContractError::ProposalEpochMismatch)));
+    assert!(!client.is_paused());
+}
+
+#[test]
+fn test_approve_fails_after_threshold_change() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+    let signer3 = Address::generate(&env);
+
+    let client = setup_test_contract(&env, &admin);
+
+    let signers = vec![&env, signer1.clone(), signer2.clone(), signer3.clone()];
+    client.set_multisig_config(&admin, &2, &signers);
+
+    let proposal_id = client.propose_action(&signer1, &Action::Pause);
+
+    // Threshold raised from 2 to 3 with the same signer set
+    client.set_multisig_config(&admin, &3, &signers);
+
+    let result = client.try_approve_action(&signer2, &proposal_id);
+    assert_eq!(result, Err(Ok(ContractError::ProposalEpochMismatch)));
+    assert!(!client.is_paused());
+}
+
+#[test]
+fn test_proposal_created_after_config_change_executes_normally() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+    let signer3 = Address::generate(&env);
+
+    let client = setup_test_contract(&env, &admin);
+
+    let signers = vec![&env, signer1.clone(), signer2.clone(), signer3.clone()];
+    client.set_multisig_config(&admin, &2, &signers);
+
+    // Config changes before any proposal is made
+    let new_signers = vec![&env, signer1.clone(), signer2.clone()];
+    client.set_multisig_config(&admin, &2, &new_signers);
+
+    // A proposal created under the new config approves and executes as usual
+    let proposal_id = client.propose_action(&signer1, &Action::Pause);
+    client.approve_action(&signer2, &proposal_id);
     assert!(client.is_paused());
 }

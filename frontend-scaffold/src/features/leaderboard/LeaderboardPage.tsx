@@ -14,21 +14,12 @@ import { useI18n } from "@/i18n";
 import { useLeaderboard } from "@/hooks/useLeaderboard";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import LeaderboardSkeleton from "./LeaderboardSkeleton";
-import LeaderboardTable from "./LeaderboardTable";
-
-const LeaderboardPage: React.FC = () => {
-  usePageTitle("Leaderboard");
-
-  const { entries, loading, error, refetch } = useLeaderboard();
-
-  // Top 3 entries for podium display; ranks 4+ go to the paginated table.
-
-const PAGE_SIZE = 20;
 
 const LeaderboardPage: React.FC = () => {
   const { t } = useI18n();
   usePageTitle(t("leaderboard.title"));
 
+  const PAGE_SIZE = 20;
   const { entries, loading, hasMore, error, loadMore, refetch } =
     useLeaderboard(PAGE_SIZE);
   const observerRef = useRef<HTMLDivElement>(null);

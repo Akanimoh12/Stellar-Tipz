@@ -21,6 +21,8 @@ jobs:
     environment:
       name: preview
       url: ${{ steps.deploy.outputs.url }}
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
     steps:
       - name: Checkout code
@@ -38,24 +40,38 @@ jobs:
         working-directory: frontend-scaffold
 
       - name: Pull Vercel environment
-        run: npx vercel pull --yes --token=${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -n "$VERCEL_TOKEN" ]; then
+            npx vercel pull --yes --token="$VERCEL_TOKEN"
+          else
+            echo "VERCEL_TOKEN is not available; skipping Vercel environment pull."
+          fi
 
       - name: Build project
-        run: npx vercel build --token=${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -n "$VERCEL_TOKEN" ]; then
+            npx vercel build --token="$VERCEL_TOKEN"
+          else
+            npm run build
+          fi
+        working-directory: frontend-scaffold
 
       - name: Deploy to Vercel
+        if: env.VERCEL_TOKEN != ''
         id: deploy
         run: |
-          URL=$(npx vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          URL=$(npx vercel deploy --prebuilt --token="$VERCEL_TOKEN")
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "Deployed to: $URL"
 
       - name: Verify deployment
+        if: steps.deploy.outputs.url != ''
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
         run: npx tsx scripts/verify-deployment.ts
 
       - name: Comment preview URL on PR
+        if: steps.deploy.outputs.url != ''
         uses: actions/github-script@v7
         with:
           script: |
@@ -80,6 +96,8 @@ jobs:
     environment:
       name: production
       url: https://stellar-tipz.vercel.app
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
     steps:
       - name: Checkout code
@@ -97,15 +115,15 @@ jobs:
         working-directory: frontend-scaffold
 
       - name: Pull Vercel environment
-        run: npx vercel pull --yes --token=${{ secrets.VERCEL_TOKEN }}
+        run: npx vercel pull --yes --token="$VERCEL_TOKEN"
 
       - name: Build project for production
-        run: npx vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: npx vercel build --prod --token="$VERCEL_TOKEN"
 
       - name: Deploy to Vercel production
         id: deploy
         run: |
-          URL=$(npx vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          URL=$(npx vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "Deployed to: $URL"
 
@@ -135,6 +153,8 @@ jobs:
     environment:
       name: production
       url: https://stellar-tipz.vercel.app
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
     steps:
       - name: Checkout code
@@ -154,18 +174,20 @@ jobs:
         if: failure()
         run: |
           echo "::error::Deployment verification failed, triggering rollback"
-          npx vercel rollback --token=${{ secrets.VERCEL_TOKEN }} --yes
+          npx vercel rollback --token="$VERCEL_TOKEN" --yes
 
   rollback:
     name: Rollback
     if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: [deploy-production]
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Rollback Vercel deployment
         run: |
-          npx vercel rollback --token=${{ secrets.VERCEL_TOKEN }} --yes
+          npx vercel rollback --token="$VERCEL_TOKEN" --yes
           echo "Rolled back to previous deployment"

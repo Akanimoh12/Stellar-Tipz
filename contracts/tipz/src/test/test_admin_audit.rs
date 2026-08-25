@@ -47,17 +47,21 @@ fn setup() -> TestCtx<'static> {
 fn test_admin_audit_trail_recorded_on_actions() {
     let ctx = setup();
 
-    // 1. set_fee
-    ctx.client.set_fee(&ctx.admin, &500_u32);
+    // 1. set_fee_change_delay
+    ctx.client
+        .set_fee_change_delay(&ctx.admin, &crate::admin::MIN_FEE_CHANGE_DELAY_LEDGERS);
 
     let history = ctx.client.get_admin_audit_history(&10, &0);
     assert_eq!(history.len(), 1);
     let entry = history.get(0).unwrap();
     assert_eq!(entry.id, 1);
     assert_eq!(entry.actor, ctx.admin);
-    assert_eq!(entry.action_kind, Symbol::new(&ctx.env, "set_fee"));
-    assert_eq!(entry.before_value, soroban_sdk::String::from_str(&ctx.env, "200"));
-    assert_eq!(entry.after_value, soroban_sdk::String::from_str(&ctx.env, "500"));
+    assert_eq!(entry.action_kind, Symbol::new(&ctx.env, "set_fee_delay"));
+    assert_eq!(entry.before_value, soroban_sdk::String::from_str(&ctx.env, "288"));
+    assert_eq!(
+        entry.after_value,
+        soroban_sdk::String::from_str(&ctx.env, "24")
+    );
     assert_eq!(entry.ledger_sequence, ctx.env.ledger().sequence());
 
     // 2. pause & unpause
@@ -83,7 +87,8 @@ fn test_admin_audit_trail_recorded_on_actions() {
 fn test_admin_audit_event_emission() {
     let ctx = setup();
 
-    ctx.client.set_fee(&ctx.admin, &350_u32);
+    ctx.client
+        .set_fee_change_delay(&ctx.admin, &crate::admin::MIN_FEE_CHANGE_DELAY_LEDGERS);
 
     let events = ctx.env.events().all();
     let target_topics = soroban_sdk::vec![
@@ -105,8 +110,9 @@ fn test_admin_audit_event_emission() {
 fn test_admin_audit_pagination() {
     let ctx = setup();
 
-    for i in 1..=10 {
-        ctx.client.set_fee(&ctx.admin, &(200 + i * 10));
+    for i in 0..10 {
+        ctx.client
+            .set_fee_change_delay(&ctx.admin, &(crate::admin::MIN_FEE_CHANGE_DELAY_LEDGERS + i));
     }
 
     let count = ctx.client.get_admin_audit_count();
@@ -132,8 +138,9 @@ fn test_admin_audit_ring_buffer_wraparound() {
     let ctx = setup();
 
     // Perform 105 admin actions (exceeding 100 capacity)
-    for i in 1..=105 {
-        ctx.client.set_fee(&ctx.admin, &(100 + (i % 800)));
+    for i in 0..105 {
+        ctx.client
+            .set_fee_change_delay(&ctx.admin, &(crate::admin::MIN_FEE_CHANGE_DELAY_LEDGERS + (i % 800)));
     }
 
     let total_count = ctx.client.get_admin_audit_count();

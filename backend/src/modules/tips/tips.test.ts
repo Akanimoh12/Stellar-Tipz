@@ -1,4 +1,5 @@
 import request from 'supertest';
+import jwt from 'jsonwebtoken';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { createApp } from '../../app.js';
 import { openApiDocument } from '../../docs/openapi.js';
@@ -847,6 +848,141 @@ describe('PATCH /api/v1/tips/:txHash/confirm', () => {
   });
 });
 
+// ── GET /api/v1/tips/:txHash/receipt ───────────────────────────────────────
+
+describe('GET /api/v1/tips/:txHash/receipt', () => {
+  const txHash = 'abc123txhash';
+  const thirdParty = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA3';
+
+  function signToken(stellarAddress: string): string {
+    return jwt.sign({ sub: 'user-id', stellarAddress }, process.env.JWT_SECRET!);
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns a receipt when the sender requests it', async () => {
+    mockFindUnique.mockResolvedValue(makeTipRow());
+    const token = signToken(from);
+
+    const app = createApp();
+    const res = await request(app)
+      .get(`/api/v1/tips/${txHash}/receipt`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.txHash).toBe(txHash);
+    expect(res.body.data.amountStroops).toBe('1000000');
+    expect(res.body.data.feeStroops).toBe('0');
+    expect(res.body.data.tokenCode).toBe('XLM');
+    expect(res.body.data.fromAddress).toBe(from);
+    expect(res.body.data.toAddress).toBe(to);
+    expect(res.body.data.ledger).toBe(100);
+    expect(res.body.data.createdAt).toBe(now.toISOString());
+    expect(res.body.data.explorerUrl).toContain(txHash);
+    expect(res.body.data.explorerUrl).toMatch(/^https:\/\/stellar\.expert\/explorer\//);
+  });
+
+  it('returns a receipt when the recipient requests it', async () => {
+    mockFindUnique.mockResolvedValue(makeTipRow());
+    const token = signToken(to);
+
+    const app = createApp();
+    const res = await request(app)
+      .get(`/api/v1/tips/${txHash}/receipt`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.txHash).toBe(txHash);
+  });
+
+  it('returns 403 when a third party requests it', async () => {
+    mockFindUnique.mockResolvedValue(makeTipRow());
+    const token = signToken(thirdParty);
+
+    const app = createApp();
+    const res = await request(app)
+      .get(`/api/v1/tips/${txHash}/receipt`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('returns 404 when the tip does not exist', async () => {
+    mockFindUnique.mockResolvedValue(null);
+    const token = signToken(from);
+
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/v1/tips/nonexistent/receipt')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('returns 401 when no auth token is provided', async () => {
+    const app = createApp();
+    const res = await request(app).get(`/api/v1/tips/${txHash}/receipt`);
+
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 for anonymous tips when caller is not sender or recipient', async () => {
+    mockFindUnique.mockResolvedValue(makeTipRow({ isAnonymous: true }));
+    const token = signToken(thirdParty);
+
+    const app = createApp();
+    const res = await request(app)
+      .get(`/api/v1/tips/${txHash}/receipt`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('returns receipt for anonymous tip when caller is the sender', async () => {
+    mockFindUnique.mockResolvedValue(makeTipRow({ isAnonymous: true }));
+    const token = signToken(from);
+
+    const app = createApp();
+    const res = await request(app)
+      .get(`/api/v1/tips/${txHash}/receipt`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.txHash).toBe(txHash);
+  });
+
+  it('returns receipt for anonymous tip when caller is the recipient', async () => {
+    mockFindUnique.mockResolvedValue(makeTipRow({ isAnonymous: true }));
+    const token = signToken(to);
+
+    const app = createApp();
+    const res = await request(app)
+      .get(`/api/v1/tips/${txHash}/receipt`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.txHash).toBe(txHash);
+  });
+
+  it('includes explorer URL with correct network path', async () => {
+    mockFindUnique.mockResolvedValue(makeTipRow());
+    const token = signToken(from);
+
+    const app = createApp();
+    const res = await request(app)
+      .get(`/api/v1/tips/${txHash}/receipt`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.explorerUrl).toBe(`https://stellar.expert/explorer/testnet/tx/${txHash}`);
+  });
+});
+
 // ── OpenAPI docs registration ───────────────────────────────────────────────
 
 describe('OpenAPI docs - Tips module', () => {
@@ -883,6 +1019,14 @@ describe('OpenAPI docs - Tips module', () => {
     expect(patchOp).toBeDefined();
     expect((patchOp?.tags as string[]) ?? []).toContain('Tips');
     expect(patchOp?.summary).toBe('Confirm a pending tip');
+  });
+
+  it('registers GET /api/v1/tips/:txHash/receipt endpoint', () => {
+    const getOp = openApiDocument.paths['/api/v1/tips/{txHash}/receipt']?.get as Record<string, unknown> | undefined;
+    expect(getOp).toBeDefined();
+    expect((getOp?.tags as string[]) ?? []).toContain('Tips');
+    expect(getOp?.summary).toBe('Get a structured tip receipt');
+    expect((getOp?.security as Record<string, string[]>[]) ?? []).toEqual([{ bearerAuth: [] }]);
   });
 
   it('registers profile tips endpoint at /api/v1/profiles/:username/tips', () => {

@@ -265,6 +265,39 @@ pub fn emit_fee_updated(env: &Env, old_bps: u32, new_bps: u32) {
     );
 }
 
+/// Topics : `("fee", "proposed")`
+/// Data   : `(old_bps: u32, new_bps: u32, effective_ledger: u32, immediate: bool)`
+pub fn emit_fee_change_proposed(
+    env: &Env,
+    old_bps: u32,
+    new_bps: u32,
+    effective_ledger: u32,
+    immediate: bool,
+) {
+    env.events().publish(
+        (symbol_short!("fee"), symbol_short!("propose")),
+        (old_bps, new_bps, effective_ledger, immediate),
+    );
+}
+
+/// Topics : `("fee", "applied")`
+/// Data   : `(old_bps: u32, new_bps: u32)`
+pub fn emit_fee_change_applied(env: &Env, old_bps: u32, new_bps: u32) {
+    env.events().publish(
+        (symbol_short!("fee"), symbol_short!("apply")),
+        (old_bps, new_bps),
+    );
+}
+
+/// Topics : `("fee", "canceled")`
+/// Data   : `(actor: Address, new_bps: u32)`
+pub fn emit_fee_change_cancelled(env: &Env, actor: &Address, new_bps: u32) {
+    env.events().publish(
+        (symbol_short!("fee"), symbol_short!("cancel")),
+        (actor.clone(), new_bps),
+    );
+}
+
 /// Topics : `("fee", "collector")`
 /// Data   : `(new_collector: Address,)`
 pub fn emit_fee_collector_updated(env: &Env, new_collector: &Address) {
@@ -338,6 +371,9 @@ pub fn emit_min_tip_amount_updated(env: &Env, old_min: i128, new_min: i128) {
         (symbol_short!("tip"), symbol_short!("min")),
         (old_min, new_min),
     );
+}
+pub fn emit_min_withdrawal_amount_updated(env: &Env, old_min: i128, new_min: i128) {
+    env.events().publish((symbol_short!("withdraw"), symbol_short!("min")), (old_min, new_min));
 }
 
 // ── Batch events ──────────────────────────────────────────────────────────────

@@ -15,3 +15,17 @@ export interface TipAggregateByCreatorDto {
   totalAmountStroops: string;
   tipCount: number;
 }
+
+export interface TipReceiptDto {
+  txHash: string;
+  ledger: number;
+  fromAddress: string;
+  toAddress: string;
+  amountStroops: string;
+  feeStroops: string;
+  tokenCode: string;
+  status: string;
+  message: string | null;
+  createdAt: string;
+  explorerUrl: string;
+}

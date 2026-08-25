@@ -35,6 +35,10 @@ pub struct MultisigConfig {
     pub required_signatures: u32,
     /// List of authorized signers
     pub signers: Vec<Address>,
+    /// Monotonically increasing counter bumped on every config change.
+    /// Proposals record the epoch they were created under; a config change
+    /// invalidates approvals collected under a prior epoch (#1154).
+    pub epoch: u32,
 }
 
 /// Proposal state
@@ -57,6 +61,8 @@ pub struct Proposal {
     pub proposer: Address,
     /// Whether the proposal has been cancelled
     pub cancelled: bool,
+    /// Configuration epoch when the proposal was created (#1154).
+    pub epoch: u32,
 }
 
 /// Set the multi-signature configuration (admin only)
@@ -73,9 +79,12 @@ pub fn set_multisig_config(
         return Err(ContractError::InvalidAmount);
     }
 
+    let epoch = get_multisig_config(env).map(|c| c.epoch + 1).unwrap_or(0);
+
     let config = MultisigConfig {
         required_signatures,
         signers,
+        epoch,
     };
 
     env.storage()
@@ -99,7 +108,6 @@ pub fn get_multisig_config(env: &Env) -> Option<MultisigConfig> {
 }
 
 /// Check if multi-sig is enabled
-#[allow(dead_code)]
 pub fn is_multisig_enabled(env: &Env) -> bool {
     get_multisig_config(env).is_some()
 }
@@ -136,6 +144,7 @@ pub fn propose_action(env: &Env, signer: &Address, action: Action) -> Result<u32
         executed: false,
         proposer: signer.clone(),
         cancelled: false,
+        epoch: config.epoch,
     };
 
     // Store proposal
@@ -192,6 +201,11 @@ pub fn approve_action(env: &Env, signer: &Address, proposal_id: u32) -> Result<(
     let now = env.ledger().timestamp();
     if now > proposal.expires_at {
         return Err(ContractError::ProposalExpired);
+    }
+
+    // Reject if the signer set/threshold changed since this proposal was created (#1154)
+    if proposal.epoch != config.epoch {
+        return Err(ContractError::ProposalEpochMismatch);
     }
 
     // Check if already approved by this signer
@@ -273,6 +287,11 @@ fn execute_proposal_internal(
         return Err(ContractError::NotAuthorized);
     }
 
+    // Reject if the signer set/threshold changed since this proposal was created (#1154)
+    if proposal.epoch != config.epoch {
+        return Err(ContractError::ProposalEpochMismatch);
+    }
+
     // Mark as executed
     proposal.executed = true;
     env.storage()
@@ -295,12 +314,7 @@ fn execute_proposal_internal(
             storage::set_version(env, new_version);
         }
         Action::SetFee(fee_bps) => {
-            if fee_bps > 1000 {
-                return Err(ContractError::InvalidFee);
-            }
-            let old_bps = storage::get_fee_bps(env);
-            storage::set_fee_bps(env, fee_bps);
-            crate::events::emit_fee_updated(env, old_bps, fee_bps);
+            crate::admin::propose_fee_change_inner(env, fee_bps)?;
         }
         Action::SetAdmin(new_admin) => {
             let old_admin = storage::get_admin(env);

@@ -39,6 +39,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",
+    "@sentry/node": "^10.71.0",
     "@socket.io/redis-adapter": "^8.3.0",
     "@stellar/stellar-sdk": "^12.3.0",
     "bullmq": "^5.12.0",
