@@ -339,6 +339,9 @@ pub fn emit_min_tip_amount_updated(env: &Env, old_min: i128, new_min: i128) {
         (old_min, new_min),
     );
 }
+pub fn emit_min_withdrawal_amount_updated(env: &Env, old_min: i128, new_min: i128) {
+    env.events().publish((symbol_short!("withdraw"), symbol_short!("min")), (old_min, new_min));
+}
 
 // ── Batch events ──────────────────────────────────────────────────────────────
 

@@ -242,14 +242,8 @@ pub fn withdraw_token(
         return Err(ContractError::NotRegistered);
     }
 
-    if amount <= 0 {
-        return Err(ContractError::InvalidAmount);
-    }
-
     let balance = storage::get_token_balance(env, caller, token);
-    if balance < amount {
-        return Err(ContractError::InsufficientBalance);
-    }
+    let amount = crate::validation::validate_withdrawal_amount(amount, storage::get_min_withdrawal_amount(env), balance)?;
 
     // Calculate fee and net amount
     let fee_bps = storage::get_fee_bps(env);

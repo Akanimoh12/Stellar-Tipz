@@ -13,27 +13,27 @@
 
 #![no_std]
 
-mod admin;
-mod credit;
-mod errors;
-mod events;
-mod fees;
-mod goals;
-mod leaderboard;
-mod migrations;
-mod multisig;
-mod multitoken;
-mod profile;
-mod refund;
-mod stats;
-mod storage;
-mod streaks;
-mod subscription;
-mod tips;
-mod token;
-mod types;
-mod validation;
-mod verification;
+pub mod admin;
+pub mod credit;
+pub mod errors;
+pub mod events;
+pub mod fees;
+pub mod goals;
+pub mod leaderboard;
+pub mod migrations;
+pub mod multisig;
+pub mod multitoken;
+pub mod profile;
+pub mod refund;
+pub mod stats;
+pub mod storage;
+pub mod streaks;
+pub mod subscription;
+pub mod tips;
+pub mod token;
+pub mod types;
+pub mod validation;
+pub mod verification;
 
 #[cfg(test)]
 mod test;
@@ -681,6 +681,9 @@ impl TipzContract {
     pub fn get_min_tip_amount(env: Env) -> i128 {
         storage::get_min_tip_amount(&env)
     }
+
+    pub fn set_min_withdrawal_amount(env: Env, caller: Address, amount: i128) -> Result<(), ContractError> { admin::set_min_withdrawal_amount(&env, &caller, amount) }
+    pub fn get_min_withdrawal_amount(env: Env) -> i128 { storage::get_min_withdrawal_amount(&env) }
 
     /// Update rate limit configuration. Admin only.
     pub fn set_rate_limit_config(
