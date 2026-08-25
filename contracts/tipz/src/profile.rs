@@ -128,6 +128,7 @@ pub fn register_profile(
         domain_verified: false,
         domain_verified_at: None,
         custom_min_tip: None,
+        last_active_at: now,  // newly registered creators are "active" at registration
     };
 
     storage::set_profile(env, &profile);

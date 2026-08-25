@@ -21,10 +21,15 @@ pub const MAX_DISPLAY_NAME_LENGTH: u32 = 64;
 pub const MAX_BIO_LENGTH: u32 = 280;
 
 /// Inactive profile threshold in seconds (180 days).
-/// Profiles with no activity beyond this threshold may be cleaned up by the admin.
-pub const INACTIVE_PROFILE_THRESHOLD_SECS: u64 = 180 * 24 * 3600;
-
-/// Registration rate limit window in seconds (1 hour).
+    /// Profiles with no activity beyond this threshold may be cleaned up by the admin.
+    pub const INACTIVE_PROFILE_THRESHOLD_SECS: u64 = 180 * 24 * 3600;
+    /// Credit score decay inactivity window in seconds (90 days).
+    /// After this window with no activity, the score begins decaying toward the base score.
+    pub const CREDIT_DECAY_INACTIVITY_WINDOW_SECS: u64 = 90 * 24 * 3600;
+    /// Credit score decay rate per second.
+    /// The score decays toward the base score (40) at this rate.
+    pub const CREDIT_DECAY_RATE_PER_SEC: u64 = 1;
+    /// Registration rate limit window in seconds (1 hour).
 pub const REGISTRATION_RATE_WINDOW_SECS: u64 = 3600;
 
 /// Maximum registrations per rate limit window.
@@ -118,6 +123,8 @@ pub struct Profile {
     pub domain_verified_at: Option<u64>,
     /// Creator-specific minimum tip override in stroops (None = use global minimum)
     pub custom_min_tip: Option<i128>,
+    /// Timestamp when the creator was last active (receiving a tip)
+    pub last_active_at: u64,
 }
 
 /// Profile plus deactivation state for queries (`get_profile`, `get_profile_by_username`).

@@ -148,6 +148,7 @@ pub fn initialize(
     storage::set_min_tip_amount(env, 1_000_000_i128);
     storage::set_min_withdrawal_amount(env, 1_000_000_i128);
     storage::set_version(env, crate::CONTRACT_VERSION);
+    storage::set_reentrancy_guard(env, false);
     storage::set_runtime_config(
         env,
         &storage::RuntimeConfig {

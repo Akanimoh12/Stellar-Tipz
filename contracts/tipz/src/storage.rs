@@ -100,6 +100,8 @@ pub enum DataKey {
     Paused,
     /// Minimum allowed tip amount in stroops
     MinTipAmount,
+    /// Reentrancy guard: set before fund-moving external calls
+    ReentrancyGuard,
     /// Number of tips sent by a specific tipper
     TipperTipCount(Address),
     /// Reverse index: (tipper, local_index) → global tip ID
@@ -166,6 +168,8 @@ pub enum DataKey {
     CreatorPeriodVolume(Address, crate::types::LeaderboardPeriod, u64),
     /// Maximum active subscriptions per subscriber
     SubscriptionLimit,
+    /// Reentrancy guard: set before fund-moving external calls
+    ReentrancyGuard,
 }
 
 /// Extended storage keys for new features (separate enum to avoid size limits)
@@ -787,6 +791,36 @@ pub fn get_subscription_limit(env: &Env) -> u32 {
 /// Sets the maximum active subscriptions per subscriber.
 pub fn set_subscription_limit(env: &Env, limit: u32) {
     env.storage().instance().set(&DataKey::SubscriptionLimit, &limit);
+}
+
+/// Returns `true` if the reentrancy guard is currently active (a fund-moving
+/// operation is in progress). Callers should not make external token transfers
+/// while the guard is active.
+pub fn is_reentrancy_guard_active(env: &Env) -> bool {
+    env.storage().instance().get(&DataKey::ReentrancyGuard).unwrap_or(false)
+}
+
+/// Set the reentrancy guard to `locked` (beginning a fund-moving operation)
+/// or `unlocked` (ending it).
+pub fn set_reentrancy_guard(env: &Env, locked: bool) {
+    env.storage().instance().set(&DataKey::ReentrancyGuard, &locked);
+}
+
+/// Guard helper: sets the guard to `locked`, runs `f`, then resets it to
+/// `unlocked` regardless of whether `f` returns `Ok` or `Err`.
+///
+/// # Safety
+/// Callers must ensure that `f` does not attempt any further cross-contract
+/// calls that would be blocked by this guard (e.g. token transfers), as the
+/// guard is purely a defense-in-depth measure.
+pub fn with_reentrancy_guard_unlocked<'a, F, R>(env: &Env, f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    set_reentrancy_guard(env, true);
+    let result = f();
+    set_reentrancy_guard(env, false);
+    result
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
