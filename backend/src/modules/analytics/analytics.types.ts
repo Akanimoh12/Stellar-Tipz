@@ -75,6 +75,8 @@ export interface ActiveUsersResponse {
   granularity: string;
   startDate: string;
   endDate: string;
+}
+
 /** A single creator analytics time-series entry. */
 export interface CreatorAnalyticsEntry {
   date: string;

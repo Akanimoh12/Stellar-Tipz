@@ -8,8 +8,8 @@ import { TipStatus } from '../../types/enums.js';
 import * as notificationsService from '../notifications/notifications.service.js';
 import { updateStreakOnTip } from '../streaks/streaks.service.js';
 import type { RecordTipInput } from './tips.schema.js';
-import { serializeTip } from './tips.serializer.js';
-import type { TipResponseDto, TipAggregateByCreatorDto } from './tips.dto.js';
+import { serializeTip, serializeTipReceipt } from './tips.serializer.js';
+import type { TipResponseDto, TipAggregateByCreatorDto, TipReceiptDto } from './tips.dto.js';
 
 export type { TipResponseDto, TipAggregateByCreatorDto };
 
@@ -166,6 +166,15 @@ export async function getTipById(id: string): Promise<TipResponseDto> {
   if (!tip) throw new NotFoundError('Tip not found');
   return serializeTip(tip);
 }
+
+/** GET /tips/:txHash/receipt — fetch a receipt by txHash. Returns the raw Tip row so the controller can enforce authorization before serializing. */
+export async function getTipByTxHash(txHash: string) {
+  const tip = await prisma.tip.findUnique({ where: { txHash } });
+  if (!tip) throw new NotFoundError('Tip not found');
+  return tip;
+}
+
+export { serializeTipReceipt };
 
 /** Shared cursor-paginated list query, newest first. */
 async function listTips(

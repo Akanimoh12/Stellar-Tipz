@@ -84,3 +84,10 @@ export const confirmTipParamSchema = z.object({
 });
 
 export type ConfirmTipParam = z.infer<typeof confirmTipParamSchema>;
+
+/** Path params for `GET /tips/:txHash/receipt`. */
+export const receiptParamSchema = z.object({
+  txHash: z.string().min(1, 'txHash is required'),
+});
+
+export type ReceiptParam = z.infer<typeof receiptParamSchema>;
