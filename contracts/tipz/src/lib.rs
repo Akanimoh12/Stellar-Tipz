@@ -1173,6 +1173,15 @@ impl TipzContract {
         refund::process_pending_refunds(&env, tip_ids)
     }
 
+    /// Process pending refunds using the on-chain refund index and a resumable cursor.
+    pub fn process_pending_refunds_from(
+        env: Env,
+        cursor: u32,
+        limit: u32,
+    ) -> Result<(u32, u32), ContractError> {
+        refund::process_pending_refunds_from(&env, cursor, limit)
+    }
+
     /// Expire a pending refund request that has exceeded the TTL.
     ///
     /// This removes the expired refund request from storage.

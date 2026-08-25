@@ -185,6 +185,10 @@ pub enum ExtendedDataKey {
     RefundRequest(u32),
     /// Refund configuration
     RefundConfig,
+    /// Number of pending refund requests tracked for cursor-based iteration.
+    PendingRefundCount,
+    /// Pending refund request tip ID by dense index.
+    PendingRefundTip(u32),
     /// Bounded ring-buffered log of all privileged admin actions.
     AdminAuditLog,
     /// Counter for total recorded admin audit entries over time.
@@ -1554,6 +1558,70 @@ pub fn set_refund_config(env: &Env, config: &crate::types::RefundConfig) {
     env.storage()
         .instance()
         .set(&ExtendedDataKey::RefundConfig, config);
+}
+
+/// Get the number of pending refund requests tracked on chain.
+pub fn get_pending_refund_count(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::PendingRefundCount)
+        .unwrap_or(0)
+}
+
+/// Get the pending refund tip ID at a dense index.
+pub fn get_pending_refund_tip_id(env: &Env, index: u32) -> Option<u32> {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::PendingRefundTip(index))
+}
+
+/// Append a pending refund tip ID to the dense index.
+pub fn add_pending_refund_tip_id(env: &Env, tip_id: u32) {
+    let count = get_pending_refund_count(env);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::PendingRefundTip(count), &tip_id);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::PendingRefundCount, &(count + 1));
+}
+
+/// Remove a pending refund tip ID from the dense index using swap-remove.
+pub fn remove_pending_refund_tip_id(env: &Env, tip_id: u32) {
+    let count = get_pending_refund_count(env);
+    if count == 0 {
+        return;
+    }
+
+    let mut found_index: Option<u32> = None;
+    for i in 0..count {
+        if let Some(current_tip_id) = get_pending_refund_tip_id(env, i) {
+            if current_tip_id == tip_id {
+                found_index = Some(i);
+                break;
+            }
+        }
+    }
+
+    let Some(index) = found_index else {
+        return;
+    };
+
+    let last_index = count - 1;
+    if index != last_index {
+        if let Some(last_tip_id) = get_pending_refund_tip_id(env, last_index) {
+            env.storage()
+                .instance()
+                .set(&ExtendedDataKey::PendingRefundTip(index), &last_tip_id);
+        }
+    }
+
+    env.storage()
+        .instance()
+        .remove(&ExtendedDataKey::PendingRefundTip(last_index));
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::PendingRefundCount, &last_index);
 }
 
 /// Get refund request by tip ID
