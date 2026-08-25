@@ -7,6 +7,7 @@ import {
   getTipsQuerySchema,
   recordTipSchema,
   confirmTipParamSchema,
+  receiptParamSchema,
 } from './tips.schema.js';
 import * as tipsService from './tips.service.js';
 import { emitTipCreated, emitBalanceUpdated, emitLeaderboardUpdated } from '../../realtime/index.js';
@@ -14,6 +15,7 @@ import { prisma } from '../../db/prisma.js';
 import { getWithdrawableBalance } from '../withdrawals/withdrawals.service.js';
 import { getUserRank } from '../leaderboard/leaderboard.service.js';
 import { logger } from '../../common/utils/logger.js';
+import { ForbiddenError, NotFoundError } from '../../common/errors/AppError.js';
 
 /** GET /tips — filterable, cursor-paginated list of tips. */
 export async function getTips(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -79,6 +81,32 @@ export async function record(req: Request, res: Response, next: NextFunction): P
     const tip = await tipsService.recordTip(input);
     emitTipCreated(tip);
     res.status(200).json({ data: tip });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** GET /tips/:txHash/receipt — structured receipt for sender or recipient. */
+export async function getReceipt(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { txHash } = receiptParamSchema.parse(req.params);
+    const tip = await tipsService.getTipByTxHash(txHash);
+
+    // Anonymous tips: 404 to everyone except sender/recipient.
+    if (tip.isAnonymous) {
+      const caller = req.user?.stellarAddress;
+      if (!caller || (caller !== tip.fromAddress && caller !== tip.toAddress)) {
+        throw new NotFoundError('Tip not found');
+      }
+    }
+
+    // Non-anonymous tips: only sender or recipient may fetch the receipt.
+    const caller = req.user?.stellarAddress;
+    if (!caller || (caller !== tip.fromAddress && caller !== tip.toAddress)) {
+      throw new ForbiddenError('Only the sender or recipient may view this receipt');
+    }
+
+    res.status(200).json({ data: tipsService.serializeTipReceipt(tip) });
   } catch (err) {
     next(err);
   }
