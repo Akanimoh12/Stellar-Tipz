@@ -21,9 +21,16 @@ export interface TokenPair {
 }
 
 export interface ChallengeResponse {
+  /** The raw nonce the wallet must sign. */
   challenge: string;
+  /** ISO-8601 expiry timestamp. */
   expiresAt: string;
+  /** Network the challenge is bound to. */
   network: string;
+  /** Stellar network passphrase to embed in the signed message. */
+  networkPassphrase: string;
+  /** Human-readable domain prefix to embed in the signed message. */
+  domain: string;
 }
 
 export interface VerifyRequest {

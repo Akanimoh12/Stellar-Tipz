@@ -74,4 +74,14 @@ export {
 
 export { recordDeadLetter, attachDeadLetterHandler, listDeadLetterJobs } from './deadLetter.js';
 
+export {
+  AUTH_CHALLENGE_CLEANUP_QUEUE,
+  getAuthChallengeCleanupQueue,
+} from './authChallengeCleanup.queue.js';
+export {
+  cleanupExpiredChallenges,
+  createAuthChallengeCleanupWorker,
+  scheduleAuthChallengeCleanup,
+} from './authChallengeCleanup.worker.js';
+
 export { bootstrapJobs } from './main.js';

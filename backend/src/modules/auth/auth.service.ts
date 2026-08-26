@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import { randomBytes, createHash } from "crypto";
+import { randomBytes, createHash, timingSafeEqual } from "crypto";
 import { prisma } from "../../db/prisma.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../common/utils/logger.js";
@@ -14,6 +14,13 @@ import type {
   ChallengeResponse,
 } from "./auth.types.js";
 import { verifyEd25519Signature } from "./signature.js";
+
+/**
+ * Domain constant included in every signed challenge message.
+ * Prevents cross-domain replay attacks — a signature produced for
+ * tipz.app cannot be replayed against a different service.
+ */
+const AUTH_DOMAIN = "tipz.app";
 
 /**
  * Helper to hash a refresh token.
@@ -81,14 +88,69 @@ function parseDuration(duration: string): number {
 }
 
 /**
+ * Resolves the Stellar network passphrase for a given network identifier.
+ * Uses the configured passphrase from env (the actual Stellar network passphrase
+ * like "Test SDF Network ; September 2015").
+ */
+function resolveNetworkPassphrase(_network: string): string {
+  return env.NETWORK_PASSPHRASE;
+}
+
+/**
+ * Builds the domain-bound message that the wallet must sign.
+ *
+ * Format:
+ *   tipz.app
+ *   Wallet: <stellarAddress>
+ *   Network: <networkPassphrase>
+ *   Nonce: <challenge>
+ *   Expires: <expiresAt ISO-8601>
+ *
+ * Including domain, network passphrase, and expiry prevents:
+ * - Cross-domain replay (tipz.app → other service)
+ * - Cross-network replay (testnet → mainnet)
+ * - Long-lived replay (expired challenges)
+ */
+function buildSignedMessage(
+  stellarAddress: string,
+  networkPassphrase: string,
+  challenge: string,
+  expiresAt: Date,
+): string {
+  return [
+    AUTH_DOMAIN,
+    `Wallet: ${stellarAddress}`,
+    `Network: ${networkPassphrase}`,
+    `Nonce: ${challenge}`,
+    `Expires: ${expiresAt.toISOString()}`,
+  ].join("\n");
+}
+
+/**
+ * Constant-time string comparison to prevent timing attacks on any
+ * secret material (e.g., challenge strings, tokens).
+ */
+function constantTimeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    // Still do the comparison to avoid length-based timing oracle,
+    // but we know they can't match.
+    timingSafeEqual(Buffer.from(a), Buffer.from(a));
+    return false;
+  }
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+/**
  * Creates an authentication challenge for a Stellar wallet address.
- * The challenge is bound to the address and network to prevent cross-address/network replay attacks.
+ * The challenge is bound to the address and network to prevent cross-address
+ * and cross-network replay attacks.
  */
 export async function createChallenge(
   stellarAddress: string,
   network?: string,
 ): Promise<ChallengeResponse> {
   const boundNetwork = network || env.STELLAR_NETWORK;
+  const networkPassphrase = resolveNetworkPassphrase(boundNetwork);
 
   // Clean up expired challenges for this address
   await prisma.authChallenge.deleteMany({
@@ -103,7 +165,6 @@ export async function createChallenge(
     where: {
       stellarAddress,
       network: boundNetwork,
-      usedAt: null,
       expiresAt: { gt: new Date() },
     },
   });
@@ -117,6 +178,8 @@ export async function createChallenge(
       challenge: existingChallenge.challenge,
       expiresAt: existingChallenge.expiresAt.toISOString(),
       network: existingChallenge.network,
+      networkPassphrase,
+      domain: AUTH_DOMAIN,
     };
   }
 
@@ -144,12 +207,18 @@ export async function createChallenge(
     challenge,
     expiresAt: expiresAt.toISOString(),
     network: boundNetwork,
+    networkPassphrase,
+    domain: AUTH_DOMAIN,
   };
 }
 
 /**
  * Verifies a signed challenge and returns JWT tokens.
  * Uses ed25519 signature verification to prove wallet ownership.
+ *
+ * Single-use enforcement: the challenge is atomically deleted via deleteMany
+ * with a count assertion. Only one concurrent request will see count=1;
+ * all others are rejected, eliminating the TOCTOU race window.
  */
 export async function verifyChallenge(
   stellarAddress: string,
@@ -169,7 +238,7 @@ export async function verifyChallenge(
   }
 
   // Validate that the challenge belongs to the requesting address
-  if (authChallenge.stellarAddress !== stellarAddress) {
+  if (!constantTimeCompare(authChallenge.stellarAddress, stellarAddress)) {
     throw new BadRequestError("Challenge address mismatch");
   }
 
@@ -178,18 +247,24 @@ export async function verifyChallenge(
     throw new BadRequestError("Challenge network mismatch");
   }
 
-  if (authChallenge.usedAt) {
-    throw new ConflictError("Challenge already used");
-  }
-
   if (authChallenge.expiresAt < new Date()) {
     throw new BadRequestError("Challenge expired");
   }
 
-  // Verify the ed25519 signature
+  // Reconstruct the expected signed message using stored metadata.
+  // The network passphrase comes from the stored challenge's network identifier.
+  const networkPassphrase = resolveNetworkPassphrase(authChallenge.network);
+  const expectedMessage = buildSignedMessage(
+    stellarAddress,
+    networkPassphrase,
+    challenge,
+    authChallenge.expiresAt,
+  );
+
+  // Verify the ed25519 signature against the domain-bound message
   const isValidSignature = verifyEd25519Signature(
     stellarAddress,
-    challenge,
+    expectedMessage,
     signature,
   );
 
@@ -197,23 +272,28 @@ export async function verifyChallenge(
     throw new UnauthorizedError("Invalid signature");
   }
 
-  // Mark challenge as used
-  await prisma.authChallenge.update({
-    where: { id: authChallenge.id },
-    data: { usedAt: new Date() },
+  // ── Atomic single-use enforcement ──────────────────────────────────────
+  // deleteMany maps to a single DELETE … WHERE id = ? SQL statement, which
+  // is atomic at the database level. Only one concurrent request will
+  // receive count = 1; all others receive count = 0 and are rejected.
+  const deleted = await prisma.authChallenge.deleteMany({
+    where: {
+      id: authChallenge.id,
+    },
   });
 
-  // Find or create user
-  let user = await prisma.user.findUnique({
-    where: { stellarAddress },
-  });
-
-  if (!user) {
-    user = await prisma.user.create({
-      data: { stellarAddress },
-    });
-    logger.info({ stellarAddress, userId: user.id }, "Created new user");
+  if (deleted.count === 0) {
+    throw new ConflictError("Challenge already used");
   }
+
+  // Find or create user (upsert is atomic — safe under concurrent requests)
+  const user = await prisma.user.upsert({
+    where: { stellarAddress },
+    create: { stellarAddress },
+    update: {},
+  });
+
+  logger.info({ stellarAddress, userId: user.id }, "User authenticated");
 
   // Generate tokens
   const payload: AuthPayload = {
@@ -225,11 +305,6 @@ export async function verifyChallenge(
 
   const accessToken = generateAccessToken(payload);
   const refreshToken = await generateRefreshToken(user.id);
-
-  logger.info(
-    { stellarAddress, userId: user.id },
-    "User authenticated successfully",
-  );
 
   return {
     accessToken,
@@ -319,3 +394,24 @@ export function verifyAccessToken(token: string): AuthPayload {
     throw new UnauthorizedError("Invalid or expired access token");
   }
 }
+
+/**
+ * Prunes expired auth challenges from the database.
+ * Called by the scheduled cleanup job.
+ */
+export async function pruneExpiredChallenges(): Promise<number> {
+  const result = await prisma.authChallenge.deleteMany({
+    where: {
+      expiresAt: { lt: new Date() },
+    },
+  });
+
+  if (result.count > 0) {
+    logger.info({ count: result.count }, "Pruned expired auth challenges");
+  }
+
+  return result.count;
+}
+
+// Export constants for testing
+export { AUTH_DOMAIN, buildSignedMessage, resolveNetworkPassphrase, constantTimeCompare };

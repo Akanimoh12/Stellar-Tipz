@@ -7,6 +7,7 @@ import {
   logoutController,
 } from './auth.controller.js';
 import { authMiddleware } from './auth.middleware.js';
+import { authRateLimiter } from './auth.rateLimit.js';
 
 /**
  * Auth module router.
@@ -15,10 +16,12 @@ import { authMiddleware } from './auth.middleware.js';
 export const authRouter = Router();
 
 // POST /auth/challenge — create authentication challenge
-authRouter.post('/challenge', challengeController);
+// Rate-limited per IP and per Stellar address to prevent brute-force attacks.
+authRouter.post('/challenge', authRateLimiter, challengeController);
 
 // POST /auth/verify — verify signed challenge and get tokens
-authRouter.post('/verify', verifyController);
+// Rate-limited per IP and per Stellar address to prevent signature brute-force.
+authRouter.post('/verify', authRateLimiter, verifyController);
 
 // GET /auth/me — get current user profile summary (requires auth)
 authRouter.get('/me', authMiddleware, meController);
