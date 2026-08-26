@@ -9,7 +9,7 @@ import * as notificationsService from '../notifications/notifications.service.js
 import { updateStreakOnTip } from '../streaks/streaks.service.js';
 import type { RecordTipInput } from './tips.schema.js';
 import { serializeTip, serializeTipReceipt } from './tips.serializer.js';
-import type { TipResponseDto, TipAggregateByCreatorDto, TipReceiptDto } from './tips.dto.js';
+import type { TipResponseDto, TipAggregateByCreatorDto } from './tips.dto.js';
 
 export type { TipResponseDto, TipAggregateByCreatorDto };
 

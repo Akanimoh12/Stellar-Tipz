@@ -30,7 +30,7 @@ import {
 } from '@stellar/stellar-sdk';
 import { config } from '../../config/index.js';
 import { logger } from '../../common/utils/logger.js';
-import { BadRequestError, NotFoundError } from '../../common/errors/AppError.js';
+import { BadRequestError } from '../../common/errors/AppError.js';
 import { logAuditAction } from './admin.service.js';
 import type {
   PreparedConfigTx,
@@ -196,7 +196,7 @@ export async function prepareSetFee(
 
 export async function submitSetFee(
   actorId: string,
-  adminAddress: string,
+  _adminAddress: string,
   feeBps: number,
   signedTxXdr: string,
 ): Promise<SubmittedConfigTx> {
@@ -228,7 +228,7 @@ export async function getPendingFeeChange(): Promise<PendingFeeChange | null> {
     const contract = new Contract(contractId);
     const tx = new TransactionBuilder(
       // Use a placeholder account; we only need to simulate.
-      await server.getAccount(contract.address()).catch(async () => {
+      await server.getAccount(contract.address().toString()).catch(async () => {
         // If contract address isn't a valid Stellar account, simulate with a different source.
         throw new BadRequestError('Cannot query pending fee change: RPC unavailable');
       }),

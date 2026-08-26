@@ -11,6 +11,7 @@ import {
   submitPauseSchema,
 } from './config.schema.js';
 import * as configService from './config.service.js';
+import { resolveAdminActor } from './admin.middleware.js';
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -19,19 +20,16 @@ import * as configService from './config.service.js';
  * The admin identity is populated by requireAuth + requireRole('admin').
  */
 function resolveAdmin(req: Request): { actorId: string; adminAddress: string } {
-  const auth = req.auth;
-  const user = req.user;
+  const actorId = resolveAdminActor(req);
 
-  if (!auth || !user) {
-    throw new BadRequestError('Authentication required');
-  }
-
-  const stellarAddress = user.stellarAddress ?? auth.stellarAddress;
+  // The auth-module `requireAuth` populates `req.auth`; the shared one
+  // populates `req.user`. Either may carry the Stellar address.
+  const stellarAddress = req.auth?.stellarAddress ?? req.user?.stellarAddress;
   if (!stellarAddress) {
     throw new BadRequestError('Admin Stellar address not found in token');
   }
 
-  return { actorId: auth.sub ?? user.id, adminAddress: stellarAddress };
+  return { actorId, adminAddress: stellarAddress };
 }
 
 // ── Prepare endpoints ─────────────────────────────────────────────────────────
