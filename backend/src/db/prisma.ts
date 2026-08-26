@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { env } from '../config/env.js';
 import { createSlowQueryMiddleware } from '../common/observability/slowQuery.js';
+import { queryCounterMiddleware } from '../common/testing/queryCounter.js';
 
 /** Singleton Prisma client. Import `prisma` everywhere you need DB access. */
 export const prisma = new PrismaClient({
@@ -16,3 +17,9 @@ prisma.$use(
     enabled: env.NODE_ENV !== 'test',
   }),
 );
+
+// Track queries executed during countQueries() contexts (issue #1243).
+// This middleware is always registered but is a no-op unless a
+// countQueries()/assertConstantQueryCount() context is active.
+prisma.$use(queryCounterMiddleware);
+
