@@ -269,6 +269,8 @@ pub fn send_tip(
         credit::calculate_credit_score_with_streak(env, &profile, env.ledger().timestamp());
 
     storage::set_profile(env, &profile);
+    // Record when this score was stored for staleness reporting (#1186).
+    credit::mark_credit_computed(env, creator);
     leaderboard::update_all_leaderboards_for_active(env, &profile, amount);
 
     // Update goal progress
@@ -385,6 +387,7 @@ pub fn send_tip_on_behalf(
     profile.credit_score = credit::calculate_credit_score(&profile, env.ledger().timestamp());
 
     storage::set_profile(env, &profile);
+    credit::mark_credit_computed(env, creator);
     leaderboard::update_all_leaderboards(env, &profile, amount);
 
     storage::bump_profile_ttl(env, creator);
@@ -707,6 +710,7 @@ pub fn deliver_scheduled_tip(
         credit::calculate_credit_score_with_streak(env, &profile, now);
 
     storage::set_profile(env, &profile);
+    credit::mark_credit_computed(env, &scheduled_tip.creator);
     leaderboard::update_all_leaderboards_for_active(env, &profile, scheduled_tip.amount);
 
     // Update goal progress

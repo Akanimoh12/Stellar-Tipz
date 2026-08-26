@@ -225,6 +225,18 @@ pub enum ExtendedDataKey {
     ActiveSubscriptions,
     /// Minimum explicit withdrawal amount in stroops.
     MinWithdrawalAmount,
+    /// Ledger sequence when a creator's credit score was last persisted (#1186).
+    CreditComputedAtLedger(Address),
+    /// Configurable staleness threshold in ledgers (#1186).
+    CreditStalenessThreshold,
+    /// Dense index: u32 → Address for paginated creator iteration (#1185).
+    CreatorIndex(u32),
+    /// Total entries in the dense creator index (#1185).
+    CreatorIndexCount,
+    /// Oracle contract address for a token (#1184).
+    TokenOracleAddress(Address),
+    /// Last known oracle price for a token (#1184).
+    TokenOraclePrice(Address),
 }
 
 /// Storage keys for compact performance caches.
@@ -2419,3 +2431,100 @@ pub fn get_creator_scheduled_tip_ids(env: &Env, creator: &Address) -> soroban_sd
     }
     vec
 }
+
+// ── Credit staleness helpers (#1186) ─────────────────────────────────────────
+
+/// Record the ledger sequence at which a creator's credit score was last stored.
+pub fn set_credit_computed_ledger(env: &Env, address: &Address, ledger: u32) {
+    env.storage()
+        .persistent()
+        .set(&ExtendedDataKey::CreditComputedAtLedger(address.clone()), &ledger);
+}
+
+/// Return the ledger sequence when the creator's credit score was last stored.
+/// Returns 0 when never stored (brand-new profile).
+pub fn get_credit_computed_ledger(env: &Env, address: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&ExtendedDataKey::CreditComputedAtLedger(address.clone()))
+        .unwrap_or(0)
+}
+
+/// Return the configured staleness threshold in ledgers.
+pub fn get_credit_staleness_threshold(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::CreditStalenessThreshold)
+        .unwrap_or(crate::types::DEFAULT_CREDIT_STALENESS_THRESHOLD_LEDGERS)
+}
+
+/// Set the staleness threshold in ledgers (admin operation).
+pub fn set_credit_staleness_threshold(env: &Env, threshold: u32) {
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::CreditStalenessThreshold, &threshold);
+}
+
+// ── Creator index helpers (#1185) ─────────────────────────────────────────────
+
+/// Append a creator address to the dense index, used for paginated iteration.
+pub fn append_creator_to_index(env: &Env, address: &Address) {
+    let count: u32 = env
+        .storage()
+        .instance()
+        .get(&ExtendedDataKey::CreatorIndexCount)
+        .unwrap_or(0);
+    env.storage()
+        .persistent()
+        .set(&ExtendedDataKey::CreatorIndex(count), address);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::CreatorIndexCount, &(count + 1));
+}
+
+/// Return the creator address at position `index` in the dense index, or None.
+pub fn get_creator_by_index(env: &Env, index: u32) -> Option<Address> {
+    env.storage()
+        .persistent()
+        .get(&ExtendedDataKey::CreatorIndex(index))
+}
+
+/// Total number of entries in the creator dense index.
+pub fn get_creator_index_count(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::CreatorIndexCount)
+        .unwrap_or(0)
+}
+
+// ── Oracle price helpers (#1184) ──────────────────────────────────────────────
+
+/// Store the oracle contract address for a given token.
+pub fn set_token_oracle_address(env: &Env, token: &Address, oracle: &Address) {
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::TokenOracleAddress(token.clone()), oracle);
+}
+
+/// Return the oracle contract address for a token, if one has been configured.
+pub fn get_token_oracle_address(env: &Env, token: &Address) -> Option<Address> {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::TokenOracleAddress(token.clone()))
+}
+
+/// Persist a freshly-fetched oracle price for a token.
+pub fn set_token_oracle_price(env: &Env, token: &Address, price: &crate::types::OraclePrice) {
+    env.storage()
+        .persistent()
+        .set(&ExtendedDataKey::TokenOraclePrice(token.clone()), price);
+}
+
+/// Return the last cached oracle price for a token.
+pub fn get_token_oracle_price(env: &Env, token: &Address) -> Option<crate::types::OraclePrice> {
+    env.storage()
+        .persistent()
+        .get(&ExtendedDataKey::TokenOraclePrice(token.clone()))
+}
+
+
