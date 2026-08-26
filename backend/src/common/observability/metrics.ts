@@ -33,6 +33,9 @@ export interface MetricsData {
     /** Cumulative count of queries that exceeded the slow-query threshold. */
     slow_queries_total: number;
   };
+  retention: {
+    rows_pruned_total: Record<string, number>;
+  };
 }
 
 let requestCount = 0;
@@ -40,6 +43,7 @@ let errorCount = 0;
 let latencySum = 0;
 let latencyCount = 0;
 let slowQueryCount = 0;
+const retentionPrunedCounts: Record<string, number> = {};
 
 export function recordRequest(duration: number) {
   requestCount++;
@@ -54,6 +58,11 @@ export function recordError() {
 /** Records a single slow query event for the `/metrics` endpoint. */
 export function recordSlowQuery() {
   slowQueryCount++;
+}
+
+/** Records rows removed by one completed retention batch. */
+export function recordRetentionPruned(model: string, count: number): void {
+  retentionPrunedCounts[model] = (retentionPrunedCounts[model] ?? 0) + count;
 }
 
 export async function getMetrics(): Promise<MetricsData> {
@@ -102,6 +111,9 @@ export async function getMetrics(): Promise<MetricsData> {
     database: {
       pool_size: prisma.$disconnect.length || 0,
       slow_queries_total: slowQueryCount,
+    },
+    retention: {
+      rows_pruned_total: { ...retentionPrunedCounts },
     },
   };
 }

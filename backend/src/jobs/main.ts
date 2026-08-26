@@ -1,7 +1,7 @@
 import { pathToFileURL } from 'node:url';
 import { logger } from '../common/utils/logger.js';
 import { registerClosable, closeAll } from '../common/utils/lifecycle.js';
-import { prisma } from '../db/prisma.js';
+import { prisma, prismaIncludingDeleted } from '../db/prisma.js';
 import { redis } from '../db/redis.js';
 import {
   createCreditRecomputeWorker,
@@ -20,6 +20,8 @@ import {
   schedulePlatformStats,
   createPayoutWorker,
   schedulePayouts,
+  createRetentionWorker,
+  scheduleRetentionPrune,
 } from './index.js';
 
 /**
@@ -28,6 +30,7 @@ import {
  */
 export async function bootstrapJobs(): Promise<void> {
   registerClosable({ name: 'Prisma', close: () => prisma.$disconnect() });
+  registerClosable({ name: 'PrismaIncludingDeleted', close: () => prismaIncludingDeleted.$disconnect() });
   registerClosable({ name: 'Redis', close: async () => { await redis.quit(); } });
 
   const creditWorker = createCreditRecomputeWorker();
@@ -101,6 +104,15 @@ export async function bootstrapJobs(): Promise<void> {
     },
   });
   await schedulePayouts();
+
+  const retentionWorker = createRetentionWorker();
+  registerClosable({
+    name: 'RetentionWorker',
+    close: async () => {
+      await retentionWorker.close();
+    },
+  });
+  await scheduleRetentionPrune();
 
   logger.info('Jobs process started');
 

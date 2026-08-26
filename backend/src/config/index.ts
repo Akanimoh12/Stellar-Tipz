@@ -35,6 +35,11 @@ export const config = {
     challengeTtlSeconds: env.AUTH_CHALLENGE_TTL_SECONDS,
   },
 
+  retention: {
+    pruneCron: env.RETENTION_PRUNE_CRON,
+    batchSize: env.RETENTION_BATCH_SIZE,
+  },
+
   stellar: {
     network: env.STELLAR_NETWORK,
     rpcUrl: env.SOROBAN_RPC_URL,

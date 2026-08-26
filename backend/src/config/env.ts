@@ -67,6 +67,10 @@ export const envSchema = z.object({
   /** Refresh token TTL — must be a duration string like "7d" or "30d". */
   REFRESH_TOKEN_EXPIRES_IN: durationString.default('7d'),
   AUTH_CHALLENGE_TTL_SECONDS: z.coerce.number().default(300),
+  /** Cron expression for the bounded data-retention pruning job. */
+  RETENTION_PRUNE_CRON: z.string().default('0 3 * * *'),
+  /** Maximum rows processed by one retention batch. */
+  RETENTION_BATCH_SIZE: z.coerce.number().int().positive().max(5000).default(500),
 
   STELLAR_NETWORK: z.enum(['TESTNET', 'FUTURENET', 'MAINNET']).default('TESTNET'),
   SOROBAN_RPC_URL: z.string().url(),

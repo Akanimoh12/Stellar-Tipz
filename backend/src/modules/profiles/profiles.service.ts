@@ -1,4 +1,4 @@
-import { prisma } from "../../db/prisma.js";
+import { prisma, prismaIncludingDeleted } from "../../db/prisma.js";
 import { redis } from "../../db/redis.js";
 import { logger } from "../../common/utils/logger.js";
 import {
@@ -173,8 +173,8 @@ export async function updateProfile(
 
   // Check if username is already taken
   if (data.username) {
-    const existingUser = await prisma.user.findUnique({
-      where: { username: data.username },
+    const existingUser = await prisma.user.findFirst({
+      where: { username: data.username, deletedAt: null },
     });
 
     if (existingUser && existingUser.id !== userId) {
@@ -287,13 +287,16 @@ export async function deactivateProfile(userId: string): Promise<void> {
 
 export async function checkUsernameAvailability(username: string): Promise<{ available: boolean }> {
   const user = await prisma.user.findFirst({
-    where: { username: { equals: username, mode: "insensitive" } },
+    where: {
+      username: { equals: username, mode: "insensitive" },
+      deletedAt: null,
+    },
   });
   return { available: !user };
 }
 
 export async function reactivateProfile(userId: string): Promise<ProfileResponseDto> {
-  const user = await prisma.user.findUnique({
+  const user = await prismaIncludingDeleted.user.findUnique({
     where: { id: userId },
   });
 
@@ -305,7 +308,7 @@ export async function reactivateProfile(userId: string): Promise<ProfileResponse
     throw new BadRequestError("Profile is not deactivated");
   }
 
-  const updatedUser = await prisma.user.update({
+  const updatedUser = await prismaIncludingDeleted.user.update({
     where: { id: userId },
     data: { deletedAt: null },
     select: {

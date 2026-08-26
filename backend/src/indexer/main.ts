@@ -1,7 +1,7 @@
 import { pathToFileURL } from 'node:url';
 import { logger } from '../common/utils/logger.js';
 import { registerClosable, closeAll } from '../common/utils/lifecycle.js';
-import { prisma } from '../db/prisma.js';
+import { prisma, prismaIncludingDeleted } from '../db/prisma.js';
 import { startIndexer } from './poller.js';
 
 /**
@@ -12,6 +12,10 @@ export async function bootstrapIndexer(): Promise<void> {
   registerClosable({
     name: 'Prisma',
     close: () => prisma.$disconnect(),
+  });
+  registerClosable({
+    name: 'PrismaIncludingDeleted',
+    close: () => prismaIncludingDeleted.$disconnect(),
   });
 
   const indexer = startIndexer();
