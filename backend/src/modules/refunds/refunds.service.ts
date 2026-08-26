@@ -5,6 +5,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from '../../common/errors/AppError.js';
+import { handleUniqueConstraintViolation } from '../../common/utils/prisma-errors.js';
 import type { RefundResponse } from './refunds.types.js';
 
 interface RefundRecord {
@@ -34,6 +35,10 @@ function serializeRefund(refund: RefundRecord): RefundResponse {
 /**
  * POST /refunds/request — request a refund for a confirmed tip sent by the
  * authenticated user. One refund request is allowed per tip.
+ * 
+ * Race-safe: if two concurrent requests try to create a refund for the same tip,
+ * the database unique constraint on tipId ensures only one succeeds. The losing
+ * request catches the P2002 error and returns a clean 409 Conflict.
  */
 export async function requestRefund(
   userId: string,
@@ -54,21 +59,22 @@ export async function requestRefund(
     throw new BadRequestError('Only confirmed tips can be refunded');
   }
 
-  const existing = await prisma.refund.findUnique({ where: { tipId: tip.id } });
-  if (existing) {
-    throw new ConflictError('A refund has already been requested for this tip');
+  // Attempt to create the refund directly. If a concurrent request already
+  // created one, Prisma will throw a P2002 unique constraint violation on tipId.
+  try {
+    const refund = await prisma.refund.create({
+      data: {
+        tipId: tip.id,
+        amount: tip.amountStroops,
+        reason,
+        status: 'pending',
+      },
+    });
+
+    return serializeRefund(refund);
+  } catch (err) {
+    handleUniqueConstraintViolation(err, 'A refund has already been requested for this tip');
   }
-
-  const refund = await prisma.refund.create({
-    data: {
-      tipId: tip.id,
-      amount: tip.amountStroops,
-      reason,
-      status: 'pending',
-    },
-  });
-
-  return serializeRefund(refund);
 }
 
 /**

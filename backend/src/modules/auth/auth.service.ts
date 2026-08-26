@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import { randomBytes, createHash } from "crypto";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../common/utils/logger.js";
@@ -203,16 +204,33 @@ export async function verifyChallenge(
     data: { usedAt: new Date() },
   });
 
-  // Find or create user
+  // Find or create user atomically. If a concurrent request is creating the same
+  // user, the unique constraint on stellarAddress will cause a P2002 error.
+  // In that case, we simply fetch the newly-created user.
   let user = await prisma.user.findUnique({
     where: { stellarAddress },
   });
 
   if (!user) {
-    user = await prisma.user.create({
-      data: { stellarAddress },
-    });
-    logger.info({ stellarAddress, userId: user.id }, "Created new user");
+    try {
+      user = await prisma.user.create({
+        data: { stellarAddress },
+      });
+      logger.info({ stellarAddress, userId: user.id }, "Created new user");
+    } catch (err) {
+      // P2002 means another concurrent request won the race and created the user
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        user = await prisma.user.findUnique({
+          where: { stellarAddress },
+        });
+        if (!user) {
+          // This should never happen, but throw if we can't find the user
+          throw new Error('Failed to create or find user after P2002 error');
+        }
+      } else {
+        throw err;
+      }
+    }
   }
 
   // Generate tokens
