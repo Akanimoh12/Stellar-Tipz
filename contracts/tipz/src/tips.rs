@@ -292,8 +292,10 @@ pub fn send_tip(
         tip_state.tips_last_24h = 1;
         tip_state.volume_last_24h = amount;
     } else {
-        tip_state.tips_last_24h += 1;
-        tip_state.volume_last_24h += amount;
+        // Saturating: the 24h counters are accumulators that must never
+        // overflow under overflow-checks = true (issue #042).
+        tip_state.tips_last_24h = tip_state.tips_last_24h.saturating_add(1);
+        tip_state.volume_last_24h = tip_state.volume_last_24h.saturating_add(amount);
     }
 
     store_tip_with_id(

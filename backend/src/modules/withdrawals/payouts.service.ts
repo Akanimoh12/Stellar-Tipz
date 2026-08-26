@@ -181,7 +181,7 @@ export async function attemptPayout(
 ): Promise<PayoutAttemptResult> {
   const balance = await getWithdrawableBalance(schedule.user.stellarAddress);
   const threshold = schedule.thresholdStroops;
-  const min = BigInt(config.payouts.minAmountStroops);
+  const min = config.payouts.minAmountStroops;
 
   if (balance < threshold || balance < min) {
     // Not enough yet. Re-check soon (cooldown) without counting as a failure.

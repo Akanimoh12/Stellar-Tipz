@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import { parseCorsOrigins } from './cors.js';
+import { MAX_STROOP_AMOUNT } from '../common/validation/stroops.js';
 
 /**
  * Centralised, validated environment configuration.
@@ -21,11 +23,38 @@ const booleanString = z
   .default('true')
   .transform((value) => value === 'true');
 
-const envSchema = z.object({
+export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
   API_BASE_PATH: z.string().default('/api/v1'),
-  CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  /**
+   * Comma-separated list of allowed CORS origins.
+   * Validated as absolute http(s) origins. A wildcard ("*") is rejected because
+   * the API always runs with credentials enabled, and localhost entries are
+   * rejected in production. Invalid configuration fails at startup (issue #078).
+   */
+  CORS_ORIGIN: z
+    .string()
+    .default('http://localhost:5173')
+    .transform((raw) => raw.split(',').map((entry) => entry.trim()).filter((entry) => entry.length > 0))
+    .pipe(
+      // Validate each origin (absolute http(s), no wildcard, no localhost in
+      // prod). Done in a superRefine so an invalid origin becomes a zod parse
+      // error and fails at startup rather than throwing through safeParse.
+      z.array(z.string()).superRefine((origins, ctx) => {
+        try {
+          parseCorsOrigins(origins.join(','));
+        } catch (e) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: (e as Error).message,
+          });
+        }
+      }),
+    ),
+
+  /** Queries slower than this (ms) are logged as slow queries and counted (issue #095). */
+  SLOW_QUERY_THRESHOLD_MS: z.coerce.number().int().positive().default(1000),
 
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
@@ -75,8 +104,17 @@ const envSchema = z.object({
   CREDIT_SCORE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional(),
   /** Search results cache TTL in seconds */
   SEARCH_CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional(),
-  /** Minimum withdrawal amount, in stroops (1 XLM = 10,000,000 stroops). */
-  WITHDRAWAL_MIN_AMOUNT_STROOPS: z.coerce.number().int().positive().default(10_000_000),
+  /**
+   * Minimum withdrawal amount, in stroops (1 XLM = 10,000,000 stroops).
+   * Stored and validated as a bigint at the config boundary — never a float —
+   * so large XLM balances (which exceed JS number precision) are exact
+   * (issue #088). Must be a positive integer within the int64 stroop range.
+   */
+  WITHDRAWAL_MIN_AMOUNT_STROOPS: z.coerce
+    .bigint()
+    .positive()
+    .max(MAX_STROOP_AMOUNT)
+    .default(10_000_000n),
   /** Withdrawal fee, in basis points (1/100th of a percent). 200 = 2%. */
   WITHDRAWAL_FEE_BPS: z.coerce.number().int().min(0).max(10_000).default(200),
 
@@ -124,7 +162,11 @@ const envSchema = z.object({
   /** Base backoff (seconds) for payout retries; grows exponentially. */
   PAYOUT_BACKOFF_BASE_SECONDS: z.coerce.number().int().positive().default(60),
   /** Floor on a scheduled payout amount, in stroops. */
-  PAYOUT_MIN_AMOUNT_STROOPS: z.coerce.number().int().positive().default(10_000_000),
+  PAYOUT_MIN_AMOUNT_STROOPS: z.coerce
+    .bigint()
+    .positive()
+    .max(MAX_STROOP_AMOUNT)
+    .default(10_000_000n),
 
   /** OG image generation limits (memory/timeout guardrails). */
   OG_IMAGE_TIMEOUT_MS: z.coerce.number().int().positive().default(3000),
