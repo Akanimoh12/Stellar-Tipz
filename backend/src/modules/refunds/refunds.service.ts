@@ -7,6 +7,12 @@ import {
 } from '../../common/errors/AppError.js';
 import { handleUniqueConstraintViolation } from '../../common/utils/prisma-errors.js';
 import type { RefundResponse } from './refunds.types.js';
+import type { Prisma } from '@prisma/client';
+import {
+  createCursorScope,
+  descendingCursorCondition,
+  toCursorPage,
+} from '../../common/pagination/cursor.js';
 
 interface RefundRecord {
   id: string;
@@ -84,17 +90,28 @@ export async function requestRefund(
 export async function getMyRefunds(
   userId: string,
   limit: number,
-  offset: number,
-): Promise<RefundResponse[]> {
+  cursor?: string,
+  offset?: number,
+): Promise<{ data: RefundResponse[]; nextCursor: string | null }> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new BadRequestError('User not found');
 
+  const scope = createCursorScope('refunds', { userId });
+  const cursorCondition = descendingCursorCondition('createdAt', cursor, scope);
+  const baseWhere: Prisma.RefundWhereInput = { tip: { fromAddress: user.stellarAddress } };
+  const where: Prisma.RefundWhereInput = cursorCondition
+    ? { AND: [baseWhere, cursorCondition as Prisma.RefundWhereInput] }
+    : baseWhere;
   const refunds = await prisma.refund.findMany({
-    where: { tip: { fromAddress: user.stellarAddress } },
-    orderBy: { createdAt: 'desc' },
-    skip: offset,
-    take: limit,
+    where,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    ...(offset !== undefined ? { skip: offset } : {}),
+    take: limit + 1,
   });
+  const page = toCursorPage(refunds, limit, scope, (refund) => refund.createdAt);
 
-  return refunds.map(serializeRefund);
+  return {
+    data: page.data.map(serializeRefund),
+    nextCursor: page.nextCursor,
+  };
 }

@@ -37,6 +37,14 @@ vi.mock('../../db/prisma.js', () => ({
   },
 }));
 
+vi.mock('../../db/redis.js', () => ({
+  redis: {
+    zcount: vi.fn().mockResolvedValue(0),
+    zadd: vi.fn().mockResolvedValue(1),
+    expire: vi.fn().mockResolvedValue(1),
+  },
+}));
+
 vi.mock('@stellar/stellar-sdk', () => {
   const mockPreparedTx = {
     build: vi.fn(() => ({
@@ -134,10 +142,10 @@ describe('GET /api/v1/subscriptions/me', () => {
     expect(mockFindMany).toHaveBeenCalledWith({
       where: { tipperId: 'tipper-1', deletedAt: null },
       include: { tipper: true, creator: true },
-      orderBy: { createdAt: 'desc' },
-      skip: 0,
-      take: 20,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 21,
     });
+    expect(res.body.nextCursor).toBeNull();
   });
 
   it('returns 401 with an invalid token', async () => {
@@ -174,12 +182,13 @@ describe('GET /api/v1/subscriptions/me', () => {
       .set('Authorization', 'Bearer valid-token');
 
     expect(res.status).toBe(200);
+    expect(res.headers.deprecation).toMatch(/^@\d+$/);
     expect(mockFindMany).toHaveBeenCalledWith({
       where: { creatorId: 'tipper-1', deletedAt: null, status: 'ACTIVE' },
       include: { tipper: true, creator: true },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: 10,
-      take: 5,
+      take: 6,
     });
   });
 });

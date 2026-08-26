@@ -295,7 +295,7 @@ pub enum CreditTier {
     Diamond,
 }
 
-/// Component-level breakdown of a profile credit score.
+/// Component-level breakdown of a profile credit score, including freshness metadata.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct CreditBreakdown {
@@ -311,7 +311,40 @@ pub struct CreditBreakdown {
     pub streak_score: u32,
     /// Final score after summing all components (capped at 100).
     pub total: u32,
+    /// Ledger sequence number when the stored credit score was last persisted.
+    /// Zero when the score has never been explicitly stored (e.g. brand-new profile).
+    pub computed_at_ledger: u32,
+    /// How many ledgers have elapsed since the score was last stored
+    /// (`current_ledger - computed_at_ledger`). Large when never stored.
+    pub ledger_age: u32,
+    /// `true` when `ledger_age` exceeds the configured staleness threshold.
+    /// Consumers should degrade UI displays when this is `true`.
+    pub is_stale: bool,
 }
+
+/// On-chain price quote returned by a price oracle contract.
+///
+/// Prices are expressed as XLM-equivalent units per 1 token stroop
+/// (scaled by `ORACLE_PRICE_SCALE = 10^7` to preserve precision in i128).
+/// A price of `10_000_000` means 1 token stroop = 1 XLM stroop (1:1).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct OraclePrice {
+    /// XLM-equivalent price per token stroop, scaled by 10^7.
+    pub price_scaled: i128,
+    /// Ledger timestamp (seconds) when this price was last updated by the oracle.
+    pub updated_at: u64,
+}
+
+/// Staleness threshold defaults (ledgers at ~5 s/ledger).
+/// 12 hours ≈ 8,640 ledgers.
+pub const DEFAULT_CREDIT_STALENESS_THRESHOLD_LEDGERS: u32 = 8_640;
+
+/// Scale factor used for oracle prices (10^7, same as stroops-per-XLM).
+pub const ORACLE_PRICE_SCALE: i128 = 10_000_000;
+
+/// Maximum oracle price age in seconds before the price is considered stale (1 hour).
+pub const ORACLE_PRICE_MAX_AGE_SECS: u64 = 3_600;
 
 /// A single skipped entry from a batch X-metrics update, including the reason.
 ///
