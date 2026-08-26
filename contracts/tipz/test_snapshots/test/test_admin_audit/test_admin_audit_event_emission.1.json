@@ -31,13 +31,13 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "set_fee",
+              "function_name": "set_fee_change_delay",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 350
+                  "u32": 24
                 }
               ]
             }
@@ -143,6 +143,14 @@
                     "storage": [
                       {
                         "key": {
+                          "symbol": "fee_delay"
+                        },
+                        "val": {
+                          "u32": 24
+                        }
+                      },
+                      {
+                        "key": {
                           "vec": [
                             {
                               "symbol": "Admin"
@@ -182,7 +190,7 @@
                                     "symbol": "action_kind"
                                   },
                                   "val": {
-                                    "symbol": "set_fee"
+                                    "symbol": "set_fee_delay"
                                   }
                                 },
                                 {
@@ -198,7 +206,7 @@
                                     "symbol": "after_value"
                                   },
                                   "val": {
-                                    "string": "350"
+                                    "string": "24"
                                   }
                                 },
                                 {
@@ -206,7 +214,7 @@
                                     "symbol": "before_value"
                                   },
                                   "val": {
-                                    "string": "200"
+                                    "string": "288"
                                   }
                                 },
                                 {
@@ -271,7 +279,7 @@
                           ]
                         },
                         "val": {
-                          "u32": 350
+                          "u32": 200
                         }
                       },
                       {
@@ -453,6 +461,21 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "MinWithdrawalAmount"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 1000000
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "NativeToken"
                             }
                           ]
@@ -504,7 +527,15 @@
                                 "symbol": "fee_bps"
                               },
                               "val": {
-                                "u32": 350
+                                "u32": 200
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "fee_change_delay_ledgers"
+                              },
+                              "val": {
+                                "u32": 24
                               }
                             },
                             {
@@ -1065,7 +1096,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": {
@@ -1074,37 +1105,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 350
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "fee"
-              },
-              {
-                "symbol": "updated"
-              }
-            ],
-            "data": {
-              "vec": [
-                {
-                  "u32": 200
-                },
-                {
-                  "u32": 350
+                  "u32": 24
                 }
               ]
             }
@@ -1135,7 +1136,7 @@
                     "symbol": "action_kind"
                   },
                   "val": {
-                    "symbol": "set_fee"
+                    "symbol": "set_fee_delay"
                   }
                 },
                 {
@@ -1151,7 +1152,7 @@
                     "symbol": "after_value"
                   },
                   "val": {
-                    "string": "350"
+                    "string": "24"
                   }
                 },
                 {
@@ -1159,7 +1160,7 @@
                     "symbol": "before_value"
                   },
                   "val": {
-                    "string": "200"
+                    "string": "288"
                   }
                 },
                 {
@@ -1205,7 +1206,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": "void"

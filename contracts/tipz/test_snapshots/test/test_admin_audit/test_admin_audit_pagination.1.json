@@ -31,13 +31,13 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "set_fee",
+              "function_name": "set_fee_change_delay",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 210
+                  "u32": 24
                 }
               ]
             }
@@ -53,13 +53,13 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "set_fee",
+              "function_name": "set_fee_change_delay",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 220
+                  "u32": 25
                 }
               ]
             }
@@ -75,13 +75,13 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "set_fee",
+              "function_name": "set_fee_change_delay",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 230
+                  "u32": 26
                 }
               ]
             }
@@ -97,13 +97,13 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "set_fee",
+              "function_name": "set_fee_change_delay",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 240
+                  "u32": 27
                 }
               ]
             }
@@ -119,13 +119,13 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "set_fee",
+              "function_name": "set_fee_change_delay",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 250
+                  "u32": 28
                 }
               ]
             }
@@ -141,13 +141,13 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "set_fee",
+              "function_name": "set_fee_change_delay",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 260
+                  "u32": 29
                 }
               ]
             }
@@ -163,13 +163,13 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "set_fee",
+              "function_name": "set_fee_change_delay",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 270
+                  "u32": 30
                 }
               ]
             }
@@ -185,13 +185,13 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "set_fee",
+              "function_name": "set_fee_change_delay",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 280
+                  "u32": 31
                 }
               ]
             }
@@ -207,13 +207,13 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "set_fee",
+              "function_name": "set_fee_change_delay",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 290
+                  "u32": 32
                 }
               ]
             }
@@ -229,13 +229,13 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "set_fee",
+              "function_name": "set_fee_change_delay",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 300
+                  "u32": 33
                 }
               ]
             }
@@ -344,6 +344,14 @@
                     "storage": [
                       {
                         "key": {
+                          "symbol": "fee_delay"
+                        },
+                        "val": {
+                          "u32": 33
+                        }
+                      },
+                      {
+                        "key": {
                           "vec": [
                             {
                               "symbol": "Admin"
@@ -383,7 +391,7 @@
                                     "symbol": "action_kind"
                                   },
                                   "val": {
-                                    "symbol": "set_fee"
+                                    "symbol": "set_fee_delay"
                                   }
                                 },
                                 {
@@ -399,7 +407,7 @@
                                     "symbol": "after_value"
                                   },
                                   "val": {
-                                    "string": "210"
+                                    "string": "24"
                                   }
                                 },
                                 {
@@ -407,7 +415,7 @@
                                     "symbol": "before_value"
                                   },
                                   "val": {
-                                    "string": "200"
+                                    "string": "288"
                                   }
                                 },
                                 {
@@ -443,7 +451,7 @@
                                     "symbol": "action_kind"
                                   },
                                   "val": {
-                                    "symbol": "set_fee"
+                                    "symbol": "set_fee_delay"
                                   }
                                 },
                                 {
@@ -459,7 +467,7 @@
                                     "symbol": "after_value"
                                   },
                                   "val": {
-                                    "string": "220"
+                                    "string": "25"
                                   }
                                 },
                                 {
@@ -467,7 +475,7 @@
                                     "symbol": "before_value"
                                   },
                                   "val": {
-                                    "string": "210"
+                                    "string": "24"
                                   }
                                 },
                                 {
@@ -503,7 +511,7 @@
                                     "symbol": "action_kind"
                                   },
                                   "val": {
-                                    "symbol": "set_fee"
+                                    "symbol": "set_fee_delay"
                                   }
                                 },
                                 {
@@ -519,7 +527,7 @@
                                     "symbol": "after_value"
                                   },
                                   "val": {
-                                    "string": "230"
+                                    "string": "26"
                                   }
                                 },
                                 {
@@ -527,7 +535,7 @@
                                     "symbol": "before_value"
                                   },
                                   "val": {
-                                    "string": "220"
+                                    "string": "25"
                                   }
                                 },
                                 {
@@ -563,7 +571,7 @@
                                     "symbol": "action_kind"
                                   },
                                   "val": {
-                                    "symbol": "set_fee"
+                                    "symbol": "set_fee_delay"
                                   }
                                 },
                                 {
@@ -579,7 +587,7 @@
                                     "symbol": "after_value"
                                   },
                                   "val": {
-                                    "string": "240"
+                                    "string": "27"
                                   }
                                 },
                                 {
@@ -587,7 +595,7 @@
                                     "symbol": "before_value"
                                   },
                                   "val": {
-                                    "string": "230"
+                                    "string": "26"
                                   }
                                 },
                                 {
@@ -623,7 +631,7 @@
                                     "symbol": "action_kind"
                                   },
                                   "val": {
-                                    "symbol": "set_fee"
+                                    "symbol": "set_fee_delay"
                                   }
                                 },
                                 {
@@ -639,7 +647,7 @@
                                     "symbol": "after_value"
                                   },
                                   "val": {
-                                    "string": "250"
+                                    "string": "28"
                                   }
                                 },
                                 {
@@ -647,7 +655,7 @@
                                     "symbol": "before_value"
                                   },
                                   "val": {
-                                    "string": "240"
+                                    "string": "27"
                                   }
                                 },
                                 {
@@ -683,7 +691,7 @@
                                     "symbol": "action_kind"
                                   },
                                   "val": {
-                                    "symbol": "set_fee"
+                                    "symbol": "set_fee_delay"
                                   }
                                 },
                                 {
@@ -699,7 +707,7 @@
                                     "symbol": "after_value"
                                   },
                                   "val": {
-                                    "string": "260"
+                                    "string": "29"
                                   }
                                 },
                                 {
@@ -707,7 +715,7 @@
                                     "symbol": "before_value"
                                   },
                                   "val": {
-                                    "string": "250"
+                                    "string": "28"
                                   }
                                 },
                                 {
@@ -743,7 +751,7 @@
                                     "symbol": "action_kind"
                                   },
                                   "val": {
-                                    "symbol": "set_fee"
+                                    "symbol": "set_fee_delay"
                                   }
                                 },
                                 {
@@ -759,7 +767,7 @@
                                     "symbol": "after_value"
                                   },
                                   "val": {
-                                    "string": "270"
+                                    "string": "30"
                                   }
                                 },
                                 {
@@ -767,7 +775,7 @@
                                     "symbol": "before_value"
                                   },
                                   "val": {
-                                    "string": "260"
+                                    "string": "29"
                                   }
                                 },
                                 {
@@ -803,7 +811,7 @@
                                     "symbol": "action_kind"
                                   },
                                   "val": {
-                                    "symbol": "set_fee"
+                                    "symbol": "set_fee_delay"
                                   }
                                 },
                                 {
@@ -819,7 +827,7 @@
                                     "symbol": "after_value"
                                   },
                                   "val": {
-                                    "string": "280"
+                                    "string": "31"
                                   }
                                 },
                                 {
@@ -827,7 +835,7 @@
                                     "symbol": "before_value"
                                   },
                                   "val": {
-                                    "string": "270"
+                                    "string": "30"
                                   }
                                 },
                                 {
@@ -863,7 +871,7 @@
                                     "symbol": "action_kind"
                                   },
                                   "val": {
-                                    "symbol": "set_fee"
+                                    "symbol": "set_fee_delay"
                                   }
                                 },
                                 {
@@ -879,7 +887,7 @@
                                     "symbol": "after_value"
                                   },
                                   "val": {
-                                    "string": "290"
+                                    "string": "32"
                                   }
                                 },
                                 {
@@ -887,7 +895,7 @@
                                     "symbol": "before_value"
                                   },
                                   "val": {
-                                    "string": "280"
+                                    "string": "31"
                                   }
                                 },
                                 {
@@ -923,7 +931,7 @@
                                     "symbol": "action_kind"
                                   },
                                   "val": {
-                                    "symbol": "set_fee"
+                                    "symbol": "set_fee_delay"
                                   }
                                 },
                                 {
@@ -939,7 +947,7 @@
                                     "symbol": "after_value"
                                   },
                                   "val": {
-                                    "string": "300"
+                                    "string": "33"
                                   }
                                 },
                                 {
@@ -947,7 +955,7 @@
                                     "symbol": "before_value"
                                   },
                                   "val": {
-                                    "string": "290"
+                                    "string": "32"
                                   }
                                 },
                                 {
@@ -1012,7 +1020,7 @@
                           ]
                         },
                         "val": {
-                          "u32": 300
+                          "u32": 200
                         }
                       },
                       {
@@ -1194,6 +1202,21 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "MinWithdrawalAmount"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 1000000
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "NativeToken"
                             }
                           ]
@@ -1245,7 +1268,15 @@
                                 "symbol": "fee_bps"
                               },
                               "val": {
-                                "u32": 300
+                                "u32": 200
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "fee_change_delay_ledgers"
+                              },
+                              "val": {
+                                "u32": 33
                               }
                             },
                             {
@@ -2103,7 +2134,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": {
@@ -2112,37 +2143,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 210
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "fee"
-              },
-              {
-                "symbol": "updated"
-              }
-            ],
-            "data": {
-              "vec": [
-                {
-                  "u32": 200
-                },
-                {
-                  "u32": 210
+                  "u32": 24
                 }
               ]
             }
@@ -2173,7 +2174,7 @@
                     "symbol": "action_kind"
                   },
                   "val": {
-                    "symbol": "set_fee"
+                    "symbol": "set_fee_delay"
                   }
                 },
                 {
@@ -2189,7 +2190,7 @@
                     "symbol": "after_value"
                   },
                   "val": {
-                    "string": "210"
+                    "string": "24"
                   }
                 },
                 {
@@ -2197,7 +2198,7 @@
                     "symbol": "before_value"
                   },
                   "val": {
-                    "string": "200"
+                    "string": "288"
                   }
                 },
                 {
@@ -2243,7 +2244,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": "void"
@@ -2267,7 +2268,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": {
@@ -2276,37 +2277,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 220
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "fee"
-              },
-              {
-                "symbol": "updated"
-              }
-            ],
-            "data": {
-              "vec": [
-                {
-                  "u32": 210
-                },
-                {
-                  "u32": 220
+                  "u32": 25
                 }
               ]
             }
@@ -2337,7 +2308,7 @@
                     "symbol": "action_kind"
                   },
                   "val": {
-                    "symbol": "set_fee"
+                    "symbol": "set_fee_delay"
                   }
                 },
                 {
@@ -2353,7 +2324,7 @@
                     "symbol": "after_value"
                   },
                   "val": {
-                    "string": "220"
+                    "string": "25"
                   }
                 },
                 {
@@ -2361,7 +2332,7 @@
                     "symbol": "before_value"
                   },
                   "val": {
-                    "string": "210"
+                    "string": "24"
                   }
                 },
                 {
@@ -2407,7 +2378,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": "void"
@@ -2431,7 +2402,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": {
@@ -2440,37 +2411,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 230
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "fee"
-              },
-              {
-                "symbol": "updated"
-              }
-            ],
-            "data": {
-              "vec": [
-                {
-                  "u32": 220
-                },
-                {
-                  "u32": 230
+                  "u32": 26
                 }
               ]
             }
@@ -2501,7 +2442,7 @@
                     "symbol": "action_kind"
                   },
                   "val": {
-                    "symbol": "set_fee"
+                    "symbol": "set_fee_delay"
                   }
                 },
                 {
@@ -2517,7 +2458,7 @@
                     "symbol": "after_value"
                   },
                   "val": {
-                    "string": "230"
+                    "string": "26"
                   }
                 },
                 {
@@ -2525,7 +2466,7 @@
                     "symbol": "before_value"
                   },
                   "val": {
-                    "string": "220"
+                    "string": "25"
                   }
                 },
                 {
@@ -2571,7 +2512,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": "void"
@@ -2595,7 +2536,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": {
@@ -2604,37 +2545,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 240
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "fee"
-              },
-              {
-                "symbol": "updated"
-              }
-            ],
-            "data": {
-              "vec": [
-                {
-                  "u32": 230
-                },
-                {
-                  "u32": 240
+                  "u32": 27
                 }
               ]
             }
@@ -2665,7 +2576,7 @@
                     "symbol": "action_kind"
                   },
                   "val": {
-                    "symbol": "set_fee"
+                    "symbol": "set_fee_delay"
                   }
                 },
                 {
@@ -2681,7 +2592,7 @@
                     "symbol": "after_value"
                   },
                   "val": {
-                    "string": "240"
+                    "string": "27"
                   }
                 },
                 {
@@ -2689,7 +2600,7 @@
                     "symbol": "before_value"
                   },
                   "val": {
-                    "string": "230"
+                    "string": "26"
                   }
                 },
                 {
@@ -2735,7 +2646,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": "void"
@@ -2759,7 +2670,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": {
@@ -2768,37 +2679,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 250
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "fee"
-              },
-              {
-                "symbol": "updated"
-              }
-            ],
-            "data": {
-              "vec": [
-                {
-                  "u32": 240
-                },
-                {
-                  "u32": 250
+                  "u32": 28
                 }
               ]
             }
@@ -2829,7 +2710,7 @@
                     "symbol": "action_kind"
                   },
                   "val": {
-                    "symbol": "set_fee"
+                    "symbol": "set_fee_delay"
                   }
                 },
                 {
@@ -2845,7 +2726,7 @@
                     "symbol": "after_value"
                   },
                   "val": {
-                    "string": "250"
+                    "string": "28"
                   }
                 },
                 {
@@ -2853,7 +2734,7 @@
                     "symbol": "before_value"
                   },
                   "val": {
-                    "string": "240"
+                    "string": "27"
                   }
                 },
                 {
@@ -2899,7 +2780,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": "void"
@@ -2923,7 +2804,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": {
@@ -2932,37 +2813,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 260
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "fee"
-              },
-              {
-                "symbol": "updated"
-              }
-            ],
-            "data": {
-              "vec": [
-                {
-                  "u32": 250
-                },
-                {
-                  "u32": 260
+                  "u32": 29
                 }
               ]
             }
@@ -2993,7 +2844,7 @@
                     "symbol": "action_kind"
                   },
                   "val": {
-                    "symbol": "set_fee"
+                    "symbol": "set_fee_delay"
                   }
                 },
                 {
@@ -3009,7 +2860,7 @@
                     "symbol": "after_value"
                   },
                   "val": {
-                    "string": "260"
+                    "string": "29"
                   }
                 },
                 {
@@ -3017,7 +2868,7 @@
                     "symbol": "before_value"
                   },
                   "val": {
-                    "string": "250"
+                    "string": "28"
                   }
                 },
                 {
@@ -3063,7 +2914,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": "void"
@@ -3087,7 +2938,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": {
@@ -3096,37 +2947,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 270
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "fee"
-              },
-              {
-                "symbol": "updated"
-              }
-            ],
-            "data": {
-              "vec": [
-                {
-                  "u32": 260
-                },
-                {
-                  "u32": 270
+                  "u32": 30
                 }
               ]
             }
@@ -3157,7 +2978,7 @@
                     "symbol": "action_kind"
                   },
                   "val": {
-                    "symbol": "set_fee"
+                    "symbol": "set_fee_delay"
                   }
                 },
                 {
@@ -3173,7 +2994,7 @@
                     "symbol": "after_value"
                   },
                   "val": {
-                    "string": "270"
+                    "string": "30"
                   }
                 },
                 {
@@ -3181,7 +3002,7 @@
                     "symbol": "before_value"
                   },
                   "val": {
-                    "string": "260"
+                    "string": "29"
                   }
                 },
                 {
@@ -3227,7 +3048,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": "void"
@@ -3251,7 +3072,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": {
@@ -3260,37 +3081,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 280
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "fee"
-              },
-              {
-                "symbol": "updated"
-              }
-            ],
-            "data": {
-              "vec": [
-                {
-                  "u32": 270
-                },
-                {
-                  "u32": 280
+                  "u32": 31
                 }
               ]
             }
@@ -3321,7 +3112,7 @@
                     "symbol": "action_kind"
                   },
                   "val": {
-                    "symbol": "set_fee"
+                    "symbol": "set_fee_delay"
                   }
                 },
                 {
@@ -3337,7 +3128,7 @@
                     "symbol": "after_value"
                   },
                   "val": {
-                    "string": "280"
+                    "string": "31"
                   }
                 },
                 {
@@ -3345,7 +3136,7 @@
                     "symbol": "before_value"
                   },
                   "val": {
-                    "string": "270"
+                    "string": "30"
                   }
                 },
                 {
@@ -3391,7 +3182,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": "void"
@@ -3415,7 +3206,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": {
@@ -3424,37 +3215,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 290
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "fee"
-              },
-              {
-                "symbol": "updated"
-              }
-            ],
-            "data": {
-              "vec": [
-                {
-                  "u32": 280
-                },
-                {
-                  "u32": 290
+                  "u32": 32
                 }
               ]
             }
@@ -3485,7 +3246,7 @@
                     "symbol": "action_kind"
                   },
                   "val": {
-                    "symbol": "set_fee"
+                    "symbol": "set_fee_delay"
                   }
                 },
                 {
@@ -3501,7 +3262,7 @@
                     "symbol": "after_value"
                   },
                   "val": {
-                    "string": "290"
+                    "string": "32"
                   }
                 },
                 {
@@ -3509,7 +3270,7 @@
                     "symbol": "before_value"
                   },
                   "val": {
-                    "string": "280"
+                    "string": "31"
                   }
                 },
                 {
@@ -3555,7 +3316,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": "void"
@@ -3579,7 +3340,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": {
@@ -3588,37 +3349,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "u32": 300
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "fee"
-              },
-              {
-                "symbol": "updated"
-              }
-            ],
-            "data": {
-              "vec": [
-                {
-                  "u32": 290
-                },
-                {
-                  "u32": 300
+                  "u32": 33
                 }
               ]
             }
@@ -3649,7 +3380,7 @@
                     "symbol": "action_kind"
                   },
                   "val": {
-                    "symbol": "set_fee"
+                    "symbol": "set_fee_delay"
                   }
                 },
                 {
@@ -3665,7 +3396,7 @@
                     "symbol": "after_value"
                   },
                   "val": {
-                    "string": "300"
+                    "string": "33"
                   }
                 },
                 {
@@ -3673,7 +3404,7 @@
                     "symbol": "before_value"
                   },
                   "val": {
-                    "string": "290"
+                    "string": "32"
                   }
                 },
                 {
@@ -3719,7 +3450,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "set_fee"
+                "symbol": "set_fee_change_delay"
               }
             ],
             "data": "void"
@@ -3832,7 +3563,7 @@
                         "symbol": "action_kind"
                       },
                       "val": {
-                        "symbol": "set_fee"
+                        "symbol": "set_fee_delay"
                       }
                     },
                     {
@@ -3848,7 +3579,7 @@
                         "symbol": "after_value"
                       },
                       "val": {
-                        "string": "300"
+                        "string": "33"
                       }
                     },
                     {
@@ -3856,7 +3587,7 @@
                         "symbol": "before_value"
                       },
                       "val": {
-                        "string": "290"
+                        "string": "32"
                       }
                     },
                     {
@@ -3892,7 +3623,7 @@
                         "symbol": "action_kind"
                       },
                       "val": {
-                        "symbol": "set_fee"
+                        "symbol": "set_fee_delay"
                       }
                     },
                     {
@@ -3908,7 +3639,7 @@
                         "symbol": "after_value"
                       },
                       "val": {
-                        "string": "290"
+                        "string": "32"
                       }
                     },
                     {
@@ -3916,7 +3647,7 @@
                         "symbol": "before_value"
                       },
                       "val": {
-                        "string": "280"
+                        "string": "31"
                       }
                     },
                     {
@@ -3952,7 +3683,7 @@
                         "symbol": "action_kind"
                       },
                       "val": {
-                        "symbol": "set_fee"
+                        "symbol": "set_fee_delay"
                       }
                     },
                     {
@@ -3968,7 +3699,7 @@
                         "symbol": "after_value"
                       },
                       "val": {
-                        "string": "280"
+                        "string": "31"
                       }
                     },
                     {
@@ -3976,7 +3707,7 @@
                         "symbol": "before_value"
                       },
                       "val": {
-                        "string": "270"
+                        "string": "30"
                       }
                     },
                     {
@@ -4069,7 +3800,7 @@
                         "symbol": "action_kind"
                       },
                       "val": {
-                        "symbol": "set_fee"
+                        "symbol": "set_fee_delay"
                       }
                     },
                     {
@@ -4085,7 +3816,7 @@
                         "symbol": "after_value"
                       },
                       "val": {
-                        "string": "270"
+                        "string": "30"
                       }
                     },
                     {
@@ -4093,7 +3824,7 @@
                         "symbol": "before_value"
                       },
                       "val": {
-                        "string": "260"
+                        "string": "29"
                       }
                     },
                     {
@@ -4129,7 +3860,7 @@
                         "symbol": "action_kind"
                       },
                       "val": {
-                        "symbol": "set_fee"
+                        "symbol": "set_fee_delay"
                       }
                     },
                     {
@@ -4145,7 +3876,7 @@
                         "symbol": "after_value"
                       },
                       "val": {
-                        "string": "260"
+                        "string": "29"
                       }
                     },
                     {
@@ -4153,7 +3884,7 @@
                         "symbol": "before_value"
                       },
                       "val": {
-                        "string": "250"
+                        "string": "28"
                       }
                     },
                     {
@@ -4189,7 +3920,7 @@
                         "symbol": "action_kind"
                       },
                       "val": {
-                        "symbol": "set_fee"
+                        "symbol": "set_fee_delay"
                       }
                     },
                     {
@@ -4205,7 +3936,7 @@
                         "symbol": "after_value"
                       },
                       "val": {
-                        "string": "250"
+                        "string": "28"
                       }
                     },
                     {
@@ -4213,7 +3944,7 @@
                         "symbol": "before_value"
                       },
                       "val": {
-                        "string": "240"
+                        "string": "27"
                       }
                     },
                     {

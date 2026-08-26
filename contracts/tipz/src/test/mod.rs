@@ -7,3 +7,4 @@ mod test_migrations;
 mod test_init;
 mod test_multisig;
 mod test_multisig_admin_guard;
+mod test_tip_expectations;

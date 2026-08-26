@@ -220,6 +220,11 @@ impl TipzContract {
     // ──────────────────────────────────────────────
 
     /// Send an XLM tip to a registered creator.
+    ///
+    /// Optional `expected_min_tip` and `expected_fee_bps` pin the config the
+    /// caller observed. A mismatch returns [`ContractError::ConfigMismatch`]
+    /// before any state change. Passing `None` for either preserves existing
+    /// behaviour for that check.
     pub fn send_tip(
         env: Env,
         tipper: Address,
@@ -228,6 +233,8 @@ impl TipzContract {
         message: String,
         is_anonymous: bool,
         is_encrypted: bool,
+        expected_min_tip: Option<i128>,
+        expected_fee_bps: Option<u32>,
     ) -> Result<(), ContractError> {
         tips::send_tip(
             &env,
@@ -237,6 +244,8 @@ impl TipzContract {
             &message,
             is_anonymous,
             is_encrypted,
+            expected_min_tip,
+            expected_fee_bps,
         )
     }
 
