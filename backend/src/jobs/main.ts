@@ -116,11 +116,16 @@ export async function bootstrapJobs(): Promise<void> {
 
   logger.info('Jobs process started');
 
+  let shuttingDown = false;
   const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info(`${signal} received, shutting down jobs...`);
-    await closeAll();
-    logger.info('Jobs shutdown complete');
-    process.exit(0);
+    const completed = await closeAllWithTimeout(30_000, () => process.exit(1));
+    if (completed) {
+      logger.info('Jobs shutdown complete');
+      process.exit(0);
+    }
   };
 
   process.on('SIGINT', () => void shutdown('SIGINT'));

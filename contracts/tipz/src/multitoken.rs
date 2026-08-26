@@ -190,6 +190,7 @@ pub fn send_tip_token(
         credit::calculate_credit_score_with_streak(env, &profile, env.ledger().timestamp());
 
     storage::set_profile(env, &profile);
+    credit::mark_credit_computed(env, creator);
     leaderboard::update_all_leaderboards_for_active(env, &profile, xlm_equivalent);
 
     // Update goal progress

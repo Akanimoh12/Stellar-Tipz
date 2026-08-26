@@ -7,6 +7,7 @@ import {
   recalculateCreditScore,
   scheduleRecomputeCreditScore,
 } from './credit.service.js';
+import { recalculate as recalculateController } from './credit.controller.js';
 
 const {
   mockFindUnique,
@@ -238,5 +239,23 @@ describe('GET /api/v1/credit/:identifier', () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+});
+
+describe('credit authorization', () => {
+  it('rejects recalculating another user\'s score', async () => {
+    const next = vi.fn();
+
+    await recalculateController(
+      {
+        body: { userId: 'user-a' },
+        user: { id: 'user-b' },
+      } as never,
+      {} as never,
+      next,
+    );
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+    expect(mockFindUnique).not.toHaveBeenCalled();
   });
 });

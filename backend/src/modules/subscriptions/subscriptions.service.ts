@@ -1,6 +1,7 @@
 import { Contract, TransactionBuilder, SorobanRpc, nativeToScVal, Networks, Keypair } from '@stellar/stellar-sdk';
 import { config } from '../../config/index.js';
 import { prisma } from '../../db/prisma.js';
+import type { Prisma } from '@prisma/client';
 import { BadRequestError, NotFoundError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
 import type {
@@ -10,6 +11,11 @@ import type {
   SubmittedSubscriptionCancel,
   SubscriptionIntervalName,
 } from './subscriptions.types.js';
+import {
+  createCursorScope,
+  descendingCursorCondition,
+  toCursorPage,
+} from '../../common/pagination/cursor.js';
 
 /** Maps the API's interval name onto the raw day count the contract expects. */
 export const INTERVAL_DAYS: Record<SubscriptionIntervalName, number> = {
@@ -64,21 +70,32 @@ export async function listMySubscriptions(
   role: 'tipper' | 'creator',
   status: SubscriptionResponse['status'] | undefined,
   limit: number,
-  offset: number,
-): Promise<SubscriptionResponse[]> {
+  cursor?: string,
+  offset?: number,
+): Promise<{ data: SubscriptionResponse[]; nextCursor: string | null }> {
+  const scope = createCursorScope('subscriptions', { userId, role, status });
+  const cursorCondition = descendingCursorCondition('createdAt', cursor, scope);
+  const baseWhere: Prisma.SubscriptionWhereInput = {
+    ...(role === 'tipper' ? { tipperId: userId } : { creatorId: userId }),
+    deletedAt: null,
+    ...(status ? { status } : {}),
+  };
+  const where: Prisma.SubscriptionWhereInput = cursorCondition
+    ? { AND: [baseWhere, cursorCondition as Prisma.SubscriptionWhereInput] }
+    : baseWhere;
   const subscriptions = await prisma.subscription.findMany({
-    where: {
-      ...(role === 'tipper' ? { tipperId: userId } : { creatorId: userId }),
-      deletedAt: null,
-      ...(status ? { status } : {}),
-    },
+    where,
     include: { tipper: true, creator: true },
-    orderBy: { createdAt: 'desc' },
-    skip: offset,
-    take: limit,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    ...(offset !== undefined ? { skip: offset } : {}),
+    take: limit + 1,
   });
+  const page = toCursorPage(subscriptions, limit, scope, (subscription) => subscription.createdAt);
 
-  return subscriptions.map(serializeSubscription);
+  return {
+    data: page.data.map(serializeSubscription),
+    nextCursor: page.nextCursor,
+  };
 }
 
 async function loadCreatorByAddress(creatorStellarAddress: string) {

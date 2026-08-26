@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { redis } from '../../db/redis.js';
 import { prisma } from '../../db/prisma.js';
 import { logger } from '../utils/logger.js';
+import { env } from '../../config/env.js';
 
 export interface MetricsData {
   timestamp: string;
@@ -30,6 +31,10 @@ export interface MetricsData {
   };
   database: {
     pool_size: number;
+    pool_timeout_seconds: number;
+    /** Cumulative Prisma pool acquisition timeouts (P2024). */
+    pool_saturation_total: number;
+    query_timeout_ms: number;
     /** Cumulative count of queries that exceeded the slow-query threshold. */
     slow_queries_total: number;
   };
@@ -109,7 +114,10 @@ export async function getMetrics(): Promise<MetricsData> {
       latency_ms: Math.round(avgLatency),
     },
     database: {
-      pool_size: prisma.$disconnect.length || 0,
+      pool_size: env.DATABASE_POOL_SIZE,
+      pool_timeout_seconds: env.DATABASE_POOL_TIMEOUT_SECONDS,
+      pool_saturation_total: poolSaturationCount,
+      query_timeout_ms: env.DATABASE_QUERY_TIMEOUT_MS,
       slow_queries_total: slowQueryCount,
     },
     retention: {

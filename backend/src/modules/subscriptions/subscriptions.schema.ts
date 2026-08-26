@@ -8,7 +8,10 @@ export const listSubscriptionsQuerySchema = z.object({
   role: z.enum(['tipper', 'creator']).default('tipper'),
   status: z.enum(['ACTIVE', 'PAUSED', 'CANCELLED', 'EXPIRED']).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
-  offset: z.coerce.number().int().min(0).default(0),
+  cursor: z.string().min(1, 'Invalid cursor').optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+}).refine((query) => query.cursor === undefined || query.offset === undefined, {
+  message: 'cursor and offset cannot be used together',
 });
 
 export const prepareCreateSubscriptionSchema = z.object({

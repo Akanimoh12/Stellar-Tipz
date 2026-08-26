@@ -134,6 +134,8 @@ pub fn register_profile(
     storage::set_profile(env, &profile);
     storage::set_username_address(env, &username, &caller);
     storage::increment_total_creators(env);
+    // Maintain a dense creator index for bounded paginated iteration (#1185).
+    storage::append_creator_to_index(env, &caller);
 
     // Bump TTL for both Profile and UsernameToAddress together.
     storage::bump_profile_ttl(env, &caller);

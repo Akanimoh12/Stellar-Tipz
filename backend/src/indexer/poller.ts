@@ -11,7 +11,7 @@ const CURSOR_TOPIC = 'tip_events';
 const MAX_PAGES_PER_TICK = 50;
 
 export interface IndexerHandle {
-  stop: () => void;
+  stop: () => Promise<void>;
 }
 
 /**
@@ -77,6 +77,7 @@ export async function pollOnce(): Promise<void> {
 export function startIndexer(): IndexerHandle {
   let stopped = false;
   let timer: NodeJS.Timeout | undefined;
+  let activePoll: Promise<void> | undefined;
 
   const schedule = (delayMs: number) => {
     if (stopped) return;
@@ -85,11 +86,14 @@ export function startIndexer(): IndexerHandle {
 
   const run = async (): Promise<void> => {
     if (stopped) return;
+    const poll = pollOnce();
+    activePoll = poll;
     try {
-      await pollOnce();
+      await poll;
     } catch (err) {
       logger.error({ err }, 'Indexer poll failed');
     } finally {
+      if (activePoll === poll) activePoll = undefined;
       schedule(config.indexer.pollIntervalMs);
     }
   };
@@ -98,10 +102,11 @@ export function startIndexer(): IndexerHandle {
   logger.info({ intervalMs: config.indexer.pollIntervalMs }, 'Indexer poll loop started');
 
   return {
-    stop: () => {
+    stop: async () => {
       stopped = true;
       if (timer) clearTimeout(timer);
       logger.info('Indexer poll loop stopped');
+      await activePoll;
     },
   };
 }
