@@ -1,6 +1,6 @@
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
 import { requireAuth } from "../auth/auth.middleware.js";
+import { createRateLimiter } from '../../common/middleware/rateLimiter.js';
 import {
   listProfilesController,
   getProfileController,
@@ -13,12 +13,10 @@ import {
   uploadImageController,
 } from "./profiles.controller.js";
 
-const profileUpdateRateLimit = rateLimit({
+const profileUpdateRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: { code: "RATE_LIMITED", message: "Too many requests" } },
+  maxRequests: 30,
+  keyPrefix: 'rl:profile-update:',
 });
 
 /**

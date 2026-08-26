@@ -5,7 +5,7 @@ import pinoHttp from 'pino-http';
 import swaggerUi from 'swagger-ui-express';
 import { env } from './config/env.js';
 import { errorHandler, notFoundHandler } from './common/middleware/errorHandler.js';
-import { globalRateLimiter } from './common/middleware/rateLimiter.js';
+import { globalRateLimiter, mutationRateLimiter } from './common/middleware/rateLimiter.js';
 import { metricsController, metricsMiddleware } from './common/observability/metrics.js';
 import { getSentryRequestHandler, getSentryErrorHandler } from './common/observability/sentry.js';
 import { logger } from './common/utils/logger.js';
@@ -36,6 +36,7 @@ import { adminRouter } from './modules/admin/admin.routes.js';
 import { discoveryRouter } from './modules/discovery/discovery.routes.js';
 import { statsRouter } from './modules/stats/stats.routes.js';
 import { ogRouter } from './modules/og/og.routes.js';
+import { optionalAuth } from './modules/auth/auth.middleware.js';
 
 /** Builds and configures the Express application without starting a listener. */
 export function createApp(): Express {
@@ -64,7 +65,9 @@ export function createApp(): Express {
       allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
     }),
   );
+  app.use(optionalAuth);
   app.use(globalRateLimiter);
+  app.use(mutationRateLimiter);
   app.use(requestId);
   app.use(metricsMiddleware);
   app.use(express.json({ limit: '1mb' }));

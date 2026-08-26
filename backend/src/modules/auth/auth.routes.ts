@@ -7,12 +7,14 @@ import {
   logoutController,
 } from './auth.controller.js';
 import { authMiddleware } from './auth.middleware.js';
+import { authRateLimiter } from '../../common/middleware/rateLimiter.js';
 
 /**
  * Auth module router.
  * Mounted at /api/v1/auth in app.ts
  */
 export const authRouter = Router();
+authRouter.use(authRateLimiter);
 
 // POST /auth/challenge — create authentication challenge
 authRouter.post('/challenge', challengeController);
