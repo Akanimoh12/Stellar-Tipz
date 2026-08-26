@@ -2,7 +2,8 @@
 export interface RefundResponse {
   id: string;
   tipId: string;
-  amount: string;
+  /** Refunded amount in stroops, serialised as a string to preserve precision (issue #088). */
+  amountStroops: string;
   reason: string;
   status: string;
   txHash: string | null;

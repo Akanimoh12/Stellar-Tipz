@@ -163,12 +163,17 @@ pub fn send_tip_token(
 
     let contract_address = env.current_contract_address();
     
+    // Set reentrancy guard before external token call
+    storage::set_reentrancy_guard(env, true);
     // Transfer tokens from tipper to contract
     let token_client = token::TokenClient::new(env, token);
     if token_client.balance(tipper) < amount {
+        storage::set_reentrancy_guard(env, false);
         return Err(ContractError::InsufficientBalance);
     }
     token_client.transfer(tipper, &contract_address, &amount);
+    // Clear reentrancy guard after the transfer completes
+    storage::set_reentrancy_guard(env, false);
 
     // Update creator's token balance
     storage::add_token_balance(env, creator, token, amount)?;
@@ -176,7 +181,8 @@ pub fn send_tip_token(
     // Convert to XLM equivalent for stats and leaderboard
     let xlm_equivalent = convert_to_xlm_equivalent(env, token, amount);
 
-    profile.total_tips_received += xlm_equivalent;
+    // Saturating: a creator's lifetime total must never overflow (issue #042).
+    profile.total_tips_received = profile.total_tips_received.saturating_add(xlm_equivalent);
     profile.total_tips_count += 1;
 
     // Update credit score based on new tip totals
@@ -207,8 +213,8 @@ pub fn send_tip_token(
         tip_state.tips_last_24h = 1;
         tip_state.volume_last_24h = xlm_equivalent;
     } else {
-        tip_state.tips_last_24h += 1;
-        tip_state.volume_last_24h += xlm_equivalent;
+        tip_state.tips_last_24h = tip_state.tips_last_24h.saturating_add(1);
+        tip_state.volume_last_24h = tip_state.volume_last_24h.saturating_add(xlm_equivalent);
     }
 
     storage::apply_send_tip_state(env, &tip_state);
@@ -254,12 +260,20 @@ pub fn withdraw_token(
 
     let token_client = token::TokenClient::new(env, token);
 
+
+    // Set reentrancy guard before external token calls
+    storage::set_reentrancy_guard(env, true);
     // Transfer net amount to creator
-    token_client.transfer(&contract_address, caller, &net);
+    token_client.transfer(&contract_address, caller, &net)?;
+    // Clear reentrancy guard after first transfer
+    storage::set_reentrancy_guard(env, false);
 
     // Transfer fee to collector (if fee > 0)
     if fee > 0 {
-        token_client.transfer(&contract_address, &fee_collector, &fee);
+        storage::set_reentrancy_guard(env, true);
+        token_client.transfer(&contract_address, &fee_collector, &fee)?;
+        // Clear reentrancy guard after second transfer
+        storage::set_reentrancy_guard(env, false);
     }
 
     // Update token balance

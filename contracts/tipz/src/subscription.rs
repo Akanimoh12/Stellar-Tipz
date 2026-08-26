@@ -108,11 +108,7 @@ pub fn execute_subscriptions(env: &Env, limit: u32) -> Result<u32, ContractError
         }
 
         let sub_key = DataKey::Subscription(subscriber.clone(), creator.clone());
-        if let Some(mut sub) = env
-            .storage()
-            .persistent()
-            .get::<DataKey, crate::types::Subscription>(&sub_key)
-        {
+        if let Some(mut sub) = env.storage().persistent().get::<DataKey, Subscription>(&sub_key) {
             if sub.active && now >= sub.next_due {
                 // Attempt to execute the due subscription
                 match execute_due_subscription_internal(env, &mut sub, now) {
