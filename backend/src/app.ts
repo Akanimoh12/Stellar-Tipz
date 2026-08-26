@@ -9,6 +9,7 @@ import { globalRateLimiter } from './common/middleware/rateLimiter.js';
 import { metricsController, metricsMiddleware } from './common/observability/metrics.js';
 import { getSentryRequestHandler, getSentryErrorHandler } from './common/observability/sentry.js';
 import { logger } from './common/utils/logger.js';
+import { truncateStellarAddress, truncateEmail, truncateMessage } from './common/utils/logRedaction.js';
 import { openApiDocument } from './docs/openapi.js';
 import { requestId } from './common/middleware/requestId.js';
 import { authRouter } from './modules/auth/auth.routes.js';
@@ -68,7 +69,83 @@ export function createApp(): Express {
   app.use(requestId);
   app.use(metricsMiddleware);
   app.use(express.json({ limit: '1mb' }));
-  app.use(pinoHttp({ logger }));
+  app.use(
+    pinoHttp({
+      logger,
+      redact: {
+        paths: [
+          // Auth headers and tokens
+          'req.headers.authorization',
+          'req.headers.cookie',
+          'req.headers["x-api-key"]',
+          'req.headers["x-auth-token"]',
+          'req.headers["x-access-token"]',
+          'req.headers.bearer',
+          // Request body tokens and keys
+          'req.body.token',
+          'req.body.accessToken',
+          'req.body.refreshToken',
+          'req.body.apiKey',
+          'req.body.privateKey',
+          'req.body.secret',
+          'req.body.password',
+          // Response body sensitive data
+          'res.body.token',
+          'res.body.accessToken',
+          'res.body.refreshToken',
+          'res.body.privateKey',
+          'res.body.secret',
+        ],
+        censor: '[REDACTED]',
+      },
+      serializers: {
+        req: (req) => {
+          // Only log safe subset of request body
+          const safeBody = req.body ? {
+            // Safe fields that can be logged
+            ...(req.body.username && { username: req.body.username }),
+            ...(req.body.email && { email: truncateEmail(req.body.email) }),
+            ...(req.body.amount && { amount: req.body.amount }),
+            ...(req.body.message && { message: truncateMessage(req.body.message) }),
+            ...(req.body.publicKey && { publicKey: truncateStellarAddress(req.body.publicKey) }),
+            ...(req.body.recipientAddress && { recipientAddress: truncateStellarAddress(req.body.recipientAddress) }),
+            ...(req.body.senderAddress && { senderAddress: truncateStellarAddress(req.body.senderAddress) }),
+            // Add type information for debugging
+            _bodyKeys: req.body ? Object.keys(req.body) : [],
+          } : undefined;
+
+          return {
+            id: req.id,
+            method: req.method,
+            url: req.url,
+            query: req.query,
+            params: req.params,
+            headers: {
+              ...req.headers,
+              // Explicitly redact sensitive headers
+              authorization: req.headers.authorization ? '[REDACTED]' : undefined,
+              cookie: req.headers.cookie ? '[REDACTED]' : undefined,
+              'x-api-key': req.headers['x-api-key'] ? '[REDACTED]' : undefined,
+              'x-auth-token': req.headers['x-auth-token'] ? '[REDACTED]' : undefined,
+              'x-access-token': req.headers['x-access-token'] ? '[REDACTED]' : undefined,
+            },
+            body: safeBody,
+            remoteAddress: req.connection?.remoteAddress,
+            remotePort: req.connection?.remotePort,
+          };
+        },
+        res: (res) => ({
+          statusCode: res.statusCode,
+          headers: {
+            ...res.getHeaders(),
+            // Ensure no sensitive headers are logged in response
+            'set-cookie': res.getHeaders()['set-cookie'] ? '[REDACTED]' : undefined,
+          },
+          // Don't log response body by default for security
+        }),
+      },
+    }),
+  );
 
   const docsPath = `${env.API_BASE_PATH}/docs`;
   app.get(`${docsPath}/openapi.json`, (_req, res) => {
