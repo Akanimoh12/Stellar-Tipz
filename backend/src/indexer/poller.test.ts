@@ -102,4 +102,28 @@ describe('startIndexer', () => {
 
     vi.useRealTimers();
   });
+
+  it('waits for an active poll before stopping', async () => {
+    vi.useFakeTimers();
+    let resolveEvents!: (value: { events: never[]; latestLedger: number }) => void;
+    mockGetEventsFrom.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveEvents = resolve;
+      }),
+    );
+
+    const { startIndexer } = await import('./poller.js');
+    const handle = startIndexer();
+    await vi.runOnlyPendingTimersAsync();
+
+    let stopped = false;
+    const stopping = handle.stop().then(() => { stopped = true; });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+
+    resolveEvents({ events: [], latestLedger: 1 });
+    await stopping;
+    expect(stopped).toBe(true);
+    vi.useRealTimers();
+  });
 });

@@ -1,6 +1,7 @@
 import { prisma } from "../../db/prisma.js";
 import { logger } from "../../common/utils/logger.js";
-import { ForbiddenError, NotFoundError } from "../../common/errors/AppError.js";
+import { NotFoundError } from "../../common/errors/AppError.js";
+import { assertOwnership } from "../../common/utils/ownership.js";
 import { generateWebhookSecret } from "./webhooks.signing.js";
 import type {
   WebhookDeliveryResponse,
@@ -83,9 +84,7 @@ export async function deleteSubscription(ownerId: string, id: string): Promise<v
   if (!existing || existing.deletedAt) {
     throw new NotFoundError(`Webhook subscription ${id} not found`);
   }
-  if (existing.ownerId !== ownerId) {
-    throw new ForbiddenError("You can only delete your own webhook subscriptions");
-  }
+  assertOwnership(existing.ownerId, ownerId, "You can only delete your own webhook subscriptions");
 
   await prisma.webhookSubscription.update({
     where: { id },
@@ -96,6 +95,7 @@ export async function deleteSubscription(ownerId: string, id: string): Promise<v
 }
 
 export async function listDeliveries(
+  ownerId: string,
   page: number,
   limit: number,
   subscriptionId?: string,
@@ -103,7 +103,9 @@ export async function listDeliveries(
 ): Promise<WebhookDeliveryListResponse> {
   logger.info({ page, limit, subscriptionId, status }, "Listing webhook deliveries");
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = {
+    subscription: { ownerId, deletedAt: null },
+  };
   if (subscriptionId) where.subscriptionId = subscriptionId;
   if (status) where.status = status;
 
@@ -133,11 +135,16 @@ export async function listDeliveries(
   return { entries, total, page, limit };
 }
 
-export async function getDelivery(id: string): Promise<WebhookDeliveryResponse> {
+export async function getDelivery(ownerId: string, id: string): Promise<WebhookDeliveryResponse> {
   logger.info({ id }, "Fetching webhook delivery");
 
-  const delivery = await prisma.webhookDelivery.findUnique({ where: { id } });
+  const delivery = await prisma.webhookDelivery.findUnique({
+    where: { id },
+    include: { subscription: { select: { ownerId: true, deletedAt: true } } },
+  });
   if (!delivery) throw new NotFoundError(`Webhook delivery ${id} not found`);
+  if (delivery.subscription.deletedAt) throw new NotFoundError(`Webhook delivery ${id} not found`);
+  assertOwnership(delivery.subscription.ownerId, ownerId);
 
   return {
     id: delivery.id,
