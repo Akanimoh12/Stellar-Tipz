@@ -1,6 +1,6 @@
 import { pathToFileURL } from 'node:url';
 import { logger } from '../common/utils/logger.js';
-import { registerClosable, closeAll } from '../common/utils/lifecycle.js';
+import { registerClosable, closeAllWithTimeout } from '../common/utils/lifecycle.js';
 import { prisma } from '../db/prisma.js';
 import { startIndexer } from './poller.js';
 
@@ -18,17 +18,22 @@ export async function bootstrapIndexer(): Promise<void> {
   registerClosable({
     name: 'Indexer',
     close: async () => {
-      indexer.stop();
+      await indexer.stop();
     },
   });
 
   logger.info('Indexer process started');
 
+  let shuttingDown = false;
   const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info(`${signal} received, shutting down indexer...`);
-    await closeAll();
-    logger.info('Indexer shutdown complete');
-    process.exit(0);
+    const completed = await closeAllWithTimeout(30_000, () => process.exit(1));
+    if (completed) {
+      logger.info('Indexer shutdown complete');
+      process.exit(0);
+    }
   };
 
   process.on('SIGINT', () => void shutdown('SIGINT'));
