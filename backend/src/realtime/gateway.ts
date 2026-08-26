@@ -43,8 +43,9 @@ export function initRealtime(httpServer: HttpServer): RealtimeServer {
     httpServer,
     {
       cors: {
-        origin: env.CORS_ORIGIN.split(','),
+        origin: env.CORS_ORIGIN,
         methods: ['GET', 'POST'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
       },
       pingInterval: HEARTBEAT_PING_INTERVAL_MS,
       pingTimeout: HEARTBEAT_PING_TIMEOUT_MS,

@@ -181,7 +181,8 @@ pub fn send_tip_token(
     // Convert to XLM equivalent for stats and leaderboard
     let xlm_equivalent = convert_to_xlm_equivalent(env, token, amount);
 
-    profile.total_tips_received += xlm_equivalent;
+    // Saturating: a creator's lifetime total must never overflow (issue #042).
+    profile.total_tips_received = profile.total_tips_received.saturating_add(xlm_equivalent);
     profile.total_tips_count += 1;
 
     // Update credit score based on new tip totals
@@ -212,8 +213,8 @@ pub fn send_tip_token(
         tip_state.tips_last_24h = 1;
         tip_state.volume_last_24h = xlm_equivalent;
     } else {
-        tip_state.tips_last_24h += 1;
-        tip_state.volume_last_24h += xlm_equivalent;
+        tip_state.tips_last_24h = tip_state.tips_last_24h.saturating_add(1);
+        tip_state.volume_last_24h = tip_state.volume_last_24h.saturating_add(xlm_equivalent);
     }
 
     storage::apply_send_tip_state(env, &tip_state);

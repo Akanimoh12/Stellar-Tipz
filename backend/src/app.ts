@@ -53,7 +53,17 @@ export function createApp(): Express {
       },
     }),
   );
-  app.use(cors({ origin: env.CORS_ORIGIN.split(','), credentials: true }));
+  app.use(
+    cors({
+      // env.CORS_ORIGIN is already validated as a list of absolute origins at
+      // startup (see config/cors.ts), so a misconfigured origin never reaches
+      // request time.
+      origin: env.CORS_ORIGIN,
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
+    }),
+  );
   app.use(globalRateLimiter);
   app.use(requestId);
   app.use(metricsMiddleware);
