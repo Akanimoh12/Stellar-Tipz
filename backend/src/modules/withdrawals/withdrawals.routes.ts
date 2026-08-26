@@ -4,10 +4,16 @@ import { env } from '../../config/env.js';
 import { mergeOpenApiPaths } from '../../docs/openapi.js';
 import * as withdrawalsController from './withdrawals.controller.js';
 import * as payoutsController from './payouts.controller.js';
+import { deprecatedOffsetPagination } from '../../common/middleware/deprecatedOffsetPagination.js';
 
 export const withdrawalsRouter = Router();
 
-withdrawalsRouter.get('/me', requireAuth, withdrawalsController.getMyWithdrawals);
+withdrawalsRouter.get(
+  '/me',
+  requireAuth,
+  deprecatedOffsetPagination,
+  withdrawalsController.getMyWithdrawals,
+);
 withdrawalsRouter.post('/prepare', requireAuth, withdrawalsController.prepareWithdrawal);
 withdrawalsRouter.post('/submit', requireAuth, withdrawalsController.submitWithdrawal);
 
@@ -88,10 +94,19 @@ mergeOpenApiPaths({
           schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
         },
         {
+          name: 'cursor',
+          in: 'query',
+          required: false,
+          schema: { type: 'string' },
+          description: 'Opaque nextCursor returned by the previous page',
+        },
+        {
           name: 'offset',
           in: 'query',
           required: false,
-          schema: { type: 'integer', minimum: 0, default: 0 },
+          deprecated: true,
+          schema: { type: 'integer', minimum: 0 },
+          description: 'Deprecated; use cursor instead. Supported until 2027-02-28.',
         },
       ],
       responses: {
@@ -103,8 +118,9 @@ mergeOpenApiPaths({
                 type: 'object',
                 properties: {
                   data: { type: 'array', items: withdrawalSchema },
+                  nextCursor: { type: 'string', nullable: true },
                 },
-                required: ['data'],
+                required: ['data', 'nextCursor'],
               },
             },
           },

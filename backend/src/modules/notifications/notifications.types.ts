@@ -8,12 +8,7 @@ export interface NotificationResponse {
 
 export interface NotificationListResponse {
   data: NotificationResponse[];
-  pagination: {
-    limit: number;
-    offset: number;
-    total: number;
-    hasMore: boolean;
-  };
+  nextCursor: string | null;
 }
 
 /** Notification type discriminators used by the createNotification triggers. */

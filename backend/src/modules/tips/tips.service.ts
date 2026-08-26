@@ -9,12 +9,18 @@ import * as notificationsService from '../notifications/notifications.service.js
 import { updateStreakOnTip } from '../streaks/streaks.service.js';
 import type { RecordTipInput } from './tips.schema.js';
 import { serializeTip, serializeTipReceipt } from './tips.serializer.js';
-import type { TipResponseDto, TipAggregateByCreatorDto, TipReceiptDto } from './tips.dto.js';
+import type { TipResponseDto, TipAggregateByCreatorDto } from './tips.dto.js';
+import {
+  createCursorScope,
+  descendingCursorCondition,
+  toCursorPage,
+} from '../../common/pagination/cursor.js';
 
 export type { TipResponseDto, TipAggregateByCreatorDto };
 
 export interface GetTipsParams {
   cursor?: string;
+  offset?: number;
   limit: number;
   address?: string;
   direction?: string;
@@ -40,7 +46,7 @@ export interface PaginatedTips {
 export async function getPaginatedTips(
   params: GetTipsParams,
 ): Promise<PaginatedTips> {
-  const where: Record<string, unknown> = {};
+  const where: Prisma.TipWhereInput = {};
   if (params.address) {
     if (params.direction === 'sent') {
       where.fromAddress = { equals: params.address, mode: 'insensitive' };
@@ -69,27 +75,29 @@ export async function getPaginatedTips(
     where.createdAt = createdAtFilter;
   }
 
+  const scope = createCursorScope('tips', {
+    address: params.address,
+    direction: params.direction,
+    tokenCode: params.tokenCode,
+    startDate: params.startDate,
+    endDate: params.endDate,
+  });
+  const cursorCondition = descendingCursorCondition('createdAt', params.cursor, scope);
+  if (cursorCondition) where.AND = cursorCondition as Prisma.TipWhereInput;
+
   const findManyArgs: Parameters<typeof prisma.tip.findMany>[0] = {
     where,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: params.limit + 1,
+    ...(params.offset !== undefined ? { skip: params.offset } : {}),
   };
 
-  if (params.cursor) {
-    findManyArgs.cursor = { id: params.cursor };
-    findManyArgs.skip = 1;
-  }
-
   const tips = await prisma.tip.findMany(findManyArgs);
-
-  const hasMore = tips.length > params.limit;
-  const results = hasMore ? tips.slice(0, params.limit) : tips;
-
-  const nextCursor = hasMore && results.length > 0 ? results[results.length - 1].id : null;
+  const page = toCursorPage(tips, params.limit, scope, (tip) => tip.createdAt);
 
   return {
-    data: results.map(serializeTip),
-    nextCursor,
+    data: page.data.map(serializeTip),
+    nextCursor: page.nextCursor,
   };
 }
 
@@ -181,20 +189,25 @@ async function listTips(
   where: Prisma.TipWhereInput,
   limit: number,
   cursor?: string,
+  offset?: number,
+  scopeName = 'tips-list',
 ): Promise<PaginatedTips> {
+  const scope = createCursorScope(scopeName, { where: JSON.stringify(where) });
+  const cursorCondition = descendingCursorCondition('createdAt', cursor, scope);
+  const scopedWhere: Prisma.TipWhereInput = cursorCondition
+    ? { AND: [where, cursorCondition as Prisma.TipWhereInput] }
+    : where;
   const rows = await prisma.tip.findMany({
-    where,
+    where: scopedWhere,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit + 1,
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    ...(offset !== undefined ? { skip: offset } : {}),
   });
-
-  const hasMore = rows.length > limit;
-  const page = hasMore ? rows.slice(0, limit) : rows;
+  const page = toCursorPage(rows, limit, scope, (tip) => tip.createdAt);
 
   return {
-    data: page.map(serializeTip),
-    nextCursor: hasMore ? page[page.length - 1].id : null,
+    data: page.data.map(serializeTip),
+    nextCursor: page.nextCursor,
   };
 }
 
@@ -203,10 +216,11 @@ export async function getTipsReceivedByUsername(
   username: string,
   limit: number,
   cursor?: string,
+  offset?: number,
 ): Promise<PaginatedTips> {
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user || user.deletedAt) throw new NotFoundError('Profile not found');
-  return listTips({ toAddress: user.stellarAddress }, limit, cursor);
+  return listTips({ toAddress: user.stellarAddress }, limit, cursor, offset, 'profile-tips');
 }
 
 /** GET /users/me/tips/sent — tips sent by the authenticated user's address. */
@@ -214,8 +228,9 @@ export async function getTipsSentByAddress(
   fromAddress: string,
   limit: number,
   cursor?: string,
+  offset?: number,
 ): Promise<PaginatedTips> {
-  return listTips({ fromAddress }, limit, cursor);
+  return listTips({ fromAddress }, limit, cursor, offset, 'user-sent-tips');
 }
 
 /**
