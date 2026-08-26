@@ -35,7 +35,7 @@ function serializeRefund(refund: RefundRecord): RefundResponse {
   return {
     id: refund.id,
     tipId: refund.tipId,
-    amount: refund.amount.toString(),
+    amountStroops: refund.amount.toString(),
     reason: refund.reason,
     status: refund.status,
     txHash: refund.txHash,

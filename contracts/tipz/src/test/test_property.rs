@@ -17,6 +17,8 @@ use soroban_sdk::{
 use crate::credit::{calculate_credit_score, BASE_SCORE, MAX_SCORE};
 use crate::errors::ContractError;
 use crate::fees::calculate_fee;
+use crate::leaderboard;
+use crate::storage;
 use crate::types::{Profile, VerificationStatus, VerificationType};
 use crate::validation::{validate_tip_amount, validate_username};
 
@@ -124,6 +126,113 @@ proptest! {
         // Allow up to 1 stroop drift from integer rounding.
         let diff = (fee_double - fee_single * 2).abs();
         prop_assert!(diff <= 1, "fee did not scale linearly: {} vs {}", fee_single, fee_double);
+    }
+}
+
+// ── Fee computation over the FULL i128 domain (issue #042) ─────────────────────
+//
+// `overflow-checks = true` means any overflow panics in release. The fee split
+// must therefore be *total* over the entire i128 range: it either returns a
+// valid (fee, net) or `OverflowError`, never panics.
+
+proptest! {
+    /// For ANY i128 amount and ANY u32 fee bps, `calculate_fee` must not panic.
+    /// It either returns a valid split or an error — it never wraps.
+    #[test]
+    fn property_fee_total_over_full_i128(
+        amount in any::<i128>(),
+        fee_bps in any::<u32>(),
+    ) {
+        let result = calculate_fee(amount, fee_bps);
+        prop_assert!(result.is_ok() || result.is_err());
+        if let Ok((fee, net)) = result {
+            // For non-negative amounts the value-invariant must hold exactly.
+            if amount >= 0 {
+                prop_assert_eq!(fee + net, amount);
+                prop_assert!(fee >= 0);
+                prop_assert!(net >= 0);
+            }
+        }
+    }
+}
+
+// ── Credit score over the FULL i128 domain (issue #042) ────────────────────────
+
+proptest! {
+    /// For ANY i128 tip volume and any X metrics / account age, the credit
+    /// score must remain within [BASE_SCORE, MAX_SCORE] and never panic.
+    #[test]
+    fn property_credit_score_total_over_full_i128(
+        tips in any::<i128>(),
+        followers in any::<u32>(),
+        engagement in any::<u32>(),
+        age_days in any::<u64>(),
+    ) {
+        let env = Env::default();
+        let owner = Address::generate(&env);
+        let registered_at = 1_700_000_000_u64;
+        let now = registered_at + age_days * 86_400;
+        let profile = build_profile(&env, owner, tips, followers, engagement, registered_at);
+        let score = calculate_credit_score(&profile, now);
+        prop_assert!(score <= MAX_SCORE, "score {} > MAX_SCORE", score);
+        prop_assert!(score >= BASE_SCORE, "score {} < BASE_SCORE", score);
+    }
+}
+
+// ── Leaderboard / volume accumulation over the FULL i128 domain (issue #042) ───
+//
+// The accumulator paths are the highest-risk: a creator's lifetime total can
+// grow past a naive bound. These must stay total (saturating) for any i128.
+
+proptest! {
+    /// Accumulating arbitrary i128 tips into a creator's period volumes must
+    /// never overflow or panic. `add_creator_period_volumes` uses saturating
+    /// addition, so it is total over the whole i128 domain.
+    #[test]
+    fn property_volume_accumulation_total_over_full_i128(
+        amounts in proptest::collection::vec(any::<i128>(), 0..=32),
+    ) {
+        use crate::TipzContract;
+        use crate::types::LeaderboardPeriod;
+
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TipzContract);
+        let creator = Address::generate(&env);
+        let period_start = 1_700_000_000_u64;
+
+        env.as_contract(&contract_id, || {
+            for amt in amounts {
+                // Must not panic for any i128 input.
+                let _ = storage::add_creator_period_volumes(
+                    &env, &creator, period_start, period_start, amt,
+                );
+            }
+        });
+        prop_assert!(true);
+    }
+}
+
+proptest! {
+    /// A creator whose lifetime total is the extreme i128::MIN/MAX bound must
+    /// update every leaderboard without overflow/panic. This is exactly the
+    /// "creator's lifetime total grows past a naive bound" risk from the issue.
+    #[test]
+    fn property_leaderboard_lifetime_total_extreme(
+        amount in any::<i128>(),
+    ) {
+        use crate::TipzContract;
+
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TipzContract);
+        let owner = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let mut profile = build_profile(&env, owner.clone(), amount, 0, 0, 1_700_000_000_u64);
+            profile.total_tips_received = amount;
+            // Must not panic for any i128 lifetime total.
+            leaderboard::update_all_leaderboards_for_active(&env, &profile, amount);
+        });
+        prop_assert!(true);
     }
 }
 

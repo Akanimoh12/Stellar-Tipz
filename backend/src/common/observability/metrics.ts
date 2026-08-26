@@ -30,6 +30,8 @@ export interface MetricsData {
   };
   database: {
     pool_size: number;
+    /** Cumulative count of queries that exceeded the slow-query threshold. */
+    slow_queries_total: number;
   };
 }
 
@@ -37,6 +39,7 @@ let requestCount = 0;
 let errorCount = 0;
 let latencySum = 0;
 let latencyCount = 0;
+let slowQueryCount = 0;
 
 export function recordRequest(duration: number) {
   requestCount++;
@@ -46,6 +49,11 @@ export function recordRequest(duration: number) {
 
 export function recordError() {
   errorCount++;
+}
+
+/** Records a single slow query event for the `/metrics` endpoint. */
+export function recordSlowQuery() {
+  slowQueryCount++;
 }
 
 export async function getMetrics(): Promise<MetricsData> {
@@ -93,6 +101,7 @@ export async function getMetrics(): Promise<MetricsData> {
     },
     database: {
       pool_size: prisma.$disconnect.length || 0,
+      slow_queries_total: slowQueryCount,
     },
   };
 }

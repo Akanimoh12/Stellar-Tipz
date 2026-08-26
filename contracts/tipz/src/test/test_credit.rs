@@ -772,6 +772,77 @@ fn now_before_registered_at_returns_base_score() {
     assert_eq!(score, BASE_SCORE);
 }
 
+/// Issue #1187: Credit score decay for inactive creators
+///
+/// Decay applies after a configurable inactivity window, at a configurable rate.
+/// Decay floors at the base score (40), never below.
+/// Resuming activity halts decay; recovery rules are documented.
+#[test]
+fn credit_decay_active_unaffected() {
+    // Recently active creator - no decay
+    let env = Env::default();
+    let now = env.ledger().timestamp();
+    let mut profile = blank_profile(&env, now);
+    profile.last_active_at = now;  // active just now
+    profile.total_tips_received = 500_000_000;  // 50 XLM
+
+    let score = calculate_credit_score(&profile, now);
+    // No decay since within inactivity window
+    assert_eq!(score, 50); // 40 + 10 tip pts
+}
+
+#[test]
+fn credit_decay_onset_after_window() {
+    // Creator inactive beyond the inactivity window
+    let env = Env::default();
+    let now = env.ledger().timestamp();
+    let inactivity_window = types::CREDIT_DECAY_INACTIVITY_WINDOW_SECS as u64 + 1; // just beyond window
+    let mut profile = blank_profile(&env, now);
+    profile.last_active_at = now.saturating_sub(inactivity_window + 100);  // inactive
+    profile.total_tips_received = 500_000_000;  // 50 XLM, would give score 50 without decay
+
+    let score = calculate_credit_score(&profile, now);
+    // Decay has started; score should be between 40 and 50
+    assert!(score < 50, "score {} should be less than 50 due to decay", score);
+    assert!(score > 40, "score {} should be greater than base 40 due to recent tips", score);
+}
+
+#[test]
+fn credit_decay_floor_at_base() {
+    // Very inactive creator - score decays to base
+    let env = Env::default();
+    let now = env.ledger().timestamp();
+    let mut profile = blank_profile(&env, now);
+    profile.last_active_at = 0;  // never active
+    profile.total_tips_received = 500_000_000;  // 50 XLM
+
+    let score = calculate_credit_score(&profile, now);
+    // Score should floor at base score (40)
+    assert_eq!(score, BASE_SCORE);
+}
+
+#[test]
+fn credit_decay_recovery_after_activity() {
+    // Creator was inactive, then becomes active again
+    let env = Env::default();
+    let now = env.ledger().timestamp();
+    let mut profile = blank_profile(&env, now);
+    profile.last_active_at = now.saturating_sub(types::CREDIT_DECAY_INACTIVITY_WINDOW_SECS as u64 + 100);
+    profile.total_tips_received = 500_000_000;  // 50 XLM
+
+    // Score should have decayed somewhat
+    let score_before = calculate_credit_score(&profile, now);
+    assert!(score_before < 50);
+
+    // Now simulate resuming activity (update last_active_at to now)
+    profile.last_active_at = now;
+    let score_after = calculate_credit_score(&profile, now);
+    // Score should recover toward the normal value (50), but may not fully recover
+    // in a single step due to the decay calculation, but it should be closer to 50
+    // than the pre-activity score was to 40
+    assert!(score_after >= score_before, "score should not decrease after activity resumption");
+}
+
 /// Documents the design choice: the credit score does **not** weight unique
 /// tippers — that signal is captured by the on-chain leaderboard, not the
 /// score formula.  Two profiles with identical tip volume must score

@@ -321,7 +321,7 @@ mod tests {
             domain: String::from_str(env, ""),
             domain_verified: false,
             domain_verified_at: None,
-        custom_min_tip: None,
+            custom_min_tip: None,
         }
     }
 

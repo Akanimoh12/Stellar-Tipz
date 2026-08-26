@@ -41,6 +41,8 @@ use soroban_sdk::{Address, Env};
 
 use crate::errors::ContractError;
 use crate::storage;
+use crate::types::CREDIT_DECAY_INACTIVITY_WINDOW_SECS;
+use crate::types::CREDIT_DECAY_RATE_PER_SEC;
 use crate::types::{CreditBreakdown, CreditTier, Profile};
 
 /// Base score awarded to every registered profile.
@@ -172,8 +174,28 @@ pub fn get_credit_breakdown_with_streak(env: &Env, profile: &Profile, now: u64) 
 /// | `total_tips_received` in the billions    | tip sub-score capped at 100    |
 /// | all X metric fields are 0                | X component = 0                |
 /// | account age < 1 day                      | age component = 0              |
+/// | No activity for extended period          | score decays toward base (40)  |
 pub fn calculate_credit_score(profile: &Profile, now: u64) -> u32 {
-    get_credit_breakdown_for_profile(profile, now).total
+    let normal_score = get_credit_breakdown_for_profile(profile, now).total;
+
+    // Apply decay toward the base score (40) if the creator has been inactive.
+    // Decay starts after a configurable inactivity window.
+    let last_active = profile.last_active_at;
+    let elapsed_since_active = now.saturating_sub(last_active);
+    let inactivity_window = CREDIT_DECAY_INACTIVITY_WINDOW_SECS;
+    let decay_rate = CREDIT_DECAY_RATE_PER_SEC;
+
+    if elapsed_since_active > inactivity_window {
+        let elapsed_beyond_window = elapsed_since_active.saturating_sub(inactivity_window) as u64;
+        let decay_amount = elapsed_beyond_window.saturating_mul(decay_rate);
+        // decay_amount may exceed the excess above base; cap at base-relative amount
+        let max_decay = normal_score.saturating_sub(BASE_SCORE as u32) as u64;
+        let actual_decay = decay_amount.min(max_decay);
+        // Floor at the base score (40), never below
+        (normal_score - (actual_decay as u32)).max(BASE_SCORE)
+    } else {
+        normal_score
+    }
 }
 
 /// Compute the credit score including streak bonuses.

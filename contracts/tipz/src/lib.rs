@@ -353,11 +353,7 @@ impl TipzContract {
         storage::get_tipper_tip_count(&env, &tipper)
     }
 
-    pub fn block_tipper(
-        env: Env,
-        creator: Address,
-        tipper: Address,
-    ) -> Result<(), ContractError> {
+    pub fn block_tipper(env: Env, creator: Address, tipper: Address) -> Result<(), ContractError> {
         tips::block_tipper(&env, &creator, &tipper)
     }
 
@@ -721,8 +717,16 @@ impl TipzContract {
         storage::get_min_tip_amount(&env)
     }
 
-    pub fn set_min_withdrawal_amount(env: Env, caller: Address, amount: i128) -> Result<(), ContractError> { admin::set_min_withdrawal_amount(&env, &caller, amount) }
-    pub fn get_min_withdrawal_amount(env: Env) -> i128 { storage::get_min_withdrawal_amount(&env) }
+    pub fn set_min_withdrawal_amount(
+        env: Env,
+        caller: Address,
+        amount: i128,
+    ) -> Result<(), ContractError> {
+        admin::set_min_withdrawal_amount(&env, &caller, amount)
+    }
+    pub fn get_min_withdrawal_amount(env: Env) -> i128 {
+        storage::get_min_withdrawal_amount(&env)
+    }
 
     /// Configure the contract-level withdrawal circuit breaker. Admin only.
     ///

@@ -20,6 +20,9 @@ import { balancesRouter, withdrawalsRouter } from './modules/withdrawals/withdra
 import { ipfsRouter } from './modules/ipfs/ipfs.routes.js';
 import { xRouter } from './modules/x/x.routes.js';
 import { notificationsRouter } from './modules/notifications/notifications.routes.js';
+import { emailRouter } from './modules/email/email.routes.js';
+import { privacyRouter } from './modules/privacy/privacy.routes.js';
+import { moderationRouter } from './modules/moderation/moderation.routes.js';
 import { searchRouter } from './modules/search/search.routes.js';
 import { webhooksRouter } from './modules/webhooks/webhooks.routes.js';
 import { analyticsRouter } from './modules/analytics/analytics.routes.js';
@@ -50,7 +53,17 @@ export function createApp(): Express {
       },
     }),
   );
-  app.use(cors({ origin: env.CORS_ORIGIN.split(','), credentials: true }));
+  app.use(
+    cors({
+      // env.CORS_ORIGIN is already validated as a list of absolute origins at
+      // startup (see config/cors.ts), so a misconfigured origin never reaches
+      // request time.
+      origin: env.CORS_ORIGIN,
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
+    }),
+  );
   app.use(globalRateLimiter);
   app.use(requestId);
   app.use(metricsMiddleware);
@@ -81,6 +94,9 @@ export function createApp(): Express {
   app.use(`${env.API_BASE_PATH}/tips`, tipsRouter);
   app.use(`${env.API_BASE_PATH}/withdrawals`, withdrawalsRouter);
   app.use(`${env.API_BASE_PATH}/notifications`, notificationsRouter);
+  app.use(`${env.API_BASE_PATH}/email`, emailRouter);
+  app.use(`${env.API_BASE_PATH}/privacy`, privacyRouter);
+  app.use(`${env.API_BASE_PATH}/moderation`, moderationRouter);
   app.use(`${env.API_BASE_PATH}/x`, xRouter);
   app.use(`${env.API_BASE_PATH}/balances`, balancesRouter);
   app.use(`${env.API_BASE_PATH}/search`, searchRouter);

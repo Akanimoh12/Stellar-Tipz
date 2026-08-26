@@ -153,11 +153,7 @@ pub const MAX_TIP_AMOUNT: i128 = 1_000_000_000_000_i128;
 pub const MAX_TIP_COUNT: u32 = u32::MAX;
 
 /// Block a tipper from sending future tips to `creator`.
-pub fn block_tipper(
-    env: &Env,
-    creator: &Address,
-    tipper: &Address,
-) -> Result<(), ContractError> {
+pub fn block_tipper(env: &Env, creator: &Address, tipper: &Address) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     creator.require_auth();
     if !storage::has_profile(env, creator) {
@@ -178,11 +174,7 @@ pub fn block_tipper(
 }
 
 /// Remove a tipper from `creator`'s blocklist.
-pub fn unblock_tipper(
-    env: &Env,
-    creator: &Address,
-    tipper: &Address,
-) -> Result<(), ContractError> {
+pub fn unblock_tipper(env: &Env, creator: &Address, tipper: &Address) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     creator.require_auth();
     if !storage::has_profile(env, creator) {
@@ -241,8 +233,12 @@ pub fn send_tip(
     validate_message(message)?;
 
     let contract_address = env.current_contract_address();
+    // Set reentrancy guard before external token call
+    storage::set_reentrancy_guard(env, true);
     // Security: native SAC transfer has no callback path into this contract.
     token::transfer_xlm_with_token(env, &config.native_token, tipper, &contract_address, amount)?;
+    // Clear reentrancy guard after the transfer completes
+    storage::set_reentrancy_guard(env, false);
 
     profile.balance = profile
         .balance
@@ -288,8 +284,10 @@ pub fn send_tip(
         tip_state.tips_last_24h = 1;
         tip_state.volume_last_24h = amount;
     } else {
-        tip_state.tips_last_24h += 1;
-        tip_state.volume_last_24h += amount;
+        // Saturating: the 24h counters are accumulators that must never
+        // overflow under overflow-checks = true (issue #042).
+        tip_state.tips_last_24h = tip_state.tips_last_24h.saturating_add(1);
+        tip_state.volume_last_24h = tip_state.volume_last_24h.saturating_add(amount);
     }
 
     store_tip_with_id(
@@ -356,7 +354,11 @@ pub fn send_tip_on_behalf(
     validate_message(message)?;
 
     let contract_address = env.current_contract_address();
+    // Set reentrancy guard before external token call
+    storage::set_reentrancy_guard(env, true);
     token::transfer_xlm(env, sender, &contract_address, amount)?;
+    // Clear reentrancy guard after the transfer completes
+    storage::set_reentrancy_guard(env, false);
 
     let mut profile = storage::get_profile(env, creator);
     profile.balance = profile
@@ -429,7 +431,11 @@ pub fn withdraw_tips(env: &Env, caller: &Address, amount: i128) -> Result<(), Co
     }
 
     let mut profile = storage::get_profile(env, caller);
-    let amount = crate::validation::validate_withdrawal_amount(amount, storage::get_min_withdrawal_amount(env), profile.balance)?;
+    let amount = crate::validation::validate_withdrawal_amount(
+        amount,
+        storage::get_min_withdrawal_amount(env),
+        profile.balance,
+    )?;
 
     // Calculate fee and net amount
     let fee_bps = storage::get_fee_bps(env);
@@ -440,13 +446,19 @@ pub fn withdraw_tips(env: &Env, caller: &Address, amount: i128) -> Result<(), Co
     let fee_collector = storage::get_fee_collector(env);
 
     crate::circuit_breaker::record_withdrawal_or_trip(env, amount)?;
-
+    // Set reentrancy guard before external token calls
+    storage::set_reentrancy_guard(env, true);
     // Transfer net amount to creator
     token::transfer_xlm(env, &contract_address, caller, net)?;
+    // Clear reentrancy guard after first transfer
+    storage::set_reentrancy_guard(env, false);
 
     // Transfer fee to collector (if fee > 0)
     if fee > 0 {
+        storage::set_reentrancy_guard(env, true);
         token::transfer_xlm(env, &contract_address, &fee_collector, fee)?;
+        // Clear reentrancy guard after second transfer
+        storage::set_reentrancy_guard(env, false);
     }
 
     // Update profile balance
@@ -509,8 +521,12 @@ pub fn emergency_withdraw_tips(
 
     let contract_address = env.current_contract_address();
 
+    // Set reentrancy guard before external token call
+    storage::set_reentrancy_guard(env, true);
     // Transfer full requested amount without charging fees (fee-free emergency exit)
     token::transfer_xlm(env, &contract_address, caller, amount)?;
+    // Clear reentrancy guard after the transfer completes
+    storage::set_reentrancy_guard(env, false);
 
     profile.balance -= amount;
     storage::set_profile(env, &profile);
@@ -637,15 +653,12 @@ pub fn send_scheduled_tip(
 /// - [`ContractError::NotFound`] if scheduled tip doesn't exist
 /// - [`ContractError::InvalidInput`] if tip already delivered or cancelled
 /// - [`ContractError::InvalidInput`] if delivery time hasn't passed yet
-pub fn deliver_scheduled_tip(
-    env: &Env,
-    scheduled_tip_id: u32,
-) -> Result<(), ContractError> {
+pub fn deliver_scheduled_tip(env: &Env, scheduled_tip_id: u32) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     crate::admin::require_not_paused(env)?;
 
-    let mut scheduled_tip = storage::get_scheduled_tip(env, scheduled_tip_id)
-        .ok_or(ContractError::NotFound)?;
+    let mut scheduled_tip =
+        storage::get_scheduled_tip(env, scheduled_tip_id).ok_or(ContractError::NotFound)?;
 
     if scheduled_tip.delivered {
         return Err(ContractError::InvalidInput);
@@ -684,8 +697,7 @@ pub fn deliver_scheduled_tip(
     streaks::record_tip_streak(env, &scheduled_tip.sender, &scheduled_tip.creator);
 
     // Update credit score
-    profile.credit_score =
-        credit::calculate_credit_score_with_streak(env, &profile, now);
+    profile.credit_score = credit::calculate_credit_score_with_streak(env, &profile, now);
 
     storage::set_profile(env, &profile);
     leaderboard::update_all_leaderboards_for_active(env, &profile, scheduled_tip.amount);
@@ -756,8 +768,8 @@ pub fn cancel_scheduled_tip(
     crate::admin::require_not_paused(env)?;
     caller.require_auth();
 
-    let mut scheduled_tip = storage::get_scheduled_tip(env, scheduled_tip_id)
-        .ok_or(ContractError::NotFound)?;
+    let mut scheduled_tip =
+        storage::get_scheduled_tip(env, scheduled_tip_id).ok_or(ContractError::NotFound)?;
 
     if scheduled_tip.sender != *caller {
         return Err(ContractError::NotAuthorized);
@@ -785,14 +797,21 @@ pub fn cancel_scheduled_tip(
     let cancellation_fee = scheduled_tip.amount / 100;
     let refund_amount = scheduled_tip.amount - cancellation_fee;
 
+    // Set reentrancy guard before external token calls
+    storage::set_reentrancy_guard(env, true);
     // Refund the sender
     let contract_address = env.current_contract_address();
     token::transfer_xlm(env, &contract_address, &scheduled_tip.sender, refund_amount)?;
+    // Clear reentrancy guard after refund
+    storage::set_reentrancy_guard(env, false);
 
     // Send cancellation fee to fee collector
     if cancellation_fee > 0 {
+        storage::set_reentrancy_guard(env, true);
         let fee_collector = storage::get_fee_collector(env);
         token::transfer_xlm(env, &contract_address, &fee_collector, cancellation_fee)?;
+        // Clear reentrancy guard after fee transfer
+        storage::set_reentrancy_guard(env, false);
         storage::add_to_fees(env, cancellation_fee)?;
     }
 

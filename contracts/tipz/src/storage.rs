@@ -15,8 +15,8 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
 
 use crate::errors::ContractError;
 use crate::types::{
-    CircuitBreakerConfig, CircuitBreakerStatus,
-    LeaderboardEntry, LeaderboardPeriod, Profile, RateLimitConfig, RateLimitStatus,
+    CircuitBreakerConfig, CircuitBreakerStatus, LeaderboardEntry, LeaderboardPeriod, Profile,
+    RateLimitConfig, RateLimitStatus,
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -101,6 +101,8 @@ pub enum DataKey {
     Paused,
     /// Minimum allowed tip amount in stroops
     MinTipAmount,
+    /// Reentrancy guard: set before fund-moving external calls
+    ReentrancyGuard,
     /// Number of tips sent by a specific tipper
     TipperTipCount(Address),
     /// Reverse index: (tipper, local_index) → global tip ID
@@ -408,15 +410,21 @@ pub fn set_paused(env: &Env, paused: bool) {
 
 /// Storage migration state accessors
 pub fn get_migration_state(env: &Env) -> Option<crate::types::MigrationState> {
-    env.storage().instance().get(&ExtendedDataKey::MigrationState)
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::MigrationState)
 }
 
 pub fn set_migration_state(env: &Env, state: &crate::types::MigrationState) {
-    env.storage().instance().set(&ExtendedDataKey::MigrationState, state);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::MigrationState, state);
 }
 
 pub fn remove_migration_state(env: &Env) {
-    env.storage().instance().remove(&ExtendedDataKey::MigrationState);
+    env.storage()
+        .instance()
+        .remove(&ExtendedDataKey::MigrationState);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -447,11 +455,16 @@ pub fn set_min_tip_amount(env: &Env, amount: i128) {
 pub const DEFAULT_MIN_WITHDRAWAL_AMOUNT: i128 = 1_000_000;
 
 pub fn get_min_withdrawal_amount(env: &Env) -> i128 {
-    env.storage().instance().get(&ExtendedDataKey::MinWithdrawalAmount).unwrap_or(DEFAULT_MIN_WITHDRAWAL_AMOUNT)
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::MinWithdrawalAmount)
+        .unwrap_or(DEFAULT_MIN_WITHDRAWAL_AMOUNT)
 }
 
 pub fn set_min_withdrawal_amount(env: &Env, amount: i128) {
-    env.storage().instance().set(&ExtendedDataKey::MinWithdrawalAmount, &amount);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::MinWithdrawalAmount, &amount);
 }
 
 /// Default domain re-verification interval: 30 days.
@@ -663,8 +676,12 @@ pub fn append_admin_audit_entry(
     }
     log.push_back(entry.clone());
 
-    env.storage().instance().set(&ExtendedDataKey::AdminAuditLog, &log);
-    env.storage().instance().set(&ExtendedDataKey::AdminAuditCount, &next_id);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::AdminAuditLog, &log);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::AdminAuditCount, &next_id);
 
     entry
 }
@@ -764,9 +781,7 @@ pub fn set_fee_change_delay_ledgers(env: &Env, delay_ledgers: u32) {
 
 /// Returns the pending fee change, if any.
 pub fn get_pending_fee_change(env: &Env) -> Option<(u32, u32, u32, bool)> {
-    env.storage()
-        .instance()
-        .get(&symbol_short!("fee_pend"))
+    env.storage().instance().get(&symbol_short!("fee_pend"))
 }
 
 /// Stores the pending fee change.
@@ -791,7 +806,9 @@ pub fn get_subscription_limit(env: &Env) -> u32 {
 
 /// Sets the maximum active subscriptions per subscriber.
 pub fn set_subscription_limit(env: &Env, limit: u32) {
-    env.storage().instance().set(&DataKey::SubscriptionLimit, &limit);
+    env.storage()
+        .instance()
+        .set(&DataKey::SubscriptionLimit, &limit);
 }
 
 pub const MAX_CIRCUIT_BREAKER_BUCKETS: u32 = 24;
@@ -852,6 +869,41 @@ fn empty_circuit_breaker_status(env: &Env, bucket_count: u32) -> CircuitBreakerS
         tripped: false,
         tripped_at: None,
     }
+}
+
+/// Returns `true` if the reentrancy guard is currently active (a fund-moving
+/// operation is in progress). Callers should not make external token transfers
+/// while the guard is active.
+pub fn is_reentrancy_guard_active(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::ReentrancyGuard)
+        .unwrap_or(false)
+}
+
+/// Set the reentrancy guard to `locked` (beginning a fund-moving operation)
+/// or `unlocked` (ending it).
+pub fn set_reentrancy_guard(env: &Env, locked: bool) {
+    env.storage()
+        .instance()
+        .set(&DataKey::ReentrancyGuard, &locked);
+}
+
+/// Guard helper: sets the guard to `locked`, runs `f`, then resets it to
+/// `unlocked` regardless of whether `f` returns `Ok` or `Err`.
+///
+/// # Safety
+/// Callers must ensure that `f` does not attempt any further cross-contract
+/// calls that would be blocked by this guard (e.g. token transfers), as the
+/// guard is purely a defense-in-depth measure.
+pub fn with_reentrancy_guard_unlocked<'a, F, R>(env: &Env, f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    set_reentrancy_guard(env, true);
+    let result = f();
+    set_reentrancy_guard(env, false);
+    result
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -2401,9 +2453,7 @@ pub fn add_creator_scheduled_tip(env: &Env, creator: &Address, id: u32) {
     let count: u32 = env
         .storage()
         .persistent()
-        .get(&ExtendedDataKey::CreatorScheduledTipCount(
-            creator.clone(),
-        ))
+        .get(&ExtendedDataKey::CreatorScheduledTipCount(creator.clone()))
         .unwrap_or(0);
     env.storage().persistent().set(
         &ExtendedDataKey::CreatorScheduledTip(creator.clone(), count),
@@ -2423,9 +2473,11 @@ pub fn get_sender_scheduled_tip_ids(env: &Env, sender: &Address) -> soroban_sdk:
         .unwrap_or(0);
     let mut vec = soroban_sdk::Vec::new(env);
     for i in 0..count {
-        if let Some(id) = env.storage().persistent().get(
-            &ExtendedDataKey::SenderScheduledTip(sender.clone(), i),
-        ) {
+        if let Some(id) = env
+            .storage()
+            .persistent()
+            .get(&ExtendedDataKey::SenderScheduledTip(sender.clone(), i))
+        {
             vec.push_back(id);
         }
     }
@@ -2436,15 +2488,15 @@ pub fn get_creator_scheduled_tip_ids(env: &Env, creator: &Address) -> soroban_sd
     let count: u32 = env
         .storage()
         .persistent()
-        .get(&ExtendedDataKey::CreatorScheduledTipCount(
-            creator.clone(),
-        ))
+        .get(&ExtendedDataKey::CreatorScheduledTipCount(creator.clone()))
         .unwrap_or(0);
     let mut vec = soroban_sdk::Vec::new(env);
     for i in 0..count {
-        if let Some(id) = env.storage().persistent().get(
-            &ExtendedDataKey::CreatorScheduledTip(creator.clone(), i),
-        ) {
+        if let Some(id) = env
+            .storage()
+            .persistent()
+            .get(&ExtendedDataKey::CreatorScheduledTip(creator.clone(), i))
+        {
             vec.push_back(id);
         }
     }

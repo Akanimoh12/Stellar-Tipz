@@ -229,7 +229,7 @@ describe('POST /api/v1/refunds/request', () => {
     expect(res.body.data).toMatchObject({
       id: 'refund-1',
       tipId: 'tip-1',
-      amount: '1000000',
+      amountStroops: '1000000',
       reason: 'wrong creator',
       status: 'pending',
       txHash: null,
@@ -276,7 +276,7 @@ describe('GET /api/v1/refunds/me', () => {
     expect(res.body.data[0]).toMatchObject({
       id: 'refund-1',
       tipId: 'tip-1',
-      amount: '1000000',
+      amountStroops: '1000000',
       status: 'pending',
     });
     expect(mockRefundFindMany).toHaveBeenCalledWith({
