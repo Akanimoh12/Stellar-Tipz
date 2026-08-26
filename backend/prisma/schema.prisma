@@ -58,15 +58,19 @@ model User {
 
 /// API key for service/admin access and webhook integrations.
 model ApiKey {
-  id          String    @id @default(cuid())
-  hashedKey   String    @unique
-  scopes      String[]
-  createdById String
-  createdBy   User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                     String    @id @default(cuid())
+  hashedKey              String    @unique
+  previousHashedKey      String?   @unique
+  previousGraceExpiresAt DateTime?
+  scopes                 String[]
+  expiresAt              DateTime?
+  lastUsedAt             DateTime?
+  createdById            String
+  createdBy              User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
   /// Soft-delete marker: non-null means the record is logically deleted.
-  deletedAt   DateTime?
+  deletedAt              DateTime?
 
   @@index([createdById])
 }
@@ -102,6 +106,9 @@ model Tip {
 
   @@index([toAddress, createdAt])
   @@index([fromAddress, createdAt])
+  @@index([createdAt, id])
+  @@index([toAddress, createdAt, id])
+  @@index([fromAddress, createdAt, id])
 }
 
 /// Tracks indexer progress per event topic so it can resume after a restart.
@@ -135,6 +142,7 @@ model Withdrawal {
   confirmedAt DateTime?
 
   @@index([userId])
+  @@index([userId, requestedAt, id])
 }
 
 /// Per-creator opt-in configuration for scheduled (auto) payouts.
@@ -208,6 +216,8 @@ model Refund {
   txHash    String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([createdAt, id])
 }
 
 /// In-app notification for a user.
@@ -225,6 +235,7 @@ model Notification {
 
   @@index([userId, readAt])
   @@index([createdAt])
+  @@index([userId, createdAt, id])
 }
 
 /// Per-user toggles controlling which notification types are created for them.
@@ -381,6 +392,8 @@ model Subscription {
   @@index([tipperId])
   @@index([creatorId])
   @@index([nextChargeAt])
+  @@index([tipperId, createdAt, id])
+  @@index([creatorId, createdAt, id])
 }
 
 /// Lifecycle status of a webhook subscription.
