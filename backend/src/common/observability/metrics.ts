@@ -38,6 +38,9 @@ export interface MetricsData {
     /** Cumulative count of queries that exceeded the slow-query threshold. */
     slow_queries_total: number;
   };
+  retention: {
+    rows_pruned_total: Record<string, number>;
+  };
 }
 
 let requestCount = 0;
@@ -45,7 +48,7 @@ let errorCount = 0;
 let latencySum = 0;
 let latencyCount = 0;
 let slowQueryCount = 0;
-let poolSaturationCount = 0;
+const retentionPrunedCounts: Record<string, number> = {};
 
 export function recordRequest(duration: number) {
   requestCount++;
@@ -62,9 +65,9 @@ export function recordSlowQuery() {
   slowQueryCount++;
 }
 
-/** Records a Prisma pool acquisition timeout. */
-export function recordPoolSaturation() {
-  poolSaturationCount++;
+/** Records rows removed by one completed retention batch. */
+export function recordRetentionPruned(model: string, count: number): void {
+  retentionPrunedCounts[model] = (retentionPrunedCounts[model] ?? 0) + count;
 }
 
 export async function getMetrics(): Promise<MetricsData> {
@@ -116,6 +119,9 @@ export async function getMetrics(): Promise<MetricsData> {
       pool_saturation_total: poolSaturationCount,
       query_timeout_ms: env.DATABASE_QUERY_TIMEOUT_MS,
       slow_queries_total: slowQueryCount,
+    },
+    retention: {
+      rows_pruned_total: { ...retentionPrunedCounts },
     },
   };
 }

@@ -17,6 +17,8 @@ datasource db {
 model User {
   id             String   @id @default(cuid())
   stellarAddress String   @unique
+  /// Usernames remain reserved after soft deletion so identities cannot be
+  /// impersonated or accidentally reassigned.
   username       String?  @unique
   displayName    String?
   bio            String?
@@ -203,6 +205,23 @@ model EventLog {
   @@index([topic])
   @@index([ledger])
   @@index([txHash])
+}
+
+/// Archived event logs retained for audit and compliance after the live event
+/// log retention window expires.
+model EventLogArchive {
+  id         String   @id @default(cuid())
+  sourceId   String   @unique
+  topic      String
+  ledger     Int
+  txHash     String
+  data       Json
+  createdAt  DateTime
+  archivedAt DateTime @default(now())
+
+  @@index([topic])
+  @@index([ledger])
+  @@index([createdAt])
 }
 
 /// Refund requests tied to a specific tip.

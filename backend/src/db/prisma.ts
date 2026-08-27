@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { env } from '../config/env.js';
 import { createSlowQueryMiddleware } from '../common/observability/slowQuery.js';
+import { softDeleteMiddleware } from './softDelete.js';
 
 const databaseUrl = new URL(env.DATABASE_URL);
 databaseUrl.searchParams.set('connection_limit', String(env.DATABASE_POOL_SIZE));
@@ -15,6 +16,17 @@ export const prisma = new PrismaClient({
   datasources: { db: { url: databaseUrl.toString() } },
   log: env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
 });
+
+/**
+ * Explicit opt-in client for admin, audit, privacy recovery, and reactivation
+ * workflows that must inspect logically deleted rows. Do not use for public
+ * or ordinary application reads.
+ */
+export const prismaIncludingDeleted = new PrismaClient({
+  log: env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+});
+
+prisma.$use(softDeleteMiddleware);
 
 // Instrument slow queries. Queries slower than the configured threshold are
 // logged (with model/operation/duration/request id, never parameters) and
