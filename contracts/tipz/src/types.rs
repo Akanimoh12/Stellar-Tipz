@@ -21,15 +21,15 @@ pub const MAX_DISPLAY_NAME_LENGTH: u32 = 64;
 pub const MAX_BIO_LENGTH: u32 = 280;
 
 /// Inactive profile threshold in seconds (180 days).
-    /// Profiles with no activity beyond this threshold may be cleaned up by the admin.
-    pub const INACTIVE_PROFILE_THRESHOLD_SECS: u64 = 180 * 24 * 3600;
-    /// Credit score decay inactivity window in seconds (90 days).
-    /// After this window with no activity, the score begins decaying toward the base score.
-    pub const CREDIT_DECAY_INACTIVITY_WINDOW_SECS: u64 = 90 * 24 * 3600;
-    /// Credit score decay rate per second.
-    /// The score decays toward the base score (40) at this rate.
-    pub const CREDIT_DECAY_RATE_PER_SEC: u64 = 1;
-    /// Registration rate limit window in seconds (1 hour).
+/// Profiles with no activity beyond this threshold may be cleaned up by the admin.
+pub const INACTIVE_PROFILE_THRESHOLD_SECS: u64 = 180 * 24 * 3600;
+/// Credit score decay inactivity window in seconds (90 days).
+/// After this window with no activity, the score begins decaying toward the base score.
+pub const CREDIT_DECAY_INACTIVITY_WINDOW_SECS: u64 = 90 * 24 * 3600;
+/// Credit score decay rate per second.
+/// The score decays toward the base score (40) at this rate.
+pub const CREDIT_DECAY_RATE_PER_SEC: u64 = 1;
+/// Registration rate limit window in seconds (1 hour).
 pub const REGISTRATION_RATE_WINDOW_SECS: u64 = 3600;
 
 /// Maximum registrations per rate limit window.
@@ -511,6 +511,34 @@ pub struct RateLimitStatus {
     pub count: u32,
     /// Timestamp when the current window started
     pub last_op_time: u64,
+}
+
+/// Withdrawal circuit breaker configuration.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CircuitBreakerConfig {
+    /// Whether withdrawal volume tracking can auto-pause the contract.
+    pub enabled: bool,
+    /// Maximum gross withdrawal volume allowed in one rolling window.
+    pub threshold: i128,
+    /// Rolling window length in seconds.
+    pub window_secs: u64,
+    /// Fixed number of buckets used to approximate the rolling window.
+    pub bucket_count: u32,
+}
+
+/// Withdrawal circuit breaker state.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CircuitBreakerStatus {
+    /// Start timestamp for each active bucket.
+    pub bucket_starts: soroban_sdk::Vec<u64>,
+    /// Gross withdrawal volume stored in each bucket.
+    pub bucket_volumes: soroban_sdk::Vec<i128>,
+    /// True when the breaker was responsible for pausing the contract.
+    pub tripped: bool,
+    /// Timestamp when the breaker last tripped.
+    pub tripped_at: Option<u64>,
 }
 
 /// Goal tracking for creators

@@ -168,7 +168,14 @@ pub fn emit_scheduled_tip_created(
 ) {
     env.events().publish(
         (symbol_short!("sch_tip"), symbol_short!("created")),
-        (1u32, id, sender.clone(), creator.clone(), amount, deliver_at),
+        (
+            1u32,
+            id,
+            sender.clone(),
+            creator.clone(),
+            amount,
+            deliver_at,
+        ),
     );
 }
 
@@ -241,7 +248,12 @@ pub fn emit_admin_change_proposed(
 ) {
     env.events().publish(
         (symbol_short!("admin"), symbol_short!("chgprop")),
-        (1u32, current_admin.clone(), new_admin.clone(), confirmable_after),
+        (
+            1u32,
+            current_admin.clone(),
+            new_admin.clone(),
+            confirmable_after,
+        ),
     );
 }
 
@@ -255,13 +267,17 @@ pub fn emit_admin_change_confirmed(env: &Env, old_admin: &Address, new_admin: &A
 }
 
 pub fn emit_upgrade_proposed(env: &Env, wasm_hash: &BytesN<32>) {
-    env.events()
-        .publish((symbol_short!("upgrade"), symbol_short!("proposed")), (1u32, wasm_hash.clone()));
+    env.events().publish(
+        (symbol_short!("upgrade"), symbol_short!("proposed")),
+        (1u32, wasm_hash.clone()),
+    );
 }
 
 pub fn emit_upgrade_cancelled(env: &Env, admin: &Address) {
-    env.events()
-        .publish((symbol_short!("upgrade"), symbol_short!("canceled")), (1u32, admin.clone()));
+    env.events().publish(
+        (symbol_short!("upgrade"), symbol_short!("canceled")),
+        (1u32, admin.clone()),
+    );
 }
 
 // ── Fee events ────────────────────────────────────────────────────────────────
@@ -356,6 +372,20 @@ pub fn emit_contract_unpaused(env: &Env, admin: &Address, flag: crate::types::Pa
     );
 }
 
+/// Topics : `("breaker", "tripped")`
+/// Data   : `(attempted_amount, rolling_total, threshold)`
+pub fn emit_circuit_breaker_tripped(
+    env: &Env,
+    attempted_amount: i128,
+    rolling_total: i128,
+    threshold: i128,
+) {
+    env.events().publish(
+        (symbol_short!("breaker"), symbol_short!("tripped")),
+        (attempted_amount, rolling_total, threshold),
+    );
+}
+
 pub fn emit_emergency_withdrawal(env: &Env, creator: &Address, amount: i128) {
     env.events().publish(
         (symbol_short!("creator"), symbol_short!("emerg_wdr")),
@@ -383,7 +413,10 @@ pub fn emit_min_tip_amount_updated(env: &Env, old_min: i128, new_min: i128) {
     );
 }
 pub fn emit_min_withdrawal_amount_updated(env: &Env, old_min: i128, new_min: i128) {
-    env.events().publish((symbol_short!("withdraw"), symbol_short!("min")), (1i128, old_min, new_min));
+    env.events().publish(
+        (symbol_short!("withdraw"), symbol_short!("min")),
+        (1i128, old_min, new_min),
+    );
 }
 
 // ── Batch events ──────────────────────────────────────────────────────────────
@@ -450,7 +483,13 @@ pub fn emit_subscription_created(
 ) {
     env.events().publish(
         (symbol_short!("sub"), symbol_short!("created")),
-        (1u32, subscriber.clone(), creator.clone(), amount, interval_days),
+        (
+            1u32,
+            subscriber.clone(),
+            creator.clone(),
+            amount,
+            interval_days,
+        ),
     );
 }
 
@@ -674,7 +713,13 @@ pub fn emit_domain_verification_expired(env: &Env, creator: &Address) {
 // ── Goal events ───────────────────────────────────────────────────────────────
 
 /// Topics : `("goal", "set")`
-pub fn emit_goal_set(env: &Env, creator: &Address, target: i128, description: &String, deadline: u64) {
+pub fn emit_goal_set(
+    env: &Env,
+    creator: &Address,
+    target: i128,
+    description: &String,
+    deadline: u64,
+) {
     env.events().publish(
         (Symbol::new(env, "goal"), symbol_short!("set")),
         (creator.clone(), target, description.clone(), deadline),

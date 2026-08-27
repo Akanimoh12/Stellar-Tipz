@@ -60,7 +60,8 @@ pub fn request_refund(env: &Env, tipper: &Address, tip_id: u32) -> Result<(), Co
     }
 
     // Calculate refund amount (original amount minus non-refundable fee)
-    let non_refundable_fee = calculate_non_refundable_fee(tip.amount, config.non_refundable_fee_bps)?;
+    let non_refundable_fee =
+        calculate_non_refundable_fee(tip.amount, config.non_refundable_fee_bps)?;
     let refund_amount = tip.amount.saturating_sub(non_refundable_fee);
 
     // Create refund request
@@ -109,7 +110,8 @@ pub fn approve_refund(env: &Env, creator: &Address, tip_id: u32) -> Result<(), C
     }
     creator.require_auth();
 
-    let mut request = storage::get_refund_request(env, tip_id).ok_or(ContractError::NoRefundRequest)?;
+    let mut request =
+        storage::get_refund_request(env, tip_id).ok_or(ContractError::NoRefundRequest)?;
 
     // Verify caller is the creator
     if request.creator != *creator {
@@ -147,7 +149,8 @@ pub fn reject_refund(env: &Env, creator: &Address, tip_id: u32) -> Result<(), Co
     }
     creator.require_auth();
 
-    let mut request = storage::get_refund_request(env, tip_id).ok_or(ContractError::NoRefundRequest)?;
+    let mut request =
+        storage::get_refund_request(env, tip_id).ok_or(ContractError::NoRefundRequest)?;
 
     // Verify caller is the creator
     if request.creator != *creator {
@@ -290,8 +293,7 @@ pub fn expire_refund(env: &Env, tip_id: u32) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     crate::admin::require_not_paused(env)?;
 
-    let request = storage::get_refund_request(env, tip_id)
-        .ok_or(ContractError::NoRefundRequest)?;
+    let request = storage::get_refund_request(env, tip_id).ok_or(ContractError::NoRefundRequest)?;
 
     // Only pending requests can expire
     if request.status != RefundStatus::Pending {
@@ -327,20 +329,19 @@ fn process_refund_internal(
 
     // Update creator's profile (reduce balance and stats)
     let mut creator_profile = storage::get_profile(env, &request.creator);
-    
+
     // Reduce creator's balance by the original tip amount
     creator_profile.balance = creator_profile.balance.saturating_sub(request.amount);
-    
+
     // Reduce total tips received and count
-    creator_profile.total_tips_received = creator_profile.total_tips_received.saturating_sub(request.amount);
+    creator_profile.total_tips_received = creator_profile
+        .total_tips_received
+        .saturating_sub(request.amount);
     creator_profile.total_tips_count = creator_profile.total_tips_count.saturating_sub(1);
 
     // Recalculate credit score
-    creator_profile.credit_score = crate::credit::calculate_credit_score_with_streak(
-        env,
-        &creator_profile,
-        now,
-    );
+    creator_profile.credit_score =
+        crate::credit::calculate_credit_score_with_streak(env, &creator_profile, now);
 
     storage::set_profile(env, &creator_profile);
 
@@ -349,7 +350,12 @@ fn process_refund_internal(
 
     // Transfer refund amount to tipper
     let contract_address = env.current_contract_address();
-    token::transfer_xlm(env, &contract_address, &request.tipper, request.refund_amount)?;
+    token::transfer_xlm(
+        env,
+        &contract_address,
+        &request.tipper,
+        request.refund_amount,
+    )?;
 
     // Non-refundable fee stays in contract (already collected)
 

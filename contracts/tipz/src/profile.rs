@@ -5,7 +5,10 @@ use soroban_sdk::{Address, Env, String, Vec};
 use crate::errors::ContractError;
 use crate::events;
 use crate::storage;
-use crate::types::{Profile, ProfileWithDeactivation, MAX_DISPLAY_NAME_LENGTH, MAX_BIO_LENGTH, INACTIVE_PROFILE_THRESHOLD_SECS};
+use crate::types::{
+    Profile, ProfileWithDeactivation, INACTIVE_PROFILE_THRESHOLD_SECS, MAX_BIO_LENGTH,
+    MAX_DISPLAY_NAME_LENGTH,
+};
 use crate::validation;
 
 /// Register a new creator profile.
@@ -134,7 +137,7 @@ pub fn register_profile(
         domain_verified: false,
         domain_verified_at: None,
         custom_min_tip: None,
-        last_active_at: now,  // newly registered creators are "active" at registration
+        last_active_at: now, // newly registered creators are "active" at registration
     };
 
     storage::set_profile(env, &profile);
@@ -503,11 +506,7 @@ pub fn get_donation_page(
 /// Set a custom minimum tip amount for the caller's profile.
 ///
 /// Pass `0` to reset to the global minimum.
-pub fn set_min_tip(
-    env: &Env,
-    creator: Address,
-    min_amount: i128,
-) -> Result<(), ContractError> {
+pub fn set_min_tip(env: &Env, creator: Address, min_amount: i128) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     crate::admin::require_not_paused(env)?;
     creator.require_auth();

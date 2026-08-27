@@ -271,5 +271,3 @@ fn test_decrement_total_creators_underflow_protection() {
     let count_after = env.as_contract(&contract_id, || storage::get_total_creators(&env));
     assert_eq!(count_after, 0);
 }
-
-

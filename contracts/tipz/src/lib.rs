@@ -17,6 +17,7 @@
 extern crate std;
 
 pub mod admin;
+pub mod circuit_breaker;
 pub mod credit;
 pub mod errors;
 pub mod events;
@@ -53,7 +54,7 @@ use crate::types::{
 
 /// The current contract interface version, stored on-chain during initialization.
 /// Must be incremented manually in source when the contract interface changes.
-pub const CONTRACT_VERSION: u32 = 3;
+pub const CONTRACT_VERSION: u32 = 4;
 
 #[contract]
 pub struct TipzContract;
@@ -371,11 +372,7 @@ impl TipzContract {
         storage::get_tipper_tip_count(&env, &tipper)
     }
 
-    pub fn block_tipper(
-        env: Env,
-        creator: Address,
-        tipper: Address,
-    ) -> Result<(), ContractError> {
+    pub fn block_tipper(env: Env, creator: Address, tipper: Address) -> Result<(), ContractError> {
         tips::block_tipper(&env, &creator, &tipper)
     }
 
@@ -818,6 +815,37 @@ impl TipzContract {
     /// Get the minimum withdrawal amount.
     pub fn get_min_withdrawal_amount(env: Env) -> i128 {
         storage::get_min_withdrawal_amount(&env)
+    }
+
+    /// Configure the contract-level withdrawal circuit breaker. Admin only.
+    ///
+    /// When enabled, gross withdrawal volume is tracked in a bounded set of
+    /// buckets. Exceeding `threshold` within `window_secs` auto-pauses the
+    /// contract before the withdrawal transfers funds.
+    pub fn set_circuit_breaker_config(
+        env: Env,
+        caller: Address,
+        enabled: bool,
+        threshold: i128,
+        window_secs: u64,
+        bucket_count: u32,
+    ) -> Result<(), ContractError> {
+        circuit_breaker::configure(&env, &caller, enabled, threshold, window_secs, bucket_count)
+    }
+
+    /// Clear circuit-breaker volume buckets and unpause if the breaker tripped.
+    pub fn reset_circuit_breaker(env: Env, caller: Address) -> Result<(), ContractError> {
+        circuit_breaker::reset(&env, &caller)
+    }
+
+    /// Return current withdrawal circuit breaker configuration.
+    pub fn get_circuit_breaker_config(env: Env) -> crate::types::CircuitBreakerConfig {
+        circuit_breaker::get_config(&env)
+    }
+
+    /// Return current withdrawal circuit breaker fixed-bucket state.
+    pub fn get_circuit_breaker_status(env: Env) -> crate::types::CircuitBreakerStatus {
+        circuit_breaker::get_status(&env)
     }
 
     /// Set the maximum sender contribution to a creator's leaderboard score in basis points.

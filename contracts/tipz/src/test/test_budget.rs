@@ -505,4 +505,3 @@ fn test_send_tip_message_length_overhead() {
         "message-length CPU overhead {overhead} exceeds max {MSG_CPU_OVERHEAD_MAX}"
     );
 }
-

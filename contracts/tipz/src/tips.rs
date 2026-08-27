@@ -54,7 +54,7 @@ fn store_tip_with_id(
     is_encrypted: bool,
 ) {
     let key = DataKey::Tip(tip_id);
-    
+
     // Generate pseudonym for anonymous tips: sha256(sender || creator || contract_salt)
     let pseudonym = if is_anonymous {
         let contract_salt = env.current_contract_address();
@@ -201,11 +201,7 @@ pub const MAX_TIP_AMOUNT: i128 = 1_000_000_000_000_i128;
 pub const MAX_TIP_COUNT: u32 = u32::MAX;
 
 /// Block a tipper from sending future tips to `creator`.
-pub fn block_tipper(
-    env: &Env,
-    creator: &Address,
-    tipper: &Address,
-) -> Result<(), ContractError> {
+pub fn block_tipper(env: &Env, creator: &Address, tipper: &Address) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     creator.require_auth();
     if !storage::has_profile(env, creator) {
@@ -226,11 +222,7 @@ pub fn block_tipper(
 }
 
 /// Remove a tipper from `creator`'s blocklist.
-pub fn unblock_tipper(
-    env: &Env,
-    creator: &Address,
-    tipper: &Address,
-) -> Result<(), ContractError> {
+pub fn unblock_tipper(env: &Env, creator: &Address, tipper: &Address) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     creator.require_auth();
     if !storage::has_profile(env, creator) {
@@ -518,7 +510,11 @@ pub fn withdraw_tips(env: &Env, caller: &Address, amount: i128) -> Result<(), Co
     }
 
     let mut profile = storage::get_profile(env, caller);
-    let amount = crate::validation::validate_withdrawal_amount(amount, storage::get_min_withdrawal_amount(env), profile.balance)?;
+    let amount = crate::validation::validate_withdrawal_amount(
+        amount,
+        storage::get_min_withdrawal_amount(env),
+        profile.balance,
+    )?;
 
     // Calculate fee and net amount
     let fee_bps = storage::get_fee_bps(env);
@@ -528,6 +524,7 @@ pub fn withdraw_tips(env: &Env, caller: &Address, amount: i128) -> Result<(), Co
     let contract_address = env.current_contract_address();
     let fee_collector = storage::get_fee_collector(env);
 
+    crate::circuit_breaker::record_withdrawal_or_trip(env, amount)?;
     // Set reentrancy guard before external token calls
     storage::set_reentrancy_guard(env, true);
     // Transfer net amount to creator
@@ -735,15 +732,12 @@ pub fn send_scheduled_tip(
 /// - [`ContractError::NotFound`] if scheduled tip doesn't exist
 /// - [`ContractError::InvalidInput`] if tip already delivered or cancelled
 /// - [`ContractError::InvalidInput`] if delivery time hasn't passed yet
-pub fn deliver_scheduled_tip(
-    env: &Env,
-    scheduled_tip_id: u32,
-) -> Result<(), ContractError> {
+pub fn deliver_scheduled_tip(env: &Env, scheduled_tip_id: u32) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     crate::admin::require_not_paused(env)?;
 
-    let mut scheduled_tip = storage::get_scheduled_tip(env, scheduled_tip_id)
-        .ok_or(ContractError::NotFound)?;
+    let mut scheduled_tip =
+        storage::get_scheduled_tip(env, scheduled_tip_id).ok_or(ContractError::NotFound)?;
 
     if scheduled_tip.delivered {
         return Err(ContractError::InvalidInput);
@@ -782,8 +776,7 @@ pub fn deliver_scheduled_tip(
     streaks::record_tip_streak(env, &scheduled_tip.sender, &scheduled_tip.creator);
 
     // Update credit score
-    profile.credit_score =
-        credit::calculate_credit_score_with_streak(env, &profile, now);
+    profile.credit_score = credit::calculate_credit_score_with_streak(env, &profile, now);
 
     storage::set_profile(env, &profile);
     credit::mark_credit_computed(env, &scheduled_tip.creator);
@@ -855,8 +848,8 @@ pub fn cancel_scheduled_tip(
     crate::admin::require_not_paused(env)?;
     caller.require_auth();
 
-    let mut scheduled_tip = storage::get_scheduled_tip(env, scheduled_tip_id)
-        .ok_or(ContractError::NotFound)?;
+    let mut scheduled_tip =
+        storage::get_scheduled_tip(env, scheduled_tip_id).ok_or(ContractError::NotFound)?;
 
     if scheduled_tip.sender != *caller {
         return Err(ContractError::NotAuthorized);

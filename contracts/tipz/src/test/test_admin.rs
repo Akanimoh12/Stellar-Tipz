@@ -804,6 +804,3 @@ fn test_old_admin_cannot_set_min_tip_after_transfer() {
         .try_set_min_tip_amount(&ctx.admin, &5_000_000_i128);
     assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
 }
-
-
-

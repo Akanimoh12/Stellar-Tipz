@@ -41,9 +41,9 @@ use soroban_sdk::{Address, Env};
 
 use crate::errors::ContractError;
 use crate::storage;
-use crate::types::{CreditBreakdown, CreditTier, Profile};
 use crate::types::CREDIT_DECAY_INACTIVITY_WINDOW_SECS;
 use crate::types::CREDIT_DECAY_RATE_PER_SEC;
+use crate::types::{CreditBreakdown, CreditTier, Profile};
 
 /// Maximum creators processed in a single `recompute_credit_scores_page` call.
 pub const MAX_RECOMPUTE_PAGE_SIZE: u32 = 50;
@@ -192,7 +192,7 @@ pub fn calculate_credit_score(profile: &Profile, now: u64) -> u32 {
     let inactivity_window = CREDIT_DECAY_INACTIVITY_WINDOW_SECS;
     let decay_rate = CREDIT_DECAY_RATE_PER_SEC;
 
-if elapsed_since_active > inactivity_window {
+    if elapsed_since_active > inactivity_window {
         let elapsed_beyond_window = elapsed_since_active.saturating_sub(inactivity_window) as u64;
         let decay_amount = elapsed_beyond_window.saturating_mul(decay_rate);
         // decay_amount may exceed the excess above base; cap at base-relative amount

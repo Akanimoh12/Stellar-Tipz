@@ -8,7 +8,12 @@ import { deprecatedOffsetPagination } from '../../common/middleware/deprecatedOf
 export const refundsRouter = Router();
 
 refundsRouter.get('/me', requireAuth, deprecatedOffsetPagination, refundsController.getMyRefunds);
+refundsRouter.get('/received', requireAuth, refundsController.getReceivedRefunds);
 refundsRouter.post('/request', requireAuth, refundsController.requestRefund);
+refundsRouter.post('/:id/approve', requireAuth, refundsController.approveRefund);
+refundsRouter.post('/:id/approve/submit', requireAuth, refundsController.submitApproveRefund);
+refundsRouter.post('/:id/reject', requireAuth, refundsController.rejectRefund);
+refundsRouter.post('/:id/reject/submit', requireAuth, refundsController.submitRejectRefund);
 
 const base = `${env.API_BASE_PATH}/refunds`;
 
@@ -28,6 +33,45 @@ const refundSchema = {
 };
 
 mergeOpenApiPaths({
+  [`${base}/received`]: {
+    get: {
+      tags: ['Refunds'],
+      summary: 'Get received refund requests',
+      description: 'Returns paginated refund requests for tips received by the authenticated creator.',
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        {
+          name: 'limit',
+          in: 'query',
+          required: false,
+          schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+        },
+        {
+          name: 'offset',
+          in: 'query',
+          required: false,
+          schema: { type: 'integer', minimum: 0, default: 0 },
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'Paginated received refund requests',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: { type: 'array', items: refundSchema },
+                },
+                required: ['data'],
+              },
+            },
+          },
+        },
+        '401': { description: 'Unauthorized' },
+      },
+    },
+  },
   [`${base}/me`]: {
     get: {
       tags: ['Refunds'],
@@ -116,6 +160,102 @@ mergeOpenApiPaths({
         '403': { description: 'Tip does not belong to the authenticated user' },
         '404': { description: 'Tip not found' },
         '409': { description: 'Refund already requested for this tip' },
+      },
+    },
+  },
+  [`${base}/{id}/approve`]: {
+    post: {
+      tags: ['Refunds'],
+      summary: 'Prepare refund approval',
+      description: 'Builds an unsigned `approve_refund` transaction for the authenticated tip recipient to sign.',
+      security: [{ bearerAuth: [] }],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: {
+        '200': { description: 'Unsigned transaction prepared' },
+        '403': { description: 'Only the tip recipient may approve' },
+        '404': { description: 'Refund not found' },
+        '409': { description: 'Refund is not pending' },
+      },
+    },
+  },
+  [`${base}/{id}/approve/submit`]: {
+    post: {
+      tags: ['Refunds'],
+      summary: 'Submit refund approval',
+      description: 'Submits a wallet-signed `approve_refund` transaction.',
+      security: [{ bearerAuth: [] }],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: { signedTxXdr: { type: 'string' } },
+              required: ['signedTxXdr'],
+            },
+          },
+        },
+      },
+      responses: {
+        '200': { description: 'Approval transaction submitted' },
+        '403': { description: 'Only the tip recipient may approve' },
+        '409': { description: 'Refund is not pending' },
+      },
+    },
+  },
+  [`${base}/{id}/reject`]: {
+    post: {
+      tags: ['Refunds'],
+      summary: 'Prepare refund rejection',
+      description: 'Builds an unsigned `reject_refund` transaction for the authenticated tip recipient to sign.',
+      security: [{ bearerAuth: [] }],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: { reason: { type: 'string' } },
+              required: ['reason'],
+            },
+          },
+        },
+      },
+      responses: {
+        '200': { description: 'Unsigned transaction prepared' },
+        '403': { description: 'Only the tip recipient may reject' },
+        '409': { description: 'Refund is not pending' },
+      },
+    },
+  },
+  [`${base}/{id}/reject/submit`]: {
+    post: {
+      tags: ['Refunds'],
+      summary: 'Submit refund rejection',
+      description: 'Submits a wallet-signed `reject_refund` transaction.',
+      security: [{ bearerAuth: [] }],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                signedTxXdr: { type: 'string' },
+                reason: { type: 'string' },
+              },
+              required: ['signedTxXdr', 'reason'],
+            },
+          },
+        },
+      },
+      responses: {
+        '200': { description: 'Rejection transaction submitted' },
+        '403': { description: 'Only the tip recipient may reject' },
+        '409': { description: 'Refund is not pending' },
       },
     },
   },

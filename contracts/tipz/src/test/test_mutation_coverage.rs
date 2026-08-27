@@ -669,4 +669,3 @@ fn tips_get_recent_tips_caps_limit_above_50() {
         assert_eq!(result.len(), 3, "result bounded by available tips, not inflated limit");
     });
 }
-

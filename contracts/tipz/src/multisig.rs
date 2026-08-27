@@ -233,7 +233,11 @@ pub fn approve_action(env: &Env, signer: &Address, proposal_id: u32) -> Result<(
 }
 
 /// Cancel a proposal (only the proposer can cancel)
-pub fn cancel_proposal(env: &Env, proposer: &Address, proposal_id: u32) -> Result<(), ContractError> {
+pub fn cancel_proposal(
+    env: &Env,
+    proposer: &Address,
+    proposal_id: u32,
+) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     proposer.require_auth();
 

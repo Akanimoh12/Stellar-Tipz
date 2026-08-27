@@ -83,9 +83,22 @@ jobs:
       - name: Build WASM (soroban)
         run: soroban contract build
 
+      - name: Generate contract ABI spec
+        run: bash ../scripts/generate-contract-spec.sh
+
+      - name: Verify committed ABI spec is current
+        working-directory: .
+        run: git diff --exit-code -- contracts/abi/tipz_contract.spec.json
+
       - name: Upload WASM artifact
         uses: actions/upload-artifact@v4
         with:
           name: soroban-wasm
           path: |
             contracts/target/wasm32-unknown-unknown/release/*.wasm
+
+      - name: Upload ABI spec artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-abi-spec
+          path: contracts/abi/tipz_contract.spec.json

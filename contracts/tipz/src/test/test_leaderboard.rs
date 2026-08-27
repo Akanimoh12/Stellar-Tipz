@@ -489,5 +489,3 @@ fn test_no_duplicates_after_update() {
         "total must reflect all three tips"
     );
 }
-
-

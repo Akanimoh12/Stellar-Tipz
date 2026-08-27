@@ -15,7 +15,8 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
 
 use crate::errors::ContractError;
 use crate::types::{
-    LeaderboardEntry, LeaderboardPeriod, Profile, RateLimitConfig, RateLimitStatus,
+    CircuitBreakerConfig, CircuitBreakerStatus, LeaderboardEntry, LeaderboardPeriod, Profile,
+    RateLimitConfig, RateLimitStatus,
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -166,8 +167,10 @@ pub enum DataKey {
     CreatorPeriodVolume(Address, crate::types::LeaderboardPeriod, u64),
     /// Maximum active subscriptions per subscriber
     SubscriptionLimit,
-    /// Reentrancy guard: set before fund-moving external calls
-    ReentrancyGuard,
+    /// Withdrawal circuit breaker configuration.
+    CircuitBreakerConfig,
+    /// Withdrawal circuit breaker fixed-bucket state.
+    CircuitBreakerStatus,
 }
 
 /// Extended storage keys for additional features (separate enum to avoid size limits)
@@ -437,15 +440,21 @@ pub fn set_pause_flags(env: &Env, flags: u32) {
 
 /// Storage migration state accessors
 pub fn get_migration_state(env: &Env) -> Option<crate::types::MigrationState> {
-    env.storage().instance().get(&ExtendedDataKey::MigrationState)
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::MigrationState)
 }
 
 pub fn set_migration_state(env: &Env, state: &crate::types::MigrationState) {
-    env.storage().instance().set(&ExtendedDataKey::MigrationState, state);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::MigrationState, state);
 }
 
 pub fn remove_migration_state(env: &Env) {
-    env.storage().instance().remove(&ExtendedDataKey::MigrationState);
+    env.storage()
+        .instance()
+        .remove(&ExtendedDataKey::MigrationState);
 }
 
 /// Sets a specific pause flag.
@@ -494,11 +503,16 @@ pub fn set_min_tip_amount(env: &Env, amount: i128) {
 pub const DEFAULT_MIN_WITHDRAWAL_AMOUNT: i128 = 1_000_000;
 
 pub fn get_min_withdrawal_amount(env: &Env) -> i128 {
-    env.storage().instance().get(&ExtendedDataKey::MinWithdrawalAmount).unwrap_or(DEFAULT_MIN_WITHDRAWAL_AMOUNT)
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::MinWithdrawalAmount)
+        .unwrap_or(DEFAULT_MIN_WITHDRAWAL_AMOUNT)
 }
 
 pub fn set_min_withdrawal_amount(env: &Env, amount: i128) {
-    env.storage().instance().set(&ExtendedDataKey::MinWithdrawalAmount, &amount);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::MinWithdrawalAmount, &amount);
 }
 
 /// Default domain re-verification interval: 30 days.
@@ -710,8 +724,12 @@ pub fn append_admin_audit_entry(
     }
     log.push_back(entry.clone());
 
-    env.storage().instance().set(&ExtendedDataKey::AdminAuditLog, &log);
-    env.storage().instance().set(&ExtendedDataKey::AdminAuditCount, &next_id);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::AdminAuditLog, &log);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::AdminAuditCount, &next_id);
 
     entry
 }
@@ -812,9 +830,7 @@ pub fn set_fee_change_delay_ledgers(env: &Env, delay_ledgers: u32) {
 
 /// Returns the pending fee change, if any.
 pub fn get_pending_fee_change(env: &Env) -> Option<(u32, u32, u32, bool)> {
-    env.storage()
-        .instance()
-        .get(&symbol_short!("fee_pend"))
+    env.storage().instance().get(&symbol_short!("fee_pend"))
 }
 
 /// Stores the pending fee change.
@@ -839,20 +855,87 @@ pub fn get_subscription_limit(env: &Env) -> u32 {
 
 /// Sets the maximum active subscriptions per subscriber.
 pub fn set_subscription_limit(env: &Env, limit: u32) {
-    env.storage().instance().set(&DataKey::SubscriptionLimit, &limit);
+    env.storage()
+        .instance()
+        .set(&DataKey::SubscriptionLimit, &limit);
+}
+
+pub const MAX_CIRCUIT_BREAKER_BUCKETS: u32 = 24;
+pub const DEFAULT_CIRCUIT_BREAKER_BUCKETS: u32 = 12;
+pub const DEFAULT_CIRCUIT_BREAKER_WINDOW_SECS: u64 = 3600;
+
+pub fn default_circuit_breaker_config() -> CircuitBreakerConfig {
+    CircuitBreakerConfig {
+        enabled: false,
+        threshold: 0,
+        window_secs: DEFAULT_CIRCUIT_BREAKER_WINDOW_SECS,
+        bucket_count: DEFAULT_CIRCUIT_BREAKER_BUCKETS,
+    }
+}
+
+pub fn get_circuit_breaker_config(env: &Env) -> CircuitBreakerConfig {
+    env.storage()
+        .instance()
+        .get(&DataKey::CircuitBreakerConfig)
+        .unwrap_or_else(default_circuit_breaker_config)
+}
+
+pub fn set_circuit_breaker_config(env: &Env, config: &CircuitBreakerConfig) {
+    env.storage()
+        .instance()
+        .set(&DataKey::CircuitBreakerConfig, config);
+}
+
+pub fn get_circuit_breaker_status(env: &Env) -> CircuitBreakerStatus {
+    env.storage()
+        .instance()
+        .get(&DataKey::CircuitBreakerStatus)
+        .unwrap_or_else(|| empty_circuit_breaker_status(env, DEFAULT_CIRCUIT_BREAKER_BUCKETS))
+}
+
+pub fn set_circuit_breaker_status(env: &Env, status: &CircuitBreakerStatus) {
+    env.storage()
+        .instance()
+        .set(&DataKey::CircuitBreakerStatus, status);
+}
+
+pub fn reset_circuit_breaker_status(env: &Env, bucket_count: u32) {
+    let count = bucket_count.clamp(1, MAX_CIRCUIT_BREAKER_BUCKETS);
+    set_circuit_breaker_status(env, &empty_circuit_breaker_status(env, count));
+}
+
+fn empty_circuit_breaker_status(env: &Env, bucket_count: u32) -> CircuitBreakerStatus {
+    let count = bucket_count.clamp(1, MAX_CIRCUIT_BREAKER_BUCKETS);
+    let mut bucket_starts = soroban_sdk::Vec::new(env);
+    let mut bucket_volumes = soroban_sdk::Vec::new(env);
+    for _ in 0..count {
+        bucket_starts.push_back(0);
+        bucket_volumes.push_back(0);
+    }
+    CircuitBreakerStatus {
+        bucket_starts,
+        bucket_volumes,
+        tripped: false,
+        tripped_at: None,
+    }
 }
 
 /// Returns `true` if the reentrancy guard is currently active (a fund-moving
 /// operation is in progress). Callers should not make external token transfers
 /// while the guard is active.
 pub fn is_reentrancy_guard_active(env: &Env) -> bool {
-    env.storage().instance().get(&DataKey::ReentrancyGuard).unwrap_or(false)
+    env.storage()
+        .instance()
+        .get(&DataKey::ReentrancyGuard)
+        .unwrap_or(false)
 }
 
 /// Set the reentrancy guard to `locked` (beginning a fund-moving operation)
 /// or `unlocked` (ending it).
 pub fn set_reentrancy_guard(env: &Env, locked: bool) {
-    env.storage().instance().set(&DataKey::ReentrancyGuard, &locked);
+    env.storage()
+        .instance()
+        .set(&DataKey::ReentrancyGuard, &locked);
 }
 
 /// Guard helper: sets the guard to `locked`, runs `f`, then resets it to
@@ -2461,9 +2544,7 @@ pub fn add_creator_scheduled_tip(env: &Env, creator: &Address, id: u32) {
     let count: u32 = env
         .storage()
         .persistent()
-        .get(&ExtendedDataKey::CreatorScheduledTipCount(
-            creator.clone(),
-        ))
+        .get(&ExtendedDataKey::CreatorScheduledTipCount(creator.clone()))
         .unwrap_or(0);
     env.storage().persistent().set(
         &ExtendedDataKey::CreatorScheduledTip(creator.clone(), count),
@@ -2483,9 +2564,11 @@ pub fn get_sender_scheduled_tip_ids(env: &Env, sender: &Address) -> soroban_sdk:
         .unwrap_or(0);
     let mut vec = soroban_sdk::Vec::new(env);
     for i in 0..count {
-        if let Some(id) = env.storage().persistent().get(
-            &ExtendedDataKey::SenderScheduledTip(sender.clone(), i),
-        ) {
+        if let Some(id) = env
+            .storage()
+            .persistent()
+            .get(&ExtendedDataKey::SenderScheduledTip(sender.clone(), i))
+        {
             vec.push_back(id);
         }
     }
@@ -2496,15 +2579,15 @@ pub fn get_creator_scheduled_tip_ids(env: &Env, creator: &Address) -> soroban_sd
     let count: u32 = env
         .storage()
         .persistent()
-        .get(&ExtendedDataKey::CreatorScheduledTipCount(
-            creator.clone(),
-        ))
+        .get(&ExtendedDataKey::CreatorScheduledTipCount(creator.clone()))
         .unwrap_or(0);
     let mut vec = soroban_sdk::Vec::new(env);
     for i in 0..count {
-        if let Some(id) = env.storage().persistent().get(
-            &ExtendedDataKey::CreatorScheduledTip(creator.clone(), i),
-        ) {
+        if let Some(id) = env
+            .storage()
+            .persistent()
+            .get(&ExtendedDataKey::CreatorScheduledTip(creator.clone(), i))
+        {
             vec.push_back(id);
         }
     }
@@ -2605,5 +2688,3 @@ pub fn get_token_oracle_price(env: &Env, token: &Address) -> Option<crate::types
         .persistent()
         .get(&ExtendedDataKey::TokenOraclePrice(token.clone()))
 }
-
-
