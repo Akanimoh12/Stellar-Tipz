@@ -53,15 +53,17 @@ pub enum ContractError {
     /// Profile is inactive beyond the cleanup threshold
     ProfileInactive = 39,
     /// Refund request window has expired
-    RefundWindowExpired = 38,
+    RefundWindowExpired = 40,
     /// Refund has already been requested for this tip
-    RefundAlreadyRequested = 39,
+    RefundAlreadyRequested = 41,
     /// Refund has already been processed
-    RefundAlreadyProcessed = 40,
+    RefundAlreadyProcessed = 42,
     /// No refund request exists for this tip
-    NoRefundRequest = 41,
+    NoRefundRequest = 43,
     /// Only the tipper can request a refund
-    NotTipper = 42,
+    NotTipper = 44,
     /// Only the creator can approve/reject a refund
-    NotCreator = 43,
+    NotCreator = 45,
+    /// Storage limit exceeded for variable-size entry
+    StorageLimitExceeded = 46,
 }

@@ -25,7 +25,7 @@ pub fn require_admin(env: &Env, caller: &Address) -> Result<(), ContractError> {
 }
 
 pub fn require_not_paused(env: &Env) -> Result<(), ContractError> {
-    if storage::is_paused(env) {
+    if storage::is_paused(env, crate::types::PauseFlag::All) {
         return Err(ContractError::ContractPaused);
     }
     Ok(())
@@ -52,7 +52,7 @@ pub fn initialize(
     storage::set_fee_collector(env, fee_collector);
     storage::set_fee_bps(env, fee_bps);
     storage::set_native_token(env, native_token);
-    storage::set_paused(env, false);
+    storage::set_pause_flags(env, 0); // No pauses by default
     storage::set_min_tip_amount(env, 1_000_000_i128);
     storage::set_version(env, crate::CONTRACT_VERSION);
     storage::set_runtime_config(
@@ -62,13 +62,14 @@ pub fn initialize(
             fee_collector: fee_collector.clone(),
             fee_bps,
             native_token: native_token.clone(),
-            paused: false,
+            pause_flags: 0,
             min_tip_amount: 1_000_000_i128,
             rate_limit: crate::types::RateLimitConfig {
                 max_ops: 50,
                 window_secs: 3600,
             },
             domain_reverify_secs: storage::DEFAULT_DOMAIN_REVERIFICATION_INTERVAL,
+            max_sender_contribution_bps: crate::types::DEFAULT_MAX_SENDER_CONTRIBUTION_BPS,
         },
     );
     storage::set_leaderboard_set(
@@ -433,19 +434,19 @@ pub fn get_admin_change_history(
     Ok(out)
 }
 
-pub fn pause(env: &Env, caller: &Address) -> Result<(), ContractError> {
+pub fn pause(env: &Env, caller: &Address, flag: crate::types::PauseFlag) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
-    storage::set_paused(env, true);
-    events::emit_contract_paused(env, caller);
+    storage::set_pause_flag(env, flag, true);
+    events::emit_contract_paused(env, caller, flag);
     Ok(())
 }
 
-pub fn unpause(env: &Env, caller: &Address) -> Result<(), ContractError> {
+pub fn unpause(env: &Env, caller: &Address, flag: crate::types::PauseFlag) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
-    storage::set_paused(env, false);
-    events::emit_contract_unpaused(env, caller);
+    storage::set_pause_flag(env, flag, false);
+    events::emit_contract_unpaused(env, caller, flag);
     Ok(())
 }
 
@@ -458,6 +459,28 @@ pub fn set_min_tip_amount(env: &Env, caller: &Address, amount: i128) -> Result<(
     let old = storage::get_min_tip_amount(env);
     storage::set_min_tip_amount(env, amount);
     events::emit_min_tip_amount_updated(env, old, amount);
+    Ok(())
+}
+
+/// Set the maximum sender contribution to a creator's leaderboard score in basis points.
+/// Admin only. Default is 5000 (50%). Max is 10000 (100%).
+pub fn set_max_sender_contribution(
+    env: &Env,
+    caller: &Address,
+    bps: u32,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    require_admin(env, caller)?;
+    if bps > 10000 {
+        return Err(ContractError::InvalidInput);
+    }
+    let config = storage::get_runtime_config(env).ok_or(ContractError::NotInitialized)?;
+    let old = config.max_sender_contribution_bps;
+    if old == bps {
+        return Ok(());
+    }
+    storage::update_runtime_config(env, |c| c.max_sender_contribution_bps = bps);
+    // Also update the legacy storage if needed
     Ok(())
 }
 

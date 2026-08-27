@@ -553,6 +553,7 @@ fn tips_anonymous_flag_true_sets_benefactor_to_none() {
             10_000_000,
             String::from_str(&env, ""),
             true, // is_anonymous = true
+            false, // is_encrypted
         );
         let tip = get_tip(&env, tip_id).expect("tip should be stored");
         assert!(tip.benefactor.is_none(), "anonymous tip must have no benefactor");
@@ -577,6 +578,7 @@ fn tips_anonymous_flag_false_sets_benefactor_to_sender() {
             10_000_000,
             String::from_str(&env, ""),
             false, // is_anonymous = false
+            false, // is_encrypted
         );
         let tip = get_tip(&env, tip_id).expect("tip should be stored");
         assert_eq!(tip.benefactor, Some(sender.clone()),
@@ -602,6 +604,7 @@ fn tips_explicit_benefactor_takes_precedence_over_sender() {
             &creator,
             10_000_000,
             String::from_str(&env, ""),
+            false,
             false,
         );
         let tip = get_tip(&env, tip_id).expect("tip should be stored");
@@ -630,9 +633,9 @@ fn tips_store_tip_ids_are_sequential_starting_at_zero() {
     let msg = String::from_str(&env, "");
 
     env.as_contract(&contract_id, || {
-        let id0 = store_tip(&env, &sender, None, &creator, 1_000, msg.clone(), false);
-        let id1 = store_tip(&env, &sender, None, &creator, 2_000, msg.clone(), false);
-        let id2 = store_tip(&env, &sender, None, &creator, 3_000, msg.clone(), false);
+        let id0 = store_tip(&env, &sender, None, &creator, 1_000, msg.clone(), false, false);
+        let id1 = store_tip(&env, &sender, None, &creator, 2_000, msg.clone(), false, false);
+        let id2 = store_tip(&env, &sender, None, &creator, 3_000, msg.clone(), false, false);
 
         assert_eq!(id1, id0 + 1);
         assert_eq!(id2, id0 + 2);
@@ -657,7 +660,7 @@ fn tips_get_recent_tips_caps_limit_above_50() {
     env.as_contract(&contract_id, || {
         // Store exactly 3 tips.
         for i in 0..3_i128 {
-            let tip_id = store_tip(&env, &sender, None, &creator, i + 1, msg.clone(), false);
+            let tip_id = store_tip(&env, &sender, None, &creator, i + 1, msg.clone(), false, false);
             crate::storage::add_creator_tip(&env, &creator, tip_id);
         }
 
@@ -666,3 +669,4 @@ fn tips_get_recent_tips_caps_limit_above_50() {
         assert_eq!(result.len(), 3, "result bounded by available tips, not inflated limit");
     });
 }
+

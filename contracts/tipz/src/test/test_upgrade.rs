@@ -21,9 +21,11 @@
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
 use crate::storage::DataKey;
-use crate::types::{LeaderboardEntry, LeaderboardPeriod};
+use crate::types::{LeaderboardEntry, LeaderboardPeriod, PauseFlag};
 use crate::TipzContract;
 use crate::TipzContractClient;
+
+const PAUSE_ALL: u32 = PauseFlag::All as u32;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -209,12 +211,12 @@ fn test_upgrade_preserves_paused_state() {
     let (env, contract_id, admin, _fee_collector, _token) = deploy_v1();
     let client_v1 = TipzContractClient::new(&env, &contract_id);
 
-    client_v1.pause(&admin);
-    assert!(client_v1.is_paused());
+    client_v1.pause(&admin, &PAUSE_ALL);
+    assert!(client_v1.is_paused(&PAUSE_ALL));
 
     let client_v2 = upgrade_to_v2(&env, &contract_id);
 
-    assert!(client_v2.is_paused(), "paused flag must survive upgrade");
+    assert!(client_v2.is_paused(&PAUSE_ALL), "paused flag must survive upgrade");
 }
 
 #[test]

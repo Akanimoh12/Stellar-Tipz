@@ -44,8 +44,12 @@ pub fn setup_test_contract<'a>(env: &'a Env, admin: &'a Address) -> TipzContract
     client
 }
 
-/// Setup test contract with all necessary components for testing
-pub fn setup_test_contract(env: &Env) -> (TipzContractClient, Address, Address, Address) {
+/// Setup test contract with all necessary components for testing.
+/// Returns `(client, admin, fee_collector, native_token)` — use when the
+/// generated admin address is needed by the caller.
+pub fn setup_test_contract_simple(
+    env: &Env,
+) -> (TipzContractClient, Address, Address, Address) {
     let contract_id = env.register_contract(None, TipzContract);
     let client = TipzContractClient::new(env, &contract_id);
     let admin = Address::generate(env);

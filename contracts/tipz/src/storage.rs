@@ -88,8 +88,6 @@ pub enum DataKey {
     CreatorTip(Address, u32),
     /// Pending two-step admin change proposal (full transition record).
     PendingAdminChange,
-    /// Admin change history list (newest entries appended last).
-    AdminChangeHistory,
     /// Pending verification request by creator address
     VerificationRequest(Address),
     /// Subscription by (subscriber, creator)
@@ -146,9 +144,11 @@ pub enum DataKey {
     CreatorPeriodVolume(Address, crate::types::LeaderboardPeriod, u64),
 }
 
-/// Extended storage keys for new features (separate enum to avoid size limits)
+/// Extended storage keys for additional features (separate enum to avoid size limits)
 #[contracttype]
 pub enum ExtendedDataKey {
+    /// Admin change history list (newest entries appended last).
+    AdminChangeHistory,
     /// Active goal for a creator
     ActiveGoal(Address),
     /// Archived goals for a creator
@@ -163,6 +163,20 @@ pub enum ExtendedDataKey {
     RefundRequest(u32),
     /// Refund configuration
     RefundConfig,
+    /// Cumulative tip volume from a specific sender to a specific creator (for leaderboard concentration cap).
+    SenderCreatorVolume(Address, Address),
+    /// Scheduled tip by ID
+    ScheduledTip(u32),
+    /// Next scheduled tip ID counter
+    NextScheduledTipId,
+    /// Number of scheduled tips for a sender
+    SenderScheduledTipCount(Address),
+    /// Index: (sender, index) -> scheduled tip ID
+    SenderScheduledTip(Address, u32),
+    /// Number of scheduled tips for a creator
+    CreatorScheduledTipCount(Address),
+    /// Index: (creator, index) -> scheduled tip ID
+    CreatorScheduledTip(Address, u32),
 }
 
 /// Storage keys for compact performance caches.
@@ -182,11 +196,15 @@ pub struct RuntimeConfig {
     pub fee_collector: Address,
     pub fee_bps: u32,
     pub native_token: Address,
-    pub paused: bool,
+    /// Bitmask of paused operations (see `PauseFlag`).
+    /// Global pause is represented by `PauseFlag::All`.
+    pub pause_flags: u32,
     pub min_tip_amount: i128,
     pub rate_limit: RateLimitConfig,
     /// Domain re-verification interval in seconds (default 30 days)
     pub domain_reverify_secs: u64,
+    /// Maximum sender contribution to a creator's leaderboard score in basis points (default 5000 = 50%).
+    pub max_sender_contribution_bps: u32,
 }
 
 /// All leaderboard periods cached under one key for write-heavy operations.
@@ -277,26 +295,56 @@ pub fn set_native_token(env: &Env, addr: &Address) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Pause state
+// Pause state (granular, bitmask-based)
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Returns `true` when the contract is paused.
-pub fn is_paused(env: &Env) -> bool {
+/// Returns `true` when the specific operation is paused.
+/// Checks both the specific flag and the global `PauseFlag::All`.
+pub fn is_paused(env: &Env, flag: crate::types::PauseFlag) -> bool {
     if let Some(config) = get_runtime_config(env) {
-        return config.paused;
+        let flags = config.pause_flags;
+        return crate::types::PauseFlag::is_set(flags, flag) || crate::types::PauseFlag::is_set(flags, crate::types::PauseFlag::All);
     }
-    env.storage()
+    // Fallback to legacy Paused key (bool) for backwards compatibility
+    let legacy_paused: bool = env.storage()
         .instance()
         .get(&DataKey::Paused)
-        .unwrap_or(false)
+        .unwrap_or(false);
+    if legacy_paused {
+        return true;
+    }
+    false
 }
 
-/// Sets the paused flag.
-pub fn set_paused(env: &Env, paused: bool) {
-    env.storage().instance().set(&DataKey::Paused, &paused);
+/// Returns `true` when the contract is globally paused (legacy compatibility).
+pub fn is_globally_paused(env: &Env) -> bool {
+    is_paused(env, crate::types::PauseFlag::All)
+}
+
+/// Sets the pause flags bitmask.
+pub fn set_pause_flags(env: &Env, flags: u32) {
+    env.storage().instance().set(&DataKey::Paused, &flags);
     update_runtime_config(env, |config| {
-        config.paused = paused;
+        config.pause_flags = flags;
     });
+}
+
+/// Sets a specific pause flag.
+pub fn set_pause_flag(env: &Env, flag: crate::types::PauseFlag, enabled: bool) {
+    let current = if let Some(config) = get_runtime_config(env) {
+        config.pause_flags
+    } else {
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(0u32)
+    };
+    let new_flags = if enabled {
+        crate::types::PauseFlag::set(current, flag)
+    } else {
+        crate::types::PauseFlag::clear(current, flag)
+    };
+    set_pause_flags(env, new_flags);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -441,7 +489,7 @@ pub fn clear_profile_deactivation(env: &Env, address: &Address) {
 fn load_admin_change_history(env: &Env) -> soroban_sdk::Vec<crate::types::AdminChangeHistoryEntry> {
     env.storage()
         .instance()
-        .get(&DataKey::AdminChangeHistory)
+        .get(&ExtendedDataKey::AdminChangeHistory)
         .unwrap_or(soroban_sdk::Vec::new(env))
 }
 
@@ -450,12 +498,18 @@ pub fn get_admin_change_history_next_id(env: &Env) -> u32 {
 }
 
 /// Append a completed admin change to history (sequential ids, newest has highest id).
+/// Enforces maximum history entries limit.
 pub fn append_admin_change_history(env: &Env, entry: &crate::types::AdminChangeHistoryEntry) {
     let mut history = load_admin_change_history(env);
+    // Enforce max admin history entries limit
+    if history.len() >= crate::types::MAX_ADMIN_HISTORY_ENTRIES {
+        // Remove oldest entry to make room
+        history.remove(0);
+    }
     history.push_back(entry.clone());
     env.storage()
         .instance()
-        .set(&DataKey::AdminChangeHistory, &history);
+        .set(&ExtendedDataKey::AdminChangeHistory, &history);
 }
 
 pub fn get_admin_change_history_entry(
@@ -544,7 +598,7 @@ pub fn set_runtime_config(env: &Env, config: &RuntimeConfig) {
         .set(&CacheKey::RuntimeConfig, config);
 }
 
-fn update_runtime_config<F>(env: &Env, update: F)
+pub fn update_runtime_config<F>(env: &Env, update: F)
 where
     F: FnOnce(&mut RuntimeConfig),
 {
@@ -766,6 +820,14 @@ pub fn add_tipper_tip(env: &Env, tipper: &Address, tip_id: u32) {
         .temporary()
         .set(&count_key, &(local_index + 1));
     set_tip_ttl(env, &count_key);
+}
+
+/// Returns the number of subscriptions for a subscriber.
+pub fn get_subscriber_sub_count(env: &Env, subscriber: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::SubscriberSubCount(subscriber.clone()))
+        .unwrap_or(0)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1154,6 +1216,36 @@ pub fn reset_creator_period_volume(env: &Env, creator: &Address, period: Leaderb
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Sender-Creator Volume Tracking (for leaderboard concentration cap)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the cumulative tip volume from a specific sender to a specific creator.
+pub fn get_sender_creator_volume(env: &Env, sender: &Address, creator: &Address) -> i128 {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::SenderCreatorVolume(sender.clone(), creator.clone()))
+        .unwrap_or(0)
+}
+
+/// Adds `amount` to the cumulative tip volume from sender to creator.
+pub fn add_sender_creator_volume(env: &Env, sender: &Address, creator: &Address, amount: i128) -> i128 {
+    let current = get_sender_creator_volume(env, sender, creator);
+    let next = current.saturating_add(amount);
+    env.storage().instance().set(
+        &ExtendedDataKey::SenderCreatorVolume(sender.clone(), creator.clone()),
+        &next,
+    );
+    next
+}
+
+/// Resets the sender-creator volume (e.g., for testing or admin cleanup).
+pub fn reset_sender_creator_volume(env: &Env, sender: &Address, creator: &Address) {
+    env.storage()
+        .instance()
+        .remove(&ExtendedDataKey::SenderCreatorVolume(sender.clone(), creator.clone()));
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Creator counter
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -1288,6 +1380,114 @@ pub fn remove_refund_request(env: &Env, tip_id: u32) {
     env.storage()
         .temporary()
         .remove(&ExtendedDataKey::RefundRequest(tip_id));
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Scheduled Tip storage functions
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the current scheduled tip count (also the index of the *next* scheduled tip).
+pub fn get_scheduled_tip_count(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::NextScheduledTipId)
+        .unwrap_or(0)
+}
+
+/// Atomically reads the current scheduled tip count, increments it in storage, and
+/// returns the **pre-increment** value (the index to assign to the new scheduled tip).
+pub fn increment_scheduled_tip_count(env: &Env) -> u32 {
+    let count = get_scheduled_tip_count(env);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::NextScheduledTipId, &(count + 1));
+    count
+}
+
+/// Returns a scheduled tip by ID.
+pub fn get_scheduled_tip(env: &Env, scheduled_tip_id: u32) -> Option<crate::types::ScheduledTip> {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::ScheduledTip(scheduled_tip_id))
+}
+
+/// Sets a scheduled tip by ID.
+pub fn set_scheduled_tip(env: &Env, scheduled_tip_id: u32, scheduled_tip: &crate::types::ScheduledTip) {
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::ScheduledTip(scheduled_tip_id), scheduled_tip);
+}
+
+/// Returns the number of scheduled tips for a sender.
+pub fn get_sender_scheduled_tip_count(env: &Env, sender: &Address) -> u32 {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::SenderScheduledTipCount(sender.clone()))
+        .unwrap_or(0)
+}
+
+/// Records a new scheduled tip ID for `sender` and bumps the per-sender count.
+pub fn add_sender_scheduled_tip(env: &Env, sender: &Address, scheduled_tip_id: u32) {
+    let local_index = get_sender_scheduled_tip_count(env, sender);
+
+    let idx_key = ExtendedDataKey::SenderScheduledTip(sender.clone(), local_index);
+    env.storage().instance().set(&idx_key, &scheduled_tip_id);
+
+    let count_key = ExtendedDataKey::SenderScheduledTipCount(sender.clone());
+    env.storage()
+        .instance()
+        .set(&count_key, &(local_index + 1));
+}
+
+/// Returns scheduled tip IDs for a sender.
+pub fn get_sender_scheduled_tip_ids(env: &Env, sender: &Address) -> soroban_sdk::Vec<u32> {
+    let count = get_sender_scheduled_tip_count(env, sender);
+    let mut ids = soroban_sdk::Vec::new(env);
+    let mut i: u32 = 0;
+    while i < count {
+        let idx_key = ExtendedDataKey::SenderScheduledTip(sender.clone(), i);
+        if let Some(tip_id) = env.storage().instance().get(&idx_key) {
+            ids.push_back(tip_id);
+        }
+        i += 1;
+    }
+    ids
+}
+
+/// Returns the number of scheduled tips for a creator.
+pub fn get_creator_scheduled_tip_count(env: &Env, creator: &Address) -> u32 {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::CreatorScheduledTipCount(creator.clone()))
+        .unwrap_or(0)
+}
+
+/// Records a new scheduled tip ID for `creator` and bumps the per-creator count.
+pub fn add_creator_scheduled_tip(env: &Env, creator: &Address, scheduled_tip_id: u32) {
+    let local_index = get_creator_scheduled_tip_count(env, creator);
+
+    let idx_key = ExtendedDataKey::CreatorScheduledTip(creator.clone(), local_index);
+    env.storage().instance().set(&idx_key, &scheduled_tip_id);
+
+    let count_key = ExtendedDataKey::CreatorScheduledTipCount(creator.clone());
+    env.storage()
+        .instance()
+        .set(&count_key, &(local_index + 1));
+}
+
+/// Returns scheduled tip IDs for a creator.
+pub fn get_creator_scheduled_tip_ids(env: &Env, creator: &Address) -> soroban_sdk::Vec<u32> {
+    let count = get_creator_scheduled_tip_count(env, creator);
+    let mut ids = soroban_sdk::Vec::new(env);
+    let mut i: u32 = 0;
+    while i < count {
+        let idx_key = ExtendedDataKey::CreatorScheduledTip(creator.clone(), i);
+        if let Some(tip_id) = env.storage().instance().get(&idx_key) {
+            ids.push_back(tip_id);
+        }
+        i += 1;
+    }
+    ids
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

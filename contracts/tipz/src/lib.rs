@@ -13,6 +13,9 @@
 
 #![no_std]
 
+#[cfg(any(test, feature = "testutils"))]
+extern crate std;
+
 mod admin;
 mod credit;
 mod errors;
@@ -105,6 +108,15 @@ impl TipzContract {
         x_handle: Option<String>,
     ) -> Result<(), ContractError> {
         profile::update_profile(&env, caller, display_name, bio, image_url, x_handle)
+    }
+
+    /// Update social links for a profile with limit enforcement (max 5 links).
+    pub fn update_social_links(
+        env: Env,
+        caller: Address,
+        social_links: soroban_sdk::Map<soroban_sdk::Symbol, String>,
+    ) -> Result<(), ContractError> {
+        profile::update_social_links(&env, caller, social_links)
     }
 
     /// Deregister the caller's profile, permanently removing it from the platform.
@@ -247,16 +259,22 @@ impl TipzContract {
         tips::withdraw_tips(&env, &caller, amount)
     }
 
-    /// Get a single tip record by its ID.
+    /// Get a single tip record by its ID (public view).
+    ///
+    /// For anonymous tips the sender is redacted to the contract address;
+    /// the stable `pseudonym` hash is still returned so clients can group
+    /// tips from one anonymous tipper without learning who sent them.
     ///
     /// Returns [`ContractError::NotFound`] when the tip does not exist or its
     /// temporary-storage TTL has expired (~7 days after the tip was sent).
     pub fn get_tip(env: Env, tip_id: u32) -> Result<Tip, ContractError> {
-        tips::get_tip(&env, tip_id).ok_or(ContractError::NotFound)
+        tips::get_tip_public(&env, tip_id).ok_or(ContractError::NotFound)
     }
 
     /// Return up to `limit` recent tips received by `creator`, newest first.
     ///
+    /// - Anonymous tips have their sender redacted to the contract address;
+    ///   use the stable `pseudonym` hash to group them instead.
     /// - `limit` is capped at 50 per call.
     /// - `offset`: number of tips to skip from the most recent (0 = start
     ///   from latest). Use `get_creator_tip_count` to know the total for
@@ -527,16 +545,16 @@ impl TipzContract {
         admin::upgrade(&env, &admin, &new_wasm_hash)
     }
 
-    pub fn pause(env: Env, caller: Address) -> Result<(), ContractError> {
-        admin::pause(&env, &caller)
+    pub fn pause(env: Env, caller: Address, flag: u32) -> Result<(), ContractError> {
+        admin::pause(&env, &caller, crate::types::PauseFlag::from_u32(flag))
     }
 
-    pub fn unpause(env: Env, caller: Address) -> Result<(), ContractError> {
-        admin::unpause(&env, &caller)
+    pub fn unpause(env: Env, caller: Address, flag: u32) -> Result<(), ContractError> {
+        admin::unpause(&env, &caller, crate::types::PauseFlag::from_u32(flag))
     }
 
-    pub fn is_paused(env: Env) -> bool {
-        storage::is_paused(&env)
+    pub fn is_paused(env: Env, flag: u32) -> bool {
+        storage::is_paused(&env, crate::types::PauseFlag::from_u32(flag))
     }
 
     pub fn set_min_tip_amount(
@@ -549,6 +567,16 @@ impl TipzContract {
 
     pub fn get_min_tip_amount(env: Env) -> i128 {
         storage::get_min_tip_amount(&env)
+    }
+
+    /// Set the maximum sender contribution to a creator's leaderboard score in basis points.
+    /// Admin only.
+    pub fn set_max_sender_contribution(
+        env: Env,
+        caller: Address,
+        bps: u32,
+    ) -> Result<(), ContractError> {
+        admin::set_max_sender_contribution(&env, &caller, bps)
     }
 
     /// Update rate limit configuration. Admin only.

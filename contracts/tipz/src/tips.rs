@@ -13,6 +13,8 @@ use crate::leaderboard;
 use crate::storage::{self, DataKey};
 use crate::streaks;
 use crate::token;
+
+use crate::types::ScheduledTip;
 use crate::types::Tip;
 use crate::validation::{validate_message, validate_tip_for_creator};
 
@@ -54,6 +56,28 @@ fn store_tip_with_id(
     is_encrypted: bool,
 ) {
     let key = DataKey::Tip(tip_id);
+    
+    // Generate pseudonym for anonymous tips: sha256(sender || creator || contract_salt)
+    let pseudonym = if is_anonymous {
+        let contract_salt = env.current_contract_address();
+        // Convert addresses to their canonical string bytes and concatenate
+        // with a separator to keep the input unambiguous.
+        let mut data = soroban_sdk::Bytes::new(env);
+        for addr in [sender, creator, &contract_salt] {
+            let addr_str = addr.to_string();
+            let len = addr_str.len() as usize;
+            let mut buf = [0u8; 80]; // Max address string length is 64.
+            addr_str.copy_into_slice(&mut buf[..len]);
+            data.extend_from_slice(&buf[..len]);
+            data.extend_from_slice(b"|");
+        }
+
+        let hash = env.crypto().sha256(&data);
+        Some(soroban_sdk::Bytes::from(hash))
+    } else {
+        None
+    };
+
     let tip = Tip {
         id: tip_id,
         sender: sender.clone(),
@@ -68,15 +92,38 @@ fn store_tip_with_id(
         timestamp: env.ledger().timestamp(),
         is_anonymous,
         is_encrypted,
+        pseudonym,
     };
 
     env.storage().temporary().set(&key, &tip);
     storage::set_tip_ttl(env, &key);
 }
 
-/// Retrieve a single tip by its ID.
+/// Retrieve a single tip by its ID (internal truth — includes the real sender).
+///
+/// Used by refund flows that must resolve the actual tipper.
 pub fn get_tip(env: &Env, tip_id: u32) -> Option<Tip> {
     env.storage().temporary().get(&DataKey::Tip(tip_id))
+}
+
+/// Replace identifying sender data on anonymous tips for public views.
+///
+/// The stored tip keeps its real sender internally (needed for refunds);
+/// only public reads are masked. The stable `pseudonym` hash remains so
+/// clients can still group tips from one anonymous tipper.
+fn redact_public_tip(env: &Env, mut tip: Tip) -> Tip {
+    if tip.is_anonymous {
+        tip.sender = env.current_contract_address();
+    }
+    tip
+}
+
+/// Retrieve a single tip by its ID for public display.
+///
+/// Anonymous tips have their sender replaced with the contract address;
+/// non-anonymous tips are returned unchanged.
+pub fn get_tip_public(env: &Env, tip_id: u32) -> Option<Tip> {
+    get_tip(env, tip_id).map(|tip| redact_public_tip(env, tip))
 }
 
 /// Maximum number of tips returned per page.
@@ -110,7 +157,7 @@ pub fn get_recent_tips(env: &Env, creator: &Address, limit: u32, offset: u32) ->
             .get::<DataKey, u32>(&DataKey::CreatorTip(creator.clone(), index))
         {
             if let Some(tip) = get_tip(env, tip_id) {
-                result.push_back(tip);
+                result.push_back(redact_public_tip(env, tip));
                 found += 1;
             }
         }
@@ -120,6 +167,9 @@ pub fn get_recent_tips(env: &Env, creator: &Address, limit: u32, offset: u32) ->
 }
 
 /// Return up to `limit` recent tips sent by `tipper`, newest first.
+///
+/// This is the tipper's own view: senders are NOT redacted, so a tipper
+/// always sees the real addresses behind their own tips.
 ///
 /// Expired tips are silently skipped, so the returned vector may contain fewer
 /// than `limit` entries.
@@ -164,7 +214,7 @@ pub fn send_tip(
 ) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     let config = storage::get_runtime_config(env).ok_or(ContractError::NotInitialized)?;
-    if config.paused {
+    if storage::is_paused(env, crate::types::PauseFlag::Tips) || storage::is_paused(env, crate::types::PauseFlag::All) {
         return Err(ContractError::ContractPaused);
     }
     tipper.require_auth();
@@ -213,7 +263,33 @@ pub fn send_tip(
         credit::calculate_credit_score_with_streak(env, &profile, env.ledger().timestamp());
 
     storage::set_profile(env, &profile);
-    leaderboard::update_all_leaderboards_for_active(env, &profile, amount);
+
+    // Track sender-creator volume for leaderboard concentration cap
+    let sender_creator_volume = storage::add_sender_creator_volume(env, tipper, creator, amount);
+    let max_contribution_bps = config.max_sender_contribution_bps;
+    
+    // Calculate the amount that counts towards leaderboard (apply concentration cap)
+    let leaderboard_amount = if max_contribution_bps >= 10000 {
+        amount // No cap
+    } else {
+        let max_allowed = profile.total_tips_received
+            .checked_mul(max_contribution_bps as i128)
+            .and_then(|v| v.checked_div(10000))
+            .unwrap_or(amount);
+        let previous_sender_volume = sender_creator_volume.saturating_sub(amount);
+        if previous_sender_volume >= max_allowed {
+            0 // Sender already at cap, no leaderboard credit
+        } else {
+            let remaining = max_allowed.saturating_sub(previous_sender_volume);
+            if amount > remaining {
+                remaining
+            } else {
+                amount
+            }
+        }
+    };
+
+    leaderboard::update_all_leaderboards_for_active(env, &profile, leaderboard_amount);
 
     // Update goal progress
     crate::goals::update_goal_progress(env, creator, amount);
@@ -369,7 +445,9 @@ pub fn send_tip_on_behalf(
 /// - [`ContractError::InvalidAmount`] if `amount` is ≤ 0
 /// - [`ContractError::InsufficientBalance`] if `amount` > profile balance or contract lacks XLM
 pub fn withdraw_tips(env: &Env, caller: &Address, amount: i128) -> Result<(), ContractError> {
-    crate::admin::require_not_paused(env)?;
+    if storage::is_paused(env, crate::types::PauseFlag::Withdrawals) || storage::is_paused(env, crate::types::PauseFlag::All) {
+        return Err(ContractError::ContractPaused);
+    }
     caller.require_auth();
 
     if !storage::has_profile(env, caller) {
@@ -451,7 +529,7 @@ pub fn send_scheduled_tip(
 ) -> Result<u32, ContractError> {
     storage::extend_instance_ttl(env);
     let config = storage::get_runtime_config(env).ok_or(ContractError::NotInitialized)?;
-    if config.paused {
+    if storage::is_paused(env, crate::types::PauseFlag::Tips) || storage::is_paused(env, crate::types::PauseFlag::All) {
         return Err(ContractError::ContractPaused);
     }
     sender.require_auth();

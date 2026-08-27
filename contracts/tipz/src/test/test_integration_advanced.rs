@@ -2,7 +2,7 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, token, Address, Env, String, Vec};
+use soroban_sdk::{testutils::{Address as _, Ledger as _}, token, Address, Env, String, Vec};
 
 use crate::TipzContract;
 use crate::TipzContractClient;
@@ -101,14 +101,14 @@ fn test_multi_user_tipping_round_robin() {
     for i in 0..5 {
         let user = users.get(i).unwrap();
         let profile = client.get_profile(&user);
-        assert_eq!(profile.balance, tip_amount);
+        assert_eq!(profile.profile.balance, tip_amount);
     }
 
     // 4. Verify leaderboard
-    let leaderboard = client.get_leaderboard(&10);
+    let leaderboard = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &10);
     assert_eq!(leaderboard.len(), 5);
     for entry in leaderboard.iter() {
-        assert_eq!(entry.total_tips_received, tip_amount);
+        assert_eq!(entry.amount, tip_amount);
     }
 }
 
@@ -132,13 +132,13 @@ fn test_withdrawal_drains_entire_balance() {
     );
 
     let profile_before = client.get_profile(&creator);
-    assert_eq!(profile_before.balance, tip_amount);
+    assert_eq!(profile_before.profile.balance, tip_amount);
 
     // Withdraw full balance
     client.withdraw_tips(&creator, &tip_amount);
 
     let profile_after = client.get_profile(&creator);
-    assert_eq!(profile_after.balance, 0);
+    assert_eq!(profile_after.profile.balance, 0);
 
     // Verify fee collector received 2% (200 bps)
     let fee_collector_balance = token_client.balance(&fee_collector);
@@ -157,13 +157,19 @@ fn test_rapid_tips_same_creator() {
     let tip_amount: i128 = 50_000_000; // 5 XLM
     let message = String::from_str(&env, "Rapid tip!");
 
-    for _ in 0..100 {
-        env.budget().reset_default();
-        client.send_tip(&tipper, &creator, &tip_amount, &message, &false, &false);
+    // Rate limit is max_ops=50 per window (3600s). Send in batches of 50,
+    // advancing the timestamp past the window between batches.
+    let window_secs = 3600_u64;
+    for batch in 0..2 {
+        env.ledger().set_timestamp(env.ledger().timestamp() + batch * window_secs);
+        for _ in 0..50 {
+            env.budget().reset_default();
+            client.send_tip(&tipper, &creator, &tip_amount, &message, &false, &false);
+        }
     }
 
     let profile = client.get_profile(&creator);
-    assert_eq!(profile.balance, tip_amount * 100);
+    assert_eq!(profile.profile.balance, tip_amount * 100);
 }
 
 #[test]
@@ -184,7 +190,7 @@ fn test_leaderboard_overtake() {
     client.send_tip(&tipper, &bob, &500_000_000, &message, &false, &false);
 
     // Verify Alice is #1
-    let leaderboard = client.get_leaderboard(&2);
+    let leaderboard = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &2);
     assert_eq!(leaderboard.get(0).unwrap().address, alice);
     assert_eq!(leaderboard.get(1).unwrap().address, bob);
 
@@ -192,7 +198,7 @@ fn test_leaderboard_overtake() {
     client.send_tip(&tipper, &bob, &1_000_000_000, &message, &false, &false);
 
     // Verify Bob is #1
-    let leaderboard_after = client.get_leaderboard(&2);
+    let leaderboard_after = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &2);
     assert_eq!(leaderboard_after.get(0).unwrap().address, bob);
     assert_eq!(leaderboard_after.get(1).unwrap().address, alice);
 }
@@ -306,3 +312,4 @@ fn test_fee_change_mid_tip() {
         50_000_000
     );
 }
+

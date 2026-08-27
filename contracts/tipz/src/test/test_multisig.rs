@@ -7,7 +7,10 @@ use soroban_sdk::{
 
 use crate::multisig::Action;
 use crate::test::test_init::setup_test_contract;
+use crate::types::PauseFlag;
 use crate::TipzContractClient;
+
+const PAUSE_ALL: u32 = PauseFlag::All as u32;
 
 #[test]
 fn test_multisig_pause() {
@@ -29,13 +32,13 @@ fn test_multisig_pause() {
     let proposal_id = client.propose_action(&signer1, &Action::Pause);
 
     // Not yet executed (1 of 2)
-    assert!(!client.is_paused());
+    assert!(!client.is_paused(&PAUSE_ALL));
 
     // Second signer approves
     client.approve_action(&signer2, &proposal_id);
 
     // Now executed (2 of 2)
-    assert!(client.is_paused());
+    assert!(client.is_paused(&PAUSE_ALL));
 }
 
 #[test]
@@ -175,5 +178,5 @@ fn test_single_signature_auto_execute() {
     client.propose_action(&signer1, &Action::Pause);
 
     // Should be paused immediately
-    assert!(client.is_paused());
+    assert!(client.is_paused(&PAUSE_ALL));
 }

@@ -66,6 +66,11 @@ fn find_insertion_index(entries: &Vec<LeaderboardEntry>, amount: i128) -> u32 {
 /// 4. **Evict** the now-lowest entry if the insert pushed the list over the
 ///    cap, keeping exactly the top `MAX_LEADERBOARD_SIZE`.
 fn update_entries(entries: &mut Vec<LeaderboardEntry>, profile: &Profile, amount: i128) {
+    // Step 0 — trim any pre-existing oversized list to the cap.
+    while entries.len() > MAX_LEADERBOARD_SIZE {
+        entries.pop_back();
+    }
+
     // Step 1 — drop the creator's stale entry if they are already ranked.
     let mut i: u32 = 0;
     while i < entries.len() {
@@ -384,10 +389,19 @@ mod tests {
             assert_eq!(result.len(), 50);
             assert_eq!(result.get(0).unwrap().address, addr_new);
 
-            // Lowest (10) should be gone
+            // Highest old score (500) should be evicted; lowest old (10) should remain
+            let mut min_amount = i128::MAX;
+            let mut found_500 = false;
             for e in result.iter() {
-                assert!(e.amount > 10 || e.address == addr_new);
+                if e.amount < min_amount {
+                    min_amount = e.amount;
+                }
+                if e.amount == 500 {
+                    found_500 = true;
+                }
             }
+            assert_eq!(min_amount, 10);
+            assert!(!found_500);
         });
     }
 }
