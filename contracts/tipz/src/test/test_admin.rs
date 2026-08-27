@@ -3,7 +3,7 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::{Address as _, Events, Ledger},
+    testutils::{Address as _, Events, Ledger as _},
     vec, Address, Env, Map, String, Symbol,
 };
 
@@ -83,49 +83,53 @@ fn insert_profile(ctx: &TestCtx, owner: &Address) {
     });
 }
 
-// ── set_fee ───────────────────────────────────────────────────────────────────
+// ── fee change flow ────────────────────────────────────────────────────────────
 
 #[test]
-fn test_set_fee_updates_stored_value() {
+fn test_propose_and_apply_fee_change_updates_stored_value() {
     let ctx = setup();
-    ctx.client.set_fee(&ctx.admin, &500_u32);
+    ctx.env.ledger().set_sequence_number(100);
+    ctx.client.propose_fee_change(&ctx.admin, &500_u32);
+
+    let pending = ctx.client.get_pending_fee_change().unwrap();
+    assert_eq!(pending.new_fee_bps, 500);
+    assert_eq!(pending.effective_ledger, 100 + ctx.client.get_fee_change_delay_ledgers());
+
+    let apply_result = ctx.client.try_apply_fee_change(&ctx.admin);
+    assert_eq!(
+        apply_result,
+        Err(Ok(ContractError::InvalidInput))
+    );
+
+    ctx.env
+        .ledger()
+        .set_sequence_number(pending.effective_ledger);
+    ctx.client.apply_fee_change(&ctx.admin);
 
     let stored: u32 = ctx.env.as_contract(&ctx.client.address, || {
-        ctx.env
-            .storage()
-            .instance()
-            .get(&DataKey::FeePercent)
-            .unwrap()
+        ctx.env.storage().instance().get(&DataKey::FeePercent).unwrap()
     });
     assert_eq!(stored, 500);
 }
 
 #[test]
-fn test_set_fee_boundary_1000_succeeds() {
+fn test_fee_change_delay_can_be_updated_above_minimum() {
     let ctx = setup();
-    ctx.client.set_fee(&ctx.admin, &1000_u32);
+    ctx.client.set_fee_change_delay(&ctx.admin, &crate::admin::MIN_FEE_CHANGE_DELAY_LEDGERS);
 
-    let stored: u32 = ctx.env.as_contract(&ctx.client.address, || {
-        ctx.env
-            .storage()
-            .instance()
-            .get(&DataKey::FeePercent)
-            .unwrap()
-    });
-    assert_eq!(stored, 1000);
+    assert_eq!(
+        ctx.client.get_fee_change_delay_ledgers(),
+        crate::admin::MIN_FEE_CHANGE_DELAY_LEDGERS
+    );
 }
 
 #[test]
-fn test_set_fee_zero_succeeds() {
+fn test_immediate_fee_decrease_applies() {
     let ctx = setup();
     ctx.client.set_fee(&ctx.admin, &0_u32);
 
     let stored: u32 = ctx.env.as_contract(&ctx.client.address, || {
-        ctx.env
-            .storage()
-            .instance()
-            .get(&DataKey::FeePercent)
-            .unwrap()
+        ctx.env.storage().instance().get(&DataKey::FeePercent).unwrap()
     });
     assert_eq!(stored, 0);
 }
@@ -138,24 +142,21 @@ fn test_set_fee_above_1000_returns_invalid_fee() {
 }
 
 #[test]
-fn test_set_fee_non_admin_returns_not_authorized() {
+fn test_propose_fee_change_non_admin_returns_not_authorized() {
     let ctx = setup();
     let attacker = Address::generate(&ctx.env);
-    let result = ctx.client.try_set_fee(&attacker, &100_u32);
+    let result = ctx.client.try_propose_fee_change(&attacker, &100_u32);
     assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
 }
 
 #[test]
-fn test_set_fee_emits_fee_updated_event() {
+fn test_cancel_fee_change_clears_pending_state() {
     let ctx = setup();
-    // fee was initialised to 200; change to 300
-    ctx.client.set_fee(&ctx.admin, &300_u32);
+    ctx.env.ledger().set_sequence_number(100);
+    ctx.client.propose_fee_change(&ctx.admin, &300_u32);
+    ctx.client.cancel_fee_change(&ctx.admin);
 
-    let events = ctx.env.events().all();
-    assert!(
-        !events.is_empty(),
-        "expected a FeeUpdated event to be emitted"
-    );
+    assert!(ctx.client.get_pending_fee_change().is_none());
 }
 
 // ── set_fee_collector ─────────────────────────────────────────────────────────
@@ -273,7 +274,11 @@ fn test_set_admin_emits_admin_changed_event() {
 #[test]
 fn test_set_fee_bps_success() {
     let ctx = setup();
-    ctx.client.set_fee(&ctx.admin, &350_u32);
+    ctx.env.ledger().set_sequence_number(100);
+    ctx.client.propose_fee_change(&ctx.admin, &350_u32);
+    let pending = ctx.client.get_pending_fee_change().unwrap();
+    ctx.env.ledger().set_sequence_number(pending.effective_ledger);
+    ctx.client.apply_fee_change(&ctx.admin);
 
     let stored: u32 = ctx.env.as_contract(&ctx.contract_id, || {
         ctx.env
@@ -314,7 +319,7 @@ fn test_set_admin_success() {
     ctx.client.set_admin(&ctx.admin, &new_admin);
 
     // new admin can perform an admin action
-    ctx.client.set_fee(&new_admin, &150_u32);
+    ctx.client.set_fee(&new_admin, &100_u32);
     let stored: u32 = ctx.env.as_contract(&ctx.contract_id, || {
         ctx.env
             .storage()
@@ -607,9 +612,9 @@ fn test_propose_admin_stores_pending_and_emits_event() {
 
     client.propose_admin_change(&admin, &new_admin);
 
-    // Pending admin should now be set
-    let pending = client.get_admin_change_proposal().map(|p| p.new_admin);
-    assert_eq!(pending, Some(new_admin));
+    let pending = client.get_admin_change_proposal();
+    assert!(pending.is_some());
+    assert_eq!(pending.unwrap().new_admin, new_admin);
 }
 
 #[test]
@@ -629,7 +634,7 @@ fn test_accept_admin_full_flow() {
 
     client.propose_admin_change(&admin, &new_admin);
 
-    // No pending admin before acceptance
+    // Pending admin before acceptance
     assert_eq!(client.get_admin_change_proposal().map(|p| p.new_admin), Some(new_admin.clone()));
 
     // Advance past the 48-hour timelock
@@ -673,7 +678,7 @@ fn test_cancel_admin_proposal_clears_pending() {
     let new_admin = Address::generate(&env);
 
     client.propose_admin_change(&admin, &new_admin);
-    assert_eq!(client.get_admin_change_proposal().map(|p| p.new_admin), Some(new_admin));
+    assert_eq!(client.get_admin_change_proposal().unwrap().new_admin, new_admin);
 
     client.cancel_admin_change(&admin);
 

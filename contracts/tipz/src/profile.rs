@@ -134,11 +134,14 @@ pub fn register_profile(
         domain_verified: false,
         domain_verified_at: None,
         custom_min_tip: None,
+        last_active_at: now,  // newly registered creators are "active" at registration
     };
 
     storage::set_profile(env, &profile);
     storage::set_username_address(env, &username, &caller);
     storage::increment_total_creators(env);
+    // Maintain a dense creator index for bounded paginated iteration (#1185).
+    storage::append_creator_to_index(env, &caller);
 
     // Bump TTL for both Profile and UsernameToAddress together.
     storage::bump_profile_ttl(env, &caller);
@@ -304,7 +307,7 @@ pub fn deactivate_profile(
     }
 
     if storage::is_profile_deactivated(env, &creator) {
-        return Err(ContractError::AlreadyDeactivated);
+        return Err(ContractError::ProfileDeactivated);
     }
 
     let now = env.ledger().timestamp();
@@ -316,6 +319,15 @@ pub fn deactivate_profile(
     storage::bump_username_ttl(env, &username);
 
     events::emit_profile_deactivated(env, &creator, &caller);
+    if caller != creator {
+        crate::admin::log_admin_action(
+            env,
+            &caller,
+            soroban_sdk::Symbol::new(env, "deactivate_profile"),
+            soroban_sdk::String::from_str(env, "active"),
+            soroban_sdk::String::from_str(env, "deactivated"),
+        );
+    }
     Ok(())
 }
 
@@ -350,6 +362,15 @@ pub fn reactivate_profile(
     storage::bump_username_ttl(env, &profile.username);
 
     events::emit_profile_reactivated(env, &creator, &caller);
+    if caller != creator {
+        crate::admin::log_admin_action(
+            env,
+            &caller,
+            soroban_sdk::Symbol::new(env, "reactivate_profile"),
+            soroban_sdk::String::from_str(env, "deactivated"),
+            soroban_sdk::String::from_str(env, "active"),
+        );
+    }
     Ok(())
 }
 
@@ -651,7 +672,7 @@ pub fn cleanup_inactive_profile(
     }
 
     if !is_profile_inactive_eligible(env, &target) {
-        return Err(ContractError::ProfileInactive);
+        return Err(ContractError::ProfileNotDeactivated);
     }
 
     let profile = storage::get_profile(env, &target);
@@ -667,6 +688,14 @@ pub fn cleanup_inactive_profile(
     storage::reset_tipper_tip_index(env, &target);
 
     events::emit_profile_deregistered(env, &target, &username);
+
+    crate::admin::log_admin_action(
+        env,
+        &admin,
+        soroban_sdk::Symbol::new(env, "cleanup_profile"),
+        soroban_sdk::String::from_str(env, "inactive"),
+        username.clone(),
+    );
 
     Ok(username)
 }

@@ -41,6 +41,14 @@ pub fn add_accepted_token(
 
     events::emit_token_added(env, token, &oracle);
 
+    crate::admin::log_admin_action(
+        env,
+        admin,
+        soroban_sdk::Symbol::new(env, "add_accepted_token"),
+        soroban_sdk::String::from_str(env, ""),
+        soroban_sdk::String::from_str(env, "added"),
+    );
+
     Ok(())
 }
 
@@ -59,6 +67,14 @@ pub fn remove_accepted_token(
     }
 
     events::emit_token_removed(env, token);
+
+    crate::admin::log_admin_action(
+        env,
+        admin,
+        soroban_sdk::Symbol::new(env, "remove_accepted_token"),
+        soroban_sdk::String::from_str(env, "enabled"),
+        soroban_sdk::String::from_str(env, "disabled"),
+    );
 
     Ok(())
 }
@@ -147,12 +163,17 @@ pub fn send_tip_token(
 
     let contract_address = env.current_contract_address();
     
+    // Set reentrancy guard before external token call
+    storage::set_reentrancy_guard(env, true);
     // Transfer tokens from tipper to contract
     let token_client = token::TokenClient::new(env, token);
     if token_client.balance(tipper) < amount {
+        storage::set_reentrancy_guard(env, false);
         return Err(ContractError::InsufficientBalance);
     }
     token_client.transfer(tipper, &contract_address, &amount);
+    // Clear reentrancy guard after the transfer completes
+    storage::set_reentrancy_guard(env, false);
 
     // Update creator's token balance
     storage::add_token_balance(env, creator, token, amount)?;
@@ -160,7 +181,8 @@ pub fn send_tip_token(
     // Convert to XLM equivalent for stats and leaderboard
     let xlm_equivalent = convert_to_xlm_equivalent(env, token, amount);
 
-    profile.total_tips_received += xlm_equivalent;
+    // Saturating: a creator's lifetime total must never overflow (issue #042).
+    profile.total_tips_received = profile.total_tips_received.saturating_add(xlm_equivalent);
     profile.total_tips_count += 1;
 
     // Update credit score based on new tip totals
@@ -168,6 +190,7 @@ pub fn send_tip_token(
         credit::calculate_credit_score_with_streak(env, &profile, env.ledger().timestamp());
 
     storage::set_profile(env, &profile);
+    credit::mark_credit_computed(env, creator);
     leaderboard::update_all_leaderboards_for_active(env, &profile, xlm_equivalent);
 
     // Update goal progress
@@ -191,8 +214,8 @@ pub fn send_tip_token(
         tip_state.tips_last_24h = 1;
         tip_state.volume_last_24h = xlm_equivalent;
     } else {
-        tip_state.tips_last_24h += 1;
-        tip_state.volume_last_24h += xlm_equivalent;
+        tip_state.tips_last_24h = tip_state.tips_last_24h.saturating_add(1);
+        tip_state.volume_last_24h = tip_state.volume_last_24h.saturating_add(xlm_equivalent);
     }
 
     storage::apply_send_tip_state(env, &tip_state);
@@ -226,14 +249,8 @@ pub fn withdraw_token(
         return Err(ContractError::NotRegistered);
     }
 
-    if amount <= 0 {
-        return Err(ContractError::InvalidAmount);
-    }
-
     let balance = storage::get_token_balance(env, caller, token);
-    if balance < amount {
-        return Err(ContractError::InsufficientBalance);
-    }
+    let amount = crate::validation::validate_withdrawal_amount(amount, storage::get_min_withdrawal_amount(env), balance)?;
 
     // Calculate fee and net amount
     let fee_bps = storage::get_fee_bps(env);
@@ -244,12 +261,20 @@ pub fn withdraw_token(
 
     let token_client = token::TokenClient::new(env, token);
 
+
+    // Set reentrancy guard before external token calls
+    storage::set_reentrancy_guard(env, true);
     // Transfer net amount to creator
-    token_client.transfer(&contract_address, caller, &net);
+    token_client.transfer(&contract_address, caller, &net)?;
+    // Clear reentrancy guard after first transfer
+    storage::set_reentrancy_guard(env, false);
 
     // Transfer fee to collector (if fee > 0)
     if fee > 0 {
-        token_client.transfer(&contract_address, &fee_collector, &fee);
+        storage::set_reentrancy_guard(env, true);
+        token_client.transfer(&contract_address, &fee_collector, &fee)?;
+        // Clear reentrancy guard after second transfer
+        storage::set_reentrancy_guard(env, false);
     }
 
     // Update token balance
@@ -265,6 +290,9 @@ pub fn withdraw_token(
     }
 
     events::emit_tips_withdrawn(env, caller, net, fee);
+
+    // Emit fee collection event for token withdrawal
+    events::emit_fee_collected(env, "token_withdrawal", caller, amount, fee, net, fee_bps);
 
     Ok(())
 }

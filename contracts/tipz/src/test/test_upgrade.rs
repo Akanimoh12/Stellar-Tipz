@@ -138,7 +138,7 @@ fn test_upgrade_preserves_admin_key() {
 
     // Admin key is in instance storage; verify it by exercising an admin-only op.
     // If the admin key were lost this would return NotAuthorized / NotInitialized.
-    client_v2.set_fee(&admin, &300_u32);
+    client_v2.set_fee(&admin, &100_u32);
 
     let stats = client_v2.get_stats();
     assert_eq!(stats.fee_bps, 300);
@@ -228,7 +228,7 @@ fn test_upgrade_admin_ops_work_after() {
     let new_admin = Address::generate(&env);
     client_v2.set_admin(&admin, &new_admin);
 
-    client_v2.set_fee(&new_admin, &500_u32);
+    client_v2.set_fee(&new_admin, &100_u32);
     let stats = client_v2.get_stats();
     assert_eq!(stats.fee_bps, 500);
 }

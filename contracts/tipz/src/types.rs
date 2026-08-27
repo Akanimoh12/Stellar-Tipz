@@ -1,12 +1,15 @@
 //! Data types for the Tipz contract.
 
-use soroban_sdk::{contracttype, Address, String};
+use soroban_sdk::{contracttype, Address, String, Symbol};
 
 /// Maximum number of registered profiles to prevent storage DoS attacks.
 pub const MAX_PROFILES: u32 = 10_000;
 
 /// Maximum tip message length in characters.
 pub const MAX_MESSAGE_LENGTH: u32 = 280;
+
+/// Maximum number of blocked tippers a creator can keep on-chain.
+pub const MAX_CREATOR_BLOCKED_TIPPERS: u32 = 100;
 
 /// Maximum username length in characters.
 pub const MAX_USERNAME_LENGTH: u32 = 32;
@@ -18,10 +21,15 @@ pub const MAX_DISPLAY_NAME_LENGTH: u32 = 64;
 pub const MAX_BIO_LENGTH: u32 = 280;
 
 /// Inactive profile threshold in seconds (180 days).
-/// Profiles with no activity beyond this threshold may be cleaned up by the admin.
-pub const INACTIVE_PROFILE_THRESHOLD_SECS: u64 = 180 * 24 * 3600;
-
-/// Registration rate limit window in seconds (1 hour).
+    /// Profiles with no activity beyond this threshold may be cleaned up by the admin.
+    pub const INACTIVE_PROFILE_THRESHOLD_SECS: u64 = 180 * 24 * 3600;
+    /// Credit score decay inactivity window in seconds (90 days).
+    /// After this window with no activity, the score begins decaying toward the base score.
+    pub const CREDIT_DECAY_INACTIVITY_WINDOW_SECS: u64 = 90 * 24 * 3600;
+    /// Credit score decay rate per second.
+    /// The score decays toward the base score (40) at this rate.
+    pub const CREDIT_DECAY_RATE_PER_SEC: u64 = 1;
+    /// Registration rate limit window in seconds (1 hour).
 pub const REGISTRATION_RATE_WINDOW_SECS: u64 = 3600;
 
 /// Maximum registrations per rate limit window.
@@ -182,6 +190,8 @@ pub struct Profile {
     pub domain_verified_at: Option<u64>,
     /// Creator-specific minimum tip override in stroops (None = use global minimum)
     pub custom_min_tip: Option<i128>,
+    /// Timestamp when the creator was last active (receiving a tip)
+    pub last_active_at: u64,
 }
 
 /// Profile plus deactivation state for queries (`get_profile`, `get_profile_by_username`).
@@ -201,6 +211,19 @@ pub struct AdminChangeProposal {
     pub new_admin: Address,
     /// Unix timestamp after which `confirm_admin_change` may succeed.
     pub confirmable_after: u64,
+    /// Unix timestamp after which proposal expires.
+    pub expires_at: u64,
+}
+
+/// State tracking for versioned storage migrations.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct MigrationState {
+    pub from_version: u32,
+    pub target_version: u32,
+    pub current_step: u32,
+    pub processed_count: u32,
+    pub is_completed: bool,
 }
 
 /// One recorded completed admin handoff (two-step confirm or direct `set_admin`).
@@ -210,6 +233,26 @@ pub struct AdminChangeHistoryEntry {
     pub old_admin: Address,
     pub new_admin: Address,
     pub confirmed_at: u64,
+}
+
+/// Recorded entry for an admin/privileged action in the ring-buffered audit trail.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdminAuditEntry {
+    /// Monotonically increasing audit log entry ID
+    pub id: u32,
+    /// Address of the actor performing the action
+    pub actor: Address,
+    /// Type of action performed
+    pub action_kind: Symbol,
+    /// Value before the action was taken
+    pub before_value: String,
+    /// Value after the action was taken
+    pub after_value: String,
+    /// Ledger sequence number at time of action
+    pub ledger_sequence: u32,
+    /// Ledger timestamp at time of action
+    pub timestamp: u64,
 }
 
 /// Recurring tip subscription record.
@@ -323,7 +366,7 @@ pub enum CreditTier {
     Diamond,
 }
 
-/// Component-level breakdown of a profile credit score.
+/// Component-level breakdown of a profile credit score, including freshness metadata.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct CreditBreakdown {
@@ -339,7 +382,40 @@ pub struct CreditBreakdown {
     pub streak_score: u32,
     /// Final score after summing all components (capped at 100).
     pub total: u32,
+    /// Ledger sequence number when the stored credit score was last persisted.
+    /// Zero when the score has never been explicitly stored (e.g. brand-new profile).
+    pub computed_at_ledger: u32,
+    /// How many ledgers have elapsed since the score was last stored
+    /// (`current_ledger - computed_at_ledger`). Large when never stored.
+    pub ledger_age: u32,
+    /// `true` when `ledger_age` exceeds the configured staleness threshold.
+    /// Consumers should degrade UI displays when this is `true`.
+    pub is_stale: bool,
 }
+
+/// On-chain price quote returned by a price oracle contract.
+///
+/// Prices are expressed as XLM-equivalent units per 1 token stroop
+/// (scaled by `ORACLE_PRICE_SCALE = 10^7` to preserve precision in i128).
+/// A price of `10_000_000` means 1 token stroop = 1 XLM stroop (1:1).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct OraclePrice {
+    /// XLM-equivalent price per token stroop, scaled by 10^7.
+    pub price_scaled: i128,
+    /// Ledger timestamp (seconds) when this price was last updated by the oracle.
+    pub updated_at: u64,
+}
+
+/// Staleness threshold defaults (ledgers at ~5 s/ledger).
+/// 12 hours ≈ 8,640 ledgers.
+pub const DEFAULT_CREDIT_STALENESS_THRESHOLD_LEDGERS: u32 = 8_640;
+
+/// Scale factor used for oracle prices (10^7, same as stroops-per-XLM).
+pub const ORACLE_PRICE_SCALE: i128 = 10_000_000;
+
+/// Maximum oracle price age in seconds before the price is considered stale (1 hour).
+pub const ORACLE_PRICE_MAX_AGE_SECS: u64 = 3_600;
 
 /// A single skipped entry from a batch X-metrics update, including the reason.
 ///
@@ -397,6 +473,8 @@ pub struct ContractConfig {
     pub is_initialized: bool,
     /// On-chain contract version
     pub version: u32,
+    /// Maximum active subscriptions per subscriber (default 50)
+    pub subscription_limit: u32,
 }
 
 /// Donation page configuration for a creator
@@ -557,4 +635,6 @@ pub struct RefundConfig {
     pub response_window_secs: u64,
     /// Non-refundable fee percentage in basis points (default 200 = 2%)
     pub non_refundable_fee_bps: u32,
+    /// Time window in seconds for pending refund requests before auto-expiry (default 30 days = 2592000)
+    pub request_ttl_ledgers: u32,
 }

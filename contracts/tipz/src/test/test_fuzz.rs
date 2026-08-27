@@ -42,12 +42,12 @@ fn expected_username_result(input: &[u8]) -> Result<(), ContractError> {
 
 fn expected_x_handle_result(input: &[u8]) -> Result<(), ContractError> {
     if input.is_empty() || input.len() > 16 {
-        return Err(ContractError::InvalidUsername);
+        return Err(ContractError::InvalidInput);
     }
 
     let start = if input[0] == b'@' {
         if input.len() == 1 {
-            return Err(ContractError::InvalidUsername);
+            return Err(ContractError::InvalidInput);
         }
         1
     } else {
@@ -55,13 +55,13 @@ fn expected_x_handle_result(input: &[u8]) -> Result<(), ContractError> {
     };
 
     if input.len() - start > 15 {
-        return Err(ContractError::InvalidUsername);
+        return Err(ContractError::InvalidInput);
     }
 
     for &b in &input[start..] {
         let valid = b.is_ascii_alphanumeric() || b == b'_';
         if !valid {
-            return Err(ContractError::InvalidUsername);
+            return Err(ContractError::InvalidInput);
         }
     }
 
@@ -191,11 +191,11 @@ fn regression_unicode_emoji_control_and_null_inputs_are_classified() {
 
     assert_eq!(
         validate_x_handle(&s(&env, "@creator🙂")),
-        Err(ContractError::InvalidUsername)
+        Err(ContractError::InvalidInput)
     );
     assert_eq!(
         validate_x_handle(&bytes(&env, b"creator\0")),
-        Err(ContractError::InvalidUsername)
+        Err(ContractError::InvalidInput)
     );
 
     assert_eq!(validate_message(&s(&env, "thanks 🙂")), Ok(()));
@@ -227,7 +227,7 @@ fn regression_maximum_length_strings_hit_exact_boundaries() {
     assert_eq!(validate_x_handle(&s(&env, "@abcdefghijklmno")), Ok(()));
     assert_eq!(
         validate_x_handle(&s(&env, "@abcdefghijklmnop")),
-        Err(ContractError::InvalidUsername)
+        Err(ContractError::InvalidInput)
     );
 
     assert_eq!(validate_message(&bytes(&env, &[b'm'; 280])), Ok(()));

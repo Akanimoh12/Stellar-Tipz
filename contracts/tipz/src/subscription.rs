@@ -35,10 +35,11 @@ pub fn create_subscription(
         return Err(ContractError::CannotTipSelf);
     }
 
-    // Enforce max subscriptions per subscriber limit
-    let sub_count = storage::get_subscriber_sub_count(env, &subscriber);
-    if sub_count >= crate::types::MAX_SUBSCRIPTIONS_PER_SUBSCRIBER {
-        return Err(ContractError::StorageLimitExceeded);
+    // Check subscription limit
+    let sub_count = get_active_subscription_count(env, &subscriber);
+    let limit = storage::get_subscription_limit(env);
+    if sub_count >= limit {
+        return Err(ContractError::SubscriptionLimitReached);
     }
 
     let next_due = env.ledger().timestamp() + (interval_days as u64 * 86400);
@@ -58,6 +59,9 @@ pub fn create_subscription(
     // Update indices
     add_subscriber_to_creator(env, &creator, &subscriber);
     add_creator_to_subscriber(env, &subscriber, &creator);
+
+    // Add to active subscriptions list
+    storage::add_active_subscription(env, &subscriber, &creator);
 
     events::emit_subscription_created(env, &subscriber, &creator, amount, interval_days);
 
@@ -89,27 +93,46 @@ pub fn cancel_subscription(
     sub.active = false;
     env.storage().persistent().set(&sub_key, &sub);
 
+    // Remove from active subscriptions list
+    storage::remove_active_subscription(env, &subscriber, &creator);
+
     events::emit_subscription_cancelled(env, &subscriber, &creator);
 
     Ok(())
 }
 
-/// Execute all subscriptions that are due.
-/// This should ideally be callable by protocol automation.
-#[allow(dead_code)]
-pub fn execute_subscriptions(_env: &Env) -> Result<(), ContractError> {
-    // In a real scenario, we might need a way to iterate through all subscriptions.
-    // For this simplified implementation, we'll assume there's a mechanism to find due subscriptions.
-    // Since we don't have a global iterator in Soroban persistent storage easily,
-    // we might need a more complex indexing or just execute specific ones if passed.
+/// Execute up to `limit` due subscriptions in a batched sweep.
+/// Returns the number of subscriptions charged.
+/// Subscriptions that fail are skipped with an event emitted.
+pub fn execute_subscriptions(env: &Env, limit: u32) -> Result<u32, ContractError> {
+    let active_subs = storage::get_active_subscriptions(env);
+    let mut charged_count = 0_u32;
+    let now = env.ledger().timestamp();
 
-    // For the requirement, we'll implement a simple version that could be extended.
-    // Since the requirement says "execute_subscriptions(env)", it implies a global check.
-    // Let's assume we store a list of all active subscribers or similar.
+    for (subscriber, creator) in active_subs.iter() {
+        if charged_count >= limit {
+            break;
+        }
 
-    // Given the constraints, I'll implement a mock for now or try to use the indices.
-    // Actually, I'll implement `execute_subscription(env, subscriber, creator)` as a helper.
-    Ok(())
+        let sub_key = DataKey::Subscription(subscriber.clone(), creator.clone());
+        if let Some(mut sub) = env.storage().persistent().get::<DataKey, Subscription>(&sub_key) {
+            if sub.active && now >= sub.next_due {
+                // Attempt to execute the due subscription
+                match execute_due_subscription_internal(env, &mut sub, now) {
+                    Ok(_) => {
+                        charged_count += 1;
+                        env.storage().persistent().set(&sub_key, &sub);
+                    }
+                    Err(_) => {
+                        // Subscription charge failed - skip and emit event
+                        events::emit_subscription_charge_failed(env, &subscriber, &creator);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(charged_count)
 }
 
 pub fn execute_due_subscription(
@@ -133,30 +156,31 @@ pub fn execute_due_subscription(
 
     let now = env.ledger().timestamp();
     if now >= sub.next_due {
-        // Execute tip
-        // We use tips::send_tip but we need to handle auth carefully or have a system tip
-        // Here we assume the contract has the right to move funds if pre-authorized?
-        // Actually, for subscriptions, the user usually grants a recurring allowance.
-        // In Soroban, we'd use the token's approve/transfer_from.
-
-        // This implementation will assume the subscriber has enough balance and the contract can transfer.
-        tips::send_tip(
-            env,
-            &subscriber,
-            &creator,
-            sub.amount,
-            &String::from_str(env, "Recurring Tip"),
-            false, // Subscriptions are not anonymous
-            false, // Subscriptions are not encrypted
-        )?;
-
-        // Update next_due
-        sub.next_due = now + (sub.interval_days as u64 * 86400);
+        execute_due_subscription_internal(env, &mut sub, now)?;
         env.storage().persistent().set(&sub_key, &sub);
-
         events::emit_subscription_executed(env, &subscriber, &creator, sub.amount);
     }
 
+    Ok(())
+}
+
+fn execute_due_subscription_internal(
+    env: &Env,
+    sub: &mut Subscription,
+    now: u64,
+) -> Result<(), ContractError> {
+    tips::send_tip(
+        env,
+        &sub.subscriber,
+        &sub.creator,
+        sub.amount,
+        &String::from_str(env, "Recurring Tip"),
+        false,
+        false,
+    )?;
+
+    // Advance next_due by exactly one interval, no drift
+    sub.next_due = sub.next_due.saturating_add(sub.interval_days as u64 * 86400);
     Ok(())
 }
 
@@ -208,6 +232,13 @@ pub fn get_subscribers(env: &Env, creator: Address) -> Vec<Subscription> {
         }
     }
     result
+}
+
+fn get_active_subscription_count(env: &Env, subscriber: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::SubscriberSubCount(subscriber.clone()))
+        .unwrap_or(0)
 }
 
 // Internal helpers for indexing

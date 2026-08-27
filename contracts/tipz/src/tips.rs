@@ -13,9 +13,7 @@ use crate::leaderboard;
 use crate::storage::{self, DataKey};
 use crate::streaks;
 use crate::token;
-
-use crate::types::ScheduledTip;
-use crate::types::Tip;
+use crate::types::{ScheduledTip, Tip, MAX_CREATOR_BLOCKED_TIPPERS};
 use crate::validation::{validate_message, validate_tip_for_creator};
 
 /// Create a new [`Tip`] record and store it in temporary storage.
@@ -202,6 +200,55 @@ pub const MAX_TIP_AMOUNT: i128 = 1_000_000_000_000_i128;
 /// Maximum per-creator tip count stored in the profile.
 pub const MAX_TIP_COUNT: u32 = u32::MAX;
 
+/// Block a tipper from sending future tips to `creator`.
+pub fn block_tipper(
+    env: &Env,
+    creator: &Address,
+    tipper: &Address,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    creator.require_auth();
+    if !storage::has_profile(env, creator) {
+        return Err(ContractError::NotRegistered);
+    }
+    if creator == tipper {
+        return Err(ContractError::CannotTipSelf);
+    }
+    if storage::is_creator_blocked_tipper(env, creator, tipper) {
+        return Ok(());
+    }
+    if storage::get_creator_blocked_tipper_count(env, creator) >= MAX_CREATOR_BLOCKED_TIPPERS {
+        return Err(ContractError::BlocklistLimitReached);
+    }
+    storage::set_creator_blocked_tipper(env, creator, tipper, env.ledger().timestamp());
+    crate::events::emit_tipper_blocked(env, creator, tipper);
+    Ok(())
+}
+
+/// Remove a tipper from `creator`'s blocklist.
+pub fn unblock_tipper(
+    env: &Env,
+    creator: &Address,
+    tipper: &Address,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    creator.require_auth();
+    if !storage::has_profile(env, creator) {
+        return Err(ContractError::NotRegistered);
+    }
+    storage::remove_creator_blocked_tipper(env, creator, tipper);
+    crate::events::emit_tipper_unblocked(env, creator, tipper);
+    Ok(())
+}
+
+pub fn is_tipper_blocked(env: &Env, creator: &Address, tipper: &Address) -> bool {
+    storage::is_creator_blocked_tipper(env, creator, tipper)
+}
+
+pub fn get_blocked_tipper_count(env: &Env, creator: &Address) -> u32 {
+    storage::get_creator_blocked_tipper_count(env, creator)
+}
+
 /// Send an XLM tip from `tipper` to a registered `creator`.
 pub fn send_tip(
     env: &Env,
@@ -234,13 +281,20 @@ pub fn send_tip(
     if storage::is_profile_deactivated(env, creator) {
         return Err(ContractError::ProfileDeactivated);
     }
+    if storage::is_creator_blocked_tipper(env, creator, tipper) {
+        return Err(ContractError::TipperBlocked);
+    }
 
     validate_tip_for_creator(env, creator, amount)?;
     validate_message(message)?;
 
     let contract_address = env.current_contract_address();
+    // Set reentrancy guard before external token call
+    storage::set_reentrancy_guard(env, true);
     // Security: native SAC transfer has no callback path into this contract.
     token::transfer_xlm_with_token(env, &config.native_token, tipper, &contract_address, amount)?;
+    // Clear reentrancy guard after the transfer completes
+    storage::set_reentrancy_guard(env, false);
 
     profile.balance = profile
         .balance
@@ -263,11 +317,13 @@ pub fn send_tip(
         credit::calculate_credit_score_with_streak(env, &profile, env.ledger().timestamp());
 
     storage::set_profile(env, &profile);
+    // Record when this score was stored for staleness reporting (#1186).
+    credit::mark_credit_computed(env, creator);
 
     // Track sender-creator volume for leaderboard concentration cap
     let sender_creator_volume = storage::add_sender_creator_volume(env, tipper, creator, amount);
     let max_contribution_bps = config.max_sender_contribution_bps;
-    
+
     // Calculate the amount that counts towards leaderboard (apply concentration cap)
     let leaderboard_amount = if max_contribution_bps >= 10000 {
         amount // No cap
@@ -312,8 +368,10 @@ pub fn send_tip(
         tip_state.tips_last_24h = 1;
         tip_state.volume_last_24h = amount;
     } else {
-        tip_state.tips_last_24h += 1;
-        tip_state.volume_last_24h += amount;
+        // Saturating: the 24h counters are accumulators that must never
+        // overflow under overflow-checks = true (issue #042).
+        tip_state.tips_last_24h = tip_state.tips_last_24h.saturating_add(1);
+        tip_state.volume_last_24h = tip_state.volume_last_24h.saturating_add(amount);
     }
 
     store_tip_with_id(
@@ -380,7 +438,11 @@ pub fn send_tip_on_behalf(
     validate_message(message)?;
 
     let contract_address = env.current_contract_address();
+    // Set reentrancy guard before external token call
+    storage::set_reentrancy_guard(env, true);
     token::transfer_xlm(env, sender, &contract_address, amount)?;
+    // Clear reentrancy guard after the transfer completes
+    storage::set_reentrancy_guard(env, false);
 
     let mut profile = storage::get_profile(env, creator);
     profile.balance = profile
@@ -399,6 +461,7 @@ pub fn send_tip_on_behalf(
     profile.credit_score = credit::calculate_credit_score(&profile, env.ledger().timestamp());
 
     storage::set_profile(env, &profile);
+    credit::mark_credit_computed(env, creator);
     leaderboard::update_all_leaderboards(env, &profile, amount);
 
     storage::bump_profile_ttl(env, creator);
@@ -454,15 +517,8 @@ pub fn withdraw_tips(env: &Env, caller: &Address, amount: i128) -> Result<(), Co
         return Err(ContractError::NotRegistered);
     }
 
-    if amount <= 0 {
-        return Err(ContractError::InvalidAmount);
-    }
-
     let mut profile = storage::get_profile(env, caller);
-
-    if profile.balance < amount {
-        return Err(ContractError::InsufficientBalance);
-    }
+    let amount = crate::validation::validate_withdrawal_amount(amount, storage::get_min_withdrawal_amount(env), profile.balance)?;
 
     // Calculate fee and net amount
     let fee_bps = storage::get_fee_bps(env);
@@ -472,12 +528,19 @@ pub fn withdraw_tips(env: &Env, caller: &Address, amount: i128) -> Result<(), Co
     let contract_address = env.current_contract_address();
     let fee_collector = storage::get_fee_collector(env);
 
+    // Set reentrancy guard before external token calls
+    storage::set_reentrancy_guard(env, true);
     // Transfer net amount to creator
     token::transfer_xlm(env, &contract_address, caller, net)?;
+    // Clear reentrancy guard after first transfer
+    storage::set_reentrancy_guard(env, false);
 
     // Transfer fee to collector (if fee > 0)
     if fee > 0 {
+        storage::set_reentrancy_guard(env, true);
         token::transfer_xlm(env, &contract_address, &fee_collector, fee)?;
+        // Clear reentrancy guard after second transfer
+        storage::set_reentrancy_guard(env, false);
     }
 
     // Update profile balance
@@ -495,6 +558,66 @@ pub fn withdraw_tips(env: &Env, caller: &Address, amount: i128) -> Result<(), Co
 
     // Emit withdrawal event: (creator, net, fee)
     crate::events::emit_tips_withdrawn(env, caller, net, fee);
+
+    // Emit fee collection event with operation kind and fee_bps for historical reconciliation
+    crate::events::emit_fee_collected(env, "withdrawal", caller, amount, fee, net, fee_bps);
+
+    Ok(())
+}
+
+/// Time-delayed emergency withdrawal that survives contract pause (#1178).
+///
+/// If the contract remains paused past `EMERGENCY_WITHDRAWAL_DELAY_SECS` (7 days),
+/// creators may withdraw their accrued tips fee-free even while paused.
+pub fn emergency_withdraw_tips(
+    env: &Env,
+    caller: &Address,
+    amount: i128,
+) -> Result<(), ContractError> {
+    caller.require_auth();
+
+    if !storage::is_paused(env) {
+        return Err(ContractError::ContractNotPaused);
+    }
+
+    let paused_at = storage::get_paused_at(env).ok_or(ContractError::ContractNotPaused)?;
+    let now = env.ledger().timestamp();
+    let threshold = paused_at.saturating_add(crate::admin::EMERGENCY_WITHDRAWAL_DELAY_SECS);
+
+    if now < threshold {
+        return Err(ContractError::EmergencyNotAllowed);
+    }
+
+    if !storage::has_profile(env, caller) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    if amount <= 0 {
+        return Err(ContractError::InvalidAmount);
+    }
+
+    let mut profile = storage::get_profile(env, caller);
+    if profile.balance < amount {
+        return Err(ContractError::InsufficientBalance);
+    }
+
+    let contract_address = env.current_contract_address();
+
+    // Set reentrancy guard before external token call
+    storage::set_reentrancy_guard(env, true);
+    // Transfer full requested amount without charging fees (fee-free emergency exit)
+    token::transfer_xlm(env, &contract_address, caller, amount)?;
+    // Clear reentrancy guard after the transfer completes
+    storage::set_reentrancy_guard(env, false);
+
+    profile.balance -= amount;
+    storage::set_profile(env, &profile);
+
+    storage::bump_profile_ttl(env, caller);
+    storage::bump_username_ttl(env, &profile.username);
+
+    // Emit distinct emergency withdrawal event
+    crate::events::emit_emergency_withdrawal(env, caller, amount);
 
     Ok(())
 }
@@ -663,6 +786,7 @@ pub fn deliver_scheduled_tip(
         credit::calculate_credit_score_with_streak(env, &profile, now);
 
     storage::set_profile(env, &profile);
+    credit::mark_credit_computed(env, &scheduled_tip.creator);
     leaderboard::update_all_leaderboards_for_active(env, &profile, scheduled_tip.amount);
 
     // Update goal progress
@@ -735,7 +859,7 @@ pub fn cancel_scheduled_tip(
         .ok_or(ContractError::NotFound)?;
 
     if scheduled_tip.sender != *caller {
-        return Err(ContractError::Unauthorized);
+        return Err(ContractError::NotAuthorized);
     }
 
     if scheduled_tip.delivered {
@@ -760,14 +884,21 @@ pub fn cancel_scheduled_tip(
     let cancellation_fee = scheduled_tip.amount / 100;
     let refund_amount = scheduled_tip.amount - cancellation_fee;
 
+    // Set reentrancy guard before external token calls
+    storage::set_reentrancy_guard(env, true);
     // Refund the sender
     let contract_address = env.current_contract_address();
     token::transfer_xlm(env, &contract_address, &scheduled_tip.sender, refund_amount)?;
+    // Clear reentrancy guard after refund
+    storage::set_reentrancy_guard(env, false);
 
     // Send cancellation fee to fee collector
     if cancellation_fee > 0 {
+        storage::set_reentrancy_guard(env, true);
         let fee_collector = storage::get_fee_collector(env);
         token::transfer_xlm(env, &contract_address, &fee_collector, cancellation_fee)?;
+        // Clear reentrancy guard after fee transfer
+        storage::set_reentrancy_guard(env, false);
         storage::add_to_fees(env, cancellation_fee)?;
     }
 

@@ -566,6 +566,159 @@ fn test_process_pending_refunds_multiple() {
 }
 
 #[test]
+fn test_process_pending_refunds_from_empty_index() {
+    let (env, _contract_id, client) = setup_test_env();
+    let admin = Address::generate(&env);
+    let fee_collector = Address::generate(&env);
+
+    initialize_contract(&env, &client, &admin, &fee_collector);
+
+    let (processed, next_cursor) = client.process_pending_refunds_from(&0, &10);
+    assert_eq!(processed, 0);
+    assert_eq!(next_cursor, 0);
+}
+
+#[test]
+fn test_process_pending_refunds_from_single_page() {
+    let (env, _contract_id, client) = setup_test_env();
+    let admin = Address::generate(&env);
+    let fee_collector = Address::generate(&env);
+    let tipper = Address::generate(&env);
+    let creator = Address::generate(&env);
+
+    initialize_contract(&env, &client, &admin, &fee_collector);
+    register_profile(&client, &creator, "creator");
+
+    client.send_tip(
+        &tipper,
+        &creator,
+        &1_000_000_i128,
+        &String::from_str(&env, "Great work!"),
+        &false,
+        &false,
+    );
+    client.request_refund(&tipper, &0);
+
+    env.ledger().set(LedgerInfo {
+        timestamp: env.ledger().timestamp() + 49 * 3600,
+        protocol_version: 20,
+        sequence_number: env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+
+    let (processed, next_cursor) = client.process_pending_refunds_from(&0, &10);
+    assert_eq!(processed, 1);
+    assert_eq!(next_cursor, 0);
+
+    let refund_request = client.get_refund_request(&0).unwrap();
+    assert_eq!(refund_request.status, RefundStatus::AutoApproved);
+}
+
+#[test]
+fn test_process_pending_refunds_from_multi_page_resumption() {
+    let (env, _contract_id, client) = setup_test_env();
+    let admin = Address::generate(&env);
+    let fee_collector = Address::generate(&env);
+    let tipper = Address::generate(&env);
+    let creator = Address::generate(&env);
+
+    initialize_contract(&env, &client, &admin, &fee_collector);
+    register_profile(&client, &creator, "creator");
+
+    for _ in 0..4 {
+        client.send_tip(
+            &tipper,
+            &creator,
+            &1_000_000_i128,
+            &String::from_str(&env, "Great work!"),
+            &false,
+            &false,
+        );
+    }
+    for tip_id in 0..4 {
+        client.request_refund(&tipper, &tip_id);
+    }
+
+    env.ledger().set(LedgerInfo {
+        timestamp: env.ledger().timestamp() + 49 * 3600,
+        protocol_version: 20,
+        sequence_number: env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+
+    let (processed1, cursor1) = client.process_pending_refunds_from(&0, &2);
+    assert_eq!(processed1, 2);
+    assert!(cursor1 > 0);
+
+    let (processed2, cursor2) = client.process_pending_refunds_from(&cursor1, &2);
+    assert_eq!(processed2, 2);
+    assert_eq!(cursor2, 0);
+}
+
+#[test]
+fn test_process_pending_refunds_from_handles_mid_walk_mutation() {
+    let (env, _contract_id, client) = setup_test_env();
+    let admin = Address::generate(&env);
+    let fee_collector = Address::generate(&env);
+    let tipper = Address::generate(&env);
+    let creator = Address::generate(&env);
+
+    initialize_contract(&env, &client, &admin, &fee_collector);
+    register_profile(&client, &creator, "creator");
+
+    for _ in 0..3 {
+        client.send_tip(
+            &tipper,
+            &creator,
+            &1_000_000_i128,
+            &String::from_str(&env, "Great work!"),
+            &false,
+            &false,
+        );
+    }
+    for tip_id in 0..3 {
+        client.request_refund(&tipper, &tip_id);
+    }
+
+    env.ledger().set(LedgerInfo {
+        timestamp: env.ledger().timestamp() + 49 * 3600,
+        protocol_version: 20,
+        sequence_number: env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+
+    let (processed1, cursor1) = client.process_pending_refunds_from(&0, &1);
+    assert_eq!(processed1, 1);
+    assert!(cursor1 > 0);
+
+    client.approve_refund(&creator, &1);
+
+    let (processed2, cursor2) = client.process_pending_refunds_from(&cursor1, &10);
+    assert!(processed2 >= 1);
+    assert_eq!(cursor2, 0);
+
+    let request0 = client.get_refund_request(&0).unwrap();
+    let request1 = client.get_refund_request(&1).unwrap();
+    let request2 = client.get_refund_request(&2).unwrap();
+
+    assert_eq!(request0.status, RefundStatus::AutoApproved);
+    assert_eq!(request1.status, RefundStatus::Approved);
+    assert_eq!(request2.status, RefundStatus::AutoApproved);
+}
+
+#[test]
 fn test_refund_no_request_exists() {
     let (env, _contract_id, client) = setup_test_env();
     let admin = Address::generate(&env);

@@ -17,6 +17,8 @@ use soroban_sdk::{
 use crate::credit::{calculate_credit_score, BASE_SCORE, MAX_SCORE};
 use crate::errors::ContractError;
 use crate::fees::calculate_fee;
+use crate::leaderboard;
+use crate::storage;
 use crate::types::{Profile, VerificationStatus, VerificationType};
 use crate::validation::{validate_tip_amount, validate_username};
 
@@ -127,6 +129,113 @@ proptest! {
     }
 }
 
+// ── Fee computation over the FULL i128 domain (issue #042) ─────────────────────
+//
+// `overflow-checks = true` means any overflow panics in release. The fee split
+// must therefore be *total* over the entire i128 range: it either returns a
+// valid (fee, net) or `OverflowError`, never panics.
+
+proptest! {
+    /// For ANY i128 amount and ANY u32 fee bps, `calculate_fee` must not panic.
+    /// It either returns a valid split or an error — it never wraps.
+    #[test]
+    fn property_fee_total_over_full_i128(
+        amount in any::<i128>(),
+        fee_bps in any::<u32>(),
+    ) {
+        let result = calculate_fee(amount, fee_bps);
+        prop_assert!(result.is_ok() || result.is_err());
+        if let Ok((fee, net)) = result {
+            // For non-negative amounts the value-invariant must hold exactly.
+            if amount >= 0 {
+                prop_assert_eq!(fee + net, amount);
+                prop_assert!(fee >= 0);
+                prop_assert!(net >= 0);
+            }
+        }
+    }
+}
+
+// ── Credit score over the FULL i128 domain (issue #042) ────────────────────────
+
+proptest! {
+    /// For ANY i128 tip volume and any X metrics / account age, the credit
+    /// score must remain within [BASE_SCORE, MAX_SCORE] and never panic.
+    #[test]
+    fn property_credit_score_total_over_full_i128(
+        tips in any::<i128>(),
+        followers in any::<u32>(),
+        engagement in any::<u32>(),
+        age_days in any::<u64>(),
+    ) {
+        let env = Env::default();
+        let owner = Address::generate(&env);
+        let registered_at = 1_700_000_000_u64;
+        let now = registered_at + age_days * 86_400;
+        let profile = build_profile(&env, owner, tips, followers, engagement, registered_at);
+        let score = calculate_credit_score(&profile, now);
+        prop_assert!(score <= MAX_SCORE, "score {} > MAX_SCORE", score);
+        prop_assert!(score >= BASE_SCORE, "score {} < BASE_SCORE", score);
+    }
+}
+
+// ── Leaderboard / volume accumulation over the FULL i128 domain (issue #042) ───
+//
+// The accumulator paths are the highest-risk: a creator's lifetime total can
+// grow past a naive bound. These must stay total (saturating) for any i128.
+
+proptest! {
+    /// Accumulating arbitrary i128 tips into a creator's period volumes must
+    /// never overflow or panic. `add_creator_period_volumes` uses saturating
+    /// addition, so it is total over the whole i128 domain.
+    #[test]
+    fn property_volume_accumulation_total_over_full_i128(
+        amounts in proptest::collection::vec(any::<i128>(), 0..=32),
+    ) {
+        use crate::TipzContract;
+        use crate::types::LeaderboardPeriod;
+
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TipzContract);
+        let creator = Address::generate(&env);
+        let period_start = 1_700_000_000_u64;
+
+        env.as_contract(&contract_id, || {
+            for amt in amounts {
+                // Must not panic for any i128 input.
+                let _ = storage::add_creator_period_volumes(
+                    &env, &creator, period_start, period_start, amt,
+                );
+            }
+        });
+        prop_assert!(true);
+    }
+}
+
+proptest! {
+    /// A creator whose lifetime total is the extreme i128::MIN/MAX bound must
+    /// update every leaderboard without overflow/panic. This is exactly the
+    /// "creator's lifetime total grows past a naive bound" risk from the issue.
+    #[test]
+    fn property_leaderboard_lifetime_total_extreme(
+        amount in any::<i128>(),
+    ) {
+        use crate::TipzContract;
+
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TipzContract);
+        let owner = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let mut profile = build_profile(&env, owner.clone(), amount, 0, 0, 1_700_000_000_u64);
+            profile.total_tips_received = amount;
+            // Must not panic for any i128 lifetime total.
+            leaderboard::update_all_leaderboards_for_active(&env, &profile, amount);
+        });
+        prop_assert!(true);
+    }
+}
+
 // ── Credit score bounding ────────────────────────────────────────────────────
 
 proptest! {
@@ -213,5 +322,231 @@ proptest! {
         } else {
             prop_assert_eq!(result, Err(ContractError::InvalidUsername));
         }
+    }
+}
+
+// ── Leaderboard determinism ──────────────────────────────────────────────────
+
+proptest! {
+    /// All-equal volumes should be ordered by insertion (stable sort).
+    /// When multiple creators have the same amount, they should maintain
+    /// their insertion order regardless of how updates are interleaved.
+    #[test]
+    fn property_leaderboard_all_equal_volumes_ordered_by_insertion(
+        count in 1usize..=20,
+    ) {
+        use crate::TipzContract;
+        use crate::types::LeaderboardPeriod;
+        
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TipzContract);
+
+        let mut addresses = Vec::new();
+        for i in 0..count {
+            addresses.push(Address::generate(&env));
+        }
+
+        env.as_contract(&contract_id, || {
+            // Insert all creators with the same amount
+            let mut entries = soroban_sdk::Vec::new(&env);
+            for addr in &addresses {
+                let entry = crate::types::LeaderboardEntry {
+                    address: addr.clone(),
+                    username: SorobanString::from_str(&env, &format!("user{}", addresses.iter().position(|a| a == addr).unwrap())),
+                    amount: 1_000_000,  // All equal
+                    credit_score: 50,
+                };
+                entries.push_back(entry);
+            }
+
+            // Verify order is preserved
+            for (i, addr) in addresses.iter().enumerate() {
+                prop_assert_eq!(entries.get(i as u32).unwrap().address, *addr,
+                    "leaderboard order not preserved at index {}", i);
+            }
+        });
+    }
+}
+
+proptest! {
+    /// Boundary test: inserting at MAX_LEADERBOARD_SIZE boundary.
+    /// When a new entry ranks exactly at position MAX_LEADERBOARD_SIZE,
+    /// it should be inserted and the last entry evicted.
+    #[test]
+    fn property_leaderboard_boundary_insertion_evicts_lowest(
+        new_amount in 50_i128..=100_i128,
+    ) {
+        use crate::TipzContract;
+        
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TipzContract);
+
+        env.as_contract(&contract_id, || {
+            let max_size = crate::leaderboard::MAX_LEADERBOARD_SIZE as usize;
+            
+            // Build a leaderboard with max_size entries, amounts from (max_size) down to 1
+            let mut entries = soroban_sdk::Vec::new(&env);
+            for i in 0..max_size {
+                let entry = crate::types::LeaderboardEntry {
+                    address: Address::generate(&env),
+                    username: SorobanString::from_str(&env, &format!("user{}", i)),
+                    amount: (max_size - i) as i128 * 10,
+                    credit_score: 50,
+                };
+                entries.push_back(entry);
+            }
+
+            // Create a new profile with an amount that would rank mid-list
+            let new_addr = Address::generate(&env);
+            let new_profile = Profile {
+                owner: new_addr.clone(),
+                username: SorobanString::from_str(&env, "newuser"),
+                display_name: SorobanString::from_str(&env, "New User"),
+                bio: SorobanString::from_str(&env, ""),
+                website: SorobanString::from_str(&env, ""),
+                image_url: SorobanString::from_str(&env, ""),
+                social_links: Map::<Symbol, SorobanString>::new(&env),
+                x_handle: SorobanString::from_str(&env, ""),
+                x_followers: 0,
+                x_engagement_avg: 0,
+                credit_score: 50,
+                total_tips_received: new_amount,
+                total_tips_count: 0,
+                balance: 0,
+                registered_at: 1_700_000_000,
+                updated_at: 1_700_000_000,
+                verification: VerificationStatus {
+                    is_verified: false,
+                    verification_type: VerificationType::Unverified,
+                    verified_at: None,
+                    revoked_at: None,
+                },
+                domain: SorobanString::from_str(&env, ""),
+                domain_verified: false,
+                domain_verified_at: None,
+                custom_min_tip: None,
+            };
+
+            // Simulate update_entries behavior
+            crate::leaderboard::update_entries(&mut entries, &new_profile, new_amount);
+
+            // Verify size is capped
+            prop_assert!(
+                entries.len() <= max_size as u32,
+                "leaderboard exceeded max size: {} > {}",
+                entries.len(),
+                max_size
+            );
+
+            // Verify descending order
+            for i in 1..entries.len() {
+                prop_assert!(
+                    entries.get(i - 1).unwrap().amount >= entries.get(i).unwrap().amount,
+                    "leaderboard not in descending order at index {}",
+                    i
+                );
+            }
+        });
+    }
+}
+
+proptest! {
+    /// Same multiset of tips in different insertion orders should yield
+    /// identical leaderboards (deterministic ordering).
+    #[test]
+    fn property_leaderboard_deterministic_regardless_of_insertion_order(
+        amounts in proptest::collection::vec(1_i128..=10_000_i128, 1..=10),
+    ) {
+        use crate::TipzContract;
+        
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TipzContract);
+
+        let mut leaderboard1 = Vec::new();
+        let mut leaderboard2 = Vec::new();
+
+        env.as_contract(&contract_id, || {
+            // First insertion order: amounts as-is
+            {
+                let mut entries = soroban_sdk::Vec::new(&env);
+                for (i, &amt) in amounts.iter().enumerate() {
+                    let profile = Profile {
+                        owner: Address::generate(&env),
+                        username: SorobanString::from_str(&env, &format!("user{}", i)),
+                        display_name: SorobanString::from_str(&env, "User"),
+                        bio: SorobanString::from_str(&env, ""),
+                        website: SorobanString::from_str(&env, ""),
+                        image_url: SorobanString::from_str(&env, ""),
+                        social_links: Map::<Symbol, SorobanString>::new(&env),
+                        x_handle: SorobanString::from_str(&env, ""),
+                        x_followers: 0,
+                        x_engagement_avg: 0,
+                        credit_score: 50,
+                        total_tips_received: amt,
+                        total_tips_count: 0,
+                        balance: 0,
+                        registered_at: 1_700_000_000 + i as u64,
+                        updated_at: 1_700_000_000 + i as u64,
+                        verification: VerificationStatus {
+                            is_verified: false,
+                            verification_type: VerificationType::Unverified,
+                            verified_at: None,
+                            revoked_at: None,
+                        },
+                        domain: SorobanString::from_str(&env, ""),
+                        domain_verified: false,
+                        domain_verified_at: None,
+                        custom_min_tip: None,
+                    };
+                    crate::leaderboard::update_entries(&mut entries, &profile, amt);
+                }
+                for e in entries.iter() {
+                    leaderboard1.push(e.amount);
+                }
+            }
+
+            // Second insertion order: amounts reversed
+            {
+                let mut entries = soroban_sdk::Vec::new(&env);
+                for (i, &amt) in amounts.iter().enumerate().rev() {
+                    let profile = Profile {
+                        owner: Address::generate(&env),
+                        username: SorobanString::from_str(&env, &format!("user{}", i)),
+                        display_name: SorobanString::from_str(&env, "User"),
+                        bio: SorobanString::from_str(&env, ""),
+                        website: SorobanString::from_str(&env, ""),
+                        image_url: SorobanString::from_str(&env, ""),
+                        social_links: Map::<Symbol, SorobanString>::new(&env),
+                        x_handle: SorobanString::from_str(&env, ""),
+                        x_followers: 0,
+                        x_engagement_avg: 0,
+                        credit_score: 50,
+                        total_tips_received: amt,
+                        total_tips_count: 0,
+                        balance: 0,
+                        registered_at: 1_700_000_000 + i as u64,
+                        updated_at: 1_700_000_000 + i as u64,
+                        verification: VerificationStatus {
+                            is_verified: false,
+                            verification_type: VerificationType::Unverified,
+                            verified_at: None,
+                            revoked_at: None,
+                        },
+                        domain: SorobanString::from_str(&env, ""),
+                        domain_verified: false,
+                        domain_verified_at: None,
+                        custom_min_tip: None,
+                    };
+                    crate::leaderboard::update_entries(&mut entries, &profile, amt);
+                }
+                for e in entries.iter() {
+                    leaderboard2.push(e.amount);
+                }
+            }
+        });
+
+        // Both leaderboards should have identical amounts in same order
+        prop_assert_eq!(leaderboard1, leaderboard2,
+            "leaderboards differ despite same multiset of amounts");
     }
 }

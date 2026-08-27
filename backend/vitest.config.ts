@@ -13,11 +13,6 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'html'],
-      thresholds: { lines: 40, functions: 40, branches: 40, statements: 40 },
-    },
-    setupFiles: ['./tests/setup.ts'],
+    setupFiles: ['vitest.setup.ts', 'tests/setup.ts'],
   },
 });

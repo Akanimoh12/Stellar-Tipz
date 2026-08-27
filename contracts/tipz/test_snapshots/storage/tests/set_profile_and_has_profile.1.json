@@ -82,11 +82,39 @@
                     },
                     {
                       "key": {
+                        "symbol": "custom_min_tip"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "display_name"
                       },
                       "val": {
                         "string": "Alice"
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "domain"
+                      },
+                      "val": {
+                        "string": ""
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "domain_verified"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "domain_verified_at"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
@@ -234,7 +262,7 @@
             },
             "ext": "v0"
           },
-          4095
+          535680
         ]
       ],
       [

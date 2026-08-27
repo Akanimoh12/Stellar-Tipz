@@ -12,9 +12,21 @@
 //! Updates use binary search for O(log n) insertion position finding.
 //!
 //! ## Tie-breaking
-//! When two creators have equal `amount`, the one who reached
-//! that amount first keeps the higher rank. This is achieved by using
-//! binary search that finds the index *after* existing entries with the same amount.
+//! When two creators have equal `amount`, the one who reached that amount
+//! **first** keeps the higher rank (earlier insertion in the list).
+//!
+//! The implementation uses a stable binary search that finds the insertion
+//! index **after** existing entries with the same amount. This ensures that
+//! if two creators have the same `amount`, the one inserted earlier maintains
+//! a better position. This tie-breaking order is deterministic and independent
+//! of insertion order into the leaderboard, making it safe for consensus across
+//! multiple nodes.
+//!
+//! ### Example
+//! If creators A, B, and C all have `amount = 100`, and they reached that
+//! amount in order (A → B → C), the leaderboard will maintain the order
+//! `[A, B, C, ...]` regardless of the order in which subsequent tips update
+//! the leaderboard.
 
 use soroban_sdk::{Address, Env, Vec};
 

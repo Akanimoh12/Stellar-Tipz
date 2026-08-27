@@ -1,18 +1,23 @@
-import { z } from "zod";
+import { z } from 'zod';
 
-/**
- * Zod validation schemas for the credit module endpoints.
- */
+export const creditIdentifierParamSchema = z.object({
+  identifier: z.string().min(1).max(100),
+});
 
-/** Path param: a user ID. */
 export const userIdParamSchema = z.object({
-  userId: z.string().min(1, "userId is required"),
+  userId: z.string().min(1),
 });
 
-/** Query params for credit score recompute trigger (issue #919). */
-export const recomputeQuerySchema = z.object({
-  xHandle: z.string().min(1).optional(),
+export const recalculateSchema = z.object({
+  userId: z.string().min(1),
 });
 
+export const creditHistoryQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+export type CreditIdentifierParam = z.infer<typeof creditIdentifierParamSchema>;
 export type UserIdParam = z.infer<typeof userIdParamSchema>;
-export type RecomputeQuery = z.infer<typeof recomputeQuerySchema>;
+export type RecalculateInput = z.infer<typeof recalculateSchema>;
+export type CreditHistoryQuery = z.infer<typeof creditHistoryQuerySchema>;
