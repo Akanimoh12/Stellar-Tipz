@@ -34,6 +34,73 @@ It covers the definition of done, module conventions, and local verification ste
 
 ---
 
+## Testing
+
+Stellar Tipz uses a **two-layer testing strategy** to balance speed and confidence:
+
+### Unit Tests (Fast, Mocked)
+
+Unit tests use heavy mocking (Prisma, external services) for fast feedback during development.  
+They verify business logic, validation, error handling, and HTTP contracts.
+
+```bash
+npm run test           # Run all unit tests
+npm run test:watch     # Watch mode for development
+npm run test:coverage  # Generate coverage report
+```
+
+**When to use:** TDD, refactoring, quick validation of business logic changes.
+
+### Integration Tests (Real Database)
+
+Integration tests run against a **real Postgres instance** to catch issues that mocks cannot detect:
+- **Constraint violations** (unique, foreign key, check constraints)
+- **Transaction bugs** (deadlocks, isolation issues)
+- **Migration drift** (schema changes that break existing code)
+- **Concurrent operations** (race conditions, P2002 handling)
+
+```bash
+# Start test database (isolated from dev DB)
+npm run test:db:up
+
+# Run integration tests
+npm run test:integration
+
+# Watch mode for integration tests
+npm run test:integration:watch
+
+# Stop test database
+npm run test:db:down
+
+# Reset test database (clean slate)
+npm run test:db:reset
+```
+
+**Test database:** Runs on port `5433` (different from dev DB on `5432`) to avoid conflicts.  
+Each test runs in **isolation** — the database is cleaned before every test.
+
+**Critical flows covered:**
+- Auth: challenge creation, user registration, token lifecycle
+- Tips: recording with P2002 handling, user relations, status transitions
+- Refunds: unique constraint enforcement, concurrent request handling (#1249)
+- Withdrawals: balance calculations, duplicate prevention, cascade deletes
+
+### CI Behavior
+
+Both test suites run in parallel on every PR:
+- **Unit tests:** Fast feedback (< 1 minute)
+- **Integration tests:** Real Postgres via GitHub service containers, migrations applied  
+  to verify schema validity before deploy
+
+See `.github/workflows/backend-integration-tests.yml` for CI configuration.
+
+### Migration Validation
+
+Integration tests apply migrations at suite start — **this is a major win by itself**.  
+If a migration is broken, CI fails before the code reaches production.
+
+---
+
 ## Tech stack
 
 | Concern        | Choice                               |
