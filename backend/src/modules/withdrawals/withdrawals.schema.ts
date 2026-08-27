@@ -2,7 +2,10 @@ import { z } from 'zod';
 
 export const withdrawalHistoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
-  offset: z.coerce.number().int().min(0).default(0),
+  cursor: z.string().min(1, 'Invalid cursor').optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+}).refine((query) => query.cursor === undefined || query.offset === undefined, {
+  message: 'cursor and offset cannot be used together',
 });
 
 export const prepareWithdrawalSchema = z.object({

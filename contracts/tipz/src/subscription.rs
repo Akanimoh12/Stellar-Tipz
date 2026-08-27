@@ -14,6 +14,9 @@ pub fn create_subscription(
     amount: i128,
     interval_days: u32,
 ) -> Result<Subscription, ContractError> {
+    if storage::is_paused(env, crate::types::PauseFlag::Subscriptions) || storage::is_paused(env, crate::types::PauseFlag::All) {
+        return Err(ContractError::ContractPaused);
+    }
     subscriber.require_auth();
 
     if amount <= 0 {
@@ -72,6 +75,10 @@ pub fn cancel_subscription(
     creator: Address,
 ) -> Result<(), ContractError> {
     subscriber.require_auth();
+
+    if storage::is_paused(env, crate::types::PauseFlag::Subscriptions) || storage::is_paused(env, crate::types::PauseFlag::All) {
+        return Err(ContractError::ContractPaused);
+    }
 
     let sub_key = DataKey::Subscription(subscriber.clone(), creator.clone());
     if !env.storage().persistent().has(&sub_key) {
@@ -137,6 +144,10 @@ pub fn execute_due_subscription(
     subscriber: Address,
     creator: Address,
 ) -> Result<(), ContractError> {
+    if storage::is_paused(env, crate::types::PauseFlag::Subscriptions) || storage::is_paused(env, crate::types::PauseFlag::All) {
+        return Err(ContractError::ContractPaused);
+    }
+
     let sub_key = DataKey::Subscription(subscriber.clone(), creator.clone());
     if !env.storage().persistent().has(&sub_key) {
         return Err(ContractError::NotFound);

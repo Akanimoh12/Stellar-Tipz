@@ -10,6 +10,11 @@ import type {
   NotificationType,
   UnreadCountResponse,
 } from './notifications.types.js';
+import {
+  createCursorScope,
+  descendingCursorCondition,
+  toCursorPage,
+} from '../../common/pagination/cursor.js';
 
 /** Maps a notification type to the preference field gating its delivery. */
 const PREFERENCE_FIELD_BY_TYPE: Record<
@@ -42,32 +47,30 @@ export async function listNotifications(
   userId: string,
   unreadOnly: boolean,
   limit: number,
-  offset: number,
+  cursor?: string,
+  offset?: number,
 ): Promise<NotificationListResponse> {
-  const where = {
+  const baseWhere: Prisma.NotificationWhereInput = {
     userId,
     deletedAt: null,
     ...(unreadOnly ? { readAt: null } : {}),
   };
-
-  const [rows, total] = await Promise.all([
-    prisma.notification.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip: offset,
-      take: limit,
-    }),
-    prisma.notification.count({ where }),
-  ]);
+  const scope = createCursorScope('notifications', { userId, unreadOnly });
+  const cursorCondition = descendingCursorCondition('createdAt', cursor, scope);
+  const where: Prisma.NotificationWhereInput = cursorCondition
+    ? { AND: [baseWhere, cursorCondition as Prisma.NotificationWhereInput] }
+    : baseWhere;
+  const rows = await prisma.notification.findMany({
+    where,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    ...(offset !== undefined ? { skip: offset } : {}),
+    take: limit + 1,
+  });
+  const page = toCursorPage(rows, limit, scope, (notification) => notification.createdAt);
 
   return {
-    data: rows.map(formatNotification),
-    pagination: {
-      limit,
-      offset,
-      total,
-      hasMore: offset + rows.length < total,
-    },
+    data: page.data.map(formatNotification),
+    nextCursor: page.nextCursor,
   };
 }
 

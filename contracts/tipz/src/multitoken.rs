@@ -132,7 +132,7 @@ pub fn send_tip_token(
 ) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     let config = storage::get_runtime_config(env).ok_or(ContractError::NotInitialized)?;
-    if config.paused {
+    if storage::is_paused(env, crate::types::PauseFlag::Tips) || storage::is_paused(env, crate::types::PauseFlag::All) {
         return Err(ContractError::ContractPaused);
     }
     tipper.require_auth();
@@ -190,6 +190,7 @@ pub fn send_tip_token(
         credit::calculate_credit_score_with_streak(env, &profile, env.ledger().timestamp());
 
     storage::set_profile(env, &profile);
+    credit::mark_credit_computed(env, creator);
     leaderboard::update_all_leaderboards_for_active(env, &profile, xlm_equivalent);
 
     // Update goal progress

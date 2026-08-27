@@ -38,6 +38,27 @@ pub const MAX_REGISTRATIONS_PER_WINDOW: u32 = 20;
 /// Storage cost ceiling per operation in stroops (for analysis).
 pub const STORAGE_COST_CEILING: i128 = 100_000_000;
 
+/// Maximum social links per profile.
+pub const MAX_SOCIAL_LINKS: u32 = 5;
+
+/// Maximum subscriptions per subscriber.
+pub const MAX_SUBSCRIPTIONS_PER_SUBSCRIBER: u32 = 20;
+
+/// Maximum tip index entries per creator/tipper (TTL-bounded).
+pub const MAX_TIP_INDEX_ENTRIES: u32 = 1000;
+
+/// Maximum pending withdrawals per creator.
+pub const MAX_PENDING_WITHDRAWALS_PER_CREATOR: u32 = 10;
+
+/// Maximum admin change history entries.
+pub const MAX_ADMIN_HISTORY_ENTRIES: u32 = 50;
+
+/// Maximum suggested tip amounts in donation page config.
+pub const MAX_SUGGESTED_AMOUNTS: u32 = 6;
+
+/// Default maximum sender contribution to leaderboard in basis points (50%).
+pub const DEFAULT_MAX_SENDER_CONTRIBUTION_BPS: u32 = 5000;
+
 /// Verification type for creator profiles.
 ///
 /// `Unverified` is the default state — it replaces `Option::None` so that
@@ -61,6 +82,52 @@ pub enum LeaderboardPeriod {
     AllTime,
     Monthly,
     Weekly,
+}
+
+/// Pause flags for granular contract pause control.
+/// Uses bitmask for efficient storage (single u32).
+#[contracttype]
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum PauseFlag {
+    None = 0,
+    Tips = 1,
+    Withdrawals = 2,
+    Registration = 4,
+    Subscriptions = 8,
+    Refunds = 16,
+    All = 0xFFFFFFFF,
+}
+
+impl PauseFlag {
+    /// Check if a specific flag is set in the bitmask.
+    pub fn is_set(flags: u32, flag: PauseFlag) -> bool {
+        flags & (flag as u32) != 0
+    }
+
+    /// Set a flag in the bitmask.
+    pub fn set(flags: u32, flag: PauseFlag) -> u32 {
+        flags | (flag as u32)
+    }
+
+    /// Clear a flag in the bitmask.
+    pub fn clear(flags: u32, flag: PauseFlag) -> u32 {
+        flags & !(flag as u32)
+    }
+
+    /// Convert from u32 to PauseFlag (for single flag values only).
+    pub fn from_u32(value: u32) -> PauseFlag {
+        match value {
+            0 => PauseFlag::None,
+            1 => PauseFlag::Tips,
+            2 => PauseFlag::Withdrawals,
+            4 => PauseFlag::Registration,
+            8 => PauseFlag::Subscriptions,
+            16 => PauseFlag::Refunds,
+            0xFFFFFFFF => PauseFlag::All,
+            _ => PauseFlag::None, // Default to None for unknown values
+        }
+    }
 }
 
 /// Verification status for a creator profile.
@@ -242,6 +309,10 @@ pub struct Tip {
     pub is_anonymous: bool,
     /// Whether the message is encrypted so only the recipient can read it
     pub is_encrypted: bool,
+    /// Pseudonymous handle for anonymous tips (derived from sender, creator, contract_salt).
+    /// Only present for anonymous tips; allows creator to identify repeat supporters
+    /// and process refunds without revealing the sender's address on-chain.
+    pub pseudonym: Option<soroban_sdk::Bytes>,
 }
 
 /// Supporter/creator streak record.
@@ -295,7 +366,7 @@ pub enum CreditTier {
     Diamond,
 }
 
-/// Component-level breakdown of a profile credit score.
+/// Component-level breakdown of a profile credit score, including freshness metadata.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct CreditBreakdown {
@@ -311,7 +382,40 @@ pub struct CreditBreakdown {
     pub streak_score: u32,
     /// Final score after summing all components (capped at 100).
     pub total: u32,
+    /// Ledger sequence number when the stored credit score was last persisted.
+    /// Zero when the score has never been explicitly stored (e.g. brand-new profile).
+    pub computed_at_ledger: u32,
+    /// How many ledgers have elapsed since the score was last stored
+    /// (`current_ledger - computed_at_ledger`). Large when never stored.
+    pub ledger_age: u32,
+    /// `true` when `ledger_age` exceeds the configured staleness threshold.
+    /// Consumers should degrade UI displays when this is `true`.
+    pub is_stale: bool,
 }
+
+/// On-chain price quote returned by a price oracle contract.
+///
+/// Prices are expressed as XLM-equivalent units per 1 token stroop
+/// (scaled by `ORACLE_PRICE_SCALE = 10^7` to preserve precision in i128).
+/// A price of `10_000_000` means 1 token stroop = 1 XLM stroop (1:1).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct OraclePrice {
+    /// XLM-equivalent price per token stroop, scaled by 10^7.
+    pub price_scaled: i128,
+    /// Ledger timestamp (seconds) when this price was last updated by the oracle.
+    pub updated_at: u64,
+}
+
+/// Staleness threshold defaults (ledgers at ~5 s/ledger).
+/// 12 hours ≈ 8,640 ledgers.
+pub const DEFAULT_CREDIT_STALENESS_THRESHOLD_LEDGERS: u32 = 8_640;
+
+/// Scale factor used for oracle prices (10^7, same as stroops-per-XLM).
+pub const ORACLE_PRICE_SCALE: i128 = 10_000_000;
+
+/// Maximum oracle price age in seconds before the price is considered stale (1 hour).
+pub const ORACLE_PRICE_MAX_AGE_SECS: u64 = 3_600;
 
 /// A single skipped entry from a batch X-metrics update, including the reason.
 ///

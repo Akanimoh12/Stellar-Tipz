@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../app.js';
+import { Prisma } from '@prisma/client';
 
 const {
   mockUserFindUnique,
@@ -73,6 +74,14 @@ vi.mock('@stellar/stellar-sdk', () => ({
   nativeToScVal: vi.fn((value) => ({ value })),
   Networks: { TESTNET: 'Test SDF Network ; September 2015' },
   Keypair: {},
+}));
+
+vi.mock('../../db/redis.js', () => ({
+  redis: {
+    zcount: vi.fn().mockResolvedValue(0),
+    zadd: vi.fn().mockResolvedValue(1),
+    expire: vi.fn().mockResolvedValue(1),
+  },
 }));
 
 vi.mock('jsonwebtoken', () => ({
@@ -170,7 +179,7 @@ describe('POST /api/v1/refunds/request', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 409 when a refund has already been requested for the tip', async () => {
+  it('returns 409 when creating a duplicate refund hits the unique constraint', async () => {
     mockAuth();
     mockUserFindUnique.mockResolvedValue({ id: 'user-1', stellarAddress: address });
     mockTipFindUnique.mockResolvedValue({
@@ -179,7 +188,13 @@ describe('POST /api/v1/refunds/request', () => {
       status: 'CONFIRMED',
       amountStroops: BigInt(1_000_000),
     });
-    mockRefundFindUnique.mockResolvedValue({ id: 'refund-1', tipId: 'tip-1' });
+    mockRefundCreate.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: '5.0.0',
+        meta: { target: ['tipId'] },
+      }),
+    );
 
     const app = createApp();
     const res = await request(app)
@@ -188,6 +203,7 @@ describe('POST /api/v1/refunds/request', () => {
       .send({ tipTxHash: 'tip-hash', reason: 'wrong creator' });
 
     expect(res.status).toBe(409);
+    expect(res.body.error.message).toBe('A refund has already been requested for this tip');
   });
 
   it('creates a pending refund for a confirmed tip sent by the authenticated user', async () => {
@@ -235,6 +251,105 @@ describe('POST /api/v1/refunds/request', () => {
       txHash: null,
     });
   });
+
+  it('handles concurrent duplicate refund requests with P2002 error', async () => {
+    mockAuth();
+    mockUserFindUnique.mockResolvedValue({ id: 'user-1', stellarAddress: address });
+    mockTipFindUnique.mockResolvedValue({
+      id: 'tip-1',
+      fromAddress: address,
+      status: 'CONFIRMED',
+      amountStroops: BigInt(1_000_000),
+    });
+
+    // First call succeeds, second call throws P2002 unique constraint violation
+    let callCount = 0;
+    mockRefundCreate.mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve({
+          id: 'refund-1',
+          tipId: 'tip-1',
+          amount: BigInt(1_000_000),
+          reason: 'wrong creator',
+          status: 'pending',
+          txHash: null,
+          createdAt: new Date('2024-01-01T00:00:00.000Z'),
+          updatedAt: new Date('2024-01-01T00:00:00.000Z'),
+        });
+      }
+      // Simulate the P2002 unique constraint violation from Prisma
+      const error = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: '5.0.0',
+        meta: { target: ['tipId'] },
+      });
+      return Promise.reject(error);
+    });
+
+    const app = createApp();
+
+    // Make two concurrent requests using Promise.all (genuinely parallel)
+    const [res1, res2] = await Promise.all([
+      request(app)
+        .post('/api/v1/refunds/request')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ tipTxHash: 'tip-hash', reason: 'wrong creator' }),
+      request(app)
+        .post('/api/v1/refunds/request')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ tipTxHash: 'tip-hash', reason: 'wrong creator' }),
+    ]);
+
+    // One should succeed with 201, one should get 409 Conflict
+    const statuses = [res1.status, res2.status].sort();
+    expect(statuses).toEqual([201, 409]);
+
+    // Verify the successful response
+    const successRes = res1.status === 201 ? res1 : res2;
+    expect(successRes.body.data).toMatchObject({
+      id: 'refund-1',
+      tipId: 'tip-1',
+      amountStroops: '1000000',
+    });
+
+    // Verify the conflict response
+    const conflictRes = res1.status === 409 ? res1 : res2;
+    expect(conflictRes.body.error.code).toBe('CONFLICT');
+    expect(conflictRes.body.error.message).toMatch(/already been requested/i);
+
+    // Both requests should have called create (no check-then-act)
+    expect(mockRefundCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns 409 when P2002 error occurs even without prior check', async () => {
+    mockAuth();
+    mockUserFindUnique.mockResolvedValue({ id: 'user-1', stellarAddress: address });
+    mockTipFindUnique.mockResolvedValue({
+      id: 'tip-1',
+      fromAddress: address,
+      status: 'CONFIRMED',
+      amountStroops: BigInt(1_000_000),
+    });
+
+    // Simulate database rejecting due to existing refund
+    const error = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: '5.0.0',
+      meta: { target: ['tipId'] },
+    });
+    mockRefundCreate.mockRejectedValue(error);
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/refunds/request')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ tipTxHash: 'tip-hash', reason: 'wrong creator' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('CONFLICT');
+    expect(res.body.error.message).toBe('A refund has already been requested for this tip');
+  });
 });
 
 describe('GET /api/v1/refunds/me', () => {
@@ -281,10 +396,10 @@ describe('GET /api/v1/refunds/me', () => {
     });
     expect(mockRefundFindMany).toHaveBeenCalledWith({
       where: { tip: { fromAddress: address } },
-      orderBy: { createdAt: 'desc' },
-      skip: 0,
-      take: 20,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 21,
     });
+    expect(res.body.nextCursor).toBeNull();
   });
 
   it('returns an empty array when the user has no refunds', async () => {
@@ -312,11 +427,12 @@ describe('GET /api/v1/refunds/me', () => {
       .set('Authorization', 'Bearer valid-token');
 
     expect(res.status).toBe(200);
+    expect(res.headers.deprecation).toMatch(/^@\d+$/);
     expect(mockRefundFindMany).toHaveBeenCalledWith({
       where: { tip: { fromAddress: address } },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: 10,
-      take: 50,
+      take: 51,
     });
   });
 

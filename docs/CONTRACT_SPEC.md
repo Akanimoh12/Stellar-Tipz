@@ -323,6 +323,21 @@ Dry-run preview for batch X metric updates. Admin-only.
 > records live in `persistent()` storage, and tip history plus reverse tip
 > indexes live in `temporary()` storage.
 
+### Storage Size Limits
+
+To prevent denial-of-service attacks, the contract enforces maximum size limits on collection fields. Attempting to store data beyond these limits returns `ContractError::StorageLimitExceeded`.
+
+| Collection                          | Max Entries | Constant                          | Enforcement Point                |
+| ----------------------------------- | ----------- | --------------------------------- | -------------------------------- |
+| `Profile.social_links`              | 5           | `MAX_SOCIAL_LINKS`                | `profile::update_social_links`   |
+| `Profile.suggested_amounts`         | 6           | `MAX_SUGGESTED_AMOUNTS`           | `profile::update_creator_config` |
+| `Subscription` (per subscriber)     | 20          | `MAX_SUBSCRIPTIONS_PER_SUBSCRIBER`| `subscription::create`           |
+| `Leaderboard` (per period)          | 50          | `MAX_LEADERBOARD_SIZE`            | `leaderboard::update_entries`    |
+| Message length                      | 200 chars   | `MAX_MESSAGE_LENGTH`              | `tips::send_tip`                 |
+| Display name length                 | 30 chars    | `MAX_DISPLAY_NAME_LENGTH`         | `profile::register_profile`      |
+| Bio length                          | 500 chars   | `MAX_BIO_LENGTH`                  | `profile::update_creator_config` |
+| Username length                     | 1-32 chars  | `MIN/MAX_USERNAME_LENGTH`         | `profile::register_profile`      |
+
 ---
 
 ## Formal Invariants

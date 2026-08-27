@@ -1,5 +1,7 @@
 import jwt from "jsonwebtoken";
 import { randomBytes, createHash } from "crypto";
+import { Prisma } from "@prisma/client";
+import { isIP } from "net";
 import { prisma } from "../../db/prisma.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../common/utils/logger.js";
@@ -7,11 +9,14 @@ import {
   BadRequestError,
   UnauthorizedError,
   ConflictError,
+  NotFoundError,
 } from "../../common/errors/AppError.js";
 import type {
   AuthPayload,
   TokenPair,
   ChallengeResponse,
+  SessionMetadata,
+  AuthSession,
 } from "./auth.types.js";
 import { verifyEd25519Signature } from "./signature.js";
 
@@ -41,21 +46,62 @@ function generateAccessToken(payload: AuthPayload): string {
 /**
  * Creates a refresh token and stores it in the database.
  */
-async function generateRefreshToken(userId: string): Promise<string> {
+export function getSessionMetadata(
+  userAgent: string | undefined,
+  ip: string | undefined,
+): SessionMetadata {
+  const browser = userAgent?.match(
+    /(Edg|Chrome|Firefox|Safari|Opera)\/?([\d.]+)/i,
+  )?.[1];
+  const operatingSystem = userAgent?.match(
+    /(Windows|Mac OS X|Android|iPhone|iPad|Linux)/i,
+  )?.[1];
+
+  return {
+    device:
+      [browser, operatingSystem].filter(Boolean).join(" on ") ||
+      "Unknown device",
+    ipAddress: truncateIp(ip),
+  };
+}
+
+function truncateIp(ip: string | undefined): string {
+  if (!ip) return "unknown";
+  const normalized = ip.replace(/^::ffff:/i, "");
+  if (isIP(normalized) === 4) {
+    const parts = normalized.split(".");
+    return `${parts[0]}.${parts[1]}.${parts[2]}.0`;
+  }
+  if (isIP(normalized) === 6) {
+    const groups = normalized.split(":").filter(Boolean).slice(0, 3);
+    return `${groups.join(":")}::`;
+  }
+  return "unknown";
+}
+
+async function generateRefreshToken(
+  userId: string,
+  metadata: SessionMetadata,
+  sessionId = randomBytes(16).toString("hex"),
+): Promise<{ token: string; id: string }> {
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(
     Date.now() + parseDuration(env.REFRESH_TOKEN_EXPIRES_IN),
   );
 
-  await prisma.refreshToken.create({
+  const record = await prisma.refreshToken.create({
     data: {
       userId,
+      sessionId,
       hashedToken: hashToken(token),
       expiresAt,
+      device: metadata.device,
+      ipAddress: metadata.ipAddress,
+      lastUsedAt: new Date(),
     },
   });
 
-  return token;
+  return { token, id: record.sessionId };
 }
 
 /**
@@ -156,6 +202,7 @@ export async function verifyChallenge(
   signature: string,
   challenge: string,
   network?: string,
+  metadata: SessionMetadata = { device: "Unknown device", ipAddress: "unknown" },
 ): Promise<TokenPair> {
   const expectedNetwork = network || env.STELLAR_NETWORK;
 
@@ -203,16 +250,33 @@ export async function verifyChallenge(
     data: { usedAt: new Date() },
   });
 
-  // Find or create user
+  // Find or create user atomically. If a concurrent request is creating the same
+  // user, the unique constraint on stellarAddress will cause a P2002 error.
+  // In that case, we simply fetch the newly-created user.
   let user = await prisma.user.findUnique({
     where: { stellarAddress },
   });
 
   if (!user) {
-    user = await prisma.user.create({
-      data: { stellarAddress },
-    });
-    logger.info({ stellarAddress, userId: user.id }, "Created new user");
+    try {
+      user = await prisma.user.create({
+        data: { stellarAddress },
+      });
+      logger.info({ stellarAddress, userId: user.id }, "Created new user");
+    } catch (err) {
+      // P2002 means another concurrent request won the race and created the user
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        user = await prisma.user.findUnique({
+          where: { stellarAddress },
+        });
+        if (!user) {
+          // This should never happen, but throw if we can't find the user
+          throw new Error('Failed to create or find user after P2002 error');
+        }
+      } else {
+        throw err;
+      }
+    }
   }
 
   // Generate tokens
@@ -223,8 +287,8 @@ export async function verifyChallenge(
     scopes: user.scopes,
   };
 
-  const accessToken = generateAccessToken(payload);
-  const refreshToken = await generateRefreshToken(user.id);
+  const session = await generateRefreshToken(user.id, metadata);
+  const accessToken = generateAccessToken({ ...payload, sessionId: session.id });
 
   logger.info(
     { stellarAddress, userId: user.id },
@@ -233,14 +297,17 @@ export async function verifyChallenge(
 
   return {
     accessToken,
-    refreshToken,
+    refreshToken: session.token,
   };
 }
 
 /**
  * Refreshes an access token using a refresh token.
  */
-export async function refreshToken(refreshToken: string): Promise<TokenPair> {
+export async function refreshToken(
+  refreshToken: string,
+  metadata: SessionMetadata = { device: "Unknown device", ipAddress: "unknown" },
+): Promise<TokenPair> {
   // Find the refresh token
   const tokenRecord = await prisma.refreshToken.findUnique({
     where: { hashedToken: hashToken(refreshToken) },
@@ -273,15 +340,81 @@ export async function refreshToken(refreshToken: string): Promise<TokenPair> {
     scopes: tokenRecord.user.scopes,
   };
 
-  const accessToken = generateAccessToken(payload);
-  const newRefreshToken = await generateRefreshToken(tokenRecord.userId);
+  const newSession = await generateRefreshToken(
+    tokenRecord.userId,
+    metadata,
+    tokenRecord.sessionId,
+  );
+  const accessToken = generateAccessToken({
+    ...payload,
+    sessionId: newSession.id,
+  });
 
   logger.info({ userId: tokenRecord.userId }, "Token refreshed successfully");
 
   return {
     accessToken,
-    refreshToken: newRefreshToken,
+    refreshToken: newSession.token,
   };
+}
+
+export async function listSessions(
+  userId: string,
+  currentSessionId?: string,
+): Promise<AuthSession[]> {
+  type SessionRecord = {
+    sessionId: string;
+    device: string;
+    ipAddress: string;
+    lastUsedAt: Date;
+    createdAt: Date;
+  };
+
+  const sessions = await prisma.refreshToken.findMany({
+    where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+    select: {
+      sessionId: true,
+      device: true,
+      ipAddress: true,
+      lastUsedAt: true,
+      createdAt: true,
+    },
+    orderBy: { lastUsedAt: "desc" },
+  });
+
+  return (sessions as SessionRecord[]).map((session) => ({
+    id: session.sessionId,
+    device: session.device,
+    ip: session.ipAddress,
+    lastUsedAt: session.lastUsedAt.toISOString(),
+    createdAt: session.createdAt.toISOString(),
+    current: session.sessionId === currentSessionId,
+  }));
+}
+
+export async function revokeSession(
+  userId: string,
+  sessionId: string,
+): Promise<void> {
+  const result = await prisma.refreshToken.updateMany({
+    where: { sessionId, userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  if (result.count === 0) throw new NotFoundError("Session not found");
+}
+
+export async function revokeOtherSessions(
+  userId: string,
+  currentSessionId?: string,
+): Promise<void> {
+  await prisma.refreshToken.updateMany({
+    where: {
+      userId,
+      revokedAt: null,
+      ...(currentSessionId ? { sessionId: { not: currentSessionId } } : {}),
+    },
+    data: { revokedAt: new Date() },
+  });
 }
 
 /**

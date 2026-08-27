@@ -32,7 +32,9 @@ pub const MAX_PENDING_REFUND_BATCH: u32 = 50;
 /// - [`ContractError::RefundAlreadyRequested`] - Refund already requested for this tip
 pub fn request_refund(env: &Env, tipper: &Address, tip_id: u32) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
-    crate::admin::require_not_paused(env)?;
+    if storage::is_paused(env, crate::types::PauseFlag::Refunds) || storage::is_paused(env, crate::types::PauseFlag::All) {
+        return Err(ContractError::ContractPaused);
+    }
     tipper.require_auth();
 
     // Get the tip
@@ -103,7 +105,9 @@ pub fn request_refund(env: &Env, tipper: &Address, tip_id: u32) -> Result<(), Co
 /// - [`ContractError::RefundAlreadyProcessed`] - Refund already processed
 pub fn approve_refund(env: &Env, creator: &Address, tip_id: u32) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
-    crate::admin::require_not_paused(env)?;
+    if storage::is_paused(env, crate::types::PauseFlag::Refunds) || storage::is_paused(env, crate::types::PauseFlag::All) {
+        return Err(ContractError::ContractPaused);
+    }
     creator.require_auth();
 
     let mut request =
@@ -140,7 +144,9 @@ pub fn approve_refund(env: &Env, creator: &Address, tip_id: u32) -> Result<(), C
 /// - [`ContractError::RefundAlreadyProcessed`] - Refund already processed
 pub fn reject_refund(env: &Env, creator: &Address, tip_id: u32) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
-    crate::admin::require_not_paused(env)?;
+    if storage::is_paused(env, crate::types::PauseFlag::Refunds) || storage::is_paused(env, crate::types::PauseFlag::All) {
+        return Err(ContractError::ContractPaused);
+    }
     creator.require_auth();
 
     let mut request =
@@ -182,7 +188,9 @@ pub fn process_pending_refunds(
     tip_ids: soroban_sdk::Vec<u32>,
 ) -> Result<u32, ContractError> {
     storage::extend_instance_ttl(env);
-    crate::admin::require_not_paused(env)?;
+    if storage::is_paused(env, crate::types::PauseFlag::Refunds) || storage::is_paused(env, crate::types::PauseFlag::All) {
+        return Err(ContractError::ContractPaused);
+    }
 
     let config = storage::get_refund_config(env);
     let now = env.ledger().timestamp();

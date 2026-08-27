@@ -30,9 +30,9 @@ export async function getMyRefunds(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { limit, offset } = refundHistoryQuerySchema.parse(req.query);
-    const result = await refundsService.getMyRefunds(req.user!.id, limit, offset);
-    res.status(200).json({ data: result });
+    const { limit, cursor, offset } = refundHistoryQuerySchema.parse(req.query);
+    const result = await refundsService.getMyRefunds(req.user!.id, limit, cursor, offset);
+    res.status(200).json(result);
   } catch (err) {
     next(err);
   }

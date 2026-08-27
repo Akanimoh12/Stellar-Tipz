@@ -13,6 +13,9 @@
 
 #![no_std]
 
+#[cfg(any(test, feature = "testutils"))]
+extern crate std;
+
 pub mod admin;
 pub mod circuit_breaker;
 pub mod credit;
@@ -22,8 +25,9 @@ pub mod fees;
 pub mod goals;
 pub mod leaderboard;
 pub mod migrations;
-pub mod multisig;
 pub mod multitoken;
+pub mod multisig;
+pub mod oracle;
 pub mod profile;
 pub mod refund;
 pub mod stats;
@@ -108,6 +112,15 @@ impl TipzContract {
         x_handle: Option<String>,
     ) -> Result<(), ContractError> {
         profile::update_profile(&env, caller, display_name, bio, image_url, x_handle)
+    }
+
+    /// Update social links for a profile with limit enforcement (max 5 links).
+    pub fn update_social_links(
+        env: Env,
+        caller: Address,
+        social_links: soroban_sdk::Map<soroban_sdk::Symbol, String>,
+    ) -> Result<(), ContractError> {
+        profile::update_social_links(&env, caller, social_links)
     }
 
     /// Deregister the caller's profile, permanently removing it from the platform.
@@ -302,16 +315,22 @@ impl TipzContract {
         storage::get_migration_state(&env)
     }
 
-    /// Get a single tip record by its ID.
+    /// Get a single tip record by its ID (public view).
+    ///
+    /// For anonymous tips the sender is redacted to the contract address;
+    /// the stable `pseudonym` hash is still returned so clients can group
+    /// tips from one anonymous tipper without learning who sent them.
     ///
     /// Returns [`ContractError::NotFound`] when the tip does not exist or its
     /// temporary-storage TTL has expired (~7 days after the tip was sent).
     pub fn get_tip(env: Env, tip_id: u32) -> Result<Tip, ContractError> {
-        tips::get_tip(&env, tip_id).ok_or(ContractError::NotFound)
+        tips::get_tip_public(&env, tip_id).ok_or(ContractError::NotFound)
     }
 
     /// Return up to `limit` recent tips received by `creator`, newest first.
     ///
+    /// - Anonymous tips have their sender redacted to the contract address;
+    ///   use the stable `pseudonym` hash to group them instead.
     /// - `limit` is capped at 50 per call.
     /// - `offset`: number of tips to skip from the most recent (0 = start
     ///   from latest). Use `get_creator_tip_count` to know the total for
@@ -405,12 +424,79 @@ impl TipzContract {
         credit::get_credit_tier(&env, &address)
     }
 
-    /// Return the weighted credit score breakdown for a registered profile.
+    /// Return the weighted credit score breakdown for a registered profile,
+    /// including staleness metadata (`computed_at_ledger`, `ledger_age`, `is_stale`).
     pub fn get_credit_breakdown(
         env: Env,
         address: Address,
     ) -> Result<CreditBreakdown, ContractError> {
         credit::get_credit_breakdown(&env, &address)
+    }
+
+    /// Set the number of ledgers after which a stored credit score is considered
+    /// stale. Default is 8,640 ledgers (~12 hours at 5 s/ledger).
+    ///
+    /// # Authorization
+    /// Requires admin signature.
+    pub fn set_credit_staleness_threshold(
+        env: Env,
+        caller: Address,
+        threshold_ledgers: u32,
+    ) -> Result<(), ContractError> {
+        storage::extend_instance_ttl(&env);
+        admin::require_admin(&env, &caller)?;
+        storage::set_credit_staleness_threshold(&env, threshold_ledgers);
+        Ok(())
+    }
+
+    /// Recompute credit scores for a page of creators starting at `cursor`.
+    ///
+    /// Returns `(next_cursor, is_done)`. Call repeatedly with the returned
+    /// cursor until `is_done == true` to recompute the full set. `limit` is
+    /// clamped to 50 to bound per-call CPU usage.
+    ///
+    /// # Authorization
+    /// Requires admin signature.
+    pub fn recompute_credit_scores_page(
+        env: Env,
+        caller: Address,
+        cursor: u32,
+        limit: u32,
+    ) -> Result<(u32, bool), ContractError> {
+        storage::extend_instance_ttl(&env);
+        admin::require_admin(&env, &caller)?;
+        Ok(credit::recompute_credit_scores_page(&env, cursor, limit))
+    }
+
+    /// Register an on-chain price oracle for `token`.
+    /// The oracle must implement `get_price(token: Address) -> OraclePrice`.
+    ///
+    /// # Authorization
+    /// Requires admin signature.
+    pub fn set_token_oracle(
+        env: Env,
+        caller: Address,
+        token: Address,
+        oracle: Address,
+    ) -> Result<(), ContractError> {
+        oracle::set_token_oracle(&env, &caller, &token, &oracle)
+    }
+
+    /// Remove the price oracle for `token` (reverts to native-only ranking).
+    ///
+    /// # Authorization
+    /// Requires admin signature.
+    pub fn remove_token_oracle(
+        env: Env,
+        caller: Address,
+        token: Address,
+    ) -> Result<(), ContractError> {
+        oracle::remove_token_oracle(&env, &caller, &token)
+    }
+
+    /// Return the current staleness threshold in ledgers.
+    pub fn get_credit_staleness_threshold(env: Env) -> u32 {
+        storage::get_credit_staleness_threshold(&env)
     }
 
     /// Return the current supporter streak for a `(supporter, creator)` pair.
@@ -693,16 +779,16 @@ impl TipzContract {
         admin::upgrade(&env, &admin, &new_wasm_hash)
     }
 
-    pub fn pause(env: Env, caller: Address) -> Result<(), ContractError> {
-        admin::pause(&env, &caller)
+    pub fn pause(env: Env, caller: Address, flag: u32) -> Result<(), ContractError> {
+        admin::pause(&env, &caller, crate::types::PauseFlag::from_u32(flag))
     }
 
-    pub fn unpause(env: Env, caller: Address) -> Result<(), ContractError> {
-        admin::unpause(&env, &caller)
+    pub fn unpause(env: Env, caller: Address, flag: u32) -> Result<(), ContractError> {
+        admin::unpause(&env, &caller, crate::types::PauseFlag::from_u32(flag))
     }
 
-    pub fn is_paused(env: Env) -> bool {
-        storage::is_paused(&env)
+    pub fn is_paused(env: Env, flag: u32) -> bool {
+        storage::is_paused(&env, crate::types::PauseFlag::from_u32(flag))
     }
 
     pub fn set_min_tip_amount(
@@ -717,6 +803,7 @@ impl TipzContract {
         storage::get_min_tip_amount(&env)
     }
 
+    /// Set the minimum withdrawal amount. Admin only.
     pub fn set_min_withdrawal_amount(
         env: Env,
         caller: Address,
@@ -724,6 +811,8 @@ impl TipzContract {
     ) -> Result<(), ContractError> {
         admin::set_min_withdrawal_amount(&env, &caller, amount)
     }
+
+    /// Get the minimum withdrawal amount.
     pub fn get_min_withdrawal_amount(env: Env) -> i128 {
         storage::get_min_withdrawal_amount(&env)
     }
@@ -757,6 +846,16 @@ impl TipzContract {
     /// Return current withdrawal circuit breaker fixed-bucket state.
     pub fn get_circuit_breaker_status(env: Env) -> crate::types::CircuitBreakerStatus {
         circuit_breaker::get_status(&env)
+    }
+
+    /// Set the maximum sender contribution to a creator's leaderboard score in basis points.
+    /// Admin only.
+    pub fn set_max_sender_contribution(
+        env: Env,
+        caller: Address,
+        bps: u32,
+    ) -> Result<(), ContractError> {
+        admin::set_max_sender_contribution(&env, &caller, bps)
     }
 
     /// Update rate limit configuration. Admin only.

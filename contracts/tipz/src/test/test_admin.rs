@@ -9,9 +9,11 @@ use soroban_sdk::{
 
 use crate::errors::ContractError;
 use crate::storage::{self, DataKey};
-use crate::types::{BatchSkip, Profile, VerificationStatus, VerificationType};
+use crate::types::{BatchSkip, PauseFlag, Profile, VerificationStatus, VerificationType};
 use crate::TipzContract;
 use crate::TipzContractClient;
+
+const PAUSE_ALL: u32 = PauseFlag::All as u32;
 
 // ── shared setup ─────────────────────────────────────────────────────────────
 
@@ -632,14 +634,21 @@ fn test_accept_admin_full_flow() {
 
     client.propose_admin_change(&admin, &new_admin);
 
-    let pending = client.get_admin_change_proposal();
-    assert_eq!(pending.unwrap().new_admin, new_admin.clone());
+    // Pending admin before acceptance
+    assert_eq!(client.get_admin_change_proposal().map(|p| p.new_admin), Some(new_admin.clone()));
 
-    env.ledger().set_timestamp(env.ledger().timestamp() + 172_801);
+    // Advance past the 48-hour timelock
+    env.ledger().set_timestamp(env.ledger().timestamp() + 48 * 3600 + 1);
 
     client.confirm_admin_change(&new_admin);
 
+    // Pending proposal is cleared
     assert_eq!(client.get_admin_change_proposal(), None);
+
+    // New admin can now perform admin-only actions (e.g., propose again)
+    let next_admin = Address::generate(&env);
+    client.propose_admin_change(&new_admin, &next_admin);
+    assert_eq!(client.get_admin_change_proposal().map(|p| p.new_admin), Some(next_admin));
 }
 
 #[test]
@@ -703,13 +712,26 @@ fn test_get_pending_admin_none_when_no_proposal() {
     assert_eq!(client.get_admin_change_proposal(), None);
 }
 
+#[test]
+fn test_propose_overwrites_existing_proposal() {
+    let (env, client, admin) = setup_initialized();
+    let candidate_a = Address::generate(&env);
+    let candidate_b = Address::generate(&env);
+
+    client.propose_admin_change(&admin, &candidate_a);
+    client.propose_admin_change(&admin, &candidate_b);
+
+    // Latest proposal wins
+    assert_eq!(client.get_admin_change_proposal().map(|p| p.new_admin), Some(candidate_b));
+}
+
 // ── pause/unpause authorization ──────────────────────────────────────────────
 
 #[test]
 fn test_pause_rejects_non_admin() {
     let ctx = setup();
     let non_admin = Address::generate(&ctx.env);
-    let result = ctx.client.try_pause(&non_admin);
+    let result = ctx.client.try_pause(&non_admin, &PAUSE_ALL);
     assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
 }
 
@@ -717,8 +739,8 @@ fn test_pause_rejects_non_admin() {
 fn test_unpause_rejects_non_admin() {
     let ctx = setup();
     let non_admin = Address::generate(&ctx.env);
-    ctx.client.pause(&ctx.admin);
-    let result = ctx.client.try_unpause(&non_admin);
+    ctx.client.pause(&ctx.admin, &PAUSE_ALL);
+    let result = ctx.client.try_unpause(&non_admin, &PAUSE_ALL);
     assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
 }
 
@@ -729,11 +751,11 @@ fn test_pause_unpause_after_admin_transfer() {
 
     ctx.client.set_admin(&ctx.admin, &new_admin);
 
-    ctx.client.pause(&new_admin);
-    assert!(ctx.client.is_paused());
+    ctx.client.pause(&new_admin, &PAUSE_ALL);
+    assert!(ctx.client.is_paused(&PAUSE_ALL));
 
-    ctx.client.unpause(&new_admin);
-    assert!(!ctx.client.is_paused());
+    ctx.client.unpause(&new_admin, &PAUSE_ALL);
+    assert!(!ctx.client.is_paused(&PAUSE_ALL));
 }
 
 #[test]
@@ -743,7 +765,7 @@ fn test_old_admin_cannot_pause_after_transfer() {
 
     ctx.client.set_admin(&ctx.admin, &new_admin);
 
-    let result = ctx.client.try_pause(&ctx.admin);
+    let result = ctx.client.try_pause(&ctx.admin, &PAUSE_ALL);
     assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
 }
 

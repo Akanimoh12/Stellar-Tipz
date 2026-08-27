@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { createApp } from '../../app.js';
 import { openApiDocument } from '../../docs/openapi.js';
+import { createCursorScope, decodeCursor } from '../../common/pagination/cursor.js';
 
 const {
   mockGetAccount,
@@ -48,6 +49,14 @@ vi.mock('../../realtime/index.js', async (importOriginal) => {
     emitLeaderboardUpdated: mockEmitLeaderboardUpdated,
   };
 });
+
+vi.mock('../../db/redis.js', () => ({
+  redis: {
+    zcount: vi.fn().mockResolvedValue(0),
+    zadd: vi.fn().mockResolvedValue(1),
+    expire: vi.fn().mockResolvedValue(1),
+  },
+}));
 
 vi.mock('../withdrawals/withdrawals.service.js', () => ({
   getWithdrawableBalance: mockGetWithdrawableBalance,
@@ -290,7 +299,8 @@ describe('GET /api/v1/tips', () => {
     const res = await request(app).get('/api/v1/tips?limit=20');
     expect(res.status).toBe(200);
     expect(res.body.data).toHaveLength(20);
-    expect(res.body.nextCursor).toBe('20');
+    expect(res.body.nextCursor).not.toBe('20');
+    expect(decodeCursor(res.body.nextCursor, createCursorScope('tips')).id).toBe('20');
   });
 
   it('returns empty array when no tips', async () => {
@@ -565,7 +575,11 @@ describe('GET /api/v1/tips — cursor-based pagination chain', () => {
     const page1 = await request(app).get('/api/v1/tips?limit=20');
     expect(page1.status).toBe(200);
     const cursor = page1.body.nextCursor as string;
-    expect(cursor).toBe('cuid-00020');
+    expect(cursor).not.toBe('cuid-00020');
+    expect(decodeCursor(cursor, createCursorScope('tips'))).toEqual({
+      sortValue: page1Rows[19].createdAt,
+      id: 'cuid-00020',
+    });
 
     mockFindMany.mockResolvedValueOnce([
       makeTipRow({ id: 'cuid-00021', txHash: 'hash-20', ledger: 120, amountStroops: BigInt(21) }),
@@ -578,8 +592,9 @@ describe('GET /api/v1/tips — cursor-based pagination chain', () => {
 
     expect(mockFindMany).toHaveBeenNthCalledWith(2,
       expect.objectContaining({
-        cursor: { id: cursor },
-        skip: 1,
+        where: expect.objectContaining({
+          AND: expect.objectContaining({ OR: expect.any(Array) }),
+        }),
       }),
     );
   });

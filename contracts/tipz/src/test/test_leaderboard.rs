@@ -122,7 +122,7 @@ fn test_leaderboard_initial_empty() {
 
     let stranger = Address::generate(&env);
     env.as_contract(&contract_id, || {
-        assert!(!crate::leaderboard::is_on_leaderboard(&env, &stranger));
+        assert!(!crate::leaderboard::is_on_leaderboard(&env, crate::types::LeaderboardPeriod::AllTime, &stranger));
     });
 }
 
@@ -145,16 +145,16 @@ fn test_leaderboard_single_creator() {
         &false,
     );
 
-    let board = client.get_leaderboard(&50);
+    let board = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &50);
     assert_eq!(board.len(), 1);
     assert_eq!(board.get(0).unwrap().address, creator);
-    assert_eq!(board.get(0).unwrap().total_tips_received, amount);
+    assert_eq!(board.get(0).unwrap().amount, amount);
     assert_eq!(
         board.get(0).unwrap().username,
         String::from_str(&env, "alice")
     );
     env.as_contract(&contract_id, || {
-        assert!(crate::leaderboard::is_on_leaderboard(&env, &creator));
+        assert!(crate::leaderboard::is_on_leaderboard(&env, crate::types::LeaderboardPeriod::AllTime, &creator));
     });
 }
 
@@ -177,7 +177,7 @@ fn test_leaderboard_ordering() {
     client.send_tip(&tipper, &carol, &50_000_000, &msg, &false, &false);
     client.send_tip(&tipper, &bob, &10_000_000, &msg, &false, &false);
 
-    let board = client.get_leaderboard(&50);
+    let board = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &50);
     assert_eq!(board.len(), 3);
     assert_eq!(
         board.get(0).unwrap().address,
@@ -192,8 +192,8 @@ fn test_leaderboard_ordering() {
     assert_eq!(board.get(2).unwrap().address, bob, "bob should be rank 3");
 
     // Verify the descending order invariant holds across the full list.
-    assert!(board.get(0).unwrap().total_tips_received >= board.get(1).unwrap().total_tips_received);
-    assert!(board.get(1).unwrap().total_tips_received >= board.get(2).unwrap().total_tips_received);
+    assert!(board.get(0).unwrap().amount >= board.get(1).unwrap().amount);
+    assert!(board.get(1).unwrap().amount >= board.get(2).unwrap().amount);
 }
 
 /// When 51 creators have received tips only the top 50 must be retained; the
@@ -253,12 +253,12 @@ fn test_leaderboard_max_size() {
                 domain_verified_at: None,
         custom_min_tip: None,
             };
-            crate::leaderboard::update_leaderboard(&env, &profile);
+            crate::leaderboard::update_leaderboard(&env, &profile, crate::types::LeaderboardPeriod::AllTime, profile.total_tips_received);
             i += 1;
         }
     });
 
-    let board = client.get_leaderboard(&50);
+    let board = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &50);
     assert_eq!(
         board.len(),
         MAX_LEADERBOARD_SIZE,
@@ -282,9 +282,10 @@ fn test_leaderboard_max_size() {
     );
 
     env.as_contract(&contract_id, || {
-        assert!(!crate::leaderboard::is_on_leaderboard(&env, &lowest));
+        assert!(!crate::leaderboard::is_on_leaderboard(&env, crate::types::LeaderboardPeriod::AllTime, &lowest));
         assert!(crate::leaderboard::is_on_leaderboard(
             &env,
+            crate::types::LeaderboardPeriod::AllTime,
             &addresses.get(0).unwrap()
         ));
     });
@@ -307,7 +308,7 @@ fn test_leaderboard_rank_update() {
     client.send_tip(&tipper, &bob, &50_000_000, &msg, &false, &false);
     client.send_tip(&tipper, &alice, &10_000_000, &msg, &false, &false);
 
-    let board_before = client.get_leaderboard(&50);
+    let board_before = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &50);
     assert_eq!(
         board_before.get(0).unwrap().address,
         bob,
@@ -317,7 +318,7 @@ fn test_leaderboard_rank_update() {
     // Alice receives a larger tip and overtakes bob.
     client.send_tip(&tipper, &alice, &100_000_000, &msg, &false, &false);
 
-    let board_after = client.get_leaderboard(&50);
+    let board_after = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &50);
     assert_eq!(
         board_after.get(0).unwrap().address,
         alice,
@@ -474,7 +475,7 @@ fn test_no_duplicates_after_update() {
     client.send_tip(&tipper, &alice, &20_000_000, &msg, &false, &false); // tip 2 — 2 XLM
     client.send_tip(&tipper, &alice, &30_000_000, &msg, &false, &false); // tip 3 — 3 XLM
 
-    let board = client.get_leaderboard(&50);
+    let board = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &50);
     assert_eq!(
         board.len(),
         1,
