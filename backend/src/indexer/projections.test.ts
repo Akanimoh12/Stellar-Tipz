@@ -6,26 +6,36 @@ const {
   mockUserUpsert,
   mockGoalUpsert,
   mockGoalUpdateMany,
+  mockGoalFindUnique,
   mockSubUpsert,
   mockSubUpdateMany,
   mockTipUpsert,
+  mockTipFindUnique,
+  mockTipUpdate,
+  mockRefundUpsert,
   mockEventLogFindFirst,
   mockEventLogCreate,
   mockCreditScoreUpsert,
   mockCreditScoreHistoryUpsert,
   mockPublishProjection,
+  mockCreateNotification,
 } = vi.hoisted(() => ({
   mockUserUpsert: vi.fn(),
   mockGoalUpsert: vi.fn(),
   mockGoalUpdateMany: vi.fn(),
+  mockGoalFindUnique: vi.fn(),
   mockSubUpsert: vi.fn(),
   mockSubUpdateMany: vi.fn(),
   mockTipUpsert: vi.fn(),
+  mockTipFindUnique: vi.fn(),
+  mockTipUpdate: vi.fn(),
+  mockRefundUpsert: vi.fn(),
   mockEventLogFindFirst: vi.fn(),
   mockEventLogCreate: vi.fn(),
   mockCreditScoreUpsert: vi.fn(),
   mockCreditScoreHistoryUpsert: vi.fn(),
   mockPublishProjection: vi.fn(),
+  mockCreateNotification: vi.fn(),
 }));
 
 vi.mock('../db/prisma.js', () => ({
@@ -45,9 +55,10 @@ vi.mock('../db/prisma.js', () => ({
       return fn(tx as never);
     }),
     user: { upsert: mockUserUpsert },
-    goal: { upsert: mockGoalUpsert, updateMany: mockGoalUpdateMany },
+    goal: { upsert: mockGoalUpsert, updateMany: mockGoalUpdateMany, findUnique: mockGoalFindUnique },
     subscription: { upsert: mockSubUpsert, updateMany: mockSubUpdateMany },
-    tip: { upsert: mockTipUpsert },
+    tip: { upsert: mockTipUpsert, findUnique: mockTipFindUnique, update: mockTipUpdate },
+    refund: { upsert: mockRefundUpsert },
     eventLog: { findFirst: mockEventLogFindFirst, create: mockEventLogCreate },
     creditScore: { upsert: mockCreditScoreUpsert },
     creditScoreHistory: { upsert: mockCreditScoreHistoryUpsert },
@@ -56,6 +67,10 @@ vi.mock('../db/prisma.js', () => ({
 
 vi.mock('./realtime-publisher.js', () => ({
   publishProjection: mockPublishProjection,
+}));
+
+vi.mock('../modules/notifications/notifications.service.js', () => ({
+  createNotification: mockCreateNotification,
 }));
 
 /** Build a decoded event; `value` is the positional payload tuple. */
@@ -101,6 +116,8 @@ beforeEach(() => {
   mockEventLogCreate.mockResolvedValue({});
   mockGoalUpsert.mockResolvedValue({});
   mockGoalUpdateMany.mockResolvedValue({ count: 1 });
+  mockGoalFindUnique.mockResolvedValue(null);
+  mockCreateNotification.mockResolvedValue(null);
   mockSubUpsert.mockResolvedValue({});
   mockSubUpdateMany.mockResolvedValue({ count: 1 });
   mockCreditScoreUpsert.mockResolvedValue({});
@@ -241,6 +258,23 @@ describe('projectEvent — goals (#899)', () => {
     expect(mockGoalUpsert.mock.calls[0][0].update).toEqual(mockGoalUpsert.mock.calls[1][0].update);
   });
 
+  it('notifies the creator when the goal transitions into COMPLETED (#964)', async () => {
+    mockGoalFindUnique.mockResolvedValue(null);
+    await projectEvent(event('goal_reached', [ADDR_A, '1000', '1000']));
+    expect(mockCreateNotification).toHaveBeenCalledWith(
+      'u_' + ADDR_A,
+      'goal_reached',
+      expect.objectContaining({ targetStroops: '1000', raisedStroops: '1000' }),
+    );
+  });
+
+  it('does not re-notify when replaying an already-COMPLETED goal', async () => {
+    mockGoalFindUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ status: 'COMPLETED' });
+    await projectEvent(event('goal_reached', [ADDR_A, '1000', '1000']));
+    await projectEvent(event('goal_reached', [ADDR_A, '1000', '1000']));
+    expect(mockCreateNotification).toHaveBeenCalledTimes(1);
+  });
+
   it('cancels a goal via updateMany (no-op when absent)', async () => {
     await projectEvent(event('goal_cancel', ADDR_A));
     expect(mockGoalUpdateMany).toHaveBeenCalledWith({
@@ -251,6 +285,46 @@ describe('projectEvent — goals (#899)', () => {
 
   it('skips a goal_set with an unparseable target', async () => {
     await projectEvent(event('goal_set', [ADDR_A, 'not-a-number', 'x', '0']));
+    expect(mockGoalUpsert).not.toHaveBeenCalled();
+  });
+
+  it('projects a goal_completed event with COMPLETED status', async () => {
+    await projectEvent(event('goal_completed', [ADDR_A, '1735000000', '5000', '5000', '105']));
+    expect(mockGoalUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'goal_u_' + ADDR_A },
+        create: expect.objectContaining({
+          id: 'goal_u_' + ADDR_A,
+          userId: 'u_' + ADDR_A,
+          targetStroops: 5000n,
+          raisedStroops: 5000n,
+          status: 'COMPLETED',
+        }),
+        update: { targetStroops: 5000n, raisedStroops: 5000n, status: 'COMPLETED' },
+      }),
+    );
+  });
+
+  it('publishes a realtime projection for goal_completed', async () => {
+    await projectEvent(event('goal_completed', [ADDR_A, '1735000000', '5000', '5000', '105']));
+    expect(mockPublishProjection).toHaveBeenCalledWith(
+      'goal_completed',
+      expect.objectContaining({
+        userId: 'u_' + ADDR_A,
+        targetStroops: '5000',
+        raisedStroops: '5000',
+      }),
+    );
+  });
+
+  it('goal_completed is idempotent on replay', async () => {
+    await projectEvent(event('goal_completed', [ADDR_A, '1735000000', '5000', '5000', '105']));
+    await projectEvent(event('goal_completed', [ADDR_A, '1735000000', '5000', '5000', '105']));
+    expect(mockGoalUpsert.mock.calls[0][0].update).toEqual(mockGoalUpsert.mock.calls[1][0].update);
+  });
+
+  it('skips a goal_completed with unparseable data', async () => {
+    await projectEvent(event('goal_completed', [ADDR_A, 'x', 'not-a-number', '5000', '105']));
     expect(mockGoalUpsert).not.toHaveBeenCalled();
   });
 });
@@ -300,6 +374,27 @@ describe('projectEvent — subscriptions (#900)', () => {
   it('skips a sub_created with an unparseable amount', async () => {
     await projectEvent(event('sub_created', [ADDR_A, ADDR_B, 'nope', 7]));
     expect(mockSubUpsert).not.toHaveBeenCalled();
+  });
+
+  it('notifies the creator of a new charge (#965)', async () => {
+    mockEventLogFindFirst.mockResolvedValue(null);
+    await projectEvent(event('sub_exec', [ADDR_A, ADDR_B, '500']));
+    expect(mockCreateNotification).toHaveBeenCalledWith('u_' + ADDR_B, 'subscription_charged', {
+      tipperId: 'u_' + ADDR_A,
+      amountStroops: '500',
+    });
+  });
+
+  it('does not re-notify when replaying an already-logged charge (#965)', async () => {
+    mockEventLogFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'existing' });
+    await projectEvent(event('sub_exec', [ADDR_A, ADDR_B, '500']));
+    await projectEvent(event('sub_exec', [ADDR_A, ADDR_B, '500']));
+    expect(mockCreateNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips notifying when the charge event is unparseable', async () => {
+    await projectEvent(event('sub_exec', [ADDR_A, ADDR_B, 'nope']));
+    expect(mockCreateNotification).not.toHaveBeenCalled();
   });
 });
 
@@ -451,5 +546,198 @@ describe('projectEvent — credit score (#898)', () => {
     expect(mockUserUpsert).toHaveBeenCalledWith(
       expect.objectContaining({ where: { stellarAddress: ADDR_A } }),
     );
+  });
+});
+
+describe('projectEvent — refunds (#1038)', () => {
+  beforeEach(() => {
+    mockTipFindUnique.mockResolvedValue({ id: 'tip-1', status: 'CONFIRMED' });
+    mockTipUpdate.mockResolvedValue({ id: 'tip-1', status: 'REFUNDED' });
+  });
+
+  it('upserts a refund when an on-chain refund event is received', async () => {
+    mockEventLogFindFirst.mockResolvedValue(null);
+    mockRefundUpsert.mockResolvedValue({
+      id: 'refund-1',
+      tipId: 'tip-1',
+      amount: BigInt(5_000_000),
+      reason: 'duplicate',
+      status: 'completed',
+      txHash: 'refund-tx-123',
+    });
+
+    const refundEvent: DecodedEvent = {
+      ledger: 150,
+      txHash: 'refund-tx-123',
+      pagingToken: '150-0',
+      topic: 'tip_refund',
+      value: {
+        tipTxHash: 'tip-tx-abc',
+        amount: '5000000',
+        reason: 'duplicate',
+      },
+    };
+
+    await projectEvent(refundEvent);
+
+    expect(mockTipFindUnique).toHaveBeenCalledWith({
+      where: { txHash: 'tip-tx-abc' },
+    });
+    expect(mockRefundUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { tipId: 'tip-1' },
+        create: expect.objectContaining({
+          tipId: 'tip-1',
+          amount: BigInt(5_000_000),
+          reason: 'duplicate',
+          status: 'completed',
+          txHash: 'refund-tx-123',
+        }),
+      }),
+    );
+  });
+
+  it('updates the tip status to REFUNDED when a refund is processed', async () => {
+    mockEventLogFindFirst.mockResolvedValue(null);
+    mockRefundUpsert.mockResolvedValue({
+      id: 'refund-1',
+      tipId: 'tip-1',
+    });
+
+    const refundEvent: DecodedEvent = {
+      ledger: 150,
+      txHash: 'refund-tx-123',
+      pagingToken: '150-0',
+      topic: 'tip_refund',
+      value: ['tip-tx-abc', '5000000', 'duplicate'],
+    };
+
+    await projectEvent(refundEvent);
+
+    expect(mockTipUpdate).toHaveBeenCalledWith({
+      where: { id: 'tip-1' },
+      data: { status: 'REFUNDED' },
+    });
+  });
+
+  it('is idempotent — replaying a refund event does not duplicate the refund', async () => {
+    mockEventLogFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'existing' });
+    mockRefundUpsert.mockResolvedValue({
+      id: 'refund-1',
+      tipId: 'tip-1',
+    });
+
+    const refundEvent: DecodedEvent = {
+      ledger: 150,
+      txHash: 'refund-tx-123',
+      pagingToken: '150-0',
+      topic: 'tip_refund',
+      value: ['tip-tx-abc', '5000000', 'duplicate'],
+    };
+
+    await projectEvent(refundEvent);
+    await projectEvent(refundEvent);
+
+    expect(mockRefundUpsert).toHaveBeenCalledTimes(2);
+    const calls = mockRefundUpsert.mock.calls;
+    expect(calls[0][0].where).toEqual(calls[1][0].where);
+  });
+
+  it('handles the "refund" topic alias the same as "tip_refund"', async () => {
+    mockEventLogFindFirst.mockResolvedValue(null);
+    mockRefundUpsert.mockResolvedValue({ id: 'refund-1', tipId: 'tip-1' });
+
+    const refundEvent: DecodedEvent = {
+      ledger: 150,
+      txHash: 'refund-tx-123',
+      pagingToken: '150-0',
+      topic: 'refund',
+      value: ['tip-tx-abc', '5000000', 'duplicate'],
+    };
+
+    await projectEvent(refundEvent);
+
+    expect(mockRefundUpsert).toHaveBeenCalledOnce();
+  });
+
+  it('skips a refund event when the referenced tip is not found', async () => {
+    mockEventLogFindFirst.mockResolvedValue(null);
+    mockTipFindUnique.mockResolvedValue(null);
+
+    const refundEvent: DecodedEvent = {
+      ledger: 150,
+      txHash: 'refund-tx-123',
+      pagingToken: '150-0',
+      topic: 'tip_refund',
+      value: ['unknown-tip-tx', '5000000', 'duplicate'],
+    };
+
+    await projectEvent(refundEvent);
+
+    expect(mockRefundUpsert).not.toHaveBeenCalled();
+    expect(mockTipUpdate).not.toHaveBeenCalled();
+  });
+
+  it('skips a refund event with unparseable payload', async () => {
+    mockEventLogFindFirst.mockResolvedValue(null);
+
+    const refundEvent: DecodedEvent = {
+      ledger: 150,
+      txHash: 'refund-tx-123',
+      pagingToken: '150-0',
+      topic: 'tip_refund',
+      value: { invalid: 'payload' },
+    };
+
+    await projectEvent(refundEvent);
+
+    expect(mockRefundUpsert).not.toHaveBeenCalled();
+  });
+
+  it('accepts both struct and positional array formats for refund data', async () => {
+    mockEventLogFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    mockRefundUpsert.mockResolvedValue({ id: 'refund-1', tipId: 'tip-1' });
+
+    const structEvent: DecodedEvent = {
+      ledger: 150,
+      txHash: 'refund-tx-struct',
+      pagingToken: '150-0',
+      topic: 'tip_refund',
+      value: {
+        tipTxHash: 'tip-tx-abc',
+        amount: '5000000',
+        reason: 'duplicate',
+      },
+    };
+
+    const arrayEvent: DecodedEvent = {
+      ledger: 151,
+      txHash: 'refund-tx-array',
+      pagingToken: '151-0',
+      topic: 'tip_refund',
+      value: ['tip-tx-abc', '5000000', 'duplicate'],
+    };
+
+    await projectEvent(structEvent);
+    await projectEvent(arrayEvent);
+
+    expect(mockRefundUpsert).toHaveBeenCalledTimes(2);
+  });
+
+  it('publishes the refund projection to realtime after processing', async () => {
+    mockEventLogFindFirst.mockResolvedValue(null);
+    mockRefundUpsert.mockResolvedValue({ id: 'refund-1', tipId: 'tip-1' });
+
+    const refundEvent: DecodedEvent = {
+      ledger: 150,
+      txHash: 'refund-tx-123',
+      pagingToken: '150-0',
+      topic: 'tip_refund',
+      value: ['tip-tx-abc', '5000000', 'duplicate'],
+    };
+
+    await projectEvent(refundEvent);
+
+    expect(mockPublishProjection).toHaveBeenCalledWith(refundEvent);
   });
 });

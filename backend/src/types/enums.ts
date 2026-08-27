@@ -6,4 +6,11 @@
  * This keeps enum usage consistent and makes future migrations easier.
  */
 
-export { Period, TipStatus } from '@prisma/client';
+export {
+  Period,
+  TipStatus,
+  GoalStatus,
+  SubscriptionInterval,
+  SubscriptionStatus,
+  WebhookDeliveryStatus,
+} from "@prisma/client";

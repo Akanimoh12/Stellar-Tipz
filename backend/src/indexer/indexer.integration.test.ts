@@ -18,6 +18,7 @@ import {
   profileUpdatedEvent,
   goalSetEvent,
   goalReachedEvent,
+  goalCompletedEvent,
   goalCancelEvent,
   subCreatedEvent,
   subExecEvent,
@@ -36,6 +37,7 @@ const {
   mockUserUpsert,
   mockGoalUpsert,
   mockGoalUpdateMany,
+  mockGoalFindUnique,
   mockSubUpsert,
   mockSubUpdateMany,
   mockTipUpsert,
@@ -44,10 +46,12 @@ const {
   mockCreditScoreUpsert,
   mockCreditScoreHistoryUpsert,
   mockPublishProjection,
+  mockCreateNotification,
 } = vi.hoisted(() => ({
   mockUserUpsert: vi.fn(),
   mockGoalUpsert: vi.fn(),
   mockGoalUpdateMany: vi.fn(),
+  mockGoalFindUnique: vi.fn(),
   mockSubUpsert: vi.fn(),
   mockSubUpdateMany: vi.fn(),
   mockTipUpsert: vi.fn(),
@@ -56,12 +60,13 @@ const {
   mockCreditScoreUpsert: vi.fn(),
   mockCreditScoreHistoryUpsert: vi.fn(),
   mockPublishProjection: vi.fn(),
+  mockCreateNotification: vi.fn(),
 }));
 
 vi.mock('../db/prisma.js', () => ({
   prisma: {
     user: { upsert: mockUserUpsert },
-    goal: { upsert: mockGoalUpsert, updateMany: mockGoalUpdateMany },
+    goal: { upsert: mockGoalUpsert, updateMany: mockGoalUpdateMany, findUnique: mockGoalFindUnique },
     subscription: { upsert: mockSubUpsert, updateMany: mockSubUpdateMany },
     tip: { upsert: mockTipUpsert },
     eventLog: { findFirst: mockEventLogFindFirst, create: mockEventLogCreate },
@@ -72,6 +77,10 @@ vi.mock('../db/prisma.js', () => ({
 
 vi.mock('./realtime-publisher.js', () => ({
   publishProjection: mockPublishProjection,
+}));
+
+vi.mock('../modules/notifications/notifications.service.js', () => ({
+  createNotification: mockCreateNotification,
 }));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -105,11 +114,13 @@ beforeEach(() => {
   mockTipUpsert.mockResolvedValue({});
   mockGoalUpsert.mockResolvedValue({});
   mockGoalUpdateMany.mockResolvedValue({ count: 1 });
+  mockGoalFindUnique.mockResolvedValue(null);
   mockSubUpsert.mockResolvedValue({});
   mockSubUpdateMany.mockResolvedValue({ count: 1 });
   mockCreditScoreUpsert.mockResolvedValue({});
   mockCreditScoreHistoryUpsert.mockResolvedValue({});
   mockPublishProjection.mockResolvedValue(undefined);
+  mockCreateNotification.mockResolvedValue(null);
 });
 
 // ── Fixture event page ────────────────────────────────────────────────────────
@@ -323,6 +334,30 @@ describe('fixture: goal_reached', () => {
   it('is idempotent — replay sets the same absolute update', async () => {
     await projectEvent(goalReachedEvent);
     await projectEvent(goalReachedEvent);
+
+    expect(mockGoalUpsert.mock.calls[0][0].update).toEqual(
+      mockGoalUpsert.mock.calls[1][0].update,
+    );
+  });
+});
+
+// ── goal_completed projection ─────────────────────────────────────────────────
+
+describe('fixture: goal_completed', () => {
+  it('marks the goal COMPLETED with absolute raised amount', async () => {
+    await projectEvent(goalCompletedEvent);
+
+    expect(mockGoalUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'goal_u_' + ADDR_A },
+        update: { targetStroops: 5000000n, raisedStroops: 5000000n, status: 'COMPLETED' },
+      }),
+    );
+  });
+
+  it('is idempotent — replay sets the same absolute update', async () => {
+    await projectEvent(goalCompletedEvent);
+    await projectEvent(goalCompletedEvent);
 
     expect(mockGoalUpsert.mock.calls[0][0].update).toEqual(
       mockGoalUpsert.mock.calls[1][0].update,

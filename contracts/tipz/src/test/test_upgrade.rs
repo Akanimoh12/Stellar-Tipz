@@ -21,9 +21,11 @@
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
 use crate::storage::DataKey;
-use crate::types::{LeaderboardEntry, LeaderboardPeriod};
+use crate::types::{LeaderboardEntry, LeaderboardPeriod, PauseFlag};
 use crate::TipzContract;
 use crate::TipzContractClient;
+
+const PAUSE_ALL: u32 = PauseFlag::All as u32;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -136,7 +138,7 @@ fn test_upgrade_preserves_admin_key() {
 
     // Admin key is in instance storage; verify it by exercising an admin-only op.
     // If the admin key were lost this would return NotAuthorized / NotInitialized.
-    client_v2.set_fee(&admin, &300_u32);
+    client_v2.set_fee(&admin, &100_u32);
 
     let stats = client_v2.get_stats();
     assert_eq!(stats.fee_bps, 300);
@@ -209,12 +211,12 @@ fn test_upgrade_preserves_paused_state() {
     let (env, contract_id, admin, _fee_collector, _token) = deploy_v1();
     let client_v1 = TipzContractClient::new(&env, &contract_id);
 
-    client_v1.pause(&admin);
-    assert!(client_v1.is_paused());
+    client_v1.pause(&admin, &PAUSE_ALL);
+    assert!(client_v1.is_paused(&PAUSE_ALL));
 
     let client_v2 = upgrade_to_v2(&env, &contract_id);
 
-    assert!(client_v2.is_paused(), "paused flag must survive upgrade");
+    assert!(client_v2.is_paused(&PAUSE_ALL), "paused flag must survive upgrade");
 }
 
 #[test]
@@ -226,7 +228,7 @@ fn test_upgrade_admin_ops_work_after() {
     let new_admin = Address::generate(&env);
     client_v2.set_admin(&admin, &new_admin);
 
-    client_v2.set_fee(&new_admin, &500_u32);
+    client_v2.set_fee(&new_admin, &100_u32);
     let stats = client_v2.get_stats();
     assert_eq!(stats.fee_bps, 500);
 }

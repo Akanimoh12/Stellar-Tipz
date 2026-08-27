@@ -5,6 +5,8 @@ import { config } from '../config/index.js';
 import { logger } from '../common/utils/logger.js';
 import { recalculateCreditScore } from '../modules/credit/credit.service.js';
 import { CREDIT_RECOMPUTE_QUEUE, getCreditRecomputeQueue } from './creditRecompute.queue.js';
+import { scheduleRepeatable } from './scheduler.js';
+import { attachDeadLetterHandler } from './deadLetter.js';
 
 export async function recomputeAllScores(): Promise<{ processed: number; failed: number }> {
   const users = await prisma.user.findMany({
@@ -41,25 +43,15 @@ export function createCreditRecomputeWorker(): Worker {
   worker.on('failed', (job, err) => {
     logger.error({ err, jobId: job?.id }, 'Credit recompute job failed');
   });
+  attachDeadLetterHandler(worker, CREDIT_RECOMPUTE_QUEUE);
 
   return worker;
 }
 
 export async function scheduleCreditRecompute(): Promise<void> {
-  const queue = getCreditRecomputeQueue();
-  const repeatableJobs = await queue.getRepeatableJobs();
-  const alreadyScheduled = repeatableJobs.some(
-    (j) => j.name === 'recompute' && j.pattern === config.credit.recomputeCron,
-  );
-
-  if (!alreadyScheduled) {
-    await queue.add(
-      'recompute',
-      {},
-      {
-        repeat: { pattern: config.credit.recomputeCron },
-      },
-    );
-    logger.info({ cron: config.credit.recomputeCron }, 'Credit recompute scheduled');
-  }
+  await scheduleRepeatable({
+    queue: getCreditRecomputeQueue(),
+    name: 'recompute',
+    pattern: config.credit.recomputeCron,
+  });
 }

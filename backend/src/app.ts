@@ -2,27 +2,25 @@ import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 import pinoHttp from 'pino-http';
-import swaggerUi from 'swagger-ui-express';
 import { env } from './config/env.js';
-import {
-  errorHandler,
-  notFoundHandler,
-} from './common/middleware/errorHandler.js';
+import { createV1Router } from './api/v1.routes.js';
+import { createVersionedApiRouter, parseVersionedApiBasePath } from './api/versioning.js';
+import { errorHandler, notFoundHandler } from './common/middleware/errorHandler.js';
+import { globalRateLimiter } from './common/middleware/rateLimiter.js';
+import { metricsController, metricsMiddleware } from './common/observability/metrics.js';
+import { getSentryRequestHandler, getSentryErrorHandler } from './common/observability/sentry.js';
 import { logger } from './common/utils/logger.js';
-import { openApiDocument } from './docs/openapi.js';
 import { requestId } from './common/middleware/requestId.js';
-import { authRouter } from './modules/auth/auth.routes.js';
-import { profilesRouter } from './modules/profiles/profiles.routes.js';
-import { creditRouter } from './modules/credit/credit.routes.js';
-import { leaderboardRouter } from './modules/leaderboard/leaderboard.routes.js';
-import { tipsRouter } from './modules/tips/tips.routes.js';
-import { balancesRouter, withdrawalsRouter } from './modules/withdrawals/withdrawals.routes.js';
-import { ipfsRouter } from './modules/ipfs/ipfs.routes.js';
+import { healthRouter } from './modules/health/health.routes.js';
 
 /** Builds and configures the Express application without starting a listener. */
 export function createApp(): Express {
   const app = express();
 
+  // Probes must remain reachable even when Redis-backed middleware is unavailable.
+  app.use('/health', healthRouter);
+
+  app.use(getSentryRequestHandler());
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -34,34 +32,32 @@ export function createApp(): Express {
       },
     }),
   );
-  app.use(cors({ origin: env.CORS_ORIGIN.split(','), credentials: true }));
+  app.use(
+    cors({
+      // env.CORS_ORIGIN is already validated as a list of absolute origins at
+      // startup (see config/cors.ts), so a misconfigured origin never reaches
+      // request time.
+      origin: env.CORS_ORIGIN,
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
+    }),
+  );
+  app.use(globalRateLimiter);
   app.use(requestId);
+  app.use(metricsMiddleware);
   app.use(express.json({ limit: '1mb' }));
   app.use(pinoHttp({ logger }));
 
-  const docsPath = `${env.API_BASE_PATH}/docs`;
-  app.get(`${docsPath}/openapi.json`, (_req, res) => {
-    res.json(openApiDocument);
-  });
-  app.use(docsPath, swaggerUi.serve, swaggerUi.setup(openApiDocument));
+  app.get('/metrics', metricsController);
 
-  app.get('/health', (_req, res) => {
-    res.json({
-      status: 'ok',
-      service: 'stellar-tipz-backend',
-      time: new Date().toISOString(),
-    });
-  });
+  const { rootPath, version } = parseVersionedApiBasePath(env.API_BASE_PATH);
+  app.use(
+    rootPath,
+    createVersionedApiRouter([{ version, router: createV1Router() }]),
+  );
 
-  app.use(`${env.API_BASE_PATH}/auth`, authRouter);
-  app.use(`${env.API_BASE_PATH}/profiles`, profilesRouter);
-  app.use(`${env.API_BASE_PATH}/credit`, creditRouter);
-  app.use(`${env.API_BASE_PATH}/leaderboard`, leaderboardRouter);
-  app.use(`${env.API_BASE_PATH}/ipfs`, ipfsRouter);
-  app.use(`${env.API_BASE_PATH}/tips`, tipsRouter);
-  app.use(`${env.API_BASE_PATH}/withdrawals`, withdrawalsRouter);
-  app.use(`${env.API_BASE_PATH}/balances`, balancesRouter);
-
+  app.use(getSentryErrorHandler());
   app.use(notFoundHandler);
   app.use(errorHandler);
 

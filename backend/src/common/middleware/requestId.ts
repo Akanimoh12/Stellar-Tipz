@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
+import { runWithRequestContext } from './requestContext.js';
 
 /** Header used to carry the correlation id in and out of the service. */
 export const REQUEST_ID_HEADER = 'x-request-id';
@@ -20,5 +21,7 @@ export function requestId(req: Request, res: Response, next: NextFunction): void
 
   req.id = id;
   res.setHeader(REQUEST_ID_HEADER, id);
-  next();
+  // Run the rest of the request inside the ALS context so asynchronous work
+  // (notably Prisma queries) can recover the request id for correlation.
+  runWithRequestContext(id, () => next());
 }

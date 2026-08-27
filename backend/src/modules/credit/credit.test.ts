@@ -1,11 +1,13 @@
 import request from 'supertest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
 import { createApp } from '../../app.js';
 import {
   computeCreditScore,
   getCreditScoreByUsername,
   recalculateCreditScore,
+  scheduleRecomputeCreditScore,
 } from './credit.service.js';
+import { recalculate as recalculateController } from './credit.controller.js';
 
 const {
   mockFindUnique,
@@ -88,6 +90,23 @@ describe('computeCreditScore (pure formula)', () => {
     expect(result.score).toBe(100);
     expect(result.tier).toBe('Diamond');
   });
+
+  it('combines tip volume, X metrics, age, and streak correctly', () => {
+    const result = computeCreditScore({
+      totalTipsReceived: BigInt(100_000_000),
+      xFollowers: 500,
+      xEngagementAvg: 100,
+      accountAgeDays: 100,
+      streakBonus: 5,
+    });
+
+    expect(result.score).toBeGreaterThan(40);
+    expect(result.score).toBeLessThanOrEqual(100);
+    expect(result.components.tipVolume).toBeGreaterThan(0);
+    expect(result.components.xMetrics).toBeGreaterThan(0);
+    expect(result.components.accountAge).toBeGreaterThan(0);
+    expect(result.components.streakBonus).toBe(5);
+  });
 });
 
 describe('credit score cache', () => {
@@ -168,9 +187,55 @@ describe('credit score cache', () => {
   });
 });
 
+describe('debounced recomputation on tips', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    mockRedisGet.mockResolvedValue(null);
+    mockRedisSet.mockResolvedValue('OK');
+  });
+
+  afterEach(() => {
+    vi.runAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('debounces rapid recomputation requests', async () => {
+    const createdAt = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+    const computedAt = new Date();
+
+    mockFindUnique.mockResolvedValue({
+      id: 'user-1',
+      username: 'alice',
+      stellarAddress: 'GA1',
+      createdAt,
+      deletedAt: null,
+      streak: { currentStreak: 0 },
+    });
+    mockAggregate.mockResolvedValue({ _sum: { amountStroops: BigInt(0) } });
+    mockUpsert.mockResolvedValue({ value: 40, computedAt });
+    mockCreate.mockResolvedValue({});
+
+    // Trigger 3 rapid recomputation requests
+    await scheduleRecomputeCreditScore('user-1');
+    await scheduleRecomputeCreditScore('user-1');
+    await scheduleRecomputeCreditScore('user-1');
+
+    // Should not have called recalculateCreditScore yet (debounced)
+    expect(mockUpsert).not.toHaveBeenCalled();
+
+    // Fast-forward time to trigger the debounced call
+    vi.advanceTimersByTime(5000);
+
+    // Now it should have been called exactly once
+    expect(mockUpsert).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('GET /api/v1/credit/:identifier', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
     mockRedisGet.mockResolvedValue(null);
     mockRedisSet.mockResolvedValue('OK');
   });
@@ -183,5 +248,23 @@ describe('GET /api/v1/credit/:identifier', () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+});
+
+describe('credit authorization', () => {
+  it('rejects recalculating another user\'s score', async () => {
+    const next = vi.fn();
+
+    await recalculateController(
+      {
+        body: { userId: 'user-a' },
+        user: { id: 'user-b' },
+      } as never,
+      {} as never,
+      next,
+    );
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+    expect(mockFindUnique).not.toHaveBeenCalled();
   });
 });

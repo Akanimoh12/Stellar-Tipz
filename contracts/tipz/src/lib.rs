@@ -13,26 +13,32 @@
 
 #![no_std]
 
-mod admin;
-mod credit;
-mod errors;
-mod events;
-mod fees;
-mod goals;
-mod leaderboard;
-mod multitoken;
-mod multisig;
-mod profile;
-mod refund;
-mod stats;
-mod storage;
-mod streaks;
-mod subscription;
-mod tips;
-mod token;
-mod types;
-mod validation;
-mod verification;
+#[cfg(any(test, feature = "testutils"))]
+extern crate std;
+
+pub mod admin;
+pub mod circuit_breaker;
+pub mod credit;
+pub mod errors;
+pub mod events;
+pub mod fees;
+pub mod goals;
+pub mod leaderboard;
+pub mod migrations;
+pub mod multitoken;
+pub mod multisig;
+pub mod oracle;
+pub mod profile;
+pub mod refund;
+pub mod stats;
+pub mod storage;
+pub mod streaks;
+pub mod subscription;
+pub mod tips;
+pub mod token;
+pub mod types;
+pub mod validation;
+pub mod verification;
 
 #[cfg(test)]
 mod test;
@@ -41,13 +47,14 @@ use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
 
 use crate::errors::ContractError;
 use crate::types::{
-    AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip, ContractConfig, ContractStats,
-    CreditBreakdown, CreditTier, LeaderboardEntry, Profile, ProfileWithDeactivation, Tip,
+    AdminAuditEntry, AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip, ContractConfig,
+    ContractStats, CreditBreakdown, CreditTier, LeaderboardEntry, MigrationState, Profile,
+    ProfileWithDeactivation, Tip,
 };
 
 /// The current contract interface version, stored on-chain during initialization.
 /// Must be incremented manually in source when the contract interface changes.
-pub const CONTRACT_VERSION: u32 = 3;
+pub const CONTRACT_VERSION: u32 = 4;
 
 #[contract]
 pub struct TipzContract;
@@ -105,6 +112,15 @@ impl TipzContract {
         x_handle: Option<String>,
     ) -> Result<(), ContractError> {
         profile::update_profile(&env, caller, display_name, bio, image_url, x_handle)
+    }
+
+    /// Update social links for a profile with limit enforcement (max 5 links).
+    pub fn update_social_links(
+        env: Env,
+        caller: Address,
+        social_links: soroban_sdk::Map<soroban_sdk::Symbol, String>,
+    ) -> Result<(), ContractError> {
+        profile::update_social_links(&env, caller, social_links)
     }
 
     /// Deregister the caller's profile, permanently removing it from the platform.
@@ -227,7 +243,15 @@ impl TipzContract {
         is_anonymous: bool,
         is_encrypted: bool,
     ) -> Result<(), ContractError> {
-        tips::send_tip(&env, &tipper, &creator, amount, &message, is_anonymous, is_encrypted)
+        tips::send_tip(
+            &env,
+            &tipper,
+            &creator,
+            amount,
+            &message,
+            is_anonymous,
+            is_encrypted,
+        )
     }
 
     /// Send a tip on behalf of someone else.
@@ -247,16 +271,66 @@ impl TipzContract {
         tips::withdraw_tips(&env, &caller, amount)
     }
 
-    /// Get a single tip record by its ID.
+    /// Time-delayed emergency withdrawal for creators during an extended contract pause (#1178).
+    pub fn emergency_withdraw_tips(
+        env: Env,
+        caller: Address,
+        amount: i128,
+    ) -> Result<(), ContractError> {
+        tips::emergency_withdraw_tips(&env, &caller, amount)
+    }
+
+    /// Returns the timestamp when contract was paused, or None if active.
+    pub fn get_paused_at(env: Env) -> Option<u64> {
+        storage::get_paused_at(&env)
+    }
+
+    /// Return the currently pending fee change, if any.
+    pub fn get_pending_fee_change(env: Env) -> Option<(u32, u32, u32, bool)> {
+        storage::get_pending_fee_change(&env)
+    }
+
+    /// Return the configured minimum fee-change delay in ledgers.
+    pub fn get_fee_change_delay_ledgers(env: Env) -> u32 {
+        storage::get_fee_change_delay_ledgers(&env)
+    }
+
+    /// Returns the required pause delay (7 days) before emergency withdrawal is unlocked.
+    pub fn get_emergency_withdrawal_delay(_env: Env) -> u64 {
+        admin::EMERGENCY_WITHDRAWAL_DELAY_SECS
+    }
+
+    /// Execute or resume a versioned storage migration to target_version (#1173). Admin only.
+    pub fn migrate(
+        env: Env,
+        caller: Address,
+        target_version: u32,
+        batch_size: u32,
+    ) -> Result<MigrationState, ContractError> {
+        migrations::migrate(&env, &caller, target_version, batch_size)
+    }
+
+    /// Returns the current active migration state, if any.
+    pub fn get_migration_state(env: Env) -> Option<MigrationState> {
+        storage::get_migration_state(&env)
+    }
+
+    /// Get a single tip record by its ID (public view).
+    ///
+    /// For anonymous tips the sender is redacted to the contract address;
+    /// the stable `pseudonym` hash is still returned so clients can group
+    /// tips from one anonymous tipper without learning who sent them.
     ///
     /// Returns [`ContractError::NotFound`] when the tip does not exist or its
     /// temporary-storage TTL has expired (~7 days after the tip was sent).
     pub fn get_tip(env: Env, tip_id: u32) -> Result<Tip, ContractError> {
-        tips::get_tip(&env, tip_id).ok_or(ContractError::NotFound)
+        tips::get_tip_public(&env, tip_id).ok_or(ContractError::NotFound)
     }
 
     /// Return up to `limit` recent tips received by `creator`, newest first.
     ///
+    /// - Anonymous tips have their sender redacted to the contract address;
+    ///   use the stable `pseudonym` hash to group them instead.
     /// - `limit` is capped at 50 per call.
     /// - `offset`: number of tips to skip from the most recent (0 = start
     ///   from latest). Use `get_creator_tip_count` to know the total for
@@ -298,6 +372,26 @@ impl TipzContract {
         storage::get_tipper_tip_count(&env, &tipper)
     }
 
+    pub fn block_tipper(env: Env, creator: Address, tipper: Address) -> Result<(), ContractError> {
+        tips::block_tipper(&env, &creator, &tipper)
+    }
+
+    pub fn unblock_tipper(
+        env: Env,
+        creator: Address,
+        tipper: Address,
+    ) -> Result<(), ContractError> {
+        tips::unblock_tipper(&env, &creator, &tipper)
+    }
+
+    pub fn is_tipper_blocked(env: Env, creator: Address, tipper: Address) -> bool {
+        tips::is_tipper_blocked(&env, &creator, &tipper)
+    }
+
+    pub fn get_blocked_tipper_count(env: Env, creator: Address) -> u32 {
+        tips::get_blocked_tipper_count(&env, &creator)
+    }
+
     // ──────────────────────────────────────────────
     // Credit Score
     // ──────────────────────────────────────────────
@@ -330,12 +424,79 @@ impl TipzContract {
         credit::get_credit_tier(&env, &address)
     }
 
-    /// Return the weighted credit score breakdown for a registered profile.
+    /// Return the weighted credit score breakdown for a registered profile,
+    /// including staleness metadata (`computed_at_ledger`, `ledger_age`, `is_stale`).
     pub fn get_credit_breakdown(
         env: Env,
         address: Address,
     ) -> Result<CreditBreakdown, ContractError> {
         credit::get_credit_breakdown(&env, &address)
+    }
+
+    /// Set the number of ledgers after which a stored credit score is considered
+    /// stale. Default is 8,640 ledgers (~12 hours at 5 s/ledger).
+    ///
+    /// # Authorization
+    /// Requires admin signature.
+    pub fn set_credit_staleness_threshold(
+        env: Env,
+        caller: Address,
+        threshold_ledgers: u32,
+    ) -> Result<(), ContractError> {
+        storage::extend_instance_ttl(&env);
+        admin::require_admin(&env, &caller)?;
+        storage::set_credit_staleness_threshold(&env, threshold_ledgers);
+        Ok(())
+    }
+
+    /// Recompute credit scores for a page of creators starting at `cursor`.
+    ///
+    /// Returns `(next_cursor, is_done)`. Call repeatedly with the returned
+    /// cursor until `is_done == true` to recompute the full set. `limit` is
+    /// clamped to 50 to bound per-call CPU usage.
+    ///
+    /// # Authorization
+    /// Requires admin signature.
+    pub fn recompute_credit_scores_page(
+        env: Env,
+        caller: Address,
+        cursor: u32,
+        limit: u32,
+    ) -> Result<(u32, bool), ContractError> {
+        storage::extend_instance_ttl(&env);
+        admin::require_admin(&env, &caller)?;
+        Ok(credit::recompute_credit_scores_page(&env, cursor, limit))
+    }
+
+    /// Register an on-chain price oracle for `token`.
+    /// The oracle must implement `get_price(token: Address) -> OraclePrice`.
+    ///
+    /// # Authorization
+    /// Requires admin signature.
+    pub fn set_token_oracle(
+        env: Env,
+        caller: Address,
+        token: Address,
+        oracle: Address,
+    ) -> Result<(), ContractError> {
+        oracle::set_token_oracle(&env, &caller, &token, &oracle)
+    }
+
+    /// Remove the price oracle for `token` (reverts to native-only ranking).
+    ///
+    /// # Authorization
+    /// Requires admin signature.
+    pub fn remove_token_oracle(
+        env: Env,
+        caller: Address,
+        token: Address,
+    ) -> Result<(), ContractError> {
+        oracle::remove_token_oracle(&env, &caller, &token)
+    }
+
+    /// Return the current staleness threshold in ledgers.
+    pub fn get_credit_staleness_threshold(env: Env) -> u32 {
+        storage::get_credit_staleness_threshold(&env)
     }
 
     /// Return the current supporter streak for a `(supporter, creator)` pair.
@@ -375,6 +536,13 @@ impl TipzContract {
     ) -> Result<(), ContractError> {
         admin::require_admin(&env, &caller)?;
         leaderboard::reset_leaderboard(&env, period);
+        admin::log_admin_action(
+            &env,
+            &caller,
+            soroban_sdk::Symbol::new(&env, "reset_leaderboard"),
+            String::from_str(&env, ""),
+            String::from_str(&env, "reset"),
+        );
         Ok(())
     }
 
@@ -402,6 +570,34 @@ impl TipzContract {
     /// Emits a `FeeUpdated` event with `(old_bps, new_bps)`.
     pub fn set_fee(env: Env, caller: Address, fee_bps: u32) -> Result<(), ContractError> {
         admin::set_fee(&env, &caller, fee_bps)
+    }
+
+    /// Propose a withdrawal fee change with a timelock for increases.
+    pub fn propose_fee_change(
+        env: Env,
+        caller: Address,
+        fee_bps: u32,
+    ) -> Result<(), ContractError> {
+        admin::propose_fee_change(&env, &caller, fee_bps)
+    }
+
+    /// Apply a pending withdrawal fee change.
+    pub fn apply_fee_change(env: Env, caller: Address) -> Result<(), ContractError> {
+        admin::apply_fee_change(&env, &caller)
+    }
+
+    /// Cancel a pending withdrawal fee change.
+    pub fn cancel_fee_change(env: Env, caller: Address) -> Result<(), ContractError> {
+        admin::cancel_fee_change(&env, &caller)
+    }
+
+    /// Update the configured fee-change delay in ledgers. Admin only.
+    pub fn set_fee_change_delay(
+        env: Env,
+        caller: Address,
+        delay_ledgers: u32,
+    ) -> Result<(), ContractError> {
+        admin::set_fee_change_delay(&env, &caller, delay_ledgers)
     }
 
     /// Update the fee collector address. Admin only.
@@ -457,6 +653,23 @@ impl TipzContract {
         admin::get_admin_change_history(&env, limit, offset)
     }
 
+    /// Return admin audit log entries, newest first (`offset` skips from the newest).
+    pub fn get_admin_audit_history(
+        env: Env,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<AdminAuditEntry>, ContractError> {
+        admin::get_admin_audit_history(&env, limit, offset)
+    }
+
+    /// Return total count of admin audit log entries recorded over time.
+    pub fn get_admin_audit_count(env: Env) -> Result<u32, ContractError> {
+        if !storage::is_initialized(&env) {
+            return Err(ContractError::NotInitialized);
+        }
+        Ok(storage::get_admin_audit_count(&env))
+    }
+
     /// Get global contract statistics.
     pub fn get_stats(env: Env) -> Result<ContractStats, ContractError> {
         if !storage::is_initialized(&env) {
@@ -489,12 +702,27 @@ impl TipzContract {
             total_fees_collected: storage::get_total_fees(&env),
             is_initialized: storage::is_initialized(&env),
             version: storage::get_version(&env),
+            subscription_limit: storage::get_subscription_limit(&env),
         })
     }
 
     /// Extend the contract instance TTL manually (admin only).
     pub fn bump_ttl(env: Env, caller: Address) -> Result<(), ContractError> {
         admin::bump_ttl(&env, &caller)
+    }
+
+    /// Extend the TTL of a creator's profile (and its username reverse-lookup)
+    /// so an inactive creator's profile — and the balance it guards — never
+    /// archives mid-lifecycle (#1175).
+    ///
+    /// Permissionless by design: anyone can call and pay the fee to keep a
+    /// profile alive, so a creator who has been quiet never loses access to
+    /// their funds through archival.
+    pub fn bump_profile_ttl(env: Env, creator: Address) {
+        storage::bump_profile_ttl(&env, &creator);
+        if let Some(profile) = storage::get_profile_opt(&env, &creator) {
+            storage::bump_username_ttl(&env, &profile.username);
+        }
     }
 
     // ──────────────────────────────────────────────
@@ -519,6 +747,30 @@ impl TipzContract {
     ///
     /// After this call the contract executes new WASM code and the stored
     /// version is incremented by one.
+    pub fn propose_upgrade(
+        env: Env,
+        admin: Address,
+        new_wasm_hash: BytesN<32>,
+    ) -> Result<BytesN<32>, ContractError> {
+        admin::propose_upgrade(&env, &admin, &new_wasm_hash)
+    }
+
+    pub fn get_proposed_upgrade(env: Env) -> Option<BytesN<32>> {
+        admin::get_proposed_upgrade(&env)
+    }
+
+    pub fn cancel_upgrade(env: Env, admin: Address) -> Result<(), ContractError> {
+        admin::cancel_upgrade(&env, &admin)
+    }
+
+    pub fn execute_upgrade(
+        env: Env,
+        admin: Address,
+        new_wasm_hash: BytesN<32>,
+    ) -> Result<(), ContractError> {
+        admin::upgrade(&env, &admin, &new_wasm_hash)
+    }
+
     pub fn upgrade(
         env: Env,
         admin: Address,
@@ -527,16 +779,16 @@ impl TipzContract {
         admin::upgrade(&env, &admin, &new_wasm_hash)
     }
 
-    pub fn pause(env: Env, caller: Address) -> Result<(), ContractError> {
-        admin::pause(&env, &caller)
+    pub fn pause(env: Env, caller: Address, flag: u32) -> Result<(), ContractError> {
+        admin::pause(&env, &caller, crate::types::PauseFlag::from_u32(flag))
     }
 
-    pub fn unpause(env: Env, caller: Address) -> Result<(), ContractError> {
-        admin::unpause(&env, &caller)
+    pub fn unpause(env: Env, caller: Address, flag: u32) -> Result<(), ContractError> {
+        admin::unpause(&env, &caller, crate::types::PauseFlag::from_u32(flag))
     }
 
-    pub fn is_paused(env: Env) -> bool {
-        storage::is_paused(&env)
+    pub fn is_paused(env: Env, flag: u32) -> bool {
+        storage::is_paused(&env, crate::types::PauseFlag::from_u32(flag))
     }
 
     pub fn set_min_tip_amount(
@@ -549,6 +801,61 @@ impl TipzContract {
 
     pub fn get_min_tip_amount(env: Env) -> i128 {
         storage::get_min_tip_amount(&env)
+    }
+
+    /// Set the minimum withdrawal amount. Admin only.
+    pub fn set_min_withdrawal_amount(
+        env: Env,
+        caller: Address,
+        amount: i128,
+    ) -> Result<(), ContractError> {
+        admin::set_min_withdrawal_amount(&env, &caller, amount)
+    }
+
+    /// Get the minimum withdrawal amount.
+    pub fn get_min_withdrawal_amount(env: Env) -> i128 {
+        storage::get_min_withdrawal_amount(&env)
+    }
+
+    /// Configure the contract-level withdrawal circuit breaker. Admin only.
+    ///
+    /// When enabled, gross withdrawal volume is tracked in a bounded set of
+    /// buckets. Exceeding `threshold` within `window_secs` auto-pauses the
+    /// contract before the withdrawal transfers funds.
+    pub fn set_circuit_breaker_config(
+        env: Env,
+        caller: Address,
+        enabled: bool,
+        threshold: i128,
+        window_secs: u64,
+        bucket_count: u32,
+    ) -> Result<(), ContractError> {
+        circuit_breaker::configure(&env, &caller, enabled, threshold, window_secs, bucket_count)
+    }
+
+    /// Clear circuit-breaker volume buckets and unpause if the breaker tripped.
+    pub fn reset_circuit_breaker(env: Env, caller: Address) -> Result<(), ContractError> {
+        circuit_breaker::reset(&env, &caller)
+    }
+
+    /// Return current withdrawal circuit breaker configuration.
+    pub fn get_circuit_breaker_config(env: Env) -> crate::types::CircuitBreakerConfig {
+        circuit_breaker::get_config(&env)
+    }
+
+    /// Return current withdrawal circuit breaker fixed-bucket state.
+    pub fn get_circuit_breaker_status(env: Env) -> crate::types::CircuitBreakerStatus {
+        circuit_breaker::get_status(&env)
+    }
+
+    /// Set the maximum sender contribution to a creator's leaderboard score in basis points.
+    /// Admin only.
+    pub fn set_max_sender_contribution(
+        env: Env,
+        caller: Address,
+        bps: u32,
+    ) -> Result<(), ContractError> {
+        admin::set_max_sender_contribution(&env, &caller, bps)
     }
 
     /// Update rate limit configuration. Admin only.
@@ -565,6 +872,13 @@ impl TipzContract {
                 max_ops,
                 window_secs,
             },
+        );
+        admin::log_admin_action(
+            &env,
+            &caller,
+            soroban_sdk::Symbol::new(&env, "set_rate_limit_config"),
+            String::from_str(&env, ""),
+            admin::u32_to_string(&env, max_ops),
         );
         Ok(())
     }
@@ -611,6 +925,10 @@ impl TipzContract {
         verification::get_verification_status(&env, creator)
     }
 
+    pub fn is_verification_expired(env: Env, creator: Address) -> Result<bool, ContractError> {
+        verification::is_verification_expired(&env, creator)
+    }
+
     // ──────────────────────────────────────────────
     // Subscriptions
 
@@ -638,6 +956,10 @@ impl TipzContract {
         creator: Address,
     ) -> Result<(), ContractError> {
         subscription::execute_due_subscription(&env, subscriber, creator)
+    }
+
+    pub fn execute_subscriptions(env: Env, limit: u32) -> Result<u32, ContractError> {
+        subscription::execute_subscriptions(&env, limit)
     }
 
     pub fn get_subscriptions(env: Env, subscriber: Address) -> Vec<crate::types::Subscription> {
@@ -685,6 +1007,15 @@ impl TipzContract {
         multisig::approve_action(&env, &signer, proposal_id)
     }
 
+    /// Cancel a proposal (only the proposer can cancel)
+    pub fn cancel_proposal(
+        env: Env,
+        proposer: Address,
+        proposal_id: u32,
+    ) -> Result<(), ContractError> {
+        multisig::cancel_proposal(&env, &proposer, proposal_id)
+    }
+
     /// Get all pending proposals
     pub fn get_pending_proposals(env: Env) -> Vec<multisig::Proposal> {
         multisig::get_pending_proposals(&env)
@@ -719,11 +1050,7 @@ impl TipzContract {
     /// Set a custom minimum tip amount for a creator profile.
     ///
     /// Pass `0` to reset to the global minimum.
-    pub fn set_min_tip(
-        env: Env,
-        creator: Address,
-        min_amount: i128,
-    ) -> Result<(), ContractError> {
+    pub fn set_min_tip(env: Env, creator: Address, min_amount: i128) -> Result<(), ContractError> {
         profile::set_min_tip(&env, creator, min_amount)
     }
 
@@ -733,11 +1060,7 @@ impl TipzContract {
     }
 
     /// Set the domain to verify via stellar.toml (marks verification as pending).
-    pub fn set_domain(
-        env: Env,
-        creator: Address,
-        domain: String,
-    ) -> Result<(), ContractError> {
+    pub fn set_domain(env: Env, creator: Address, domain: String) -> Result<(), ContractError> {
         profile::set_domain(&env, creator, domain)
     }
 
@@ -783,11 +1106,7 @@ impl TipzContract {
     }
 
     /// Admin confirms domain verification after off-chain stellar.toml check.
-    pub fn verify_domain(
-        env: Env,
-        caller: Address,
-        creator: Address,
-    ) -> Result<(), ContractError> {
+    pub fn verify_domain(env: Env, caller: Address, creator: Address) -> Result<(), ContractError> {
         admin::verify_domain(&env, &caller, &creator)
     }
 
@@ -890,7 +1209,15 @@ impl TipzContract {
         message: String,
         is_anonymous: bool,
     ) -> Result<(), ContractError> {
-        multitoken::send_tip_token(&env, &tipper, &creator, amount, &token, &message, is_anonymous)
+        multitoken::send_tip_token(
+            &env,
+            &tipper,
+            &creator,
+            amount,
+            &token,
+            &message,
+            is_anonymous,
+        )
     }
 
     /// Withdraw accumulated tips in a specific token
@@ -926,11 +1253,7 @@ impl TipzContract {
     /// - [`ContractError::NotTipper`] - Caller is not the tipper
     /// - [`ContractError::RefundWindowExpired`] - Request window has passed
     /// - [`ContractError::RefundAlreadyRequested`] - Refund already requested
-    pub fn request_refund(
-        env: Env,
-        tipper: Address,
-        tip_id: u32,
-    ) -> Result<(), ContractError> {
+    pub fn request_refund(env: Env, tipper: Address, tip_id: u32) -> Result<(), ContractError> {
         refund::request_refund(&env, &tipper, tip_id)
     }
 
@@ -947,11 +1270,7 @@ impl TipzContract {
     /// - [`ContractError::NoRefundRequest`] - No refund request exists
     /// - [`ContractError::NotCreator`] - Caller is not the creator
     /// - [`ContractError::RefundAlreadyProcessed`] - Refund already processed
-    pub fn approve_refund(
-        env: Env,
-        creator: Address,
-        tip_id: u32,
-    ) -> Result<(), ContractError> {
+    pub fn approve_refund(env: Env, creator: Address, tip_id: u32) -> Result<(), ContractError> {
         refund::approve_refund(&env, &creator, tip_id)
     }
 
@@ -968,11 +1287,7 @@ impl TipzContract {
     /// - [`ContractError::NoRefundRequest`] - No refund request exists
     /// - [`ContractError::NotCreator`] - Caller is not the creator
     /// - [`ContractError::RefundAlreadyProcessed`] - Refund already processed
-    pub fn reject_refund(
-        env: Env,
-        creator: Address,
-        tip_id: u32,
-    ) -> Result<(), ContractError> {
+    pub fn reject_refund(env: Env, creator: Address, tip_id: u32) -> Result<(), ContractError> {
         refund::reject_refund(&env, &creator, tip_id)
     }
 
@@ -993,6 +1308,25 @@ impl TipzContract {
         refund::process_pending_refunds(&env, tip_ids)
     }
 
+    /// Process pending refunds using the on-chain refund index and a resumable cursor.
+    pub fn process_pending_refunds_from(
+        env: Env,
+        cursor: u32,
+        limit: u32,
+    ) -> Result<(u32, u32), ContractError> {
+        refund::process_pending_refunds_from(&env, cursor, limit)
+    }
+
+    /// Expire a pending refund request that has exceeded the TTL.
+    ///
+    /// This removes the expired refund request from storage.
+    ///
+    /// # Parameters
+    /// - `tip_id` - The ID of the tip with the refund request to expire
+    pub fn expire_refund(env: Env, tip_id: u32) -> Result<(), ContractError> {
+        refund::expire_refund(&env, tip_id)
+    }
+
     /// Get refund request by tip ID.
     ///
     /// Returns the refund request details if one exists for the given tip.
@@ -1002,10 +1336,7 @@ impl TipzContract {
     ///
     /// # Returns
     /// The refund request if it exists, None otherwise
-    pub fn get_refund_request(
-        env: Env,
-        tip_id: u32,
-    ) -> Option<types::RefundRequest> {
+    pub fn get_refund_request(env: Env, tip_id: u32) -> Option<types::RefundRequest> {
         refund::get_refund_request(&env, tip_id)
     }
 

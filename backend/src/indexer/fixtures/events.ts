@@ -48,47 +48,56 @@ export const goalReachedEvent: DecodedEvent = {
   value: [ADDR_A, '5000000', '5000000'],
 };
 
+/** Sample decoded goal_completed event for indexer tests. */
+export const goalCompletedEvent: DecodedEvent = {
+  ledger: 105,
+  txHash: 'fixture-goal-completed-tx-001',
+  pagingToken: '105-0',
+  topic: 'goal_completed',
+  value: [ADDR_A, '1735000000', '5000000', '5000000', '105'],
+};
+
 /** Sample decoded goal_cancel event for indexer tests. */
 export const goalCancelEvent: DecodedEvent = {
-  ledger: 105,
+  ledger: 106,
   txHash: 'fixture-goal-cancel-tx-001',
-  pagingToken: '105-0',
+  pagingToken: '106-0',
   topic: 'goal_cancel',
   value: ADDR_A,
 };
 
 /** Sample decoded sub_created event for indexer tests. */
 export const subCreatedEvent: DecodedEvent = {
-  ledger: 106,
+  ledger: 107,
   txHash: 'fixture-sub-created-tx-001',
-  pagingToken: '106-0',
+  pagingToken: '107-0',
   topic: 'sub_created',
   value: [ADDR_A, ADDR_B, '500000', 30],
 };
 
 /** Sample decoded sub_exec event for indexer tests. */
 export const subExecEvent: DecodedEvent = {
-  ledger: 107,
+  ledger: 108,
   txHash: 'fixture-sub-exec-tx-001',
-  pagingToken: '107-0',
+  pagingToken: '108-0',
   topic: 'sub_exec',
   value: [ADDR_A, ADDR_B, '500000'],
 };
 
 /** Sample decoded sub_cancel event for indexer tests. */
 export const subCancelEvent: DecodedEvent = {
-  ledger: 108,
+  ledger: 109,
   txHash: 'fixture-sub-cancel-tx-001',
-  pagingToken: '108-0',
+  pagingToken: '109-0',
   topic: 'sub_cancel',
   value: [ADDR_A, ADDR_B],
 };
 
 /** Sample decoded credit_updated event for indexer tests. */
 export const creditUpdatedEvent: DecodedEvent = {
-  ledger: 109,
+  ledger: 110,
   txHash: 'fixture-credit-tx-001',
-  pagingToken: '109-0',
+  pagingToken: '110-0',
   topic: 'credit_updated',
   value: [ADDR_A, 40, 65],
 };
@@ -110,9 +119,11 @@ export const fullFixtureEventPage = {
     profileUpdatedEvent,
     goalSetEvent,
     goalReachedEvent,
+    goalCompletedEvent,
+    goalCancelEvent,
     subCreatedEvent,
     subExecEvent,
     creditUpdatedEvent,
   ],
-  latestLedger: 109,
+  latestLedger: 110,
 };
