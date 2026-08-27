@@ -199,17 +199,17 @@ fn test_deregister_profile_removes_from_leaderboard() {
         storage::set_profile(&env, &profile);
 
         // Manually add to leaderboard
-        crate::leaderboard::update_leaderboard(&env, &profile);
+        crate::leaderboard::update_leaderboard(&env, &profile, crate::types::LeaderboardPeriod::AllTime, profile.total_tips_received);
     });
 
     // Verify profile is on leaderboard before deregistration
     let is_on_leaderboard_before = env.as_contract(&contract_id, || {
-        crate::leaderboard::is_on_leaderboard(&env, &caller)
+        crate::leaderboard::is_on_leaderboard(&env, crate::types::LeaderboardPeriod::AllTime, &caller)
     });
     assert!(is_on_leaderboard_before);
 
     // Get leaderboard size before deregistration
-    let leaderboard_before = client.get_leaderboard(&0);
+    let leaderboard_before = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &100);
     let size_before = leaderboard_before.len();
 
     // Deregister the profile
@@ -217,12 +217,12 @@ fn test_deregister_profile_removes_from_leaderboard() {
 
     // Verify profile is not on leaderboard after deregistration
     let is_on_leaderboard_after = env.as_contract(&contract_id, || {
-        crate::leaderboard::is_on_leaderboard(&env, &caller)
+        crate::leaderboard::is_on_leaderboard(&env, crate::types::LeaderboardPeriod::AllTime, &caller)
     });
     assert!(!is_on_leaderboard_after);
 
     // Verify leaderboard size decreased by one
-    let leaderboard_after = client.get_leaderboard(&0);
+    let leaderboard_after = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &100);
     let size_after = leaderboard_after.len();
     assert_eq!(size_after, size_before - 1);
 }
@@ -239,7 +239,7 @@ fn test_deregister_profile_when_paused() {
 
     // Pause the contract
     env.as_contract(&contract_id, || {
-        storage::set_paused(&env, true);
+        storage::set_pause_flag(&env, crate::types::PauseFlag::All, true);
     });
 
     // Attempt to deregister while paused
@@ -271,3 +271,5 @@ fn test_decrement_total_creators_underflow_protection() {
     let count_after = env.as_contract(&contract_id, || storage::get_total_creators(&env));
     assert_eq!(count_after, 0);
 }
+
+

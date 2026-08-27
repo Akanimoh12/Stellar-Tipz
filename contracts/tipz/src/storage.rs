@@ -112,8 +112,6 @@ pub enum DataKey {
     CreatorTip(Address, u32),
     /// Pending two-step admin change proposal (full transition record).
     PendingAdminChange,
-    /// Admin change history list (newest entries appended last).
-    AdminChangeHistory,
     /// Pending verification request by creator address
     VerificationRequest(Address),
     /// Subscription by (subscriber, creator)
@@ -172,9 +170,11 @@ pub enum DataKey {
     ReentrancyGuard,
 }
 
-/// Extended storage keys for new features (separate enum to avoid size limits)
+/// Extended storage keys for additional features (separate enum to avoid size limits)
 #[contracttype]
 pub enum ExtendedDataKey {
+    /// Admin change history list (newest entries appended last).
+    AdminChangeHistory,
     /// Active goal for a creator
     ActiveGoal(Address),
     /// Archived goals for a creator
@@ -189,6 +189,8 @@ pub enum ExtendedDataKey {
     RefundRequest(u32),
     /// Refund configuration
     RefundConfig,
+    /// Cumulative tip volume from a specific sender to a specific creator (for leaderboard concentration cap).
+    SenderCreatorVolume(Address, Address),
     /// Number of pending refund requests tracked for cursor-based iteration.
     PendingRefundCount,
     /// Pending refund request tip ID by dense index.
@@ -257,11 +259,15 @@ pub struct RuntimeConfig {
     pub fee_bps: u32,
     pub fee_change_delay_ledgers: u32,
     pub native_token: Address,
-    pub paused: bool,
+    /// Bitmask of paused operations (see `PauseFlag`).
+    /// Global pause is represented by `PauseFlag::All`.
+    pub pause_flags: u32,
     pub min_tip_amount: i128,
     pub rate_limit: RateLimitConfig,
     /// Domain re-verification interval in seconds (default 30 days)
     pub domain_reverify_secs: u64,
+    /// Maximum sender contribution to a creator's leaderboard score in basis points (default 5000 = 50%).
+    pub max_sender_contribution_bps: u32,
 }
 
 /// All leaderboard periods cached under one key for write-heavy operations.
@@ -381,18 +387,30 @@ pub fn set_native_token(env: &Env, addr: &Address) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Pause state
+// Pause state (granular, bitmask-based)
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Returns `true` when the contract is paused.
-pub fn is_paused(env: &Env) -> bool {
+/// Returns `true` when the specific operation is paused.
+/// Checks both the specific flag and the global `PauseFlag::All`.
+pub fn is_paused(env: &Env, flag: crate::types::PauseFlag) -> bool {
     if let Some(config) = get_runtime_config(env) {
-        return config.paused;
+        let flags = config.pause_flags;
+        return crate::types::PauseFlag::is_set(flags, flag) || crate::types::PauseFlag::is_set(flags, crate::types::PauseFlag::All);
     }
-    env.storage()
+    // Fallback to legacy Paused key (bool) for backwards compatibility
+    let legacy_paused: bool = env.storage()
         .instance()
         .get(&DataKey::Paused)
-        .unwrap_or(false)
+        .unwrap_or(false);
+    if legacy_paused {
+        return true;
+    }
+    false
+}
+
+/// Returns `true` when the contract is globally paused (legacy compatibility).
+pub fn is_globally_paused(env: &Env) -> bool {
+    is_paused(env, crate::types::PauseFlag::All)
 }
 
 /// Returns the timestamp when the contract was paused, or None if not paused.
@@ -400,13 +418,13 @@ pub fn get_paused_at(env: &Env) -> Option<u64> {
     env.storage().instance().get(&ExtendedDataKey::PausedAt)
 }
 
-/// Sets the paused flag and tracks paused_at timestamp.
-pub fn set_paused(env: &Env, paused: bool) {
-    env.storage().instance().set(&DataKey::Paused, &paused);
+/// Sets the pause flags bitmask and tracks paused_at timestamp.
+pub fn set_pause_flags(env: &Env, flags: u32) {
+    env.storage().instance().set(&DataKey::Paused, &flags);
     update_runtime_config(env, |config| {
-        config.paused = paused;
+        config.pause_flags = flags;
     });
-    if paused {
+    if crate::types::PauseFlag::is_set(flags, crate::types::PauseFlag::All) {
         if get_paused_at(env).is_none() {
             env.storage()
                 .instance()
@@ -428,6 +446,24 @@ pub fn set_migration_state(env: &Env, state: &crate::types::MigrationState) {
 
 pub fn remove_migration_state(env: &Env) {
     env.storage().instance().remove(&ExtendedDataKey::MigrationState);
+}
+
+/// Sets a specific pause flag.
+pub fn set_pause_flag(env: &Env, flag: crate::types::PauseFlag, enabled: bool) {
+    let current = if let Some(config) = get_runtime_config(env) {
+        config.pause_flags
+    } else {
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(0u32)
+    };
+    let new_flags = if enabled {
+        crate::types::PauseFlag::set(current, flag)
+    } else {
+        crate::types::PauseFlag::clear(current, flag)
+    };
+    set_pause_flags(env, new_flags);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -683,7 +719,7 @@ pub fn append_admin_audit_entry(
 fn load_admin_change_history(env: &Env) -> soroban_sdk::Vec<crate::types::AdminChangeHistoryEntry> {
     env.storage()
         .instance()
-        .get(&DataKey::AdminChangeHistory)
+        .get(&ExtendedDataKey::AdminChangeHistory)
         .unwrap_or(soroban_sdk::Vec::new(env))
 }
 
@@ -692,6 +728,7 @@ pub fn get_admin_change_history_next_id(env: &Env) -> u32 {
 }
 
 /// Append a completed admin change to history (sequential ids, newest has highest id).
+/// Enforces maximum history entries limit.
 pub fn append_admin_change_history(env: &Env, entry: &crate::types::AdminChangeHistoryEntry) {
     let mut history = load_admin_change_history(env);
     if history.len() >= ADMIN_AUDIT_LOG_CAPACITY {
@@ -700,7 +737,7 @@ pub fn append_admin_change_history(env: &Env, entry: &crate::types::AdminChangeH
     history.push_back(entry.clone());
     env.storage()
         .instance()
-        .set(&DataKey::AdminChangeHistory, &history);
+        .set(&ExtendedDataKey::AdminChangeHistory, &history);
 }
 
 pub fn get_admin_change_history_entry(
@@ -872,7 +909,7 @@ pub fn set_runtime_config(env: &Env, config: &RuntimeConfig) {
         .set(&CacheKey::RuntimeConfig, config);
 }
 
-fn update_runtime_config<F>(env: &Env, update: F)
+pub fn update_runtime_config<F>(env: &Env, update: F)
 where
     F: FnOnce(&mut RuntimeConfig),
 {
@@ -1104,6 +1141,14 @@ pub fn add_tipper_tip(env: &Env, tipper: &Address, tip_id: u32) {
         .temporary()
         .set(&count_key, &(local_index + 1));
     set_tip_ttl(env, &count_key);
+}
+
+/// Returns the number of subscriptions for a subscriber.
+pub fn get_subscriber_sub_count(env: &Env, subscriber: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::SubscriberSubCount(subscriber.clone()))
+        .unwrap_or(0)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1494,6 +1539,36 @@ pub fn reset_creator_period_volume(env: &Env, creator: &Address, period: Leaderb
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Sender-Creator Volume Tracking (for leaderboard concentration cap)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the cumulative tip volume from a specific sender to a specific creator.
+pub fn get_sender_creator_volume(env: &Env, sender: &Address, creator: &Address) -> i128 {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::SenderCreatorVolume(sender.clone(), creator.clone()))
+        .unwrap_or(0)
+}
+
+/// Adds `amount` to the cumulative tip volume from sender to creator.
+pub fn add_sender_creator_volume(env: &Env, sender: &Address, creator: &Address, amount: i128) -> i128 {
+    let current = get_sender_creator_volume(env, sender, creator);
+    let next = current.saturating_add(amount);
+    env.storage().instance().set(
+        &ExtendedDataKey::SenderCreatorVolume(sender.clone(), creator.clone()),
+        &next,
+    );
+    next
+}
+
+/// Resets the sender-creator volume (e.g., for testing or admin cleanup).
+pub fn reset_sender_creator_volume(env: &Env, sender: &Address, creator: &Address) {
+    env.storage()
+        .instance()
+        .remove(&ExtendedDataKey::SenderCreatorVolume(sender.clone(), creator.clone()));
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Creator counter
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -1725,6 +1800,10 @@ pub fn remove_active_subscription(env: &Env, subscriber: &Address, creator: &Add
         .persistent()
         .set(&ExtendedDataKey::ActiveSubscriptions, &new_subs);
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Scheduled Tip storage functions
+// ──────────────────────────────────────────────────────────────────────────────
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Tests

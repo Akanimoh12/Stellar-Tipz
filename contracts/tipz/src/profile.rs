@@ -40,7 +40,9 @@ pub fn register_profile(
 ) -> Result<Profile, ContractError> {
     storage::extend_instance_ttl(env);
 
-    crate::admin::require_not_paused(env)?;
+    if storage::is_paused(env, crate::types::PauseFlag::Registration) || storage::is_paused(env, crate::types::PauseFlag::All) {
+        return Err(ContractError::ContractPaused);
+    }
 
     // Require explicit authorisation from the caller.
     caller.require_auth();
@@ -50,10 +52,9 @@ pub fn register_profile(
         return Err(ContractError::NotInitialized);
     }
 
-    // --- DoS protection: max profiles and registration rate limiting ---
+    // --- DoS protection: max profiles ---
 
     validation::validate_profile_count(env)?;
-    validation::validate_registration_rate_limit(env, &caller)?;
 
     // --- Input validation (centralized in validation module) ---
 
@@ -96,6 +97,11 @@ pub fn register_profile(
     if storage::get_username_address(env, &username).is_some() {
         return Err(ContractError::UsernameTaken);
     }
+
+    // --- Registration rate limiting (must come AFTER duplicate checks so the
+    // counter increment is committed — Soroban rolls back storage on Err) ---
+
+    validation::validate_registration_rate_limit(env, &caller)?;
 
     // --- Build and persist the profile ---
 
@@ -210,6 +216,44 @@ pub fn update_profile(
         profile.x_handle = normalized_x;
     }
 
+    profile.updated_at = env.ledger().timestamp();
+
+    storage::set_profile(env, &profile);
+
+    // Bump TTL for both Profile and UsernameToAddress together.
+    storage::bump_profile_ttl(env, &caller);
+    storage::bump_username_ttl(env, &profile.username);
+
+    events::emit_profile_updated(env, &caller);
+
+    Ok(())
+}
+
+/// Update social links for a profile with limit enforcement (max 5 links).
+pub fn update_social_links(
+    env: &Env,
+    caller: Address,
+    social_links: soroban_sdk::Map<soroban_sdk::Symbol, String>,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+
+    if storage::is_paused(env, crate::types::PauseFlag::Registration) || storage::is_paused(env, crate::types::PauseFlag::All) {
+        return Err(ContractError::ContractPaused);
+    }
+
+    caller.require_auth();
+
+    if !storage::has_profile(env, &caller) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    // Enforce max social links limit
+    if social_links.len() > crate::types::MAX_SOCIAL_LINKS {
+        return Err(ContractError::StorageLimitExceeded);
+    }
+
+    let mut profile = storage::get_profile(env, &caller);
+    profile.social_links = social_links;
     profile.updated_at = env.ledger().timestamp();
 
     storage::set_profile(env, &profile);
@@ -407,8 +451,8 @@ pub fn set_donation_page(
         return Err(ContractError::MessageTooLong);
     }
 
-    if config.suggested_amounts.len() > 6 {
-        return Err(ContractError::InvalidAmount);
+    if config.suggested_amounts.len() > crate::types::MAX_SUGGESTED_AMOUNTS {
+        return Err(ContractError::StorageLimitExceeded);
     }
 
     if config.header_image_uri.len() > 256 {
@@ -578,7 +622,9 @@ pub fn is_profile_inactive_eligible(env: &Env, address: &Address) -> bool {
     if last_active == 0 {
         // Check registration time instead
         if let Some(profile) = storage::get_profile_opt(env, address) {
-            return now >= profile.registered_at.saturating_add(INACTIVE_PROFILE_THRESHOLD_SECS);
+            if now >= profile.registered_at.saturating_add(INACTIVE_PROFILE_THRESHOLD_SECS) {
+                return profile.balance == 0;
+            }
         }
         return false;
     }

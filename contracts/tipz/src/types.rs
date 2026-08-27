@@ -38,6 +38,27 @@ pub const MAX_REGISTRATIONS_PER_WINDOW: u32 = 20;
 /// Storage cost ceiling per operation in stroops (for analysis).
 pub const STORAGE_COST_CEILING: i128 = 100_000_000;
 
+/// Maximum social links per profile.
+pub const MAX_SOCIAL_LINKS: u32 = 5;
+
+/// Maximum subscriptions per subscriber.
+pub const MAX_SUBSCRIPTIONS_PER_SUBSCRIBER: u32 = 20;
+
+/// Maximum tip index entries per creator/tipper (TTL-bounded).
+pub const MAX_TIP_INDEX_ENTRIES: u32 = 1000;
+
+/// Maximum pending withdrawals per creator.
+pub const MAX_PENDING_WITHDRAWALS_PER_CREATOR: u32 = 10;
+
+/// Maximum admin change history entries.
+pub const MAX_ADMIN_HISTORY_ENTRIES: u32 = 50;
+
+/// Maximum suggested tip amounts in donation page config.
+pub const MAX_SUGGESTED_AMOUNTS: u32 = 6;
+
+/// Default maximum sender contribution to leaderboard in basis points (50%).
+pub const DEFAULT_MAX_SENDER_CONTRIBUTION_BPS: u32 = 5000;
+
 /// Verification type for creator profiles.
 ///
 /// `Unverified` is the default state — it replaces `Option::None` so that
@@ -61,6 +82,52 @@ pub enum LeaderboardPeriod {
     AllTime,
     Monthly,
     Weekly,
+}
+
+/// Pause flags for granular contract pause control.
+/// Uses bitmask for efficient storage (single u32).
+#[contracttype]
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum PauseFlag {
+    None = 0,
+    Tips = 1,
+    Withdrawals = 2,
+    Registration = 4,
+    Subscriptions = 8,
+    Refunds = 16,
+    All = 0xFFFFFFFF,
+}
+
+impl PauseFlag {
+    /// Check if a specific flag is set in the bitmask.
+    pub fn is_set(flags: u32, flag: PauseFlag) -> bool {
+        flags & (flag as u32) != 0
+    }
+
+    /// Set a flag in the bitmask.
+    pub fn set(flags: u32, flag: PauseFlag) -> u32 {
+        flags | (flag as u32)
+    }
+
+    /// Clear a flag in the bitmask.
+    pub fn clear(flags: u32, flag: PauseFlag) -> u32 {
+        flags & !(flag as u32)
+    }
+
+    /// Convert from u32 to PauseFlag (for single flag values only).
+    pub fn from_u32(value: u32) -> PauseFlag {
+        match value {
+            0 => PauseFlag::None,
+            1 => PauseFlag::Tips,
+            2 => PauseFlag::Withdrawals,
+            4 => PauseFlag::Registration,
+            8 => PauseFlag::Subscriptions,
+            16 => PauseFlag::Refunds,
+            0xFFFFFFFF => PauseFlag::All,
+            _ => PauseFlag::None, // Default to None for unknown values
+        }
+    }
 }
 
 /// Verification status for a creator profile.
@@ -242,6 +309,10 @@ pub struct Tip {
     pub is_anonymous: bool,
     /// Whether the message is encrypted so only the recipient can read it
     pub is_encrypted: bool,
+    /// Pseudonymous handle for anonymous tips (derived from sender, creator, contract_salt).
+    /// Only present for anonymous tips; allows creator to identify repeat supporters
+    /// and process refunds without revealing the sender's address on-chain.
+    pub pseudonym: Option<soroban_sdk::Bytes>,
 }
 
 /// Supporter/creator streak record.

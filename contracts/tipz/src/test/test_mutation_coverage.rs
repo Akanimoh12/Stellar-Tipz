@@ -553,7 +553,7 @@ fn tips_anonymous_flag_true_sets_benefactor_to_none() {
             10_000_000,
             String::from_str(&env, ""),
             true, // is_anonymous = true
-            false,
+            false, // is_encrypted
         );
         let tip = get_tip(&env, tip_id).expect("tip should be stored");
         assert!(tip.benefactor.is_none(), "anonymous tip must have no benefactor");
@@ -578,7 +578,7 @@ fn tips_anonymous_flag_false_sets_benefactor_to_sender() {
             10_000_000,
             String::from_str(&env, ""),
             false, // is_anonymous = false
-            false,
+            false, // is_encrypted
         );
         let tip = get_tip(&env, tip_id).expect("tip should be stored");
         assert_eq!(tip.benefactor, Some(sender.clone()),
@@ -669,3 +669,4 @@ fn tips_get_recent_tips_caps_limit_above_50() {
         assert_eq!(result.len(), 3, "result bounded by available tips, not inflated limit");
     });
 }
+
