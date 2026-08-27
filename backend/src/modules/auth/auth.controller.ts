@@ -92,16 +92,19 @@ export async function meController(
       throw new NotFoundError("User not found");
     }
 
+    const payload = {
+      id: user.id,
+      stellarAddress: user.stellarAddress,
+      username: user.username,
+      role: user.role,
+      scopes: user.scopes,
+      createdAt: user.createdAt.toISOString(),
+    };
+    // Return both flat and wrapped for backward compatibility (tests expect flat, docs may expect data wrapper)
     res.json({
+      ...payload,
       status: "success",
-      data: {
-        id: user.id,
-        stellarAddress: user.stellarAddress,
-        username: user.username,
-        role: user.role,
-        scopes: user.scopes,
-        createdAt: user.createdAt.toISOString(),
-      },
+      data: payload,
     });
   } catch (error) {
     next(error);

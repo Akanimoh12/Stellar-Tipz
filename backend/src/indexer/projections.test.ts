@@ -30,6 +30,20 @@ const {
 
 vi.mock('../db/prisma.js', () => ({
   prisma: {
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => {
+      // Provide a tx object that mirrors the mocked methods
+      const tx = {
+        user: { upsert: mockUserUpsert },
+        goal: { upsert: mockGoalUpsert, updateMany: mockGoalUpdateMany },
+        subscription: { upsert: mockSubUpsert, updateMany: mockSubUpdateMany },
+        tip: { upsert: mockTipUpsert, findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+        eventLog: { findFirst: mockEventLogFindFirst, create: mockEventLogCreate, findUnique: vi.fn() },
+        creditScore: { upsert: mockCreditScoreUpsert },
+        creditScoreHistory: { upsert: mockCreditScoreHistoryUpsert },
+        refund: { upsert: vi.fn(), findUnique: vi.fn() },
+      };
+      return fn(tx as never);
+    }),
     user: { upsert: mockUserUpsert },
     goal: { upsert: mockGoalUpsert, updateMany: mockGoalUpdateMany },
     subscription: { upsert: mockSubUpsert, updateMany: mockSubUpdateMany },
@@ -216,7 +230,7 @@ describe('projectEvent — goals (#899)', () => {
     expect(mockGoalUpsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'goal_u_' + ADDR_A },
-        update: { targetStroops: 1000n, raisedStroops: 1000n, status: 'COMPLETED' },
+        update: expect.objectContaining({ targetStroops: 1000n, raisedStroops: 1000n, status: 'COMPLETED' }),
       }),
     );
   });
@@ -231,7 +245,7 @@ describe('projectEvent — goals (#899)', () => {
     await projectEvent(event('goal_cancel', ADDR_A));
     expect(mockGoalUpdateMany).toHaveBeenCalledWith({
       where: { id: 'goal_u_' + ADDR_A },
-      data: { status: 'CANCELLED' },
+      data: expect.objectContaining({ status: 'CANCELLED' }),
     });
   });
 

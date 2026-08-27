@@ -117,6 +117,11 @@ interface ParsedRefund {
   reason?: string;
 }
 
+/**
+ * Project a refund event. Wraps refund upsert + tip status update in a single
+ * transaction (isolation RepeatableRead, timeout 5000ms) to prevent partial state
+ * (refund without tip status). No external network calls are held inside.
+ */
 async function projectRefund(event: DecodedEvent): Promise<void> {
   const refund = parseRefund(event.value);
   if (!refund) {
@@ -124,33 +129,42 @@ async function projectRefund(event: DecodedEvent): Promise<void> {
     return;
   }
 
-  const tip = await prisma.tip.findUnique({ where: { txHash: refund.tipTxHash } });
-  if (!tip) {
-    logger.warn({ tipTxHash: refund.tipTxHash }, 'Refund event references unknown tip, skipping');
-    return;
-  }
+  await prisma.$transaction(
+    async (tx) => {
+      const tip = await tx.tip.findUnique({ where: { txHash: refund.tipTxHash } });
+      if (!tip) {
+        logger.warn({ tipTxHash: refund.tipTxHash }, 'Refund event references unknown tip, skipping');
+        return;
+      }
 
-  await prisma.refund.upsert({
-    where: { tipId: tip.id },
-    create: {
-      tipId: tip.id,
-      amount: refund.amount,
-      reason: refund.reason ?? '',
-      txHash: event.txHash,
-      status: 'completed',
-    },
-    update: {
-      amount: refund.amount,
-      reason: refund.reason ?? '',
-      txHash: event.txHash,
-      status: 'completed',
-    },
-  });
+      await tx.refund.upsert({
+        where: { tipId: tip.id },
+        create: {
+          tipId: tip.id,
+          amount: refund.amount,
+          reason: refund.reason ?? '',
+          txHash: event.txHash,
+          status: 'completed',
+        },
+        update: {
+          amount: refund.amount,
+          reason: refund.reason ?? '',
+          txHash: event.txHash,
+          status: 'completed',
+        },
+      });
 
-  await prisma.tip.update({
-    where: { id: tip.id },
-    data: { status: 'REFUNDED' },
-  });
+      await tx.tip.update({
+        where: { id: tip.id },
+        data: { status: 'REFUNDED' },
+      });
+    },
+    {
+      timeout: 5000,
+      maxWait: 2000,
+      isolationLevel: "RepeatableRead",
+    },
+  );
 }
 
 /**
@@ -293,10 +307,11 @@ async function projectGoalSet(event: DecodedEvent): Promise<void> {
       title,
       targetStroops,
       raisedStroops: 0n,
+      // version defaults to 0
       deadline: deadlineAt,
       status: 'ACTIVE',
     },
-    update: { title, targetStroops, deadline: deadlineAt, status: 'ACTIVE' },
+    update: { title, targetStroops, deadline: deadlineAt, status: 'ACTIVE', version: { increment: 1 } },
   });
 }
 
@@ -324,7 +339,7 @@ async function projectGoalReached(event: DecodedEvent): Promise<void> {
       raisedStroops,
       status: 'COMPLETED',
     },
-    update: { targetStroops, raisedStroops, status: 'COMPLETED' },
+    update: { targetStroops, raisedStroops, status: 'COMPLETED', version: { increment: 1 } },
   });
 }
 
@@ -336,7 +351,7 @@ async function projectGoalCancelled(event: DecodedEvent): Promise<void> {
   }
   const userId = await ensureUserId(creator);
   // updateMany is a no-op (not an error) when the creator has no goal row yet.
-  await prisma.goal.updateMany({ where: { id: goalId(userId) }, data: { status: 'CANCELLED' } });
+  await prisma.goal.updateMany({ where: { id: goalId(userId) }, data: { status: 'CANCELLED', version: { increment: 1 } } as never });
 }
 
 // ── Subscription projections (issue #900) ─────────────────────────────────────
@@ -440,33 +455,41 @@ async function projectCreditScoreUpdated(event: DecodedEvent): Promise<void> {
 
   const userId = await ensureUserId(creator);
 
-  // Upsert the current credit score
-  await prisma.creditScore.upsert({
-    where: { userId },
-    create: {
-      userId,
-      value: newScoreValue,
-      computedAt: new Date(),
-    },
-    update: {
-      value: newScoreValue,
-      computedAt: new Date(),
-    },
-  });
-
-  // Append to history only if a row with the same (userId, value, ledger) doesn't exist.
-  // Use a deterministic id to ensure idempotency on replay.
+  // Transactional: creditScore + history are updated atomically
+  // (isolation ReadCommitted, timeout 5000ms). No external calls inside.
   const historyId = `credit_history_${userId}_${event.ledger}`;
-  await prisma.creditScoreHistory.upsert({
-    where: { id: historyId },
-    create: {
-      id: historyId,
-      userId,
-      value: newScoreValue,
-      computedAt: new Date(),
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.creditScore.upsert({
+        where: { userId },
+        create: {
+          userId,
+          value: newScoreValue,
+          computedAt: new Date(),
+        },
+        update: {
+          value: newScoreValue,
+          computedAt: new Date(),
+        },
+      });
+
+      await tx.creditScoreHistory.upsert({
+        where: { id: historyId },
+        create: {
+          id: historyId,
+          userId,
+          value: newScoreValue,
+          computedAt: new Date(),
+        },
+        update: {},
+      });
     },
-    update: {},
-  });
+    {
+      timeout: 5000,
+      maxWait: 2000,
+      isolationLevel: "ReadCommitted",
+    },
+  );
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────

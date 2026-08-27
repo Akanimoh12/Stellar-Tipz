@@ -26,6 +26,8 @@ export const config = {
 
   auth: {
     jwtSecret: env.JWT_SECRET,
+    jwtSecrets: env.JWT_SECRETS,
+    jwtCurrentKid: env.JWT_CURRENT_KID,
     jwtExpiresIn: env.JWT_EXPIRES_IN,
     refreshTokenExpiresIn: env.REFRESH_TOKEN_EXPIRES_IN,
     challengeTtlSeconds: env.AUTH_CHALLENGE_TTL_SECONDS,

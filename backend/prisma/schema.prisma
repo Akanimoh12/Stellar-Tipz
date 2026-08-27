@@ -44,6 +44,8 @@ model User {
   streak               Streak?
 
   @@index([createdAt])
+  // Audit: where deletedAt null + orderBy createdAt (listProfiles)
+  @@index([deletedAt, createdAt])
 }
 
 /// API key for service/admin access and webhook integrations.
@@ -92,6 +94,15 @@ model Tip {
 
   @@index([toAddress, createdAt])
   @@index([fromAddress, createdAt])
+  // Audit: where/status/orderBy combinations
+  // equality status before range/sort createdAt
+  @@index([status, createdAt])
+  @@index([status, toAddress])
+  @@index([status, fromAddress])
+  @@index([tokenCode])
+  // Composite for filtered pagination: equality tokenCode + address before range createdAt
+  @@index([toAddress, tokenCode, createdAt])
+  @@index([fromAddress, tokenCode, createdAt])
 }
 
 /// Tracks indexer progress per event topic so it can resume after a restart.
@@ -125,6 +136,10 @@ model Withdrawal {
   confirmedAt DateTime?
 
   @@index([userId])
+  // Audit: history orderBy requestedAt, and status filter
+  @@index([userId, status])
+  @@index([userId, requestedAt])
+  @@index([status])
 }
 
 /// Raw decoded on-chain event persisted for audit and replay.
@@ -146,6 +161,9 @@ model EventLog {
   @@index([topic])
   @@index([ledger])
   @@index([txHash])
+  // Audit: composite for topic+ledger range scans
+  @@index([topic, ledger])
+  @@index([ledger, topic])
 }
 
 /// Refund requests tied to a specific tip.
@@ -176,6 +194,9 @@ model Notification {
 
   @@index([userId, readAt])
   @@index([createdAt])
+  // Audit: list by userId ordered by createdAt (equality userId before sort createdAt)
+  @@index([userId, createdAt])
+  @@index([userId, readAt, createdAt])
 }
 
 /// Cached X (Twitter) account metrics.
@@ -211,6 +232,7 @@ model LeaderboardSnapshot {
 }
 
 /// Per-user tipping streak tracking. One row per user (userId is unique).
+/// Version column guards read-modify-write (optimistic locking) to prevent lost updates.
 model Streak {
   id            String    @id @default(cuid())
   userId        String    @unique
@@ -218,6 +240,7 @@ model Streak {
   currentStreak Int       @default(0)
   longestStreak Int       @default(0)
   lastTipDate   DateTime?
+  version       Int       @default(0)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -239,6 +262,10 @@ model AuthChallenge {
 
   @@index([stellarAddress])
   @@index([expiresAt])
+  // Audit: where stellarAddress+network+usedAt+expiresAt (equality stellarAddress, network before range expiresAt)
+  @@index([stellarAddress, network])
+  @@index([stellarAddress, network, expiresAt])
+  @@index([stellarAddress, network, usedAt])
 }
 
 /// Refresh token issued on login, stored hashed for rotation/revocation.
@@ -265,6 +292,7 @@ enum GoalStatus {
 }
 
 /// Creator-defined funding goal tracked against incoming tips.
+/// Version column guards read-modify-write increments to raisedStroops (optimistic locking).
 model Goal {
   id            String     @id @default(cuid())
   userId        String
@@ -272,6 +300,7 @@ model Goal {
   title         String
   targetStroops BigInt
   raisedStroops BigInt     @default(0)
+  version       Int        @default(0)
   deadline      DateTime?
   status        GoalStatus @default(ACTIVE)
   createdAt     DateTime   @default(now())
@@ -281,6 +310,7 @@ model Goal {
 
   @@index([userId])
   @@index([status])
+  @@index([userId, status])
 }
 
 /// Billing cadence for a recurring tip subscription.
@@ -361,11 +391,16 @@ model CreditScoreHistory {
   computedAt DateTime @default(now())
 
   @@index([userId])
+  // Audit: where userId + orderBy computedAt
+  @@index([userId, computedAt])
 }
 
 /// Pre-aggregated daily platform analytics, one row per calendar day (UTC).
 /// Populated by a scheduled job so dashboards can read trends without scanning
 /// the raw Tip/User tables.
+/// Version column guards concurrent increments (optimistic locking); primary
+/// mutation path uses atomic increment (no read-then-write) so version is
+/// for the rare read-modify-write path.
 model AnalyticsDaily {
   id          String   @id @default(cuid())
   /// Calendar day (UTC) this aggregate covers; one row per day.
@@ -378,6 +413,7 @@ model AnalyticsDaily {
   newUsers    Int      @default(0)
   /// Distinct users that sent or received a tip on this day.
   activeUsers Int      @default(0)
+  version     Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }

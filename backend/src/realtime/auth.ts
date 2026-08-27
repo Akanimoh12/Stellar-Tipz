@@ -1,12 +1,13 @@
 import type { Socket } from 'socket.io';
-import jwt from 'jsonwebtoken';
-import { config } from '../config/index.js';
 import { logger } from '../common/utils/logger.js';
 import type { AuthUser } from '../modules/auth/auth.types.js';
+import { verifyAccessToken } from '../modules/auth/jwt.js';
+import type { AuthPayload } from '../modules/auth/auth.types.js';
 
 interface JwtPayload {
   sub: string;
   stellarAddress: string;
+  userId?: string;
 }
 
 export interface AuthenticatedSocket extends Socket {
@@ -29,13 +30,14 @@ export function socketAuth(socket: AuthenticatedSocket, next: (err?: Error) => v
   }
 
   try {
-    const payload = jwt.verify(token, config.auth.jwtSecret) as JwtPayload;
+    const payload = verifyAccessToken(token) as AuthPayload & JwtPayload;
+    const uid = (payload as unknown as JwtPayload).sub ?? payload.userId;
     socket.authUser = {
-      id: payload.sub,
+      id: uid,
       stellarAddress: payload.stellarAddress,
       username: null,
     };
-    logger.debug({ socketId: socket.id, userId: payload.sub }, 'Socket authenticated');
+    logger.debug({ socketId: socket.id, userId: uid }, 'Socket authenticated');
     next();
   } catch (err) {
     logger.warn({ socketId: socket.id, err }, 'Socket connection rejected: invalid token');

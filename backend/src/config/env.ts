@@ -25,6 +25,20 @@ const envSchema = z.object({
   REDIS_URL: z.string().url(),
 
   JWT_SECRET: z.string().min(8),
+  /**
+   * Optional JSON or comma-separated map of kid->secret for key rotation.
+   * Supported formats:
+   *  - JSON object: '{"kid1":"secret1","kid2":"secret2"}'
+   *  - JSON array:  '[{"kid":"kid1","secret":"secret1"}]'
+   *  - CSV:         'kid1:secret1,kid2:secret2'
+   * When absent, single-secret mode is used (kid="primary").
+   * Rotation: add new kid/secret to this map, set JWT_CURRENT_KID to the new kid,
+   * keep old keys for at least 2× JWT_EXPIRES_IN (documented window) to allow
+   * in-flight tokens to expire, then remove the retired kid.
+   */
+  JWT_SECRETS: z.string().optional(),
+  /** Kid to use when signing new tokens. Must exist in JWT_SECRETS when rotation is configured. */
+  JWT_CURRENT_KID: z.string().optional(),
   /** Access token TTL — must be a duration string like "15m" or "1h". */
   JWT_EXPIRES_IN: durationString.default('15m'),
   /** Refresh token TTL — must be a duration string like "7d" or "30d". */
