@@ -83,7 +83,8 @@ async function generateRefreshToken(
   userId: string,
   metadata: SessionMetadata,
   sessionId = randomBytes(16).toString("hex"),
-): Promise<{ token: string; id: string }> {
+  familyId = sessionId,
+): Promise<{ token: string; id: string; familyId: string }> {
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(
     Date.now() + parseDuration(env.REFRESH_TOKEN_EXPIRES_IN),
@@ -93,6 +94,7 @@ async function generateRefreshToken(
     data: {
       userId,
       sessionId,
+      familyId,
       hashedToken: hashToken(token),
       expiresAt,
       device: metadata.device,
@@ -101,7 +103,7 @@ async function generateRefreshToken(
     },
   });
 
-  return { token, id: record.sessionId };
+  return { token, id: record.sessionId, familyId: record.familyId };
 }
 
 /**
@@ -303,12 +305,16 @@ export async function verifyChallenge(
 
 /**
  * Refreshes an access token using a refresh token.
+ * Implements rotation, reuse detection, and family revocation (issue #080):
+ * - Each refresh issues a new token and invalidates the old one
+ * - Reuse of an already-rotated token revokes the entire family and logs a security event
+ * - Tokens are stored hashed (see hashToken), familyId tracks lineage for revocation
  */
 export async function refreshToken(
   refreshToken: string,
   metadata: SessionMetadata = { device: "Unknown device", ipAddress: "unknown" },
 ): Promise<TokenPair> {
-  // Find the refresh token
+  // Find the refresh token (hashed lookup — raw token never persisted)
   const tokenRecord = await prisma.refreshToken.findUnique({
     where: { hashedToken: hashToken(refreshToken) },
     include: { user: true },
@@ -318,21 +324,80 @@ export async function refreshToken(
     throw new UnauthorizedError("Invalid refresh token");
   }
 
-  if (tokenRecord.revokedAt) {
-    throw new UnauthorizedError("Refresh token revoked");
-  }
-
+  // Expiry check before revocation logic — expired tokens are not reuse candidates
   if (tokenRecord.expiresAt < new Date()) {
     throw new UnauthorizedError("Refresh token expired");
   }
 
-  // Revoke old token
-  await prisma.refreshToken.update({
-    where: { id: tokenRecord.id },
-    data: { revokedAt: new Date() },
+  // Reuse detection: token was already rotated/revoked. This is a potential theft signal.
+  // We revoke the entire family (all tokens sharing the same familyId) and log a security event.
+  // The familyId field tracks lineage; fallback to sessionId for backward compatibility with pre-migration rows.
+  if (tokenRecord.revokedAt) {
+    const familyId = (tokenRecord as { familyId?: string }).familyId ?? tokenRecord.sessionId;
+
+    // Revoke entire family atomically — self-healing: attacker and legitimate user both must re-auth
+    await prisma.refreshToken.updateMany({
+      where: {
+        familyId,
+        revokedAt: null,
+      },
+      data: { revokedAt: new Date() },
+    });
+    // Also handle legacy rows where familyId may not yet be set but sessionId matches
+    await prisma.refreshToken.updateMany({
+      where: {
+        sessionId: tokenRecord.sessionId,
+        revokedAt: null,
+      },
+      data: { revokedAt: new Date() },
+    });
+
+    logger.warn(
+      {
+        userId: tokenRecord.userId,
+        sessionId: tokenRecord.sessionId,
+        familyId,
+        ip: metadata.ipAddress,
+        device: metadata.device,
+        tokenId: tokenRecord.id,
+        event: 'refresh_token_reuse_detected',
+      },
+      'SECURITY: Refresh token reuse detected — entire family revoked (potential theft)',
+    );
+
+    throw new UnauthorizedError("Refresh token reuse detected — family revoked");
+  }
+
+  // Normal rotation: revoke the old token and issue a new one in the same family/session
+  const familyId = (tokenRecord as { familyId?: string }).familyId ?? tokenRecord.sessionId;
+
+  // Use a transaction so revoke + create are atomic (no window where no valid token exists)
+  const newSession = await prisma.$transaction(async (tx) => {
+    await tx.refreshToken.update({
+      where: { id: tokenRecord.id },
+      data: { revokedAt: new Date(), lastUsedAt: new Date() },
+    });
+
+    const token = randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + parseDuration(env.REFRESH_TOKEN_EXPIRES_IN));
+
+    const record = await tx.refreshToken.create({
+      data: {
+        userId: tokenRecord.userId,
+        sessionId: tokenRecord.sessionId,
+        familyId,
+        hashedToken: hashToken(token),
+        expiresAt,
+        device: metadata.device,
+        ipAddress: metadata.ipAddress,
+        lastUsedAt: new Date(),
+      },
+    });
+
+    return { token, id: record.sessionId, familyId: record.familyId };
   });
 
-  // Generate new tokens with updated user info
+  // Generate new access token with updated user info and same sessionId
   const payload: AuthPayload = {
     userId: tokenRecord.userId,
     stellarAddress: tokenRecord.user.stellarAddress,
@@ -340,17 +405,15 @@ export async function refreshToken(
     scopes: tokenRecord.user.scopes,
   };
 
-  const newSession = await generateRefreshToken(
-    tokenRecord.userId,
-    metadata,
-    tokenRecord.sessionId,
-  );
   const accessToken = generateAccessToken({
     ...payload,
     sessionId: newSession.id,
   });
 
-  logger.info({ userId: tokenRecord.userId }, "Token refreshed successfully");
+  logger.info(
+    { userId: tokenRecord.userId, sessionId: newSession.id, familyId: newSession.familyId },
+    "Token refreshed successfully — rotated within family",
+  );
 
   return {
     accessToken,
