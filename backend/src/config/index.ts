@@ -115,6 +115,37 @@ export const config = {
     concurrency: env.OG_IMAGE_CONCURRENCY,
   },
 
+  timeouts: {
+    sorobanRpcMs: env.SOROBAN_RPC_TIMEOUT_MS,
+    horizonMs: env.HORIZON_TIMEOUT_MS,
+    ipfsMs: env.IPFS_TIMEOUT_MS,
+    xApiMs: env.X_API_TIMEOUT_MS,
+    requestMs: env.REQUEST_TIMEOUT_MS,
+  },
+
+  circuitBreaker: {
+    threshold: env.CIRCUIT_BREAKER_THRESHOLD,
+    resetTimeoutMs: env.CIRCUIT_BREAKER_RESET_TIMEOUT_MS,
+    rpcThreshold: env.RPC_CIRCUIT_BREAKER_THRESHOLD,
+    rpcResetTimeoutMs: env.RPC_CIRCUIT_BREAKER_RESET_TIMEOUT_MS,
+    horizonThreshold: env.HORIZON_CIRCUIT_BREAKER_THRESHOLD,
+    horizonResetTimeoutMs: env.HORIZON_CIRCUIT_BREAKER_RESET_TIMEOUT_MS,
+  },
+
+  retry: {
+    maxAttempts: env.RETRY_MAX_ATTEMPTS,
+    initialDelayMs: env.RETRY_INITIAL_DELAY_MS,
+    maxDelayMs: env.RETRY_MAX_DELAY_MS,
+    factor: env.RETRY_FACTOR,
+  },
+
+  payload: {
+    jsonLimit: env.JSON_BODY_LIMIT,
+    multerFileSize: env.MULTER_FILE_SIZE_LIMIT,
+    multerFiles: env.MULTER_FILES_LIMIT,
+    multerFields: env.MULTER_FIELDS_LIMIT,
+  },
+
   logging: {
     level: env.LOG_LEVEL,
     sentryDsn: env.SENTRY_DSN,

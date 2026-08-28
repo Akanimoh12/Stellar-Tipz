@@ -11,7 +11,9 @@ import { metricsController, metricsMiddleware } from './common/observability/met
 import { getSentryRequestHandler, getSentryErrorHandler } from './common/observability/sentry.js';
 import { logger } from './common/utils/logger.js';
 import { requestId } from './common/middleware/requestId.js';
+import { requestTimeoutAndSignal } from './common/middleware/requestTimeout.js';
 import { healthRouter } from './modules/health/health.routes.js';
+import { config } from './config/index.js';
 
 /**
  * HSTS max-age: 1 year (31536000 seconds).
@@ -164,9 +166,25 @@ export function createApp(): Express {
   );
   app.use(globalRateLimiter);
   app.use(requestId);
+  // Server-level timeout + client-disconnect AbortSignal (issue #090)
+  app.use(requestTimeoutAndSignal);
   app.use(metricsMiddleware);
-  // Must parse both JSON and CSP report bodies (browsers send application/csp-report)
-  app.use(express.json({ limit: '1mb', type: ['application/json', 'application/csp-report'] }));
+  /**
+   * Right-sized JSON limits (issue #077).
+   * Default is tight (100kb, configurable via JSON_BODY_LIMIT) — far below the old 1mb blanket.
+   * Routes that legitimately need more (tip/profile writes) get a larger explicit limit via
+   * adaptiveJsonLimit below. Oversized bodies are mapped to 413 PAYLOAD_TOO_LARGE in errorHandler.
+   */
+  const defaultJsonLimit = (config as unknown as { payload?: { jsonLimit: string } })?.payload?.jsonLimit ?? '100kb'; // e.g. '100kb'
+  const largeJsonLimit = '500kb';
+  // Paths that need larger JSON bodies (documented per-route override)
+  const largeJsonPrefixes = [`${(config as unknown as { server?: { apiBasePath: string } })?.server?.apiBasePath ?? '/api/v1'}/tips`, `${(config as unknown as { server?: { apiBasePath: string } })?.server?.apiBasePath ?? '/api/v1'}/profiles`, `${(config as unknown as { server?: { apiBasePath: string } })?.server?.apiBasePath ?? '/api/v1'}/auth`];
+  const adaptiveJsonLimit = (req: express.Request, _res: express.Response, next: express.NextFunction) => {
+    const needsLarge = largeJsonPrefixes.some((prefix) => req.path.startsWith(prefix) || req.originalUrl.startsWith(prefix));
+    const limit = needsLarge ? largeJsonLimit : defaultJsonLimit;
+    return express.json({ limit, type: ['application/json', 'application/csp-report'] })(req, _res, next);
+  };
+  app.use(adaptiveJsonLimit);
   app.use(pinoHttp({ logger }));
 
   app.get('/metrics', metricsController);

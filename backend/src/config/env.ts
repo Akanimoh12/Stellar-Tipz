@@ -186,6 +186,33 @@ export const envSchema = z.object({
   OG_IMAGE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
   OG_IMAGE_CONCURRENCY: z.coerce.number().int().positive().default(4),
 
+  // ── Outbound & server timeouts (issue #090) ─────────────────────────────
+  SOROBAN_RPC_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  HORIZON_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
+  IPFS_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+  X_API_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+
+  // ── Circuit breaker (issue #091) ───────────────────────────────────────
+  CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().int().positive().default(5),
+  CIRCUIT_BREAKER_RESET_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  RPC_CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().int().positive().default(5),
+  RPC_CIRCUIT_BREAKER_RESET_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  HORIZON_CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().int().positive().default(5),
+  HORIZON_CIRCUIT_BREAKER_RESET_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+
+  // ── Retry with jitter (issue #092) ────────────────────────────────────
+  RETRY_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
+  RETRY_INITIAL_DELAY_MS: z.coerce.number().int().positive().default(100),
+  RETRY_MAX_DELAY_MS: z.coerce.number().int().positive().default(5_000),
+  RETRY_FACTOR: z.coerce.number().positive().default(2),
+
+  // ── Payload limits (issue #077) ───────────────────────────────────────
+  JSON_BODY_LIMIT: z.string().default('100kb'),
+  MULTER_FILE_SIZE_LIMIT: z.coerce.number().int().positive().default(5 * 1024 * 1024),
+  MULTER_FILES_LIMIT: z.coerce.number().int().positive().default(1),
+  MULTER_FIELDS_LIMIT: z.coerce.number().int().positive().default(10),
+
   LOG_LEVEL: z.string().default('info'),
   SENTRY_DSN: z.string().optional(),
 })
