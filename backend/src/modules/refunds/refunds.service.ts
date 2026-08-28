@@ -14,6 +14,7 @@ import {
   NotFoundError,
 } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
+import { rpcCall } from '../../common/stellar/rpcClient.js';
 import { handleUniqueConstraintViolation } from '../../common/utils/prisma-errors.js';
 import type { Prisma } from '@prisma/client';
 import {
@@ -99,8 +100,9 @@ async function prepareRefundResolutionTx(
   const contractId = config.stellar.contractId;
   if (!contractId) throw new BadRequestError('Contract ID is not configured');
 
-  const server = getServer();
-  const sourceAccount = await server.getAccount(creatorAddress).catch(() => {
+  const sourceAccount = await rpcCall((server) => server.getAccount(creatorAddress), {
+    operationName: 'getAccount',
+  }).catch(() => {
     throw new BadRequestError('Source account not found on network');
   });
   const networkPassphrase = getNetworkPassphrase();
@@ -117,7 +119,9 @@ async function prepareRefundResolutionTx(
     .setTimeout(30)
     .build();
 
-  const simulateResponse = await server.simulateTransaction(tx).catch((err: Error) => {
+  const simulateResponse = await rpcCall((server) => server.simulateTransaction(tx), {
+    operationName: 'simulateTransaction',
+  }).catch((err: Error) => {
     logger.error({ err, method }, 'Refund resolution simulation failed');
     throw new BadRequestError('Transaction simulation failed');
   });
@@ -146,8 +150,9 @@ async function submitRefundResolutionTx(
 
   const networkPassphrase = getNetworkPassphrase();
   const tx = TransactionBuilder.fromXDR(signedTxXdr, networkPassphrase);
-  const server = getServer();
-  const sendResponse = await server.sendTransaction(tx).catch((err: Error) => {
+  const sendResponse = await rpcCall((server) => server.sendTransaction(tx), {
+    operationName: 'sendTransaction',
+  }).catch((err: Error) => {
     logger.error({ err, refundId, status }, 'Refund resolution submission failed');
     throw new BadRequestError('Failed to submit refund transaction');
   });

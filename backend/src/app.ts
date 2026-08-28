@@ -13,7 +13,9 @@ import { logger } from './common/utils/logger.js';
 import { truncateStellarAddress, truncateEmail, truncateMessage } from './common/utils/logRedaction.js';
 import { openApiDocument } from './docs/openapi.js';
 import { requestId } from './common/middleware/requestId.js';
+import { requestTimeoutAndSignal } from './common/middleware/requestTimeout.js';
 import { healthRouter } from './modules/health/health.routes.js';
+import { config } from './config/index.js';
 
 /**
  * HSTS max-age: 1 year (31536000 seconds).
@@ -166,6 +168,8 @@ export function createApp(): Express {
   );
   app.use(globalRateLimiter);
   app.use(requestId);
+  // Server-level timeout + client-disconnect AbortSignal (issue #090)
+  app.use(requestTimeoutAndSignal);
   app.use(metricsMiddleware);
   app.use(express.json({ limit: '1mb' }));
   app.use(

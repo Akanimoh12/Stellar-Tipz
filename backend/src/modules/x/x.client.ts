@@ -2,6 +2,7 @@ import { config } from '../../config/index.js';
 import { BadGatewayError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
 import { xCircuitBreaker, type CircuitBreaker } from './x.circuit-breaker.js';
+import { fetchWithTimeout } from '../../common/utils/fetchWithTimeout.js';
 
 export interface XApiUser {
   id: string;
@@ -32,8 +33,8 @@ export interface XRateLimitInfo {
   limit: number | null;
 }
 
-const BASE_URL = config.twitter.baseUrl;
-const BEARER_TOKEN = config.twitter.bearerToken;
+const BASE_URL = (config as unknown as { twitter?: { baseUrl: string } })?.twitter?.baseUrl ?? 'https://api.twitter.com/2';
+const BEARER_TOKEN = (config as unknown as { twitter?: { bearerToken?: string } })?.twitter?.bearerToken;
 
 export class XApiClient {
   private readonly baseUrl: string;
@@ -111,7 +112,7 @@ export class XApiClient {
 
   private async executeRequest<T>(
     path: string,
-    options: RequestInit | undefined,
+    options: RequestInit & { parentSignal?: AbortSignal } | undefined,
     attempt: number,
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
@@ -124,10 +125,30 @@ export class XApiClient {
 
     logger.debug({ url, attempt: attempt + 1 }, 'X API request');
 
+    // Timeouts are explicit and configurable (issue #090); parentSignal carries client-disconnect cancellation
+    const timeoutMs = (config as unknown as { timeouts?: { xApiMs: number } })?.timeouts?.xApiMs ?? 10_000;
+    const parentSignal = (options as unknown as { parentSignal?: AbortSignal })?.parentSignal;
+    const explicitSignal = (options as unknown as { signal?: AbortSignal })?.signal;
+
     let response: Response;
     try {
-      response = await fetch(url, { ...options, headers });
+      response = await fetchWithTimeout(url, {
+        ...options,
+        headers,
+        timeoutMs,
+        parentSignal: parentSignal ?? explicitSignal ?? undefined,
+        // Remove explicit signal to avoid duplication — fetchWithTimeout merges them
+        signal: undefined,
+      });
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'TimeoutError') {
+        logger.warn({ url, timeoutMs }, 'X API request timed out');
+        throw new BadGatewayError(`X API request timed out after ${timeoutMs}ms`);
+      }
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        logger.debug({ url }, 'X API request aborted (client disconnect)');
+        throw new BadGatewayError('X API request cancelled');
+      }
       logger.error({ err, url }, 'X API network error');
       throw new BadGatewayError(
         `X API request failed: ${(err as Error).message}`,
@@ -175,18 +196,18 @@ export class XApiClient {
     return body;
   }
 
-  async getUserByHandle(handle: string): Promise<XApiUserByHandleResponse> {
+  async getUserByHandle(handle: string, opts: { signal?: AbortSignal } = {}): Promise<XApiUserByHandleResponse> {
     const path = `/users/by/username/${encodeURIComponent(handle)}?user.fields=public_metrics`;
     return this.request<XApiUserByHandleResponse>(path, {
-      signal: AbortSignal.timeout(10_000),
-    });
+      parentSignal: opts.signal,
+    } as RequestInit & { parentSignal?: AbortSignal });
   }
 
-  async getUserById(id: string): Promise<XApiUserByHandleResponse> {
+  async getUserById(id: string, opts: { signal?: AbortSignal } = {}): Promise<XApiUserByHandleResponse> {
     const path = `/users/${encodeURIComponent(id)}?user.fields=public_metrics`;
     return this.request<XApiUserByHandleResponse>(path, {
-      signal: AbortSignal.timeout(10_000),
-    });
+      parentSignal: opts.signal,
+    } as RequestInit & { parentSignal?: AbortSignal });
   }
 }
 

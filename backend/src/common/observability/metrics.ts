@@ -41,6 +41,14 @@ export interface MetricsData {
   retention: {
     rows_pruned_total: Record<string, number>;
   };
+  circuitBreaker?: Record<string, { state: string; failures: number; opens: number }>;
+  timeouts?: {
+    request_timeout_ms: number;
+    rpc_timeout_ms: number;
+    horizon_timeout_ms: number;
+    ipfs_timeout_ms: number;
+    x_api_timeout_ms: number;
+  };
 }
 
 let requestCount = 0;
@@ -48,6 +56,7 @@ let errorCount = 0;
 let latencySum = 0;
 let latencyCount = 0;
 let slowQueryCount = 0;
+let poolSaturationCount = 0;
 const retentionPrunedCounts: Record<string, number> = {};
 
 export function recordRequest(duration: number) {
@@ -63,6 +72,10 @@ export function recordError() {
 /** Records a single slow query event for the `/metrics` endpoint. */
 export function recordSlowQuery() {
   slowQueryCount++;
+}
+
+export function recordPoolSaturation(): void {
+  poolSaturationCount++;
 }
 
 /** Records rows removed by one completed retention batch. */
@@ -86,6 +99,15 @@ export async function getMetrics(): Promise<MetricsData> {
     } catch {
       redisInfo = undefined;
     }
+  }
+
+  // Circuit breaker states (issue #091) — lazy import to avoid cycle
+  let circuitBreaker: Record<string, { state: string; failures: number; opens: number }> | undefined;
+  try {
+    const { getCircuitBreakerMetrics } = await import('../utils/circuitBreaker.js');
+    circuitBreaker = getCircuitBreakerMetrics();
+  } catch {
+    circuitBreaker = undefined;
   }
 
   return {
@@ -122,6 +144,14 @@ export async function getMetrics(): Promise<MetricsData> {
     },
     retention: {
       rows_pruned_total: { ...retentionPrunedCounts },
+    },
+    circuitBreaker,
+    timeouts: {
+      request_timeout_ms: env.REQUEST_TIMEOUT_MS,
+      rpc_timeout_ms: env.SOROBAN_RPC_TIMEOUT_MS,
+      horizon_timeout_ms: env.HORIZON_TIMEOUT_MS,
+      ipfs_timeout_ms: env.IPFS_TIMEOUT_MS,
+      x_api_timeout_ms: env.X_API_TIMEOUT_MS,
     },
   };
 }
