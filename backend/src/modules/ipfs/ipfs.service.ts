@@ -7,6 +7,7 @@ import {
   ServiceUnavailableError,
 } from "../../common/errors/AppError.js";
 import { buildGatewayUrl } from "./ipfs.utils.js";
+import { fetchWithTimeout } from "../../common/utils/fetchWithTimeout.js";
 import type { IpfsUploadResponse } from "./ipfs.types.js";
 
 /** Default max file size limit for image uploads (5 MB) */
@@ -77,12 +78,15 @@ export function generateFallbackCid(buffer: Buffer): string {
  * @returns Object containing CID and resolvable gateway URL.
  * @throws BadRequestError, BadGatewayError, or ServiceUnavailableError.
  */
-export async function pinImageToIpfs(file: {
-  mimetype: string;
-  size: number;
-  buffer: Buffer;
-  originalname?: string;
-}): Promise<IpfsUploadResponse> {
+export async function pinImageToIpfs(
+  file: {
+    mimetype: string;
+    size: number;
+    buffer: Buffer;
+    originalname?: string;
+  },
+  opts: { signal?: AbortSignal } = {},
+): Promise<IpfsUploadResponse> {
   // 1. Validate file format and constraints
   validateImageFile(file);
 
@@ -101,16 +105,18 @@ export async function pinImageToIpfs(file: {
     };
   }
 
-  // 3. Pin image via IPFS HTTP API endpoint
+  // 3. Pin image via IPFS HTTP API endpoint (explicit timeout + client disconnect — issue #090)
   try {
     const formData = new globalThis.FormData();
     const blob = new globalThis.Blob([file.buffer], { type: file.mimetype });
     formData.append("file", blob, file.originalname || "image");
 
     const endpoint = `${ipfsApiUrl.replace(/\/+$/, "")}/api/v0/add?pin=true`;
-    const response = await globalThis.fetch(endpoint, {
+    const response = await fetchWithTimeout(endpoint, {
       method: "POST",
       body: formData,
+      timeoutMs: (config as unknown as { timeouts?: { ipfsMs: number } })?.timeouts?.ipfsMs ?? 15_000,
+      parentSignal: opts.signal,
     });
 
     if (!response.ok) {
@@ -121,7 +127,7 @@ export async function pinImageToIpfs(file: {
       );
 
       // Fallback strategy (#984): if in dev/test, fallback gracefully; in prod throw BadGatewayError
-      if (config.server.nodeEnv !== "production") {
+      if ((config as unknown as { server?: { nodeEnv: string } })?.server?.nodeEnv !== "production") {
         logger.warn("Non-production environment: falling back after IPFS pinning HTTP error.");
         const fallbackCid = generateFallbackCid(file.buffer);
         return {
@@ -157,10 +163,24 @@ export async function pinImageToIpfs(file: {
       throw error;
     }
 
+    // Timeout vs cancellation mapping (issue #090)
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      logger.warn({ endpoint: `${ipfsApiUrl}/api/v0/add`, timeoutMs: (config as unknown as { timeouts?: { ipfsMs: number } })?.timeouts?.ipfsMs ?? 15_000 }, "IPFS pinning timed out");
+      if ((config as unknown as { server?: { nodeEnv: string } })?.server?.nodeEnv !== "production") {
+        const fallbackCid = generateFallbackCid(file.buffer);
+        return { cid: fallbackCid, url: buildGatewayUrl(fallbackCid), size: file.size, mimeType: file.mimetype };
+      }
+      throw new ServiceUnavailableError(`IPFS pinning timed out after ${(config as unknown as { timeouts?: { ipfsMs: number } })?.timeouts?.ipfsMs ?? 15_000}ms`);
+    }
+    if (error instanceof DOMException && error.name === "AbortError") {
+      logger.debug("IPFS pinning aborted (client disconnect)");
+      throw new ServiceUnavailableError("IPFS pinning cancelled");
+    }
+
     logger.error({ error }, "Error communicating with IPFS pinning service");
 
     // Fallback handling (#984): network exception / timeout fallback for non-prod
-    if (config.server.nodeEnv !== "production") {
+    if ((config as unknown as { server?: { nodeEnv: string } })?.server?.nodeEnv !== "production") {
       logger.warn("Non-production environment: fallback CID generated after IPFS failure.");
       const fallbackCid = generateFallbackCid(file.buffer);
       return {
