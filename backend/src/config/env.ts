@@ -56,6 +56,13 @@ export const envSchema = z.object({
   /** Queries slower than this (ms) are logged as slow queries and counted (issue #095). */
   SLOW_QUERY_THRESHOLD_MS: z.coerce.number().int().positive().default(1000),
 
+  /** Maximum PostgreSQL connections held by this process. */
+  DATABASE_POOL_SIZE: z.coerce.number().int().positive().default(10),
+  /** Seconds to wait for a free pooled connection before failing. */
+  DATABASE_POOL_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(10),
+  /** PostgreSQL statement timeout applied to every Prisma connection. */
+  DATABASE_QUERY_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
   /** Attaches the Socket.IO Redis adapter so realtime rooms are shared across horizontally scaled instances. */
@@ -67,6 +74,12 @@ export const envSchema = z.object({
   /** Refresh token TTL — must be a duration string like "7d" or "30d". */
   REFRESH_TOKEN_EXPIRES_IN: durationString.default('7d'),
   AUTH_CHALLENGE_TTL_SECONDS: z.coerce.number().default(300),
+  /** Optional CSP violation report endpoint (report-uri). When set, CSP header includes this URL. */
+  CSP_REPORT_URI: z.string().url().optional(),
+  /** Cron expression for the bounded data-retention pruning job. */
+  RETENTION_PRUNE_CRON: z.string().default('0 3 * * *'),
+  /** Maximum rows processed by one retention batch. */
+  RETENTION_BATCH_SIZE: z.coerce.number().int().positive().max(5000).default(500),
 
   STELLAR_NETWORK: z.enum(['TESTNET', 'FUTURENET', 'MAINNET']).default('TESTNET'),
   SOROBAN_RPC_URL: z.string().url(),
@@ -175,7 +188,108 @@ export const envSchema = z.object({
 
   LOG_LEVEL: z.string().default('info'),
   SENTRY_DSN: z.string().optional(),
-});
+})
+  .superRefine((data, ctx) => {
+    // Production-specific hardening (issue #098) — dev ergonomics untouched,
+    // but production reports ALL violations together for actionable startup failure.
+    if (data.NODE_ENV !== 'production') return;
+
+    const issues: { path: (string | number)[]; message: string }[] = [];
+
+    // ── JWT_SECRET: substantially stronger in production ───────────────────
+    const weakSecrets = new Set([
+      'change-me-in-production',
+      'changeme',
+      'secret',
+      'password',
+      'test-secret-key-for-testing',
+      'test-secret-key-for-vitest',
+      'supersecretkey',
+      'your_jwt_secret',
+      '12345678',
+    ]);
+    const jwtLower = data.JWT_SECRET.toLowerCase();
+    if (data.JWT_SECRET.length < 32) {
+      issues.push({
+        path: ['JWT_SECRET'],
+        message: `JWT_SECRET must be at least 32 characters in production (got ${data.JWT_SECRET.length}). Generate with: openssl rand -hex 32`,
+      });
+    }
+    if (weakSecrets.has(data.JWT_SECRET) || weakSecrets.has(jwtLower)) {
+      issues.push({
+        path: ['JWT_SECRET'],
+        message: 'JWT_SECRET uses a known default/weak value — generate a unique secret (openssl rand -hex 32) and do not use the example placeholder',
+      });
+    }
+    if (jwtLower.includes('change-me') || jwtLower.includes('changeme') || jwtLower === 'test-secret-key-for-testing' || jwtLower === 'test-secret-key-for-vitest') {
+      // Already covered by weakSecrets, but keep explicit for clarity if length check passes
+      if (!weakSecrets.has(data.JWT_SECRET) && !weakSecrets.has(jwtLower)) {
+        issues.push({
+          path: ['JWT_SECRET'],
+          message: 'JWT_SECRET must not be a default placeholder value in production',
+        });
+      }
+    }
+
+    // ── CONTRACT_ID required in production ────────────────────────────────
+    if (!data.CONTRACT_ID || data.CONTRACT_ID.trim().length === 0) {
+      issues.push({
+        path: ['CONTRACT_ID'],
+        message: 'CONTRACT_ID is required in production — set the deployed Soroban contract address (starts with C, 56 chars)',
+      });
+    }
+
+    // ── MAINNET consistency checks ────────────────────────────────────────
+    if (data.STELLAR_NETWORK === 'MAINNET') {
+      const MAINNET_PASSPHRASE = 'Public Global Stellar Network ; September 2015';
+      const MAINNET_HORIZON = 'https://horizon.stellar.org';
+
+      if (data.NETWORK_PASSPHRASE !== MAINNET_PASSPHRASE) {
+        issues.push({
+          path: ['NETWORK_PASSPHRASE'],
+          message: `STELLAR_NETWORK=MAINNET requires NETWORK_PASSPHRASE="${MAINNET_PASSPHRASE}" (got "${data.NETWORK_PASSPHRASE}")`,
+        });
+      }
+      // Horizon must be mainnet (not testnet/futurenet) — exact match is most robust
+      if (data.HORIZON_URL !== MAINNET_HORIZON) {
+        // Also reject obvious testnet URLs even if not exact mismatch
+        if (data.HORIZON_URL.includes('testnet') || data.HORIZON_URL.includes('futurenet')) {
+          issues.push({
+            path: ['HORIZON_URL'],
+            message: `STELLAR_NETWORK=MAINNET requires HORIZON_URL="${MAINNET_HORIZON}" (got "${data.HORIZON_URL}" — looks like testnet/futurenet)`,
+          });
+        } else {
+          issues.push({
+            path: ['HORIZON_URL'],
+            message: `STELLAR_NETWORK=MAINNET requires HORIZON_URL="${MAINNET_HORIZON}" (got "${data.HORIZON_URL}")`,
+          });
+        }
+      }
+      // Soroban RPC must be mainnet — reject testnet/futurenet, require mainnet hint
+      const rpcLower = data.SOROBAN_RPC_URL.toLowerCase();
+      if (rpcLower.includes('testnet') || rpcLower.includes('futurenet')) {
+        issues.push({
+          path: ['SOROBAN_RPC_URL'],
+          message: `STELLAR_NETWORK=MAINNET requires a mainnet Soroban RPC URL (got "${data.SOROBAN_RPC_URL}" — contains testnet/futurenet)`,
+        });
+      } else if (!rpcLower.includes('mainnet') && data.SOROBAN_RPC_URL !== MAINNET_HORIZON) {
+        // Be lenient: allow any URL that doesn't look like testnet, but warn if it doesn't mention mainnet
+        // Require explicit mainnet to avoid accidental testnet use. This is intentionally strict in production.
+        issues.push({
+          path: ['SOROBAN_RPC_URL'],
+          message: `STELLAR_NETWORK=MAINNET requires a mainnet SOROBAN_RPC_URL containing "mainnet" (got "${data.SOROBAN_RPC_URL}")`,
+        });
+      }
+    }
+
+    for (const issue of issues) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: issue.path,
+        message: issue.message,
+      });
+    }
+  });
 
 export const env = envSchema.parse(process.env);
 export type Env = z.infer<typeof envSchema>;

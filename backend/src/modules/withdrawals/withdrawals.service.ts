@@ -9,28 +9,44 @@ import type {
   WithdrawableBalanceResponse,
   SubmitWithdrawalResult,
 } from './withdrawals.types.js';
+import {
+  createCursorScope,
+  descendingCursorCondition,
+  toCursorPage,
+} from '../../common/pagination/cursor.js';
 
 export async function getWithdrawalHistory(
   userId: string,
   limit: number,
-  offset: number,
-): Promise<WithdrawalResponse[]> {
+  cursor?: string,
+  offset?: number,
+): Promise<{ data: WithdrawalResponse[]; nextCursor: string | null }> {
+  const scope = createCursorScope('withdrawals', { userId });
+  const cursorCondition = descendingCursorCondition('requestedAt', cursor, scope);
+  const baseWhere: Prisma.WithdrawalWhereInput = { userId };
+  const where: Prisma.WithdrawalWhereInput = cursorCondition
+    ? { AND: [baseWhere, cursorCondition as Prisma.WithdrawalWhereInput] }
+    : baseWhere;
   const withdrawals = await prisma.withdrawal.findMany({
-    where: { userId },
-    orderBy: { requestedAt: 'desc' },
-    skip: offset,
-    take: limit,
+    where,
+    orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
+    ...(offset !== undefined ? { skip: offset } : {}),
+    take: limit + 1,
   });
+  const page = toCursorPage(withdrawals, limit, scope, (withdrawal) => withdrawal.requestedAt);
 
-  return withdrawals.map((withdrawal) => ({
-    id: withdrawal.id,
-    amount: withdrawal.amount.toString(),
-    fee: withdrawal.fee.toString(),
-    txHash: withdrawal.txHash,
-    status: withdrawal.status,
-    requestedAt: withdrawal.requestedAt.toISOString(),
-    confirmedAt: withdrawal.confirmedAt ? withdrawal.confirmedAt.toISOString() : null,
-  }));
+  return {
+    data: page.data.map((withdrawal) => ({
+      id: withdrawal.id,
+      amount: withdrawal.amount.toString(),
+      fee: withdrawal.fee.toString(),
+      txHash: withdrawal.txHash,
+      status: withdrawal.status,
+      requestedAt: withdrawal.requestedAt.toISOString(),
+      confirmedAt: withdrawal.confirmedAt ? withdrawal.confirmedAt.toISOString() : null,
+    })),
+    nextCursor: page.nextCursor,
+  };
 }
 
 export async function getWithdrawableBalance(userId: string): Promise<WithdrawableBalanceResponse> {

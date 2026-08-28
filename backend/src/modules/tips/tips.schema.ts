@@ -47,10 +47,13 @@ export type UsernameParam = z.infer<typeof usernameParamSchema>;
 /** Cursor pagination query for tip list endpoints. */
 export const tipsListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
-  cursor: z.string().cuid('Invalid cursor').optional(),
+  cursor: z.string().min(1, 'Invalid cursor').optional(),
+  offset: z.coerce.number().int().min(0).optional(),
   tokenCode: z.string().max(10).optional(),
   startDate: z.string().datetime('Invalid start date (must be ISO 8601)').optional(),
   endDate: z.string().datetime('Invalid end date (must be ISO 8601)').optional(),
+}).refine((query) => query.cursor === undefined || query.offset === undefined, {
+  message: 'cursor and offset cannot be used together',
 });
 
 export type TipsListQuery = z.infer<typeof tipsListQuerySchema>;
@@ -58,10 +61,16 @@ export type TipsListQuery = z.infer<typeof tipsListQuerySchema>;
 /** Query params for `GET /tips` — filterable list of tips. */
 export const getTipsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
-  cursor: z.string().cuid('Invalid cursor').optional(),
+  cursor: z.string().min(1, 'Invalid cursor').optional(),
+  offset: z.coerce.number().int().min(0).optional(),
   address: z.string().regex(/^G[A-Z2-7]{55}$/, 'Invalid Stellar address').optional(),
   direction: z.enum(['sent', 'received']).optional(),
+  tokenCode: z.string().max(10).optional(),
+  startDate: z.string().datetime('Invalid start date (must be ISO 8601)').optional(),
+  endDate: z.string().datetime('Invalid end date (must be ISO 8601)').optional(),
   aggregate: z.enum(['creator']).optional(),
+}).refine((query) => query.cursor === undefined || query.offset === undefined, {
+  message: 'cursor and offset cannot be used together',
 });
 
 export type GetTipsQuery = z.infer<typeof getTipsQuerySchema>;
