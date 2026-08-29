@@ -11,3 +11,11 @@ export { EventLogStore } from './event-log.store.js';
 export { IndexerService } from './indexer.service.js';
 export type { IndexedEvent, IndexerStatus } from './indexer.types.js';
 export { withRetry } from './retry.js';
+export {
+  getIndexerReport,
+  getIndexerSnapshot,
+  recordIndexerTick,
+  noteIndexerError,
+  resetIndexerMonitor,
+} from './monitor.js';
+export type { IndexerMonitorReport } from './monitor.js';

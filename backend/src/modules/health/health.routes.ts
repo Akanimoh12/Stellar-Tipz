@@ -7,6 +7,8 @@ import {
   type HealthService,
 } from './health.service.js';
 import { rpcCall } from '../../common/stellar/rpcClient.js';
+import { getIndexerReport } from '../../indexer/monitor.js';
+import { config } from '../../config/index.js';
 
 const dependencies: HealthDependencies = {
   postgres: async () => {
@@ -20,6 +22,17 @@ const dependencies: HealthDependencies = {
       operationName: 'getHealth',
     });
     if ((health as { status: string }).status !== 'healthy') throw new Error('Soroban RPC reported an unhealthy status');
+  },
+  // Indexer readiness (issue #1258): the API serves stale data when the
+  // indexer lags behind the chain head, so readiness must reflect that.
+  indexer: async () => {
+    const report = await getIndexerReport();
+    if (!report.healthy) {
+      throw new Error(
+        `Indexer lag ${report.lagLedgers} (threshold ${config.indexer.lagThresholdLedgers})` +
+          (report.stalled ? ', cursor stalled' : ''),
+      );
+    }
   },
 };
 

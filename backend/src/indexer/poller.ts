@@ -3,6 +3,7 @@ import { logger } from '../common/utils/logger.js';
 import { getCursorLedger, setCursorLedger } from './cursor.js';
 import { getEventsFrom, getLatestLedger } from './sorobanClient.js';
 import { projectEvent } from './projections.js';
+import { recordIndexerTick, noteIndexerError, noteProcessedLedger } from './monitor.js';
 
 /** Cursor topic under which tip-event indexing progress is tracked. */
 const CURSOR_TOPIC = 'tip_events';
@@ -47,9 +48,11 @@ export async function pollOnce(): Promise<void> {
         await projectEvent(event);
         pagingToken = event.pagingToken;
         processed++;
+        noteProcessedLedger(event.ledger);
       } catch (err) {
         logger.error({ err, txHash: event.txHash, topic: event.topic }, 'Failed to project event');
         anyFailed = true;
+        noteIndexerError();
       }
     }
 
@@ -63,6 +66,8 @@ export async function pollOnce(): Promise<void> {
   // Advance the cursor only after all events processed successfully.
   const nextCursor = Math.max(startLedger - 1, latestLedger);
   await setCursorLedger(CURSOR_TOPIC, nextCursor);
+  noteProcessedLedger(nextCursor);
+  recordIndexerTick(processed);
 
   if (processed > 0) {
     logger.info({ processed, fromLedger: startLedger, toLedger: nextCursor }, 'Indexer projected events');

@@ -89,6 +89,10 @@ export const envSchema = z.object({
 
   INDEXER_POLL_INTERVAL_MS: z.coerce.number().default(5000),
   INDEXER_START_LEDGER: z.coerce.number().optional(),
+  /** Ledgers behind the chain head after which /health/ready turns unhealthy. */
+  INDEXER_LAG_THRESHOLD_LEDGERS: z.coerce.number().int().positive().default(50),
+  /** Consecutive polls with an unchanged cursor that trigger a stall alert. */
+  INDEXER_STALL_INTERVALS: z.coerce.number().int().positive().default(3),
 
   CREDIT_RECOMPUTE_CRON: z.string().default('0 */6 * * *'),
   /** Cron expression for the daily analytics rollup job. Runs at 00:05 UTC daily by default. */
