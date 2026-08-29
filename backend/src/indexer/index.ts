@@ -11,3 +11,5 @@ export { EventLogStore } from './event-log.store.js';
 export { IndexerService } from './indexer.service.js';
 export type { IndexedEvent, IndexerStatus } from './indexer.types.js';
 export { withRetry } from './retry.js';
+export { runBackfill, BACKFILL_CURSOR_TOPIC } from './backfill.js';
+export type { BackfillOptions, BackfillReport, BackfillSummary } from './backfill.js';

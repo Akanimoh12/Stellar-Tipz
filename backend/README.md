@@ -130,6 +130,43 @@ To skip the hook in an emergency: `git commit --no-verify`.
 validated at startup via `src/config/env.ts`; the server refuses to start if
 required vars are missing.
 
+---
+
+## Indexer backfill tooling
+
+After fixing a projection bug, you may need to reindex a range of ledgers. A
+standalone CLI reindexes an explicit ledger range idempotently **without
+disrupting live indexing** — it uses its own dedicated backfill cursor and runs
+in its own process.
+
+```bash
+cd backend
+
+# Reindex the last 1,000 ledgers up to the current chain head
+npm run indexer:backfill -- --from 3500000
+
+# Reindex an explicit range
+npm run indexer:backfill -- --from 3490000 --to 3501000
+
+# See what would change without writing anything
+npm run indexer:backfill -- --from 3490000 --to 3501000 --dry-run
+
+# Ignore the stored backfill cursor and start fresh
+npm run indexer:backfill -- --from 1000 --force --dry-run
+```
+
+Behaviour (issue #1259):
+
+- **Explicit range** — `--from`/`--to` (inclusive); defaults are stored-cursor+1
+  to the current chain head.
+- **Non-disruptive** — uses a separate `backfill_tip_events` cursor, so it never
+  touches the live indexer's progress.
+- **Resumable** — re-running continues from where the last run stopped.
+- **Progress** — logs periodic progress and prints a per-topic summary.
+- **Dry-run** — `--dry-run` reports what would change without writing a thing.
+- **Idempotent** — projections are upserts and EventLog is keyed uniquely, so
+  re-running a range never double-counts.
+
 **Convenience via Makefile**
 
 ```bash

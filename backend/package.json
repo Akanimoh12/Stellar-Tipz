@@ -10,8 +10,9 @@
   "scripts": {
     "prepare": "husky",
     "dev": "tsx watch src/server.ts",
-    "indexer": "tsx src/indexer/main.ts",
-    "indexer:dev": "tsx watch src/indexer/main.ts",
+  "indexer": "tsx src/indexer/main.ts",
+  "indexer:dev": "tsx watch src/indexer/main.ts",
+  "indexer:backfill": "tsx src/indexer/backfill.main.ts",
     "jobs": "tsx src/jobs/main.ts",
     "jobs:dev": "tsx watch src/jobs/main.ts",
     "build": "tsc -p tsconfig.json",
