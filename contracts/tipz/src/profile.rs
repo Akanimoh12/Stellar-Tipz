@@ -5,7 +5,10 @@ use soroban_sdk::{Address, Env, String, Vec};
 use crate::errors::ContractError;
 use crate::events;
 use crate::storage;
-use crate::types::{Profile, ProfileWithDeactivation, MAX_DISPLAY_NAME_LENGTH, MAX_BIO_LENGTH, INACTIVE_PROFILE_THRESHOLD_SECS};
+use crate::types::{
+    Profile, ProfileWithDeactivation, INACTIVE_PROFILE_THRESHOLD_SECS, MAX_BIO_LENGTH,
+    MAX_DISPLAY_NAME_LENGTH,
+};
 use crate::validation;
 
 /// Register a new creator profile.
@@ -40,7 +43,9 @@ pub fn register_profile(
 ) -> Result<Profile, ContractError> {
     storage::extend_instance_ttl(env);
 
-    crate::admin::require_not_paused(env)?;
+    if storage::is_paused(env, crate::types::PauseFlag::Registration) || storage::is_paused(env, crate::types::PauseFlag::All) {
+        return Err(ContractError::ContractPaused);
+    }
 
     // Require explicit authorisation from the caller.
     caller.require_auth();
@@ -50,10 +55,9 @@ pub fn register_profile(
         return Err(ContractError::NotInitialized);
     }
 
-    // --- DoS protection: max profiles and registration rate limiting ---
+    // --- DoS protection: max profiles ---
 
     validation::validate_profile_count(env)?;
-    validation::validate_registration_rate_limit(env, &caller)?;
 
     // --- Input validation (centralized in validation module) ---
 
@@ -97,6 +101,11 @@ pub fn register_profile(
         return Err(ContractError::UsernameTaken);
     }
 
+    // --- Registration rate limiting (must come AFTER duplicate checks so the
+    // counter increment is committed — Soroban rolls back storage on Err) ---
+
+    validation::validate_registration_rate_limit(env, &caller)?;
+
     // --- Build and persist the profile ---
 
     let now = env.ledger().timestamp();
@@ -128,12 +137,14 @@ pub fn register_profile(
         domain_verified: false,
         domain_verified_at: None,
         custom_min_tip: None,
-        last_active_at: now,  // newly registered creators are "active" at registration
+        last_active_at: now, // newly registered creators are "active" at registration
     };
 
     storage::set_profile(env, &profile);
     storage::set_username_address(env, &username, &caller);
     storage::increment_total_creators(env);
+    // Maintain a dense creator index for bounded paginated iteration (#1185).
+    storage::append_creator_to_index(env, &caller);
 
     // Bump TTL for both Profile and UsernameToAddress together.
     storage::bump_profile_ttl(env, &caller);
@@ -208,6 +219,44 @@ pub fn update_profile(
         profile.x_handle = normalized_x;
     }
 
+    profile.updated_at = env.ledger().timestamp();
+
+    storage::set_profile(env, &profile);
+
+    // Bump TTL for both Profile and UsernameToAddress together.
+    storage::bump_profile_ttl(env, &caller);
+    storage::bump_username_ttl(env, &profile.username);
+
+    events::emit_profile_updated(env, &caller);
+
+    Ok(())
+}
+
+/// Update social links for a profile with limit enforcement (max 5 links).
+pub fn update_social_links(
+    env: &Env,
+    caller: Address,
+    social_links: soroban_sdk::Map<soroban_sdk::Symbol, String>,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+
+    if storage::is_paused(env, crate::types::PauseFlag::Registration) || storage::is_paused(env, crate::types::PauseFlag::All) {
+        return Err(ContractError::ContractPaused);
+    }
+
+    caller.require_auth();
+
+    if !storage::has_profile(env, &caller) {
+        return Err(ContractError::NotRegistered);
+    }
+
+    // Enforce max social links limit
+    if social_links.len() > crate::types::MAX_SOCIAL_LINKS {
+        return Err(ContractError::StorageLimitExceeded);
+    }
+
+    let mut profile = storage::get_profile(env, &caller);
+    profile.social_links = social_links;
     profile.updated_at = env.ledger().timestamp();
 
     storage::set_profile(env, &profile);
@@ -405,8 +454,8 @@ pub fn set_donation_page(
         return Err(ContractError::MessageTooLong);
     }
 
-    if config.suggested_amounts.len() > 6 {
-        return Err(ContractError::InvalidAmount);
+    if config.suggested_amounts.len() > crate::types::MAX_SUGGESTED_AMOUNTS {
+        return Err(ContractError::StorageLimitExceeded);
     }
 
     if config.header_image_uri.len() > 256 {
@@ -457,11 +506,7 @@ pub fn get_donation_page(
 /// Set a custom minimum tip amount for the caller's profile.
 ///
 /// Pass `0` to reset to the global minimum.
-pub fn set_min_tip(
-    env: &Env,
-    creator: Address,
-    min_amount: i128,
-) -> Result<(), ContractError> {
+pub fn set_min_tip(env: &Env, creator: Address, min_amount: i128) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     crate::admin::require_not_paused(env)?;
     creator.require_auth();
@@ -576,7 +621,9 @@ pub fn is_profile_inactive_eligible(env: &Env, address: &Address) -> bool {
     if last_active == 0 {
         // Check registration time instead
         if let Some(profile) = storage::get_profile_opt(env, address) {
-            return now >= profile.registered_at.saturating_add(INACTIVE_PROFILE_THRESHOLD_SECS);
+            if now >= profile.registered_at.saturating_add(INACTIVE_PROFILE_THRESHOLD_SECS) {
+                return profile.balance == 0;
+            }
         }
         return false;
     }

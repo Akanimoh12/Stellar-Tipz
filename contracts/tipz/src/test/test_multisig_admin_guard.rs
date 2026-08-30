@@ -6,10 +6,7 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{
-    testutils::Address as _,
-    vec, Address, BytesN, Env,
-};
+use soroban_sdk::{testutils::Address as _, vec, Address, BytesN, Env};
 
 use crate::errors::ContractError;
 use crate::test::test_init::setup_test_contract;

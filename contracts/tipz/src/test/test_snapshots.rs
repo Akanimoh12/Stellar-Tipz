@@ -182,8 +182,8 @@ fn snapshot_storage(env: &Env, contract_id: &Address, ctx: &AddrCtx) -> StorageS
         if let Some(v) = env.storage().instance().get::<_, u32>(&DataKey::FeePercent) {
             put_u32(&mut instance_values, "FeePercent", v);
         }
-        if let Some(v) = env.storage().instance().get::<_, bool>(&DataKey::Paused) {
-            put_bool(&mut instance_values, "Paused", v);
+        if let Some(v) = env.storage().instance().get::<_, u32>(&DataKey::Paused) {
+            put_u32(&mut instance_values, "Paused", v);
         }
         if let Some(v) = env.storage().instance().get::<_, i128>(&DataKey::MinTipAmount) {
             put_i128(&mut instance_values, "MinTipAmount", v);

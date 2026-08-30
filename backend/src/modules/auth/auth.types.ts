@@ -7,6 +7,7 @@ export interface AuthPayload {
   stellarAddress: string;
   role: string;
   scopes: string[];
+  sessionId?: string;
 }
 
 export interface AuthUser {
@@ -18,6 +19,20 @@ export interface AuthUser {
 export interface TokenPair {
   accessToken: string;
   refreshToken: string;
+}
+
+export interface SessionMetadata {
+  device: string;
+  ipAddress: string;
+}
+
+export interface AuthSession {
+  id: string;
+  device: string;
+  ip: string;
+  lastUsedAt: string;
+  createdAt: string;
+  current: boolean;
 }
 
 export interface ChallengeResponse {

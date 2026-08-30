@@ -15,7 +15,8 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
 
 use crate::errors::ContractError;
 use crate::types::{
-    LeaderboardEntry, LeaderboardPeriod, Profile, RateLimitConfig, RateLimitStatus,
+    CircuitBreakerConfig, CircuitBreakerStatus, LeaderboardEntry, LeaderboardPeriod, Profile,
+    RateLimitConfig, RateLimitStatus,
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -112,8 +113,6 @@ pub enum DataKey {
     CreatorTip(Address, u32),
     /// Pending two-step admin change proposal (full transition record).
     PendingAdminChange,
-    /// Admin change history list (newest entries appended last).
-    AdminChangeHistory,
     /// Pending verification request by creator address
     VerificationRequest(Address),
     /// Subscription by (subscriber, creator)
@@ -168,13 +167,17 @@ pub enum DataKey {
     CreatorPeriodVolume(Address, crate::types::LeaderboardPeriod, u64),
     /// Maximum active subscriptions per subscriber
     SubscriptionLimit,
-    /// Reentrancy guard: set before fund-moving external calls
-    ReentrancyGuard,
+    /// Withdrawal circuit breaker configuration.
+    CircuitBreakerConfig,
+    /// Withdrawal circuit breaker fixed-bucket state.
+    CircuitBreakerStatus,
 }
 
-/// Extended storage keys for new features (separate enum to avoid size limits)
+/// Extended storage keys for additional features (separate enum to avoid size limits)
 #[contracttype]
 pub enum ExtendedDataKey {
+    /// Admin change history list (newest entries appended last).
+    AdminChangeHistory,
     /// Active goal for a creator
     ActiveGoal(Address),
     /// Archived goals for a creator
@@ -189,6 +192,8 @@ pub enum ExtendedDataKey {
     RefundRequest(u32),
     /// Refund configuration
     RefundConfig,
+    /// Cumulative tip volume from a specific sender to a specific creator (for leaderboard concentration cap).
+    SenderCreatorVolume(Address, Address),
     /// Number of pending refund requests tracked for cursor-based iteration.
     PendingRefundCount,
     /// Pending refund request tip ID by dense index.
@@ -225,6 +230,18 @@ pub enum ExtendedDataKey {
     ActiveSubscriptions,
     /// Minimum explicit withdrawal amount in stroops.
     MinWithdrawalAmount,
+    /// Ledger sequence when a creator's credit score was last persisted (#1186).
+    CreditComputedAtLedger(Address),
+    /// Configurable staleness threshold in ledgers (#1186).
+    CreditStalenessThreshold,
+    /// Dense index: u32 → Address for paginated creator iteration (#1185).
+    CreatorIndex(u32),
+    /// Total entries in the dense creator index (#1185).
+    CreatorIndexCount,
+    /// Oracle contract address for a token (#1184).
+    TokenOracleAddress(Address),
+    /// Last known oracle price for a token (#1184).
+    TokenOraclePrice(Address),
 }
 
 /// Storage keys for compact performance caches.
@@ -245,11 +262,15 @@ pub struct RuntimeConfig {
     pub fee_bps: u32,
     pub fee_change_delay_ledgers: u32,
     pub native_token: Address,
-    pub paused: bool,
+    /// Bitmask of paused operations (see `PauseFlag`).
+    /// Global pause is represented by `PauseFlag::All`.
+    pub pause_flags: u32,
     pub min_tip_amount: i128,
     pub rate_limit: RateLimitConfig,
     /// Domain re-verification interval in seconds (default 30 days)
     pub domain_reverify_secs: u64,
+    /// Maximum sender contribution to a creator's leaderboard score in basis points (default 5000 = 50%).
+    pub max_sender_contribution_bps: u32,
 }
 
 /// All leaderboard periods cached under one key for write-heavy operations.
@@ -369,18 +390,30 @@ pub fn set_native_token(env: &Env, addr: &Address) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Pause state
+// Pause state (granular, bitmask-based)
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Returns `true` when the contract is paused.
-pub fn is_paused(env: &Env) -> bool {
+/// Returns `true` when the specific operation is paused.
+/// Checks both the specific flag and the global `PauseFlag::All`.
+pub fn is_paused(env: &Env, flag: crate::types::PauseFlag) -> bool {
     if let Some(config) = get_runtime_config(env) {
-        return config.paused;
+        let flags = config.pause_flags;
+        return crate::types::PauseFlag::is_set(flags, flag) || crate::types::PauseFlag::is_set(flags, crate::types::PauseFlag::All);
     }
-    env.storage()
+    // Fallback to legacy Paused key (bool) for backwards compatibility
+    let legacy_paused: bool = env.storage()
         .instance()
         .get(&DataKey::Paused)
-        .unwrap_or(false)
+        .unwrap_or(false);
+    if legacy_paused {
+        return true;
+    }
+    false
+}
+
+/// Returns `true` when the contract is globally paused (legacy compatibility).
+pub fn is_globally_paused(env: &Env) -> bool {
+    is_paused(env, crate::types::PauseFlag::All)
 }
 
 /// Returns the timestamp when the contract was paused, or None if not paused.
@@ -388,13 +421,13 @@ pub fn get_paused_at(env: &Env) -> Option<u64> {
     env.storage().instance().get(&ExtendedDataKey::PausedAt)
 }
 
-/// Sets the paused flag and tracks paused_at timestamp.
-pub fn set_paused(env: &Env, paused: bool) {
-    env.storage().instance().set(&DataKey::Paused, &paused);
+/// Sets the pause flags bitmask and tracks paused_at timestamp.
+pub fn set_pause_flags(env: &Env, flags: u32) {
+    env.storage().instance().set(&DataKey::Paused, &flags);
     update_runtime_config(env, |config| {
-        config.paused = paused;
+        config.pause_flags = flags;
     });
-    if paused {
+    if crate::types::PauseFlag::is_set(flags, crate::types::PauseFlag::All) {
         if get_paused_at(env).is_none() {
             env.storage()
                 .instance()
@@ -407,15 +440,39 @@ pub fn set_paused(env: &Env, paused: bool) {
 
 /// Storage migration state accessors
 pub fn get_migration_state(env: &Env) -> Option<crate::types::MigrationState> {
-    env.storage().instance().get(&ExtendedDataKey::MigrationState)
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::MigrationState)
 }
 
 pub fn set_migration_state(env: &Env, state: &crate::types::MigrationState) {
-    env.storage().instance().set(&ExtendedDataKey::MigrationState, state);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::MigrationState, state);
 }
 
 pub fn remove_migration_state(env: &Env) {
-    env.storage().instance().remove(&ExtendedDataKey::MigrationState);
+    env.storage()
+        .instance()
+        .remove(&ExtendedDataKey::MigrationState);
+}
+
+/// Sets a specific pause flag.
+pub fn set_pause_flag(env: &Env, flag: crate::types::PauseFlag, enabled: bool) {
+    let current = if let Some(config) = get_runtime_config(env) {
+        config.pause_flags
+    } else {
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(0u32)
+    };
+    let new_flags = if enabled {
+        crate::types::PauseFlag::set(current, flag)
+    } else {
+        crate::types::PauseFlag::clear(current, flag)
+    };
+    set_pause_flags(env, new_flags);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -446,11 +503,16 @@ pub fn set_min_tip_amount(env: &Env, amount: i128) {
 pub const DEFAULT_MIN_WITHDRAWAL_AMOUNT: i128 = 1_000_000;
 
 pub fn get_min_withdrawal_amount(env: &Env) -> i128 {
-    env.storage().instance().get(&ExtendedDataKey::MinWithdrawalAmount).unwrap_or(DEFAULT_MIN_WITHDRAWAL_AMOUNT)
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::MinWithdrawalAmount)
+        .unwrap_or(DEFAULT_MIN_WITHDRAWAL_AMOUNT)
 }
 
 pub fn set_min_withdrawal_amount(env: &Env, amount: i128) {
-    env.storage().instance().set(&ExtendedDataKey::MinWithdrawalAmount, &amount);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::MinWithdrawalAmount, &amount);
 }
 
 /// Default domain re-verification interval: 30 days.
@@ -662,8 +724,12 @@ pub fn append_admin_audit_entry(
     }
     log.push_back(entry.clone());
 
-    env.storage().instance().set(&ExtendedDataKey::AdminAuditLog, &log);
-    env.storage().instance().set(&ExtendedDataKey::AdminAuditCount, &next_id);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::AdminAuditLog, &log);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::AdminAuditCount, &next_id);
 
     entry
 }
@@ -671,7 +737,7 @@ pub fn append_admin_audit_entry(
 fn load_admin_change_history(env: &Env) -> soroban_sdk::Vec<crate::types::AdminChangeHistoryEntry> {
     env.storage()
         .instance()
-        .get(&DataKey::AdminChangeHistory)
+        .get(&ExtendedDataKey::AdminChangeHistory)
         .unwrap_or(soroban_sdk::Vec::new(env))
 }
 
@@ -680,6 +746,7 @@ pub fn get_admin_change_history_next_id(env: &Env) -> u32 {
 }
 
 /// Append a completed admin change to history (sequential ids, newest has highest id).
+/// Enforces maximum history entries limit.
 pub fn append_admin_change_history(env: &Env, entry: &crate::types::AdminChangeHistoryEntry) {
     let mut history = load_admin_change_history(env);
     if history.len() >= ADMIN_AUDIT_LOG_CAPACITY {
@@ -688,7 +755,7 @@ pub fn append_admin_change_history(env: &Env, entry: &crate::types::AdminChangeH
     history.push_back(entry.clone());
     env.storage()
         .instance()
-        .set(&DataKey::AdminChangeHistory, &history);
+        .set(&ExtendedDataKey::AdminChangeHistory, &history);
 }
 
 pub fn get_admin_change_history_entry(
@@ -763,9 +830,7 @@ pub fn set_fee_change_delay_ledgers(env: &Env, delay_ledgers: u32) {
 
 /// Returns the pending fee change, if any.
 pub fn get_pending_fee_change(env: &Env) -> Option<(u32, u32, u32, bool)> {
-    env.storage()
-        .instance()
-        .get(&symbol_short!("fee_pend"))
+    env.storage().instance().get(&symbol_short!("fee_pend"))
 }
 
 /// Stores the pending fee change.
@@ -790,20 +855,87 @@ pub fn get_subscription_limit(env: &Env) -> u32 {
 
 /// Sets the maximum active subscriptions per subscriber.
 pub fn set_subscription_limit(env: &Env, limit: u32) {
-    env.storage().instance().set(&DataKey::SubscriptionLimit, &limit);
+    env.storage()
+        .instance()
+        .set(&DataKey::SubscriptionLimit, &limit);
+}
+
+pub const MAX_CIRCUIT_BREAKER_BUCKETS: u32 = 24;
+pub const DEFAULT_CIRCUIT_BREAKER_BUCKETS: u32 = 12;
+pub const DEFAULT_CIRCUIT_BREAKER_WINDOW_SECS: u64 = 3600;
+
+pub fn default_circuit_breaker_config() -> CircuitBreakerConfig {
+    CircuitBreakerConfig {
+        enabled: false,
+        threshold: 0,
+        window_secs: DEFAULT_CIRCUIT_BREAKER_WINDOW_SECS,
+        bucket_count: DEFAULT_CIRCUIT_BREAKER_BUCKETS,
+    }
+}
+
+pub fn get_circuit_breaker_config(env: &Env) -> CircuitBreakerConfig {
+    env.storage()
+        .instance()
+        .get(&DataKey::CircuitBreakerConfig)
+        .unwrap_or_else(default_circuit_breaker_config)
+}
+
+pub fn set_circuit_breaker_config(env: &Env, config: &CircuitBreakerConfig) {
+    env.storage()
+        .instance()
+        .set(&DataKey::CircuitBreakerConfig, config);
+}
+
+pub fn get_circuit_breaker_status(env: &Env) -> CircuitBreakerStatus {
+    env.storage()
+        .instance()
+        .get(&DataKey::CircuitBreakerStatus)
+        .unwrap_or_else(|| empty_circuit_breaker_status(env, DEFAULT_CIRCUIT_BREAKER_BUCKETS))
+}
+
+pub fn set_circuit_breaker_status(env: &Env, status: &CircuitBreakerStatus) {
+    env.storage()
+        .instance()
+        .set(&DataKey::CircuitBreakerStatus, status);
+}
+
+pub fn reset_circuit_breaker_status(env: &Env, bucket_count: u32) {
+    let count = bucket_count.clamp(1, MAX_CIRCUIT_BREAKER_BUCKETS);
+    set_circuit_breaker_status(env, &empty_circuit_breaker_status(env, count));
+}
+
+fn empty_circuit_breaker_status(env: &Env, bucket_count: u32) -> CircuitBreakerStatus {
+    let count = bucket_count.clamp(1, MAX_CIRCUIT_BREAKER_BUCKETS);
+    let mut bucket_starts = soroban_sdk::Vec::new(env);
+    let mut bucket_volumes = soroban_sdk::Vec::new(env);
+    for _ in 0..count {
+        bucket_starts.push_back(0);
+        bucket_volumes.push_back(0);
+    }
+    CircuitBreakerStatus {
+        bucket_starts,
+        bucket_volumes,
+        tripped: false,
+        tripped_at: None,
+    }
 }
 
 /// Returns `true` if the reentrancy guard is currently active (a fund-moving
 /// operation is in progress). Callers should not make external token transfers
 /// while the guard is active.
 pub fn is_reentrancy_guard_active(env: &Env) -> bool {
-    env.storage().instance().get(&DataKey::ReentrancyGuard).unwrap_or(false)
+    env.storage()
+        .instance()
+        .get(&DataKey::ReentrancyGuard)
+        .unwrap_or(false)
 }
 
 /// Set the reentrancy guard to `locked` (beginning a fund-moving operation)
 /// or `unlocked` (ending it).
 pub fn set_reentrancy_guard(env: &Env, locked: bool) {
-    env.storage().instance().set(&DataKey::ReentrancyGuard, &locked);
+    env.storage()
+        .instance()
+        .set(&DataKey::ReentrancyGuard, &locked);
 }
 
 /// Guard helper: sets the guard to `locked`, runs `f`, then resets it to
@@ -860,7 +992,7 @@ pub fn set_runtime_config(env: &Env, config: &RuntimeConfig) {
         .set(&CacheKey::RuntimeConfig, config);
 }
 
-fn update_runtime_config<F>(env: &Env, update: F)
+pub fn update_runtime_config<F>(env: &Env, update: F)
 where
     F: FnOnce(&mut RuntimeConfig),
 {
@@ -1092,6 +1224,14 @@ pub fn add_tipper_tip(env: &Env, tipper: &Address, tip_id: u32) {
         .temporary()
         .set(&count_key, &(local_index + 1));
     set_tip_ttl(env, &count_key);
+}
+
+/// Returns the number of subscriptions for a subscriber.
+pub fn get_subscriber_sub_count(env: &Env, subscriber: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::SubscriberSubCount(subscriber.clone()))
+        .unwrap_or(0)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1482,6 +1622,36 @@ pub fn reset_creator_period_volume(env: &Env, creator: &Address, period: Leaderb
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Sender-Creator Volume Tracking (for leaderboard concentration cap)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the cumulative tip volume from a specific sender to a specific creator.
+pub fn get_sender_creator_volume(env: &Env, sender: &Address, creator: &Address) -> i128 {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::SenderCreatorVolume(sender.clone(), creator.clone()))
+        .unwrap_or(0)
+}
+
+/// Adds `amount` to the cumulative tip volume from sender to creator.
+pub fn add_sender_creator_volume(env: &Env, sender: &Address, creator: &Address, amount: i128) -> i128 {
+    let current = get_sender_creator_volume(env, sender, creator);
+    let next = current.saturating_add(amount);
+    env.storage().instance().set(
+        &ExtendedDataKey::SenderCreatorVolume(sender.clone(), creator.clone()),
+        &next,
+    );
+    next
+}
+
+/// Resets the sender-creator volume (e.g., for testing or admin cleanup).
+pub fn reset_sender_creator_volume(env: &Env, sender: &Address, creator: &Address) {
+    env.storage()
+        .instance()
+        .remove(&ExtendedDataKey::SenderCreatorVolume(sender.clone(), creator.clone()));
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Creator counter
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -1713,6 +1883,10 @@ pub fn remove_active_subscription(env: &Env, subscriber: &Address, creator: &Add
         .persistent()
         .set(&ExtendedDataKey::ActiveSubscriptions, &new_subs);
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Scheduled Tip storage functions
+// ──────────────────────────────────────────────────────────────────────────────
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Tests
@@ -2370,9 +2544,7 @@ pub fn add_creator_scheduled_tip(env: &Env, creator: &Address, id: u32) {
     let count: u32 = env
         .storage()
         .persistent()
-        .get(&ExtendedDataKey::CreatorScheduledTipCount(
-            creator.clone(),
-        ))
+        .get(&ExtendedDataKey::CreatorScheduledTipCount(creator.clone()))
         .unwrap_or(0);
     env.storage().persistent().set(
         &ExtendedDataKey::CreatorScheduledTip(creator.clone(), count),
@@ -2392,9 +2564,11 @@ pub fn get_sender_scheduled_tip_ids(env: &Env, sender: &Address) -> soroban_sdk:
         .unwrap_or(0);
     let mut vec = soroban_sdk::Vec::new(env);
     for i in 0..count {
-        if let Some(id) = env.storage().persistent().get(
-            &ExtendedDataKey::SenderScheduledTip(sender.clone(), i),
-        ) {
+        if let Some(id) = env
+            .storage()
+            .persistent()
+            .get(&ExtendedDataKey::SenderScheduledTip(sender.clone(), i))
+        {
             vec.push_back(id);
         }
     }
@@ -2405,17 +2579,112 @@ pub fn get_creator_scheduled_tip_ids(env: &Env, creator: &Address) -> soroban_sd
     let count: u32 = env
         .storage()
         .persistent()
-        .get(&ExtendedDataKey::CreatorScheduledTipCount(
-            creator.clone(),
-        ))
+        .get(&ExtendedDataKey::CreatorScheduledTipCount(creator.clone()))
         .unwrap_or(0);
     let mut vec = soroban_sdk::Vec::new(env);
     for i in 0..count {
-        if let Some(id) = env.storage().persistent().get(
-            &ExtendedDataKey::CreatorScheduledTip(creator.clone(), i),
-        ) {
+        if let Some(id) = env
+            .storage()
+            .persistent()
+            .get(&ExtendedDataKey::CreatorScheduledTip(creator.clone(), i))
+        {
             vec.push_back(id);
         }
     }
     vec
+}
+
+// ── Credit staleness helpers (#1186) ─────────────────────────────────────────
+
+/// Record the ledger sequence at which a creator's credit score was last stored.
+pub fn set_credit_computed_ledger(env: &Env, address: &Address, ledger: u32) {
+    env.storage()
+        .persistent()
+        .set(&ExtendedDataKey::CreditComputedAtLedger(address.clone()), &ledger);
+}
+
+/// Return the ledger sequence when the creator's credit score was last stored.
+/// Returns 0 when never stored (brand-new profile).
+pub fn get_credit_computed_ledger(env: &Env, address: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&ExtendedDataKey::CreditComputedAtLedger(address.clone()))
+        .unwrap_or(0)
+}
+
+/// Return the configured staleness threshold in ledgers.
+pub fn get_credit_staleness_threshold(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::CreditStalenessThreshold)
+        .unwrap_or(crate::types::DEFAULT_CREDIT_STALENESS_THRESHOLD_LEDGERS)
+}
+
+/// Set the staleness threshold in ledgers (admin operation).
+pub fn set_credit_staleness_threshold(env: &Env, threshold: u32) {
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::CreditStalenessThreshold, &threshold);
+}
+
+// ── Creator index helpers (#1185) ─────────────────────────────────────────────
+
+/// Append a creator address to the dense index, used for paginated iteration.
+pub fn append_creator_to_index(env: &Env, address: &Address) {
+    let count: u32 = env
+        .storage()
+        .instance()
+        .get(&ExtendedDataKey::CreatorIndexCount)
+        .unwrap_or(0);
+    env.storage()
+        .persistent()
+        .set(&ExtendedDataKey::CreatorIndex(count), address);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::CreatorIndexCount, &(count + 1));
+}
+
+/// Return the creator address at position `index` in the dense index, or None.
+pub fn get_creator_by_index(env: &Env, index: u32) -> Option<Address> {
+    env.storage()
+        .persistent()
+        .get(&ExtendedDataKey::CreatorIndex(index))
+}
+
+/// Total number of entries in the creator dense index.
+pub fn get_creator_index_count(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::CreatorIndexCount)
+        .unwrap_or(0)
+}
+
+// ── Oracle price helpers (#1184) ──────────────────────────────────────────────
+
+/// Store the oracle contract address for a given token.
+pub fn set_token_oracle_address(env: &Env, token: &Address, oracle: &Address) {
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::TokenOracleAddress(token.clone()), oracle);
+}
+
+/// Return the oracle contract address for a token, if one has been configured.
+pub fn get_token_oracle_address(env: &Env, token: &Address) -> Option<Address> {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::TokenOracleAddress(token.clone()))
+}
+
+/// Persist a freshly-fetched oracle price for a token.
+pub fn set_token_oracle_price(env: &Env, token: &Address, price: &crate::types::OraclePrice) {
+    env.storage()
+        .persistent()
+        .set(&ExtendedDataKey::TokenOraclePrice(token.clone()), price);
+}
+
+/// Return the last cached oracle price for a token.
+pub fn get_token_oracle_price(env: &Env, token: &Address) -> Option<crate::types::OraclePrice> {
+    env.storage()
+        .persistent()
+        .get(&ExtendedDataKey::TokenOraclePrice(token.clone()))
 }

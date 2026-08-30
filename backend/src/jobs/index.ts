@@ -85,3 +85,11 @@ export {
 } from './authChallengeCleanup.worker.js';
 
 export { bootstrapJobs } from './main.js';
+
+export { RETENTION_QUEUE, getRetentionQueue } from './retention.queue.js';
+export {
+  RETENTION_DAYS,
+  runRetentionPrune,
+  createRetentionWorker,
+  scheduleRetentionPrune,
+} from './retention.worker.js';

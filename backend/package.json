@@ -28,6 +28,9 @@
     "prisma:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts"
   },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
   "lint-staged": {
     "**/*.ts": [
       "eslint --fix",

@@ -104,7 +104,7 @@ pub fn require_admin(env: &Env, caller: &Address) -> Result<(), ContractError> {
 }
 
 pub fn require_not_paused(env: &Env) -> Result<(), ContractError> {
-    if storage::is_paused(env) {
+    if storage::is_paused(env, crate::types::PauseFlag::All) {
         return Err(ContractError::ContractPaused);
     }
     Ok(())
@@ -144,9 +144,12 @@ pub fn initialize(
     storage::set_fee_collector(env, fee_collector);
     storage::set_fee_bps(env, fee_bps);
     storage::set_native_token(env, native_token);
-    storage::set_paused(env, false);
+    storage::set_pause_flags(env, 0); // No pauses by default
     storage::set_min_tip_amount(env, 1_000_000_i128);
     storage::set_min_withdrawal_amount(env, 1_000_000_i128);
+    let breaker_config = storage::default_circuit_breaker_config();
+    storage::set_circuit_breaker_config(env, &breaker_config);
+    storage::reset_circuit_breaker_status(env, breaker_config.bucket_count);
     storage::set_version(env, crate::CONTRACT_VERSION);
     storage::set_reentrancy_guard(env, false);
     storage::set_runtime_config(
@@ -157,13 +160,14 @@ pub fn initialize(
             fee_bps,
             fee_change_delay_ledgers: DEFAULT_FEE_CHANGE_DELAY_LEDGERS,
             native_token: native_token.clone(),
-            paused: false,
+            pause_flags: 0,
             min_tip_amount: 1_000_000_i128,
             rate_limit: crate::types::RateLimitConfig {
                 max_ops: 50,
                 window_secs: 3600,
             },
             domain_reverify_secs: storage::DEFAULT_DOMAIN_REVERIFICATION_INTERVAL,
+            max_sender_contribution_bps: crate::types::DEFAULT_MAX_SENDER_CONTRIBUTION_BPS,
         },
     );
     storage::set_leaderboard_set(
@@ -419,11 +423,7 @@ pub fn set_fee_change_delay(
 ///
 /// Fee increases are timelocked; decreases may be applied immediately, but
 /// still pass through the same proposal record so clients can warn users.
-pub fn propose_fee_change(
-    env: &Env,
-    caller: &Address,
-    fee_bps: u32,
-) -> Result<(), ContractError> {
+pub fn propose_fee_change(env: &Env, caller: &Address, fee_bps: u32) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
     require_no_multisig(env)?;
@@ -460,10 +460,7 @@ pub fn propose_fee_change_inner(env: &Env, fee_bps: u32) -> Result<(u32, u32), C
     } else {
         current_ledger
     };
-    storage::set_pending_fee_change(
-        env,
-        &(fee_bps, effective_ledger, current_ledger, !increase),
-    );
+    storage::set_pending_fee_change(env, &(fee_bps, effective_ledger, current_ledger, !increase));
     events::emit_fee_change_proposed(env, old_bps, fee_bps, effective_ledger, !increase);
     Ok((old_bps, fee_bps))
 }
@@ -743,12 +740,12 @@ pub fn get_admin_audit_history(
     Ok(out)
 }
 
-pub fn pause(env: &Env, caller: &Address) -> Result<(), ContractError> {
+pub fn pause(env: &Env, caller: &Address, flag: crate::types::PauseFlag) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
     require_no_multisig(env)?;
-    storage::set_paused(env, true);
-    events::emit_contract_paused(env, caller);
+    storage::set_pause_flag(env, flag, true);
+    events::emit_contract_paused(env, caller, flag);
     log_admin_action(
         env,
         caller,
@@ -759,12 +756,12 @@ pub fn pause(env: &Env, caller: &Address) -> Result<(), ContractError> {
     Ok(())
 }
 
-pub fn unpause(env: &Env, caller: &Address) -> Result<(), ContractError> {
+pub fn unpause(env: &Env, caller: &Address, flag: crate::types::PauseFlag) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
     require_no_multisig(env)?;
-    storage::set_paused(env, false);
-    events::emit_contract_unpaused(env, caller);
+    storage::set_pause_flag(env, flag, false);
+    events::emit_contract_unpaused(env, caller, flag);
     log_admin_action(
         env,
         caller,
@@ -794,14 +791,48 @@ pub fn set_min_tip_amount(env: &Env, caller: &Address, amount: i128) -> Result<(
     Ok(())
 }
 
-pub fn set_min_withdrawal_amount(env: &Env, caller: &Address, amount: i128) -> Result<(), ContractError> {
+pub fn set_min_withdrawal_amount(
+    env: &Env,
+    caller: &Address,
+    amount: i128,
+) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
-    if amount < 0 { return Err(ContractError::InvalidAmount); }
+    if amount < 0 {
+        return Err(ContractError::InvalidAmount);
+    }
     let old = storage::get_min_withdrawal_amount(env);
     storage::set_min_withdrawal_amount(env, amount);
     events::emit_min_withdrawal_amount_updated(env, old, amount);
-    log_admin_action(env, caller, Symbol::new(env, "set_min_withdrawal"), i128_to_string(env, old), i128_to_string(env, amount));
+    log_admin_action(
+        env,
+        caller,
+        Symbol::new(env, "set_min_withdrawal"),
+        i128_to_string(env, old),
+        i128_to_string(env, amount),
+    );
+    Ok(())
+}
+
+/// Set the maximum sender contribution to a creator's leaderboard score in basis points.
+/// Admin only. Default is 5000 (50%). Max is 10000 (100%).
+pub fn set_max_sender_contribution(
+    env: &Env,
+    caller: &Address,
+    bps: u32,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    require_admin(env, caller)?;
+    if bps > 10000 {
+        return Err(ContractError::InvalidInput);
+    }
+    let config = storage::get_runtime_config(env).ok_or(ContractError::NotInitialized)?;
+    let old = config.max_sender_contribution_bps;
+    if old == bps {
+        return Ok(());
+    }
+    storage::update_runtime_config(env, |c| c.max_sender_contribution_bps = bps);
+    // Also update the legacy storage if needed
     Ok(())
 }
 
@@ -894,13 +925,17 @@ pub fn propose_upgrade(
 }
 
 pub fn get_proposed_upgrade(env: &Env) -> Option<BytesN<32>> {
-    env.storage().instance().get(&ExtendedDataKey::ProposedUpgradeHash)
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::ProposedUpgradeHash)
 }
 
 pub fn cancel_upgrade(env: &Env, caller: &Address) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     require_admin(env, caller)?;
-    env.storage().instance().remove(&ExtendedDataKey::ProposedUpgradeHash);
+    env.storage()
+        .instance()
+        .remove(&ExtendedDataKey::ProposedUpgradeHash);
     events::emit_upgrade_cancelled(env, caller);
     log_admin_action(
         env,
@@ -927,7 +962,9 @@ pub fn upgrade(
     }
     env.deployer()
         .update_current_contract_wasm(new_wasm_hash.clone());
-    env.storage().instance().remove(&ExtendedDataKey::ProposedUpgradeHash);
+    env.storage()
+        .instance()
+        .remove(&ExtendedDataKey::ProposedUpgradeHash);
     let old_version = storage::get_version(env);
     let new_version = old_version + 1;
     storage::set_version(env, new_version);

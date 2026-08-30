@@ -1,8 +1,7 @@
-
-Auth.service · TS
 import jwt from "jsonwebtoken";
 import { randomBytes, createHash, timingSafeEqual } from "crypto";
 import { Networks } from "@stellar/stellar-sdk";
+import { isIP } from "net";
 import { prisma } from "../../db/prisma.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../common/utils/logger.js";
@@ -11,14 +10,17 @@ import {
   UnauthorizedError,
   ConflictError,
   TooManyRequestsError,
+  NotFoundError,
 } from "../../common/errors/AppError.js";
 import type {
   AuthPayload,
   TokenPair,
   ChallengeResponse,
+  SessionMetadata,
+  AuthSession,
 } from "./auth.types.js";
 import { verifyEd25519Signature } from "./signature.js";
- 
+
 /**
  * ASSUMPTION: a Redis client singleton exists at "../../lib/redis.js" and is
  * already used elsewhere in this repo (e.g. for BullMQ). Adjust the import
@@ -27,14 +29,14 @@ import { verifyEd25519Signature } from "./signature.js";
  * call sites below don't need to change.
  */
 import { redis } from "../../lib/redis.js";
- 
+
 /**
  * Domain constant included in every signed challenge message.
  * Prevents cross-domain replay attacks — a signature produced for
  * tipz.app cannot be replayed against a different service.
  */
 const AUTH_DOMAIN = "tipz.app";
- 
+
 /**
  * FIX: previously there was a single `env.NETWORK_PASSPHRASE` used
  * regardless of which network was requested, so the "Network:" line in the
@@ -47,9 +49,9 @@ const NETWORK_PASSPHRASES: Record<string, string> = {
   FUTURENET: Networks.FUTURENET,
   MAINNET: Networks.PUBLIC,
 };
- 
+
 const ALLOWED_NETWORKS = new Set(Object.keys(NETWORK_PASSPHRASES));
- 
+
 /**
  * Rate limit config for challenge issuance and verification. These are read
  * directly from process.env with sane defaults; move them into the central
@@ -71,7 +73,7 @@ const VERIFY_RATE_LIMIT_MAX_PER_ADDRESS = Number(
 const VERIFY_RATE_LIMIT_MAX_PER_IP = Number(
   process.env.AUTH_VERIFY_RATE_LIMIT_MAX_PER_IP ?? 40,
 );
- 
+
 /**
  * Fixed-window rate limiter backed by Redis INCR/EXPIRE. INCR is atomic, so
  * concurrent requests racing on the same key still get a correct, strictly
@@ -94,21 +96,21 @@ async function checkAndIncrementRateLimit(
     );
   }
 }
- 
+
 /**
  * Helper to hash a refresh token.
  */
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
- 
+
 /**
  * Generates a random challenge string for wallet signature verification.
  */
 function generateChallenge(): string {
   return randomBytes(32).toString("hex");
 }
- 
+
 /**
  * Creates a JWT access token.
  */
@@ -117,27 +119,70 @@ function generateAccessToken(payload: AuthPayload): string {
     expiresIn: env.JWT_EXPIRES_IN,
   } as jwt.SignOptions);
 }
- 
+
+export function getSessionMetadata(
+  userAgent: string | undefined,
+  ip: string | undefined,
+): SessionMetadata {
+  const browser = userAgent?.match(
+    /(Edg|Chrome|Firefox|Safari|Opera)\/?([\d.]+)/i,
+  )?.[1];
+  const operatingSystem = userAgent?.match(
+    /(Windows|Mac OS X|Android|iPhone|iPad|Linux)/i,
+  )?.[1];
+
+  return {
+    device:
+      [browser, operatingSystem].filter(Boolean).join(" on ") ||
+      "Unknown device",
+    ipAddress: truncateIp(ip),
+  };
+}
+
+function truncateIp(ip: string | undefined): string {
+  if (!ip) return "unknown";
+  const normalized = ip.replace(/^::ffff:/i, "");
+  if (isIP(normalized) === 4) {
+    const parts = normalized.split(".");
+    return `${parts[0]}.${parts[1]}.${parts[2]}.0`;
+  }
+  if (isIP(normalized) === 6) {
+    const groups = normalized.split(":").filter(Boolean).slice(0, 3);
+    return `${groups.join(":")}::`;
+  }
+  return "unknown";
+}
+
 /**
  * Creates a refresh token and stores it in the database.
  */
-async function generateRefreshToken(userId: string): Promise<string> {
+async function generateRefreshToken(
+  userId: string,
+  metadata: SessionMetadata,
+  sessionId = randomBytes(16).toString("hex"),
+  familyId = sessionId,
+): Promise<{ token: string; id: string; familyId: string }> {
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(
     Date.now() + parseDuration(env.REFRESH_TOKEN_EXPIRES_IN),
   );
- 
-  await prisma.refreshToken.create({
+
+  const record = await prisma.refreshToken.create({
     data: {
       userId,
+      sessionId,
+      familyId,
       hashedToken: hashToken(token),
       expiresAt,
+      device: metadata.device,
+      ipAddress: metadata.ipAddress,
+      lastUsedAt: new Date(),
     },
   });
- 
-  return token;
+
+  return { token, id: record.sessionId, familyId: record.familyId };
 }
- 
+
 /**
  * Parses a duration string (e.g., '7d', '15m') into milliseconds.
  */
@@ -146,20 +191,20 @@ function parseDuration(duration: string): number {
   if (!match) {
     throw new Error(`Invalid duration format: ${duration}`);
   }
- 
+
   const value = parseInt(match[1], 10);
   const unit = match[2];
- 
+
   const multipliers: Record<string, number> = {
     s: 1000,
     m: 60 * 1000,
     h: 60 * 60 * 1000,
     d: 24 * 60 * 60 * 1000,
   };
- 
+
   return value * multipliers[unit];
 }
- 
+
 /**
  * Resolves the real Stellar network passphrase for a given network
  * identifier. Throws if the identifier isn't one this deployment supports,
@@ -172,7 +217,7 @@ function resolveNetworkPassphrase(network: string): string {
   }
   return passphrase;
 }
- 
+
 /**
  * Builds the domain-bound message that the wallet must sign.
  *
@@ -203,21 +248,19 @@ function buildSignedMessage(
     `Expires: ${expiresAt.toISOString()}`,
   ].join("\n");
 }
- 
+
 /**
  * Constant-time string comparison to prevent timing attacks on any
  * secret material (e.g., challenge strings, tokens).
  */
 function constantTimeCompare(a: string, b: string): boolean {
   if (a.length !== b.length) {
-    // Still do the comparison to avoid length-based timing oracle,
-    // but we know they can't match.
     timingSafeEqual(Buffer.from(a), Buffer.from(a));
     return false;
   }
   return timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
- 
+
 /**
  * Creates an authentication challenge for a Stellar wallet address.
  * The challenge is bound to the address and network to prevent cross-address
@@ -232,11 +275,11 @@ export async function createChallenge(
   requestIp: string,
 ): Promise<ChallengeResponse> {
   const boundNetwork = network || env.STELLAR_NETWORK;
- 
+
   if (!ALLOWED_NETWORKS.has(boundNetwork)) {
     throw new BadRequestError(`Unsupported network: ${boundNetwork}`);
   }
- 
+
   await checkAndIncrementRateLimit(
     "challenge:addr",
     stellarAddress,
@@ -247,18 +290,16 @@ export async function createChallenge(
     requestIp,
     CHALLENGE_RATE_LIMIT_MAX_PER_IP,
   );
- 
+
   const networkPassphrase = resolveNetworkPassphrase(boundNetwork);
- 
-  // Clean up expired challenges for this address
+
   await prisma.authChallenge.deleteMany({
     where: {
       stellarAddress,
       expiresAt: { lt: new Date() },
     },
   });
- 
-  // Check for existing unused challenge for this address and network
+
   const existingChallenge = await prisma.authChallenge.findFirst({
     where: {
       stellarAddress,
@@ -266,7 +307,7 @@ export async function createChallenge(
       expiresAt: { gt: new Date() },
     },
   });
- 
+
   if (existingChallenge) {
     logger.info(
       { stellarAddress, network: boundNetwork },
@@ -280,13 +321,12 @@ export async function createChallenge(
       domain: AUTH_DOMAIN,
     };
   }
- 
-  // Create new challenge
+
   const challenge = generateChallenge();
   const expiresAt = new Date(
     Date.now() + env.AUTH_CHALLENGE_TTL_SECONDS * 1000,
   );
- 
+
   await prisma.authChallenge.create({
     data: {
       stellarAddress,
@@ -295,12 +335,12 @@ export async function createChallenge(
       expiresAt,
     },
   });
- 
+
   logger.info(
     { stellarAddress, network: boundNetwork },
     "Created new auth challenge",
   );
- 
+
   return {
     challenge,
     expiresAt: expiresAt.toISOString(),
@@ -309,7 +349,7 @@ export async function createChallenge(
     domain: AUTH_DOMAIN,
   };
 }
- 
+
 /**
  * Verifies a signed challenge and returns JWT tokens.
  * Uses ed25519 signature verification to prove wallet ownership.
@@ -326,13 +366,14 @@ export async function verifyChallenge(
   challenge: string,
   network: string | undefined,
   requestIp: string,
+  metadata: SessionMetadata = { device: "Unknown device", ipAddress: "unknown" },
 ): Promise<TokenPair> {
   const expectedNetwork = network || env.STELLAR_NETWORK;
- 
+
   if (!ALLOWED_NETWORKS.has(expectedNetwork)) {
     throw new BadRequestError(`Unsupported network: ${expectedNetwork}`);
   }
- 
+
   await checkAndIncrementRateLimit(
     "verify:addr",
     stellarAddress,
@@ -343,35 +384,27 @@ export async function verifyChallenge(
     requestIp,
     VERIFY_RATE_LIMIT_MAX_PER_IP,
   );
- 
-  // Find the challenge
+
   const authChallenge = await prisma.authChallenge.findUnique({
     where: { challenge },
   });
- 
+
   if (!authChallenge) {
     throw new BadRequestError("Invalid challenge");
   }
- 
-  // Validate that the challenge belongs to the requesting address
+
   if (!constantTimeCompare(authChallenge.stellarAddress, stellarAddress)) {
     throw new BadRequestError("Challenge address mismatch");
   }
- 
-  // Validate that the challenge is for the correct network
+
   if (authChallenge.network !== expectedNetwork) {
     throw new BadRequestError("Challenge network mismatch");
   }
- 
+
   if (authChallenge.expiresAt < new Date()) {
     throw new BadRequestError("Challenge expired");
   }
- 
-  // Reconstruct the expected signed message using stored metadata.
-  // FIX: this now resolves a passphrase that's actually distinct per
-  // network, so a signature produced for one network's challenge can't
-  // verify against another network's challenge even if every other field
-  // matches.
+
   const networkPassphrase = resolveNetworkPassphrase(authChallenge.network);
   const expectedMessage = buildSignedMessage(
     stellarAddress,
@@ -379,105 +412,223 @@ export async function verifyChallenge(
     challenge,
     authChallenge.expiresAt,
   );
- 
-  // Verify the ed25519 signature against the domain-bound message
+
   const isValidSignature = verifyEd25519Signature(
     stellarAddress,
     expectedMessage,
     signature,
   );
- 
+
   if (!isValidSignature) {
     throw new UnauthorizedError("Invalid signature");
   }
- 
-  // ── Atomic single-use enforcement ──────────────────────────────────────
-  // deleteMany maps to a single DELETE … WHERE id = ? SQL statement, which
-  // is atomic at the database level. Only one concurrent request will
-  // receive count = 1; all others receive count = 0 and are rejected.
+
   const deleted = await prisma.authChallenge.deleteMany({
     where: {
       id: authChallenge.id,
     },
   });
- 
+
   if (deleted.count === 0) {
     throw new ConflictError("Challenge already used");
   }
- 
-  // Find or create user (upsert is atomic — safe under concurrent requests)
+
+  // Find or create user. Upsert is atomic at the DB level, so it's safe
+  // under concurrent sign-ins without needing a P2002 fallback.
   const user = await prisma.user.upsert({
     where: { stellarAddress },
     create: { stellarAddress },
     update: {},
   });
- 
-  logger.info({ stellarAddress, userId: user.id }, "User authenticated");
- 
-  // Generate tokens
+
   const payload: AuthPayload = {
     userId: user.id,
     stellarAddress: user.stellarAddress,
     role: user.role,
     scopes: user.scopes,
   };
- 
-  const accessToken = generateAccessToken(payload);
-  const refreshToken = await generateRefreshToken(user.id);
- 
+
+  const session = await generateRefreshToken(user.id, metadata);
+  const accessToken = generateAccessToken({ ...payload, sessionId: session.id });
+
+  logger.info(
+    { stellarAddress, userId: user.id },
+    "User authenticated successfully",
+  );
+
   return {
     accessToken,
-    refreshToken,
+    refreshToken: session.token,
   };
 }
- 
+
 /**
  * Refreshes an access token using a refresh token.
+ * Implements rotation, reuse detection, and family revocation (issue #080):
+ * - Each refresh issues a new token and invalidates the old one
+ * - Reuse of an already-rotated token revokes the entire family and logs a security event
+ * - Tokens are stored hashed (see hashToken), familyId tracks lineage for revocation
  */
-export async function refreshToken(refreshToken: string): Promise<TokenPair> {
-  // Find the refresh token
+export async function refreshToken(
+  refreshToken: string,
+  metadata: SessionMetadata = { device: "Unknown device", ipAddress: "unknown" },
+): Promise<TokenPair> {
   const tokenRecord = await prisma.refreshToken.findUnique({
     where: { hashedToken: hashToken(refreshToken) },
     include: { user: true },
   });
- 
+
   if (!tokenRecord) {
     throw new UnauthorizedError("Invalid refresh token");
   }
- 
-  if (tokenRecord.revokedAt) {
-    throw new UnauthorizedError("Refresh token revoked");
-  }
- 
+
   if (tokenRecord.expiresAt < new Date()) {
     throw new UnauthorizedError("Refresh token expired");
   }
- 
-  // Revoke old token
-  await prisma.refreshToken.update({
-    where: { id: tokenRecord.id },
-    data: { revokedAt: new Date() },
+
+  if (tokenRecord.revokedAt) {
+    const familyId = (tokenRecord as { familyId?: string }).familyId ?? tokenRecord.sessionId;
+
+    await prisma.refreshToken.updateMany({
+      where: {
+        familyId,
+        revokedAt: null,
+      },
+      data: { revokedAt: new Date() },
+    });
+    await prisma.refreshToken.updateMany({
+      where: {
+        sessionId: tokenRecord.sessionId,
+        revokedAt: null,
+      },
+      data: { revokedAt: new Date() },
+    });
+
+    logger.warn(
+      {
+        userId: tokenRecord.userId,
+        sessionId: tokenRecord.sessionId,
+        familyId,
+        ip: metadata.ipAddress,
+        device: metadata.device,
+        tokenId: tokenRecord.id,
+        event: 'refresh_token_reuse_detected',
+      },
+      'SECURITY: Refresh token reuse detected — entire family revoked (potential theft)',
+    );
+
+    throw new UnauthorizedError("Refresh token reuse detected — family revoked");
+  }
+
+  const familyId = (tokenRecord as { familyId?: string }).familyId ?? tokenRecord.sessionId;
+
+  const newSession = await prisma.$transaction(async (tx) => {
+    await tx.refreshToken.update({
+      where: { id: tokenRecord.id },
+      data: { revokedAt: new Date(), lastUsedAt: new Date() },
+    });
+
+    const token = randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + parseDuration(env.REFRESH_TOKEN_EXPIRES_IN));
+
+    const record = await tx.refreshToken.create({
+      data: {
+        userId: tokenRecord.userId,
+        sessionId: tokenRecord.sessionId,
+        familyId,
+        hashedToken: hashToken(token),
+        expiresAt,
+        device: metadata.device,
+        ipAddress: metadata.ipAddress,
+        lastUsedAt: new Date(),
+      },
+    });
+
+    return { token, id: record.sessionId, familyId: record.familyId };
   });
- 
-  // Generate new tokens with updated user info
+
   const payload: AuthPayload = {
     userId: tokenRecord.userId,
     stellarAddress: tokenRecord.user.stellarAddress,
     role: tokenRecord.user.role,
     scopes: tokenRecord.user.scopes,
   };
- 
-  const accessToken = generateAccessToken(payload);
-  const newRefreshToken = await generateRefreshToken(tokenRecord.userId);
- 
-  logger.info({ userId: tokenRecord.userId }, "Token refreshed successfully");
- 
+
+  const accessToken = generateAccessToken({
+    ...payload,
+    sessionId: newSession.id,
+  });
+
+  logger.info(
+    { userId: tokenRecord.userId, sessionId: newSession.id, familyId: newSession.familyId },
+    "Token refreshed successfully — rotated within family",
+  );
+
   return {
     accessToken,
-    refreshToken: newRefreshToken,
+    refreshToken: newSession.token,
   };
 }
- 
+
+export async function listSessions(
+  userId: string,
+  currentSessionId?: string,
+): Promise<AuthSession[]> {
+  type SessionRecord = {
+    sessionId: string;
+    device: string;
+    ipAddress: string;
+    lastUsedAt: Date;
+    createdAt: Date;
+  };
+
+  const sessions = await prisma.refreshToken.findMany({
+    where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+    select: {
+      sessionId: true,
+      device: true,
+      ipAddress: true,
+      lastUsedAt: true,
+      createdAt: true,
+    },
+    orderBy: { lastUsedAt: "desc" },
+  });
+
+  return (sessions as SessionRecord[]).map((session) => ({
+    id: session.sessionId,
+    device: session.device,
+    ip: session.ipAddress,
+    lastUsedAt: session.lastUsedAt.toISOString(),
+    createdAt: session.createdAt.toISOString(),
+    current: session.sessionId === currentSessionId,
+  }));
+}
+
+export async function revokeSession(
+  userId: string,
+  sessionId: string,
+): Promise<void> {
+  const result = await prisma.refreshToken.updateMany({
+    where: { sessionId, userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  if (result.count === 0) throw new NotFoundError("Session not found");
+}
+
+export async function revokeOtherSessions(
+  userId: string,
+  currentSessionId?: string,
+): Promise<void> {
+  await prisma.refreshToken.updateMany({
+    where: {
+      userId,
+      revokedAt: null,
+      ...(currentSessionId ? { sessionId: { not: currentSessionId } } : {}),
+    },
+    data: { revokedAt: new Date() },
+  });
+}
+
 /**
  * Revokes a refresh token (logout).
  */
@@ -485,24 +636,23 @@ export async function revokeRefreshToken(refreshToken: string): Promise<void> {
   const tokenRecord = await prisma.refreshToken.findUnique({
     where: { hashedToken: hashToken(refreshToken) },
   });
- 
+
   if (!tokenRecord) {
     throw new UnauthorizedError("Invalid refresh token");
   }
- 
+
   if (tokenRecord.revokedAt) {
-    // Already revoked, no-op
     return;
   }
- 
+
   await prisma.refreshToken.update({
     where: { id: tokenRecord.id },
     data: { revokedAt: new Date() },
   });
- 
+
   logger.info({ userId: tokenRecord.userId }, "Refresh token revoked");
 }
- 
+
 /**
  * Verifies a JWT access token and returns the payload.
  */
@@ -513,7 +663,7 @@ export function verifyAccessToken(token: string): AuthPayload {
     throw new UnauthorizedError("Invalid or expired access token");
   }
 }
- 
+
 /**
  * Prunes expired auth challenges from the database.
  * Called by the scheduled cleanup job.
@@ -524,14 +674,14 @@ export async function pruneExpiredChallenges(): Promise<number> {
       expiresAt: { lt: new Date() },
     },
   });
- 
+
   if (result.count > 0) {
     logger.info({ count: result.count }, "Pruned expired auth challenges");
   }
- 
+
   return result.count;
 }
- 
+
 // Export constants for testing
 export {
   AUTH_DOMAIN,
@@ -541,4 +691,3 @@ export {
   resolveNetworkPassphrase,
   constantTimeCompare,
 };
- 

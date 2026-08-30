@@ -193,7 +193,44 @@ docker run -p 8080:80 stellar-tipz-frontend
 
 ---
 
-## 4. Helper Scripts
+## 4. Database migration rollback runbook
+
+Database migrations are forward-only in Prisma, so rollback is an incident
+procedure rather than `prisma migrate down`.
+
+1. Stop application deploys and pause workers that write to the affected
+  tables. Record the current migration name with `npx prisma migrate status`.
+2. Assess whether the newest migration has a sibling `down.sql`. Review it
+  before execution; down SQL must be specific to that migration and must not
+  contain an unbounded data rewrite.
+3. Take or verify a database snapshot, then rehearse the down SQL against a
+  restored copy. On the production database, execute it using the approved
+  change-control connection, for example:
+
+  ```bash
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+    -f backend/prisma/migrations/<migration>/down.sql
+  ```
+
+4. Deploy the compatible application version, run health checks, and verify
+  `npx prisma migrate status` plus the affected API workflows. Do not edit the
+  `_prisma_migrations` history by hand; record the rollback and follow-up
+  forward migration in the incident log.
+
+Some migrations are intentionally irreversible. If data has already been
+ dropped, a down SQL file cannot reconstruct it. Restore the last known-good
+ snapshot to an isolated database, validate it, promote it according to the
+ disaster-recovery procedure, and replay only verified writes captured after
+ the snapshot. Treat the migration as failed, preserve the failed database for
+ forensics, and create a new forward migration after recovery. The CI
+ `migration-safety` job requires an explicit `.irreversible` marker for this
+ case and still requires the destructive-operation acknowledgement.
+
+The pull-request CI rehearses the newest migration against a seeded PostgreSQL
+16 database: it applies the complete history, runs the Prisma seed, executes
+the newest `down.sql`, and verifies that the database schema changed.
+
+## 5. Helper Scripts
 
 Located in `scripts/`:
 
