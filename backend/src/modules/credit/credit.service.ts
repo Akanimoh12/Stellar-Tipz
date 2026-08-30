@@ -88,10 +88,10 @@ function formatCreditScoreResponse(user: {
   if (!user.creditScore) {
     return {
       userId: user.id,
-      score: BASE_SCORE,
+      score: creditScoreConfig.weights.base,
       tier: 'Silver',
       components: {
-        base: BASE_SCORE,
+        base: creditScoreConfig.weights.base,
         tipVolume: 0,
         xMetrics: 0,
         accountAge: 0,
@@ -110,7 +110,7 @@ function formatCreditScoreResponse(user: {
     score: user.creditScore.value,
     tier,
     components: {
-      base: BASE_SCORE,
+      base: creditScoreConfig.weights.base,
       tipVolume: 0,
       xMetrics: 0,
       accountAge: 0,
