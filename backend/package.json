@@ -32,7 +32,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "backup:verify": "tsx scripts/verify-backup-restore.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
