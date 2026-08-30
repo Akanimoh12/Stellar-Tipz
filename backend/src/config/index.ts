@@ -56,6 +56,10 @@ export const config = {
     startLedger: env.INDEXER_START_LEDGER,
     lagThresholdLedgers: env.INDEXER_LAG_THRESHOLD_LEDGERS,
     stallIntervals: env.INDEXER_STALL_INTERVALS,
+    /** Confirmation depth before an event is projected (issue #1257). */
+    finalityDepth: env.INDEXER_FINALITY_DEPTH,
+    /** Recent ledger hashes retained for reorg detection (issue #1257). */
+    reorgLookback: env.INDEXER_REORG_LOOKBACK,
   },
 
   twitter: {
