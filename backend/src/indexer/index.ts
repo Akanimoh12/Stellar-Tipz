@@ -19,3 +19,5 @@ export {
   resetIndexerMonitor,
 } from './monitor.js';
 export type { IndexerMonitorReport } from './monitor.js';
+export { runBackfill, BACKFILL_CURSOR_TOPIC } from './backfill.js';
+export type { BackfillOptions, BackfillReport, BackfillSummary } from './backfill.js';

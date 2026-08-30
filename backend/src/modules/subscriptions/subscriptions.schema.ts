@@ -10,7 +10,7 @@ export const listSubscriptionsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().min(1, 'Invalid cursor').optional(),
   offset: z.coerce.number().int().min(0).optional(),
-}).refine((query) => query.cursor === undefined || query.offset === undefined, {
+}).strict().refine((query) => query.cursor === undefined || query.offset === undefined, {
   message: 'cursor and offset cannot be used together',
 });
 
@@ -18,19 +18,19 @@ export const prepareCreateSubscriptionSchema = z.object({
   creatorStellarAddress: stellarAddress,
   amountStroops: z.string().regex(/^\d+$/, 'Amount must be a string of digits (stroops)'),
   interval: z.enum(['DAILY', 'WEEKLY', 'MONTHLY']),
-});
+}).strict();
 
 export const submitCreateSubscriptionSchema = prepareCreateSubscriptionSchema.extend({
   signedTxXdr: z.string().min(1, 'Signed transaction XDR is required'),
-});
+}).strict();
 
 export const prepareCancelSubscriptionSchema = z.object({
   creatorStellarAddress: stellarAddress,
-});
+}).strict();
 
 export const submitCancelSubscriptionSchema = prepareCancelSubscriptionSchema.extend({
   signedTxXdr: z.string().min(1, 'Signed transaction XDR is required'),
-});
+}).strict();
 
 export type ListSubscriptionsQuery = z.infer<typeof listSubscriptionsQuerySchema>;
 export type PrepareCreateSubscriptionInput = z.infer<typeof prepareCreateSubscriptionSchema>;

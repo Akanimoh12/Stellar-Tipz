@@ -8,7 +8,7 @@ export interface MetricsData {
   timestamp: string;
   service: string;
   uptime: number;
-  process: {
+  process: {https://github.com/StellarDevHub/Web3-Student-Lab/pull/1240
     memory: {
       rss: number;
       heapTotal: number;
@@ -49,6 +49,10 @@ export interface MetricsData {
     last_tick_processed: number;
     events_processed_total: number;
     errors_total: number;
+    /** Events whose topic/version is not yet understood by the indexer. */
+    unknown_events_total: number;
+    /** Last ledger successfully processed by the indexer (for lag = chainHead - this). */
+    last_processed_ledger: number | null;
   };
   circuitBreaker?: Record<string, { state: string; failures: number; opens: number }>;
   timeouts?: {
@@ -67,6 +71,8 @@ let latencyCount = 0;
 let slowQueryCount = 0;
 let poolSaturationCount = 0;
 const retentionPrunedCounts: Record<string, number> = {};
+let unknownEventCount = 0;
+let lastProcessedLedger: number | null = null;
 
 export function recordRequest(duration: number) {
   requestCount++;
@@ -90,6 +96,16 @@ export function recordPoolSaturation(): void {
 /** Records rows removed by one completed retention batch. */
 export function recordRetentionPruned(model: string, count: number): void {
   retentionPrunedCounts[model] = (retentionPrunedCounts[model] ?? 0) + count;
+}
+
+/** Records an indexer event the indexer does not yet understand (issue #1261). */
+export function recordUnknownEvent(): void {
+  unknownEventCount++;
+}
+
+/** Records the last ledger successfully processed by the indexer (issue #1258 / #1261). */
+export function recordIndexerLedgerProcessed(ledger: number): void {
+  lastProcessedLedger = ledger;
 }
 
 export async function getMetrics(): Promise<MetricsData> {
@@ -183,6 +199,10 @@ export async function getMetrics(): Promise<MetricsData> {
       rows_pruned_total: { ...retentionPrunedCounts },
     },
     indexer,
+    indexer: {
+      unknown_events_total: unknownEventCount,
+      last_processed_ledger: lastProcessedLedger,
+    },
     circuitBreaker,
     timeouts: {
       request_timeout_ms: env.REQUEST_TIMEOUT_MS,

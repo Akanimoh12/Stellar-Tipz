@@ -162,8 +162,17 @@ export async function updatePreferences(
 ): Promise<NotificationPreferenceResponse> {
   const pref = await prisma.notificationPreference.upsert({
     where: { userId },
-    create: { userId, ...patch },
-    update: patch,
+    create: {
+      userId,
+      tipReceived: patch.tipReceived,
+      goalReached: patch.goalReached,
+      subscriptionCharged: patch.subscriptionCharged,
+    },
+    update: {
+      tipReceived: patch.tipReceived,
+      goalReached: patch.goalReached,
+      subscriptionCharged: patch.subscriptionCharged,
+    },
   });
   return formatPreferences(pref);
 }
