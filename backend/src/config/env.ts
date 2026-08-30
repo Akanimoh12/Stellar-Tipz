@@ -107,6 +107,20 @@ export const envSchema = z.object({
   INDEXER_LAG_THRESHOLD_LEDGERS: z.coerce.number().int().positive().default(50),
   /** Consecutive polls with an unchanged cursor that trigger a stall alert. */
   INDEXER_STALL_INTERVALS: z.coerce.number().int().positive().default(3),
+  /**
+   * Confirmation depth (issue #1257). The indexer only projects events at
+   * ledgers at or below `head - INDEXER_FINALITY_DEPTH`, so a ledger that is
+   * later dropped by a reorg was never projected. Stellar reaches
+   * near-instant finality via SCP (a validated ledger is externalized, not
+   * probabilistically confirmed), so a small buffer is ample; the default is
+   * deliberately conservative. `0` disables the gate (process at head).
+   */
+  INDEXER_FINALITY_DEPTH: z.coerce.number().int().min(0).default(10),
+  /**
+   * How many recently-processed ledger hashes to retain for reorg detection
+   * (issue #1257). Must comfortably exceed `INDEXER_FINALITY_DEPTH`.
+   */
+  INDEXER_REORG_LOOKBACK: z.coerce.number().int().positive().default(64),
 
   CREDIT_RECOMPUTE_CRON: z.string().default('0 */6 * * *'),
   /** Cron expression for the daily analytics rollup job. Runs at 00:05 UTC daily by default. */
