@@ -17,6 +17,7 @@ const {
   mockHistoryFindMany,
   mockRedisGet,
   mockRedisSet,
+  mockTransaction,
 } = vi.hoisted(() => ({
   mockFindUnique: vi.fn(),
   mockAggregate: vi.fn(),
@@ -25,6 +26,13 @@ const {
   mockHistoryFindMany: vi.fn(),
   mockRedisGet: vi.fn(),
   mockRedisSet: vi.fn(),
+  mockTransaction: vi.fn(async (fn: (tx: unknown) => unknown) => {
+    const tx = {
+      creditScore: { upsert: mockUpsert },
+      creditScoreHistory: { create: mockCreate },
+    };
+    return fn(tx);
+  }),
 }));
 
 vi.mock('../../db/prisma.js', () => ({
@@ -36,6 +44,7 @@ vi.mock('../../db/prisma.js', () => ({
       create: mockCreate,
       findMany: mockHistoryFindMany,
     },
+    $transaction: mockTransaction,
     $disconnect: vi.fn(),
   },
 }));

@@ -6,22 +6,14 @@ import { BadRequestError, NotFoundError } from '../../common/errors/AppError.js'
 import { logger } from '../../common/utils/logger.js';
 import { rpcCall } from '../../common/stellar/rpcClient.js';
 import { TipStatus } from '../../types/enums.js';
-import * as notificationsService from '../notifications/notifications.service.js';
-import { updateStreakOnTip } from '../streaks/streaks.service.js';
 import type { RecordTipInput } from './tips.schema.js';
-import { serializeTip, serializeTipReceipt } from './tips.serializer.js';
+import { serializeTip } from './tips.serializer.js';
 import type { TipResponseDto, TipAggregateByCreatorDto } from './tips.dto.js';
-import {
-  createCursorScope,
-  descendingCursorCondition,
-  toCursorPage,
-} from '../../common/pagination/cursor.js';
 
 export type { TipResponseDto, TipAggregateByCreatorDto };
 
 export interface GetTipsParams {
   cursor?: string;
-  offset?: number;
   limit: number;
   address?: string;
   direction?: string;
@@ -47,7 +39,7 @@ export interface PaginatedTips {
 export async function getPaginatedTips(
   params: GetTipsParams,
 ): Promise<PaginatedTips> {
-  const where: Prisma.TipWhereInput = {};
+  const where: Record<string, unknown> = {};
   if (params.address) {
     if (params.direction === 'sent') {
       where.fromAddress = { equals: params.address, mode: 'insensitive' };
@@ -76,29 +68,27 @@ export async function getPaginatedTips(
     where.createdAt = createdAtFilter;
   }
 
-  const scope = createCursorScope('tips', {
-    address: params.address,
-    direction: params.direction,
-    tokenCode: params.tokenCode,
-    startDate: params.startDate,
-    endDate: params.endDate,
-  });
-  const cursorCondition = descendingCursorCondition('createdAt', params.cursor, scope);
-  if (cursorCondition) where.AND = cursorCondition as Prisma.TipWhereInput;
-
   const findManyArgs: Parameters<typeof prisma.tip.findMany>[0] = {
     where,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: params.limit + 1,
-    ...(params.offset !== undefined ? { skip: params.offset } : {}),
   };
 
+  if (params.cursor) {
+    findManyArgs.cursor = { id: params.cursor };
+    findManyArgs.skip = 1;
+  }
+
   const tips = await prisma.tip.findMany(findManyArgs);
-  const page = toCursorPage(tips, params.limit, scope, (tip) => tip.createdAt);
+
+  const hasMore = tips.length > params.limit;
+  const results = hasMore ? tips.slice(0, params.limit) : tips;
+
+  const nextCursor = hasMore && results.length > 0 ? results[results.length - 1].id : null;
 
   return {
-    data: page.data.map(serializeTip),
-    nextCursor: page.nextCursor,
+    data: results.map(serializeTip),
+    nextCursor,
   };
 }
 
@@ -179,39 +169,25 @@ export async function getTipById(id: string): Promise<TipResponseDto> {
   return serializeTip(tip);
 }
 
-/** GET /tips/:txHash/receipt — fetch a receipt by txHash. Returns the raw Tip row so the controller can enforce authorization before serializing. */
-export async function getTipByTxHash(txHash: string) {
-  const tip = await prisma.tip.findUnique({ where: { txHash } });
-  if (!tip) throw new NotFoundError('Tip not found');
-  return tip;
-}
-
-export { serializeTipReceipt };
-
 /** Shared cursor-paginated list query, newest first. */
 async function listTips(
   where: Prisma.TipWhereInput,
   limit: number,
   cursor?: string,
-  offset?: number,
-  scopeName = 'tips-list',
 ): Promise<PaginatedTips> {
-  const scope = createCursorScope(scopeName, { where: JSON.stringify(where) });
-  const cursorCondition = descendingCursorCondition('createdAt', cursor, scope);
-  const scopedWhere: Prisma.TipWhereInput = cursorCondition
-    ? { AND: [where, cursorCondition as Prisma.TipWhereInput] }
-    : where;
   const rows = await prisma.tip.findMany({
-    where: scopedWhere,
+    where,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit + 1,
-    ...(offset !== undefined ? { skip: offset } : {}),
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
-  const page = toCursorPage(rows, limit, scope, (tip) => tip.createdAt);
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
 
   return {
-    data: page.data.map(serializeTip),
-    nextCursor: page.nextCursor,
+    data: page.map(serializeTip),
+    nextCursor: hasMore ? page[page.length - 1].id : null,
   };
 }
 
@@ -220,11 +196,10 @@ export async function getTipsReceivedByUsername(
   username: string,
   limit: number,
   cursor?: string,
-  offset?: number,
 ): Promise<PaginatedTips> {
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user || user.deletedAt) throw new NotFoundError('Profile not found');
-  return listTips({ toAddress: user.stellarAddress }, limit, cursor, offset, 'profile-tips');
+  return listTips({ toAddress: user.stellarAddress }, limit, cursor);
 }
 
 /** GET /users/me/tips/sent — tips sent by the authenticated user's address. */
@@ -232,9 +207,8 @@ export async function getTipsSentByAddress(
   fromAddress: string,
   limit: number,
   cursor?: string,
-  offset?: number,
 ): Promise<PaginatedTips> {
-  return listTips({ fromAddress }, limit, cursor, offset, 'user-sent-tips');
+  return listTips({ fromAddress }, limit, cursor);
 }
 
 /**
@@ -242,27 +216,116 @@ export async function getTipsSentByAddress(
  * If a tip with the given txHash already exists the existing record is returned
  * instead of inserting a duplicate. A Prisma P2002 unique-constraint violation
  * (from a concurrent insert) is handled the same way.
+ *
+ * Transactional boundary: Tip + Notification + AnalyticsDaily are updated atomically
+ * in a single interactive transaction (isolation RepeatableRead, timeout 8000ms).
+ * Streak updates are handled via atomic increment/version (see concurrency task).
+ * External side-effects (RPC verification, webhook enqueue, realtime publish) are
+ * enqueued AFTER commit — never held inside the transaction.
  */
 export async function recordTip(input: RecordTipInput): Promise<TipResponseDto> {
   const existing = await prisma.tip.findUnique({ where: { txHash: input.txHash } });
   if (existing) return serializeTip(existing);
 
   try {
-    const tip = await prisma.tip.create({
-      data: {
-        txHash: input.txHash,
-        ledger: input.ledger,
-        fromAddress: input.fromAddress,
-        toAddress: input.toAddress,
-        amountStroops: BigInt(input.amountStroops),
-        message: input.message,
+    const { tip, created } = await prisma.$transaction(
+      async (tx) => {
+        const dup = await tx.tip.findUnique({ where: { txHash: input.txHash } });
+        if (dup) return { tip: dup, created: false };
+
+        const tip = await tx.tip.create({
+          data: {
+            txHash: input.txHash,
+            ledger: input.ledger,
+            fromAddress: input.fromAddress,
+            toAddress: input.toAddress,
+            amountStroops: BigInt(input.amountStroops),
+            message: input.message,
+          },
+        });
+
+        // Notification for receiver (if user exists off-chain)
+        const receiver = await tx.user.findUnique({
+          where: { stellarAddress: input.toAddress },
+          select: { id: true },
+        });
+        if (receiver) {
+          await tx.notification.create({
+            data: {
+              userId: receiver.id,
+              type: "tip_received",
+              payload: {
+                txHash: input.txHash,
+                amountStroops: input.amountStroops,
+                fromAddress: input.fromAddress,
+              } as unknown as Prisma.InputJsonValue,
+            },
+          });
+        }
+
+        // Daily analytics — atomic counters (never read-then-write)
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        await tx.analyticsDaily.upsert({
+          where: { date: today },
+          create: {
+            date: today,
+            totalTips: 1,
+            totalVolume: BigInt(input.amountStroops),
+            newUsers: 0,
+            activeUsers: 1,
+          },
+          update: {
+            totalTips: { increment: 1 },
+            totalVolume: { increment: BigInt(input.amountStroops) },
+          },
+        });
+
+        return { tip, created: true };
       },
-    });
-    await notifyCreatorOfTip(tip);
-    await updateTipperStreak(tip.fromAddress);
+      {
+        timeout: 8000,
+        maxWait: 3000,
+        isolationLevel: "RepeatableRead",
+      },
+    );
+
+    // Enqueue side-effects AFTER commit — never inside transaction (connection pool safety)
+    if (created) {
+      // Goal and Streak are derived counters; use atomic/version helpers after commit
+      // Fire-and-forget with error logging, but await for correctness in tests
+      try {
+        const { atomicIncrementGoalRaised } = await import(
+          "../../common/utils/concurrency.js"
+        );
+        const { updateStreakForTip } = await import("../../common/utils/concurrency.js");
+        // Find userIds for atomic updates
+        const receiver = await prisma.user.findUnique({
+          where: { stellarAddress: input.toAddress },
+          select: { id: true },
+        });
+        const sender = await prisma.user.findUnique({
+          where: { stellarAddress: input.fromAddress },
+          select: { id: true },
+        });
+        if (receiver) {
+          await atomicIncrementGoalRaised(receiver.id, BigInt(input.amountStroops)).catch((e) =>
+            logger.warn({ err: e, userId: receiver.id }, "Goal increment failed"),
+          );
+        }
+        if (sender) {
+          await updateStreakForTip(sender.id).catch((e) =>
+            logger.warn({ err: e, userId: sender.id }, "Streak update failed"),
+          );
+        }
+      } catch (e) {
+        logger.warn({ err: e }, "Post-tip side-effects failed");
+      }
+    }
+
     return serializeTip(tip);
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       const tip = await prisma.tip.findUnique({ where: { txHash: input.txHash } });
       if (tip) return serializeTip(tip);
     }
@@ -271,62 +334,31 @@ export async function recordTip(input: RecordTipInput): Promise<TipResponseDto> 
 }
 
 /**
- * Notify the receiving creator that they got a new tip. Best-effort: only fires
- * for creators with an off-chain User row, skips self-tips, and never lets a
- * notification failure block the tip recording itself.
- */
-async function notifyCreatorOfTip(tip: {
-  id: string;
-  fromAddress: string;
-  toAddress: string;
-  amountStroops: bigint;
-  message: string | null;
-}): Promise<void> {
-  if (tip.fromAddress === tip.toAddress) return;
-
-  try {
-    const receiver = await prisma.user.findUnique({ where: { stellarAddress: tip.toAddress } });
-    if (!receiver) return;
-
-    await notificationsService.createNotification(receiver.id, 'tip_received', {
-      tipId: tip.id,
-      from: tip.fromAddress,
-      amountStroops: tip.amountStroops.toString(),
-      message: tip.message,
-    });
-  } catch (err) {
-    logger.error({ err, tipId: tip.id }, 'Failed to notify creator of new tip');
-  }
-}
-
-/**
- * Update the tipper's streak when a tip is recorded. Best-effort: only fires
- * for tippers with an off-chain User row and never lets a streak update
- * failure block the tip recording itself.
- */
-async function updateTipperStreak(fromAddress: string): Promise<void> {
-  try {
-    const sender = await prisma.user.findUnique({ where: { stellarAddress: fromAddress } });
-    if (!sender) return;
-    await updateStreakOnTip(sender.id);
-  } catch (err) {
-    logger.error({ err, fromAddress }, 'Failed to update tipper streak');
-  }
-}
-
-/**
  * PATCH /tips/:txHash/confirm — transition a tip from PENDING to CONFIRMED.
  * Idempotent: calling on an already-CONFIRMED tip is a no-op.
+ *
+ * Transactional boundary: status transition is wrapped to ensure
+ * idempotency under concurrent confirms (isolation ReadCommitted, timeout 5000ms).
+ * No external calls are held inside.
  */
 export async function confirmTip(txHash: string): Promise<TipResponseDto> {
-  const tip = await prisma.tip.findUnique({ where: { txHash } });
-  if (!tip) throw new NotFoundError('Tip not found');
-  if (tip.status === TipStatus.CONFIRMED) return serializeTip(tip);
-  const updated = await prisma.tip.update({
-    where: { txHash },
-    data: { status: TipStatus.CONFIRMED },
-  });
-  return serializeTip(updated);
+  return prisma.$transaction(
+    async (tx) => {
+      const tip = await tx.tip.findUnique({ where: { txHash } });
+      if (!tip) throw new NotFoundError("Tip not found");
+      if (tip.status === TipStatus.CONFIRMED) return serializeTip(tip);
+      const updated = await tx.tip.update({
+        where: { txHash },
+        data: { status: TipStatus.CONFIRMED },
+      });
+      return serializeTip(updated);
+    },
+    {
+      timeout: 5000,
+      maxWait: 2000,
+      isolationLevel: "ReadCommitted",
+    },
+  );
 }
 
 /**
