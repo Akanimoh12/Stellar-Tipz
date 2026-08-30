@@ -54,6 +54,10 @@ pub enum ContractError {
     InvalidMessage = 48,
     SubLimitReached = 49,
     RefundReqExpired = 50,
+    /// Profile is inactive beyond the cleanup threshold
+    ProfileInactive = 51,
+    /// Storage limit exceeded for variable-size entry
+    StorageLimitExceeded = 52,
 }
 
 impl ContractError {

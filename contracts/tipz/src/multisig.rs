@@ -233,7 +233,11 @@ pub fn approve_action(env: &Env, signer: &Address, proposal_id: u32) -> Result<(
 }
 
 /// Cancel a proposal (only the proposer can cancel)
-pub fn cancel_proposal(env: &Env, proposer: &Address, proposal_id: u32) -> Result<(), ContractError> {
+pub fn cancel_proposal(
+    env: &Env,
+    proposer: &Address,
+    proposal_id: u32,
+) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     proposer.require_auth();
 
@@ -301,12 +305,12 @@ fn execute_proposal_internal(
     // Execute the action
     match proposal.action {
         Action::Pause => {
-            storage::set_paused(env, true);
-            crate::events::emit_contract_paused(env, &env.current_contract_address());
+            storage::set_pause_flag(env, crate::types::PauseFlag::All, true);
+            crate::events::emit_contract_paused(env, &env.current_contract_address(), crate::types::PauseFlag::All);
         }
         Action::Unpause => {
-            storage::set_paused(env, false);
-            crate::events::emit_contract_unpaused(env, &env.current_contract_address());
+            storage::set_pause_flag(env, crate::types::PauseFlag::All, false);
+            crate::events::emit_contract_unpaused(env, &env.current_contract_address(), crate::types::PauseFlag::All);
         }
         Action::Upgrade(wasm_hash) => {
             env.deployer().update_current_contract_wasm(wasm_hash);

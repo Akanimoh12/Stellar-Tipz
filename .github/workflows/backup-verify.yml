@@ -1,0 +1,109 @@
+name: Backup Restore Verification
+
+# Issue #1256 — an unverified backup is not a backup. Restore the latest
+# production dump into a throwaway database on a schedule, validate it, and
+# fail loudly (red run + alert webhook) if anything is wrong.
+
+on:
+  schedule:
+    # 03:00 UTC daily — after the 02:00 UTC daily dump has landed.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      dump_s3_uri:
+        description: "Override: s3:// URI of a specific dump to verify"
+        required: false
+
+concurrency:
+  group: backup-verify
+  cancel-in-progress: false
+
+jobs:
+  verify-restore:
+    name: Restore latest dump into a scratch DB and validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      scratch-db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: scratch
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      SCRATCH_DATABASE_URL: postgres://postgres:postgres@localhost:5433/scratch
+      # The workflow needs read access to the backup bucket and the alert hook.
+      AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_READ_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_READ_AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.BACKUP_AWS_REGION }}
+      BACKUP_BUCKET: ${{ secrets.BACKUP_BUCKET }}
+      BACKUP_ALERT_WEBHOOK_URL: ${{ secrets.BACKUP_ALERT_WEBHOOK_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install postgresql-client (pg_restore / psql)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Resolve the dump to verify
+        id: dump
+        run: |
+          if [ -n "${{ github.event.inputs.dump_s3_uri }}" ]; then
+            echo "uri=${{ github.event.inputs.dump_s3_uri }}" >> "$GITHUB_OUTPUT"
+          else
+            LATEST=$(aws s3 ls "s3://${BACKUP_BUCKET}/pg/daily/" | sort | tail -n1 | awk '{print $4}')
+            if [ -z "$LATEST" ]; then echo "::error::no dump found under s3://${BACKUP_BUCKET}/pg/daily/"; exit 1; fi
+            echo "uri=s3://${BACKUP_BUCKET}/pg/daily/${LATEST}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Restore latest baseline row counts (if present)
+        run: |
+          aws s3 cp "s3://${BACKUP_BUCKET}/pg/verify/last-counts.json" /tmp/baseline.json || echo "no baseline yet"
+
+      - name: Verify restore
+        env:
+          BACKUP_DUMP_S3_URI: ${{ steps.dump.outputs.uri }}
+          BACKUP_BASELINE_PATH: /tmp/baseline.json
+        run: npm run backup:verify
+
+      - name: Persist this run's row counts as the next baseline
+        if: success()
+        run: |
+          COUNTS='{}'
+          for T in User Tip Refund Goal Subscription EventLog IndexerCursor Withdrawal; do
+            N=$(psql "$SCRATCH_DATABASE_URL" -Atqc "SELECT COUNT(*) FROM \"$T\"" 2>/dev/null || echo 0)
+            COUNTS=$(echo "$COUNTS" | jq --arg t "$T" --argjson n "${N:-0}" '. + {($t): $n}')
+          done
+          echo "$COUNTS" > /tmp/last-counts.json
+          aws s3 cp /tmp/last-counts.json "s3://${BACKUP_BUCKET}/pg/verify/last-counts.json"
+
+      - name: Alert on failure
+        if: failure()
+        run: |
+          if [ -n "${BACKUP_ALERT_WEBHOOK_URL}" ]; then
+            curl -sf -X POST -H 'content-type: application/json' \
+              -d "{\"text\":\":rotating_light: Backup restore verification workflow FAILED — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+              "${BACKUP_ALERT_WEBHOOK_URL}" || true
+          fi

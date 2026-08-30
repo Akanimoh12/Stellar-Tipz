@@ -2,12 +2,13 @@ import { Request, Response } from 'express';
 import { redis } from '../../db/redis.js';
 import { prisma } from '../../db/prisma.js';
 import { logger } from '../utils/logger.js';
+import { env } from '../../config/env.js';
 
 export interface MetricsData {
   timestamp: string;
   service: string;
   uptime: number;
-  process: {
+  process: {https://github.com/StellarDevHub/Web3-Student-Lab/pull/1240
     memory: {
       rss: number;
       heapTotal: number;
@@ -30,8 +31,36 @@ export interface MetricsData {
   };
   database: {
     pool_size: number;
+    pool_timeout_seconds: number;
+    /** Cumulative Prisma pool acquisition timeouts (P2024). */
+    pool_saturation_total: number;
+    query_timeout_ms: number;
     /** Cumulative count of queries that exceeded the slow-query threshold. */
     slow_queries_total: number;
+  };
+  retention: {
+    rows_pruned_total: Record<string, number>;
+  };
+  indexer?: {
+    /** Lag (ledgers) between the chain head and the last processed ledger. */
+    lag_ledgers: number;
+    last_processed_ledger: number | null;
+    stalled: boolean;
+    last_tick_processed: number;
+    events_processed_total: number;
+    errors_total: number;
+    /** Events whose topic/version is not yet understood by the indexer. */
+    unknown_events_total: number;
+    /** Last ledger successfully processed by the indexer (for lag = chainHead - this). */
+    last_processed_ledger: number | null;
+  };
+  circuitBreaker?: Record<string, { state: string; failures: number; opens: number }>;
+  timeouts?: {
+    request_timeout_ms: number;
+    rpc_timeout_ms: number;
+    horizon_timeout_ms: number;
+    ipfs_timeout_ms: number;
+    x_api_timeout_ms: number;
   };
 }
 
@@ -40,6 +69,10 @@ let errorCount = 0;
 let latencySum = 0;
 let latencyCount = 0;
 let slowQueryCount = 0;
+let poolSaturationCount = 0;
+const retentionPrunedCounts: Record<string, number> = {};
+let unknownEventCount = 0;
+let lastProcessedLedger: number | null = null;
 
 export function recordRequest(duration: number) {
   requestCount++;
@@ -54,6 +87,25 @@ export function recordError() {
 /** Records a single slow query event for the `/metrics` endpoint. */
 export function recordSlowQuery() {
   slowQueryCount++;
+}
+
+export function recordPoolSaturation(): void {
+  poolSaturationCount++;
+}
+
+/** Records rows removed by one completed retention batch. */
+export function recordRetentionPruned(model: string, count: number): void {
+  retentionPrunedCounts[model] = (retentionPrunedCounts[model] ?? 0) + count;
+}
+
+/** Records an indexer event the indexer does not yet understand (issue #1261). */
+export function recordUnknownEvent(): void {
+  unknownEventCount++;
+}
+
+/** Records the last ledger successfully processed by the indexer (issue #1258 / #1261). */
+export function recordIndexerLedgerProcessed(ledger: number): void {
+  lastProcessedLedger = ledger;
 }
 
 export async function getMetrics(): Promise<MetricsData> {
@@ -72,6 +124,43 @@ export async function getMetrics(): Promise<MetricsData> {
     } catch {
       redisInfo = undefined;
     }
+  }
+
+  // Indexer lag/rate metrics (issue #1258) — lazy import to avoid a cycle and
+  // to keep the (fragile) DB/network reads from blocking the metrics endpoint
+  // when they fail.
+  let indexer: MetricsData['indexer'];
+  try {
+    const { getIndexerReport } = await import('../../indexer/monitor.js');
+    const report = await getIndexerReport();
+    indexer = {
+      lag_ledgers: report.lagLedgers,
+      last_processed_ledger: report.lastProcessedLedger,
+      stalled: report.stalled,
+      last_tick_processed: report.lastTickProcessed,
+      events_processed_total: report.eventsProcessedTotal,
+      errors_total: report.errorsTotal,
+    };
+  } catch {
+    const { getIndexerSnapshot } = await import('../../indexer/monitor.js');
+    const snap = getIndexerSnapshot();
+    indexer = {
+      lag_ledgers: 0,
+      last_processed_ledger: snap.lastProcessedLedger,
+      stalled: false,
+      last_tick_processed: snap.lastTickProcessed,
+      events_processed_total: snap.eventsProcessedTotal,
+      errors_total: snap.errorsTotal,
+    };
+  }
+
+  // Circuit breaker states (issue #091) — lazy import to avoid cycle
+  let circuitBreaker: Record<string, { state: string; failures: number; opens: number }> | undefined;
+  try {
+    const { getCircuitBreakerMetrics } = await import('../utils/circuitBreaker.js');
+    circuitBreaker = getCircuitBreakerMetrics();
+  } catch {
+    circuitBreaker = undefined;
   }
 
   return {
@@ -100,8 +189,27 @@ export async function getMetrics(): Promise<MetricsData> {
       latency_ms: Math.round(avgLatency),
     },
     database: {
-      pool_size: prisma.$disconnect.length || 0,
+      pool_size: env.DATABASE_POOL_SIZE,
+      pool_timeout_seconds: env.DATABASE_POOL_TIMEOUT_SECONDS,
+      pool_saturation_total: poolSaturationCount,
+      query_timeout_ms: env.DATABASE_QUERY_TIMEOUT_MS,
       slow_queries_total: slowQueryCount,
+    },
+    retention: {
+      rows_pruned_total: { ...retentionPrunedCounts },
+    },
+    indexer,
+    indexer: {
+      unknown_events_total: unknownEventCount,
+      last_processed_ledger: lastProcessedLedger,
+    },
+    circuitBreaker,
+    timeouts: {
+      request_timeout_ms: env.REQUEST_TIMEOUT_MS,
+      rpc_timeout_ms: env.SOROBAN_RPC_TIMEOUT_MS,
+      horizon_timeout_ms: env.HORIZON_TIMEOUT_MS,
+      ipfs_timeout_ms: env.IPFS_TIMEOUT_MS,
+      x_api_timeout_ms: env.X_API_TIMEOUT_MS,
     },
   };
 }

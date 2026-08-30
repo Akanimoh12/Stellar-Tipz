@@ -28,43 +28,35 @@ model User {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   /// Soft-delete marker: non-null means the record is logically deleted.
-  deletedAt              DateTime?
-  /// Non-null means the creator voluntarily deactivated their account.
-  deactivatedAt          DateTime?
-  /// Non-null means an admin blocked this creator (excluded from discovery).
-  blockedAt              DateTime?
-  /// True when a moderator flagged the creator as unverified/suspicious. Such
-  /// creators are excluded from public discovery surfaces.
-  flaggedUnverified      Boolean   @default(false)
-  apiKeys                ApiKey[]
-  refreshTokens          RefreshToken[]
-  goals                  Goal[]
-  sentTips               Tip[]                   @relation("SentTips")
-  receivedTips           Tip[]                   @relation("ReceivedTips")
-  tipperSubscriptions    Subscription[]          @relation("SubscriptionTipper")
-  creatorSubscriptions   Subscription[]          @relation("SubscriptionCreator")
-  creditScore            CreditScore?
-  creditScoreHistory     CreditScoreHistory[]
-  withdrawals            Withdrawal[]
-  notifications          Notification[]
-  notificationPreference NotificationPreference?
-  leaderboardSnapshots   LeaderboardSnapshot[]
-  streak                 Streak?
-  webhookSubscriptions   WebhookSubscription[]
-  payoutSchedule          PayoutSchedule?
+  deletedAt      DateTime?
+  apiKeys              ApiKey[]
+  refreshTokens        RefreshToken[]
+  goals                Goal[]
+  sentTips             Tip[]                @relation("SentTips")
+  receivedTips         Tip[]                @relation("ReceivedTips")
+  tipperSubscriptions  Subscription[]       @relation("SubscriptionTipper")
+  creatorSubscriptions Subscription[]       @relation("SubscriptionCreator")
+  creditScore          CreditScore?
+  creditScoreHistory   CreditScoreHistory[]
+  withdrawals          Withdrawal[]
+  notifications        Notification[]
+  leaderboardSnapshots LeaderboardSnapshot[]
+  streak               Streak?
 
   @@index([createdAt])
+  // Audit: where deletedAt null + orderBy createdAt (listProfiles)
+  @@index([deletedAt, createdAt])
 }
 
 /// API key for service/admin access and webhook integrations.
 model ApiKey {
-  id          String    @id @default(cuid())
-  hashedKey   String    @unique
+  id          String   @id @default(cuid())
+  hashedKey   String   @unique
   scopes      String[]
   createdById String
-  createdBy   User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   /// Soft-delete marker: non-null means the record is logically deleted.
   deletedAt   DateTime?
 
@@ -97,11 +89,20 @@ model Tip {
   updatedAt     DateTime  @updatedAt
   refund        Refund?
 
-  sender   User? @relation("SentTips", fields: [fromAddress], references: [stellarAddress])
-  receiver User? @relation("ReceivedTips", fields: [toAddress], references: [stellarAddress])
+  sender        User?     @relation("SentTips", fields: [fromAddress], references: [stellarAddress])
+  receiver      User?     @relation("ReceivedTips", fields: [toAddress], references: [stellarAddress])
 
   @@index([toAddress, createdAt])
   @@index([fromAddress, createdAt])
+  // Audit: where/status/orderBy combinations
+  // equality status before range/sort createdAt
+  @@index([status, createdAt])
+  @@index([status, toAddress])
+  @@index([status, fromAddress])
+  @@index([tokenCode])
+  // Composite for filtered pagination: equality tokenCode + address before range createdAt
+  @@index([toAddress, tokenCode, createdAt])
+  @@index([fromAddress, tokenCode, createdAt])
 }
 
 /// Tracks indexer progress per event topic so it can resume after a restart.
@@ -110,6 +111,21 @@ model IndexerCursor {
   lastLedger Int
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+}
+
+/// Recent (ledger, ledgerHash) pairs the indexer has processed, per topic —
+/// a short trailing window used to detect chain reorganizations (issue
+/// #1257). On each tick the newest checkpoints' hashes are re-compared
+/// against the chain; a mismatch triggers rollback + reprocess. Pruned to
+/// `INDEXER_REORG_LOOKBACK` entries per topic.
+model LedgerCheckpoint {
+  topic      String
+  ledger     Int
+  ledgerHash String
+  createdAt  DateTime @default(now())
+
+  @@id([topic, ledger])
+  @@index([topic, ledger(sort: Desc)])
 }
 
 /// Lifecycle status of a withdrawal. Set to CONFIRMED/FAILED by the indexer
@@ -135,45 +151,10 @@ model Withdrawal {
   confirmedAt DateTime?
 
   @@index([userId])
-}
-
-/// Per-creator opt-in configuration for scheduled (auto) payouts.
-/// A creator enables this to have accrued tip balance automatically withdrawn
-/// once it reaches `thresholdStroops` and/or on a recurring `cadence`.
-model PayoutSchedule {
-  id          String   @id @default(cuid())
-  userId      String   @unique
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  /// Master switch for scheduled payouts.
-  enabled     Boolean  @default(false)
-  /// Minimum accrued balance (stroops) required before a payout is attempted.
-  thresholdStroops BigInt @default(0)
-  /// Recurring cadence. MANUAL means "pay out as soon as the threshold is met"
-  /// (re-checked every job run, subject to a cooldown).
-  cadence     PayoutCadence @default(MANUAL)
-  /// Next time the scheduler may attempt a payout for this creator.
-  nextRunAt   DateTime @default(now())
-  /// Last time a payout attempt (success or failure) was recorded.
-  lastRunAt   DateTime?
-  /// Status of the most recent payout attempt.
-  lastStatus  String?
-  /// Consecutive failures; reset to 0 on success. After `maxAttempts` the
-  /// schedule is paused and the creator is notified.
-  consecutiveFailures Int @default(0)
-  /// Set true after repeated failures; creator must re-enable to resume.
-  paused      Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([enabled, paused, nextRunAt])
-}
-
-/// Recurring cadence for scheduled payouts.
-enum PayoutCadence {
-  MANUAL
-  DAILY
-  WEEKLY
-  MONTHLY
+  // Audit: history orderBy requestedAt, and status filter
+  @@index([userId, status])
+  @@index([userId, requestedAt])
+  @@index([status])
 }
 
 /// Raw decoded on-chain event persisted for audit and replay.
@@ -195,6 +176,9 @@ model EventLog {
   @@index([topic])
   @@index([ledger])
   @@index([txHash])
+  // Audit: composite for topic+ledger range scans
+  @@index([topic, ledger])
+  @@index([ledger, topic])
 }
 
 /// Refund requests tied to a specific tip.
@@ -225,21 +209,9 @@ model Notification {
 
   @@index([userId, readAt])
   @@index([createdAt])
-}
-
-/// Per-user toggles controlling which notification types are created for them.
-/// Missing rows are treated as all-enabled (see notifications module defaults).
-model NotificationPreference {
-  id                  String   @id @default(cuid())
-  userId              String   @unique
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tipReceived         Boolean  @default(true)
-  goalReached         Boolean  @default(true)
-  subscriptionCharged Boolean  @default(true)
-  /// Whether the creator wants to be notified when a scheduled payout fails.
-  payoutFailed        Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  // Audit: list by userId ordered by createdAt (equality userId before sort createdAt)
+  @@index([userId, createdAt])
+  @@index([userId, readAt, createdAt])
 }
 
 /// Cached X (Twitter) account metrics.
@@ -275,6 +247,7 @@ model LeaderboardSnapshot {
 }
 
 /// Per-user tipping streak tracking. One row per user (userId is unique).
+/// Version column guards read-modify-write (optimistic locking) to prevent lost updates.
 model Streak {
   id            String    @id @default(cuid())
   userId        String    @unique
@@ -282,6 +255,7 @@ model Streak {
   currentStreak Int       @default(0)
   longestStreak Int       @default(0)
   lastTipDate   DateTime?
+  version       Int       @default(0)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -290,23 +264,30 @@ model Streak {
 /// Created when a wallet requests a sign-in nonce; deleted (or expired) after verification.
 /// TTL is enforced by the application layer via AUTH_CHALLENGE_TTL_SECONDS.
 model AuthChallenge {
-  id             String    @id @default(cuid())
+  id              String   @id @default(cuid())
   /// The wallet address this challenge was issued for.
-  stellarAddress String
+  stellarAddress  String
   /// Random nonce the wallet must sign to prove ownership.
-  challenge      String    @unique
+  challenge       String   @unique
   /// Network this challenge is bound to (TESTNET, FUTURENET, MAINNET).
-  network        String
+  network         String
   /// UTC timestamp after which the challenge is no longer valid.
-  expiresAt      DateTime
-  usedAt         DateTime?
+  expiresAt       DateTime
+  usedAt          DateTime?
 
   @@index([stellarAddress])
   @@index([expiresAt])
+  // Audit: where stellarAddress+network+usedAt+expiresAt (equality stellarAddress, network before range expiresAt)
+  @@index([stellarAddress, network])
+  @@index([stellarAddress, network, expiresAt])
+  @@index([stellarAddress, network, usedAt])
 }
 
 /// Refresh token issued on login, stored hashed for rotation/revocation.
 /// The raw token value is never persisted — only its hash is stored here.
+/// `familyId` tracks the token lineage/family for reuse detection: all tokens
+/// derived from the same initial login share a family. Reuse of a revoked
+/// token revokes the entire family (self-healing, issue #080).
 model RefreshToken {
   id          String    @id @default(cuid())
   userId      String
@@ -329,6 +310,7 @@ enum GoalStatus {
 }
 
 /// Creator-defined funding goal tracked against incoming tips.
+/// Version column guards read-modify-write increments to raisedStroops (optimistic locking).
 model Goal {
   id            String     @id @default(cuid())
   userId        String
@@ -336,6 +318,7 @@ model Goal {
   title         String
   targetStroops BigInt
   raisedStroops BigInt     @default(0)
+  version       Int        @default(0)
   deadline      DateTime?
   status        GoalStatus @default(ACTIVE)
   createdAt     DateTime   @default(now())
@@ -345,6 +328,7 @@ model Goal {
 
   @@index([userId])
   @@index([status])
+  @@index([userId, status])
 }
 
 /// Billing cadence for a recurring tip subscription.
@@ -378,38 +362,11 @@ model Subscription {
   /// Soft-delete marker: non-null means the record is logically deleted.
   deletedAt     DateTime?
 
+  webhookDeliveries WebhookDelivery[]
+
   @@index([tipperId])
   @@index([creatorId])
   @@index([nextChargeAt])
-}
-
-/// Lifecycle status of a webhook subscription.
-enum WebhookSubscriptionStatus {
-  ACTIVE
-  DISABLED
-}
-
-/// A consumer-registered HTTP endpoint that receives signed event payloads
-/// (issue #997). The `secret` is generated on creation and used to compute an
-/// HMAC-SHA256 signature for every outgoing delivery so consumers can verify
-/// payload authenticity.
-model WebhookSubscription {
-  id        String                    @id @default(cuid())
-  ownerId   String
-  owner     User                      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  url       String
-  secret    String
-  /// Event types this subscription receives, e.g. "tip.received".
-  events    String[]
-  status    WebhookSubscriptionStatus @default(ACTIVE)
-  createdAt DateTime                  @default(now())
-  updatedAt DateTime                  @updatedAt
-  /// Soft-delete marker: non-null means the record is logically deleted.
-  deletedAt DateTime?
-
-  deliveries WebhookDelivery[]
-
-  @@index([ownerId])
 }
 
 /// Delivery state of a single webhook notification attempt.
@@ -419,12 +376,12 @@ enum WebhookDeliveryStatus {
   FAILED
 }
 
-/// A single delivery attempt of an event payload to a webhook subscription's
-/// URL (e.g. notifying an integrator that a tip was received).
+/// A single delivery attempt of a subscription billing event to a webhook
+/// consumer (e.g. notifying an integrator that a charge succeeded or failed).
 model WebhookDelivery {
   id             String                @id @default(cuid())
   subscriptionId String
-  subscription   WebhookSubscription   @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  subscription   Subscription          @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
   status         WebhookDeliveryStatus @default(PENDING)
   responseCode   Int?
   attempts       Int                   @default(0)
@@ -452,11 +409,16 @@ model CreditScoreHistory {
   computedAt DateTime @default(now())
 
   @@index([userId])
+  // Audit: where userId + orderBy computedAt
+  @@index([userId, computedAt])
 }
 
 /// Pre-aggregated daily platform analytics, one row per calendar day (UTC).
 /// Populated by a scheduled job so dashboards can read trends without scanning
 /// the raw Tip/User tables.
+/// Version column guards concurrent increments (optimistic locking); primary
+/// mutation path uses atomic increment (no read-then-write) so version is
+/// for the rare read-modify-write path.
 model AnalyticsDaily {
   id          String   @id @default(cuid())
   /// Calendar day (UTC) this aggregate covers; one row per day.
@@ -469,6 +431,7 @@ model AnalyticsDaily {
   newUsers    Int      @default(0)
   /// Distinct users that sent or received a tip on this day.
   activeUsers Int      @default(0)
+  version     Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -494,25 +457,4 @@ model AuditLog {
   @@index([createdAt])
 }
 
-/// A background job that exhausted all of its BullMQ retry attempts.
-/// Rows are written by the jobs runtime's dead-letter handler so failed
-/// jobs remain inspectable after BullMQ prunes them from Redis.
-model DeadLetterJob {
-  id            String   @id @default(cuid())
-  /// BullMQ queue name the job belonged to, e.g. "x-metrics-refresh".
-  queue         String
-  /// BullMQ job id, when available.
-  jobId         String?
-  /// BullMQ job name, e.g. "refresh".
-  jobName       String
-  /// The job's data payload at the time it failed.
-  data          Json?
-  /// Error message from the final failed attempt.
-  failedReason  String
-  /// Number of attempts made before the job was moved to the dead letter.
-  attemptsMade  Int
-  failedAt      DateTime @default(now())
 
-  @@index([queue])
-  @@index([failedAt])
-}

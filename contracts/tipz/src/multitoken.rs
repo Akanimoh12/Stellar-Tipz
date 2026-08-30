@@ -132,7 +132,7 @@ pub fn send_tip_token(
 ) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     let config = storage::get_runtime_config(env).ok_or(ContractError::NotInitialized)?;
-    if config.paused {
+    if storage::is_paused(env, crate::types::PauseFlag::Tips) || storage::is_paused(env, crate::types::PauseFlag::All) {
         return Err(ContractError::ContractPaused);
     }
     tipper.require_auth();
@@ -162,7 +162,7 @@ pub fn send_tip_token(
     validate_message(message)?;
 
     let contract_address = env.current_contract_address();
-    
+
     // Set reentrancy guard before external token call
     storage::set_reentrancy_guard(env, true);
     // Transfer tokens from tipper to contract
@@ -190,6 +190,7 @@ pub fn send_tip_token(
         credit::calculate_credit_score_with_streak(env, &profile, env.ledger().timestamp());
 
     storage::set_profile(env, &profile);
+    credit::mark_credit_computed(env, creator);
     leaderboard::update_all_leaderboards_for_active(env, &profile, xlm_equivalent);
 
     // Update goal progress
@@ -220,16 +221,7 @@ pub fn send_tip_token(
     storage::apply_send_tip_state(env, &tip_state);
     storage::set_creator_last_active(env, creator, now);
 
-    events::emit_tip_sent_token(
-        env,
-        tip_id,
-        tipper,
-        creator,
-        amount,
-        token,
-        message,
-        now,
-    );
+    events::emit_tip_sent_token(env, tip_id, tipper, creator, amount, token, message, now);
 
     Ok(())
 }
@@ -249,7 +241,11 @@ pub fn withdraw_token(
     }
 
     let balance = storage::get_token_balance(env, caller, token);
-    let amount = crate::validation::validate_withdrawal_amount(amount, storage::get_min_withdrawal_amount(env), balance)?;
+    let amount = crate::validation::validate_withdrawal_amount(
+        amount,
+        storage::get_min_withdrawal_amount(env),
+        balance,
+    )?;
 
     // Calculate fee and net amount
     let fee_bps = storage::get_fee_bps(env);
@@ -259,7 +255,6 @@ pub fn withdraw_token(
     let fee_collector = storage::get_fee_collector(env);
 
     let token_client = token::TokenClient::new(env, token);
-
 
     // Set reentrancy guard before external token calls
     storage::set_reentrancy_guard(env, true);

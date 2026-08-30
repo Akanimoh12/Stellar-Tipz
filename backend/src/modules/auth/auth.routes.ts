@@ -5,6 +5,9 @@ import {
   meController,
   refreshController,
   logoutController,
+  sessionsController,
+  revokeSessionController,
+  revokeOtherSessionsController,
 } from './auth.controller.js';
 import { authMiddleware } from './auth.middleware.js';
 import { authRateLimiter } from '../../common/middleware/rateLimiter.js';
@@ -30,3 +33,8 @@ authRouter.post('/refresh', refreshController);
 
 // POST /auth/logout — revoke refresh token
 authRouter.post('/logout', logoutController);
+
+// Session management (requires auth)
+authRouter.get('/sessions', authMiddleware, sessionsController);
+authRouter.delete('/sessions/:id', authMiddleware, revokeSessionController);
+authRouter.delete('/sessions', authMiddleware, revokeOtherSessionsController);

@@ -4,117 +4,225 @@ import helmet from 'helmet';
 import pinoHttp from 'pino-http';
 import swaggerUi from 'swagger-ui-express';
 import { env } from './config/env.js';
+import { createV1Router } from './api/v1.routes.js';
+import { createVersionedApiRouter, parseVersionedApiBasePath } from './api/versioning.js';
 import { errorHandler, notFoundHandler } from './common/middleware/errorHandler.js';
 import { globalRateLimiter, mutationRateLimiter } from './common/middleware/rateLimiter.js';
 import { metricsController, metricsMiddleware } from './common/observability/metrics.js';
 import { getSentryRequestHandler, getSentryErrorHandler } from './common/observability/sentry.js';
 import { logger } from './common/utils/logger.js';
+import { truncateStellarAddress, truncateEmail, truncateMessage } from './common/utils/logRedaction.js';
 import { openApiDocument } from './docs/openapi.js';
 import { requestId } from './common/middleware/requestId.js';
-import { authRouter } from './modules/auth/auth.routes.js';
-import { profilesRouter } from './modules/profiles/profiles.routes.js';
-import { creditRouter } from './modules/credit/credit.routes.js';
-import { leaderboardRouter } from './modules/leaderboard/leaderboard.routes.js';
-import { tipsRouter } from './modules/tips/tips.routes.js';
-import { balancesRouter, withdrawalsRouter } from './modules/withdrawals/withdrawals.routes.js';
-import { ipfsRouter } from './modules/ipfs/ipfs.routes.js';
-import { xRouter } from './modules/x/x.routes.js';
-import { notificationsRouter } from './modules/notifications/notifications.routes.js';
-import { emailRouter } from './modules/email/email.routes.js';
-import { privacyRouter } from './modules/privacy/privacy.routes.js';
-import { moderationRouter } from './modules/moderation/moderation.routes.js';
-import { searchRouter } from './modules/search/search.routes.js';
-import { webhooksRouter } from './modules/webhooks/webhooks.routes.js';
-import { analyticsRouter } from './modules/analytics/analytics.routes.js';
-import { goalsRouter } from './modules/goals/goals.routes.js';
+import { requestTimeoutAndSignal } from './common/middleware/requestTimeout.js';
+import { healthRouter } from './modules/health/health.routes.js';
+import { optionalAuth } from './modules/auth/auth.middleware.js';
 import { registerGoalsDocs } from './modules/goals/goals.openapi.js';
 import { registerSubscriptionsDocs } from './modules/subscriptions/subscriptions.openapi.js';
-import { subscriptionsRouter } from './modules/subscriptions/subscriptions.routes.js';
-import { refundsRouter } from './modules/refunds/refunds.routes.js';
-import { streaksRouter } from './modules/streaks/streaks.routes.js';
-import { adminRouter } from './modules/admin/admin.routes.js';
-import { discoveryRouter } from './modules/discovery/discovery.routes.js';
-import { statsRouter } from './modules/stats/stats.routes.js';
-import { ogRouter } from './modules/og/og.routes.js';
-import { optionalAuth } from './modules/auth/auth.middleware.js';
+
+/**
+ * HSTS max-age: 1 year (31536000 seconds).
+ */
+const HSTS_MAX_AGE_SECONDS = 31536000;
+
+function buildStrictCspDirectives(): Record<string, Iterable<string>> {
+  const directives: Record<string, Iterable<string>> = {
+    'default-src': ["'self'"],
+    'base-uri': ["'self'"],
+    'font-src': ["'self'", 'https:', 'data:'],
+    'form-action': ["'self'"],
+    'frame-ancestors': ["'none'"],
+    'img-src': ["'self'", 'data:'],
+    'object-src': ["'none'"],
+    'script-src': ["'self'"],
+    'script-src-attr': ["'none'"],
+    'style-src': ["'self'"],
+    'upgrade-insecure-requests': [],
+  };
+  if (env.CSP_REPORT_URI) {
+    directives['report-uri'] = [env.CSP_REPORT_URI];
+  }
+  return directives;
+}
+
+function buildDocsCspDirectives(): Record<string, Iterable<string>> {
+  const strict = buildStrictCspDirectives();
+  return {
+    ...strict,
+    'script-src': ["'self'", "'unsafe-inline'"],
+    'style-src': ["'self'", "'unsafe-inline'", 'https:'],
+    'img-src': ["'self'", 'data:', 'https:'],
+    'frame-ancestors': ["'self'"],
+  };
+}
 
 /** Builds and configures the Express application without starting a listener. */
 export function createApp(): Express {
   const app = express();
 
+  // Probes must remain reachable even when Redis-backed middleware is unavailable.
+  app.use('/health', healthRouter);
+
   app.use(getSentryRequestHandler());
+
+  const isProduction = env.NODE_ENV === 'production';
+  const strictCspDirectives = buildStrictCspDirectives();
+  const docsCspDirectives = buildDocsCspDirectives();
+
   app.use(
     helmet({
       contentSecurityPolicy: {
-        directives: {
-          ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-          'script-src': ["'self'", "'unsafe-inline'"],
-          'style-src': ["'self'", "'unsafe-inline'"],
-        },
+        directives: strictCspDirectives,
       },
+      crossOriginEmbedderPolicy: false,
+      crossOriginOpenerPolicy: { policy: 'same-origin' },
+      crossOriginResourcePolicy: { policy: 'same-site' },
+      originAgentCluster: true,
+      referrerPolicy: { policy: 'no-referrer' },
+      strictTransportSecurity: isProduction
+        ? {
+            maxAge: HSTS_MAX_AGE_SECONDS,
+            includeSubDomains: true,
+            preload: true,
+          }
+        : false,
+      xContentTypeOptions: true,
+      xDnsPrefetchControl: { allow: false },
+      xDownloadOptions: true,
+      xFrameOptions: { action: 'deny' },
+      xPermittedCrossDomainPolicies: { permittedPolicies: 'none' },
+      hidePoweredBy: true,
+      xXssProtection: false,
     }),
   );
+
+  app.use((_req, res, next) => {
+    res.setHeader(
+      'Permissions-Policy',
+      'camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), fullscreen=(self), interest-cohort=()',
+    );
+    next();
+  });
+
+  const docsMount = `${env.API_BASE_PATH}/docs`;
+  app.use(docsMount, helmet.contentSecurityPolicy({ directives: docsCspDirectives }));
+
+  // Serve Swagger UI & raw OpenAPI JSON
+  app.get(`${docsMount}/openapi.json`, (_req, res) => {
+    res.json(openApiDocument);
+  });
+  app.use(docsMount, swaggerUi.serve, swaggerUi.setup(openApiDocument));
+
+  const ogMount = `${env.API_BASE_PATH}/og`;
+  app.use(ogMount, (_req, res, next) => {
+    res.removeHeader('X-Frame-Options');
+    res.setHeader('X-Frame-Options', 'ALLOWALL');
+    next();
+  });
+  app.use(ogMount, helmet.contentSecurityPolicy({ directives: { ...strictCspDirectives, 'frame-ancestors': ['*'] } }));
+
   app.use(
     cors({
-      // env.CORS_ORIGIN is already validated as a list of absolute origins at
-      // startup (see config/cors.ts), so a misconfigured origin never reaches
-      // request time.
       origin: env.CORS_ORIGIN,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
     }),
   );
+
   app.use(optionalAuth);
   app.use(globalRateLimiter);
   app.use(mutationRateLimiter);
   app.use(requestId);
+  app.use(requestTimeoutAndSignal);
   app.use(metricsMiddleware);
   app.use(express.json({ limit: '1mb' }));
-  app.use(pinoHttp({ logger }));
 
-  const docsPath = `${env.API_BASE_PATH}/docs`;
-  app.get(`${docsPath}/openapi.json`, (_req, res) => {
-    res.json(openApiDocument);
-  });
-  app.use(docsPath, swaggerUi.serve, swaggerUi.setup(openApiDocument));
+  app.use(
+    pinoHttp({
+      logger,
+      redact: {
+        paths: [
+          'req.headers.authorization',
+          'req.headers.cookie',
+          'req.headers["x-api-key"]',
+          'req.headers["x-auth-token"]',
+          'req.headers["x-access-token"]',
+          'req.headers.bearer',
+          'req.body.token',
+          'req.body.accessToken',
+          'req.body.refreshToken',
+          'req.body.apiKey',
+          'req.body.privateKey',
+          'req.body.secret',
+          'req.body.password',
+          'res.body.token',
+          'res.body.accessToken',
+          'res.body.refreshToken',
+          'res.body.privateKey',
+          'res.body.secret',
+        ],
+        censor: '[REDACTED]',
+      },
+      serializers: {
+        req: (req) => {
+          const safeBody = req.body ? {
+            ...(req.body.username && { username: req.body.username }),
+            ...(req.body.email && { email: truncateEmail(req.body.email) }),
+            ...(req.body.amount && { amount: req.body.amount }),
+            ...(req.body.message && { message: truncateMessage(req.body.message) }),
+            ...(req.body.publicKey && { publicKey: truncateStellarAddress(req.body.publicKey) }),
+            ...(req.body.recipientAddress && { recipientAddress: truncateStellarAddress(req.body.recipientAddress) }),
+            ...(req.body.senderAddress && { senderAddress: truncateStellarAddress(req.body.senderAddress) }),
+            _bodyKeys: req.body ? Object.keys(req.body) : [],
+          } : undefined;
 
-  app.get('/health', (_req, res) => {
-    res.json({
-      status: 'ok',
-      service: 'stellar-tipz-backend',
-      time: new Date().toISOString(),
-    });
-  });
+          return {
+            id: req.id,
+            method: req.method,
+            url: req.url,
+            query: req.query,
+            params: req.params,
+            headers: {
+              ...req.headers,
+              authorization: req.headers.authorization ? '[REDACTED]' : undefined,
+              cookie: req.headers.cookie ? '[REDACTED]' : undefined,
+              'x-api-key': req.headers['x-api-key'] ? '[REDACTED]' : undefined,
+              'x-auth-token': req.headers['x-auth-token'] ? '[REDACTED]' : undefined,
+              'x-access-token': req.headers['x-access-token'] ? '[REDACTED]' : undefined,
+            },
+            body: safeBody,
+            remoteAddress: req.connection?.remoteAddress,
+            remotePort: req.connection?.remotePort,
+          };
+        },
+        res: (res) => ({
+          statusCode: res.statusCode,
+          headers: {
+            ...res.getHeaders(),
+            'set-cookie': res.getHeaders()['set-cookie'] ? '[REDACTED]' : undefined,
+          },
+        }),
+      },
+    }),
+  );
 
   app.get('/metrics', metricsController);
 
-  app.use(`${env.API_BASE_PATH}/auth`, authRouter);
-  app.use(`${env.API_BASE_PATH}/profiles`, profilesRouter);
-  app.use(`${env.API_BASE_PATH}/credit`, creditRouter);
-  app.use(`${env.API_BASE_PATH}/leaderboard`, leaderboardRouter);
-  app.use(`${env.API_BASE_PATH}/ipfs`, ipfsRouter);
-  app.use(`${env.API_BASE_PATH}/tips`, tipsRouter);
-  app.use(`${env.API_BASE_PATH}/withdrawals`, withdrawalsRouter);
-  app.use(`${env.API_BASE_PATH}/notifications`, notificationsRouter);
-  app.use(`${env.API_BASE_PATH}/email`, emailRouter);
-  app.use(`${env.API_BASE_PATH}/privacy`, privacyRouter);
-  app.use(`${env.API_BASE_PATH}/moderation`, moderationRouter);
-  app.use(`${env.API_BASE_PATH}/x`, xRouter);
-  app.use(`${env.API_BASE_PATH}/balances`, balancesRouter);
-  app.use(`${env.API_BASE_PATH}/search`, searchRouter);
-  app.use(`${env.API_BASE_PATH}/webhooks`, webhooksRouter);
-  app.use(`${env.API_BASE_PATH}/analytics`, analyticsRouter);
-  app.use(`${env.API_BASE_PATH}/goals`, goalsRouter);
-  app.use(`${env.API_BASE_PATH}/subscriptions`, subscriptionsRouter);
-  app.use(`${env.API_BASE_PATH}/refunds`, refundsRouter);
-  app.use(`${env.API_BASE_PATH}/streaks`, streaksRouter);
-  app.use(`${env.API_BASE_PATH}/admin`, adminRouter);
-  app.use(`${env.API_BASE_PATH}/discover`, discoveryRouter);
-  app.use(`${env.API_BASE_PATH}/stats`, statsRouter);
-  app.use(`${env.API_BASE_PATH}/og`, ogRouter);
+  const cspReportPath = `${env.API_BASE_PATH}/csp-reports`;
+  app.post(cspReportPath, (req, res) => {
+    logger.warn({ cspReport: req.body, ip: req.ip }, 'CSP violation reported');
+    res.status(204).end();
+  });
 
-  // Register OpenAPI path docs for feature modules.
+  // Maintainer's versioned router pattern (replaces manual route mounts)
+  const { rootPath, version } = parseVersionedApiBasePath(env.API_BASE_PATH);
+  app.use(
+    rootPath,
+    createVersionedApiRouter([{ version, router: createV1Router() }]),
+  );
+
+  // Register OpenAPI path docs for feature modules
   registerGoalsDocs();
   registerSubscriptionsDocs();
 

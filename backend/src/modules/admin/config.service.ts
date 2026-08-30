@@ -30,6 +30,7 @@ import {
 } from '@stellar/stellar-sdk';
 import { config } from '../../config/index.js';
 import { logger } from '../../common/utils/logger.js';
+import { rpcCall } from '../../common/stellar/rpcClient.js';
 import { BadRequestError, NotFoundError } from '../../common/errors/AppError.js';
 import { logAuditAction } from './admin.service.js';
 import type {
@@ -71,9 +72,10 @@ async function buildUnsignedConfigTx(
 ): Promise<string> {
   const contractId = getContractId();
   const networkPassphrase = getNetworkPassphrase();
-  const server = getRpcServer();
 
-  const sourceAccount = await server.getAccount(adminAddress).catch(() => {
+  const sourceAccount = await rpcCall((server) => server.getAccount(adminAddress), {
+    operationName: 'getAccount',
+  }).catch(() => {
     throw new BadRequestError('Admin Stellar account not found on network');
   });
 
@@ -86,7 +88,9 @@ async function buildUnsignedConfigTx(
     .setTimeout(30)
     .build();
 
-  const sim = await server.simulateTransaction(tx).catch((err: Error) => {
+  const sim = await rpcCall((server) => server.simulateTransaction(tx), {
+    operationName: 'simulateTransaction',
+  }).catch((err: Error) => {
     logger.error({ err, contractFn }, 'Config tx simulation failed');
     throw new BadRequestError('Transaction simulation failed');
   });
@@ -112,7 +116,6 @@ async function broadcastSignedTx(
   after: Record<string, unknown>,
 ): Promise<SubmittedConfigTx> {
   const networkPassphrase = getNetworkPassphrase();
-  const server = getRpcServer();
 
   // Parse the XDR first so we get a clear error before hitting the network.
   let tx;
@@ -132,7 +135,9 @@ async function broadcastSignedTx(
   let status: SubmittedConfigTx['status'] = 'ERROR';
 
   try {
-    const send = await server.sendTransaction(tx);
+    const send = await rpcCall((server) => server.sendTransaction(tx), {
+      operationName: 'sendTransaction',
+    });
     txHash = send.hash;
     status = send.status === 'ERROR' ? 'ERROR' : 'PENDING';
     if (send.status === 'ERROR') {
@@ -219,16 +224,18 @@ export async function submitSetFee(
  * The data shape matches what `propose_fee_change_inner` stores on-chain:
  *   (fee_bps: u32, effective_ledger: u32, proposed_ledger: u32, is_decrease: bool)
  */
-export async function getPendingFeeChange(): Promise<PendingFeeChange | null> {
+export async function getPendingFeeChange(opts: { signal?: AbortSignal } = {}): Promise<PendingFeeChange | null> {
   const contractId = getContractId();
-  const server = getRpcServer();
 
   try {
     // Query the contract's `get_pending_fee_change` view function.
     const contract = new Contract(contractId);
     const tx = new TransactionBuilder(
       // Use a placeholder account; we only need to simulate.
-      await server.getAccount(contract.address()).catch(async () => {
+      await rpcCall((server) => server.getAccount(contract.address()), {
+        signal: opts.signal,
+        operationName: 'getAccount',
+      }).catch(async () => {
         // If contract address isn't a valid Stellar account, simulate with a different source.
         throw new BadRequestError('Cannot query pending fee change: RPC unavailable');
       }),
@@ -238,7 +245,10 @@ export async function getPendingFeeChange(): Promise<PendingFeeChange | null> {
       .setTimeout(30)
       .build();
 
-    const sim = await server.simulateTransaction(tx);
+    const sim = await rpcCall((server) => server.simulateTransaction(tx), {
+      signal: opts.signal,
+      operationName: 'simulateTransaction',
+    });
     if (SorobanRpc.Api.isSimulationError(sim)) {
       // No pending fee change returns a specific error from the contract.
       return null;

@@ -97,10 +97,19 @@ export function registerSubscriptionsDocs(): void {
             schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
           },
           {
+            name: 'cursor',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+            description: 'Opaque nextCursor returned by the previous page',
+          },
+          {
             name: 'offset',
             in: 'query',
             required: false,
-            schema: { type: 'integer', minimum: 0, default: 0 },
+            deprecated: true,
+            schema: { type: 'integer', minimum: 0 },
+            description: 'Deprecated; use cursor instead. Supported until 2027-02-28.',
           },
         ],
         responses: {
@@ -110,8 +119,11 @@ export function registerSubscriptionsDocs(): void {
               'application/json': {
                 schema: {
                   type: 'object',
-                  properties: { data: { type: 'array', items: subscriptionSchema } },
-                  required: ['data'],
+                  properties: {
+                    data: { type: 'array', items: subscriptionSchema },
+                    nextCursor: { type: 'string', nullable: true },
+                  },
+                  required: ['data', 'nextCursor'],
                 },
               },
             },

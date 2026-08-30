@@ -193,7 +193,92 @@ docker run -p 8080:80 stellar-tipz-frontend
 
 ---
 
-## 4. Helper Scripts
+## 4. Database migration rollback runbook
+
+Database migrations are forward-only in Prisma, so rollback is an incident
+procedure rather than `prisma migrate down`.
+
+1. Stop application deploys and pause workers that write to the affected
+  tables. Record the current migration name with `npx prisma migrate status`.
+2. Assess whether the newest migration has a sibling `down.sql`. Review it
+  before execution; down SQL must be specific to that migration and must not
+  contain an unbounded data rewrite.
+3. Take or verify a database snapshot, then rehearse the down SQL against a
+  restored copy. On the production database, execute it using the approved
+  change-control connection, for example:
+
+  ```bash
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+    -f backend/prisma/migrations/<migration>/down.sql
+  ```
+
+4. Deploy the compatible application version, run health checks, and verify
+  `npx prisma migrate status` plus the affected API workflows. Do not edit the
+  `_prisma_migrations` history by hand; record the rollback and follow-up
+  forward migration in the incident log.
+
+Some migrations are intentionally irreversible. If data has already been
+ dropped, a down SQL file cannot reconstruct it. Restore the last known-good
+ snapshot to an isolated database, validate it, promote it according to the
+ disaster-recovery procedure, and replay only verified writes captured after
+ the snapshot. Treat the migration as failed, preserve the failed database for
+ forensics, and create a new forward migration after recovery. The CI
+ `migration-safety` job requires an explicit `.irreversible` marker for this
+ case and still requires the destructive-operation acknowledgement.
+
+The pull-request CI rehearses the newest migration against a seeded PostgreSQL
+16 database: it applies the complete history, runs the Prisma seed, executes
+the newest `down.sql`, and verifies that the database schema changed.
+
+## 4a. Chain finality & indexer reorg handling (issue #1257)
+
+**Finality policy.** Stellar reaches agreement through SCP: a ledger is either
+*externalized* (final) or it is not — there is no probabilistic confirmation
+and deep reorgs of externalized ledgers do not occur in normal operation. The
+indexer nonetheless keeps a small confirmation buffer so a transient RPC-level
+inconsistency (a node briefly serving an un-externalized candidate, a
+load-balanced RPC pool momentarily disagreeing) can never reach a projection.
+
+- `INDEXER_FINALITY_DEPTH` (default **10** ledgers, ~50s): the poll loop only
+  projects events at ledgers `<= head - INDEXER_FINALITY_DEPTH`. Events past
+  that boundary are left for a later tick. Set to `0` to process at head
+  (not recommended for production).
+- `INDEXER_REORG_LOOKBACK` (default **64**): how many recently-processed
+  `(ledger, hash)` pairs are retained in `LedgerCheckpoint` for detection.
+  Keep it well above `INDEXER_FINALITY_DEPTH`.
+
+**Detection.** After each successful tick the indexer records the ledger hash
+of the highest ledger it processed (`LedgerCheckpoint`, keyed by
+`topic + ledger`). At the start of every tick it re-fetches the current hash
+of its most recent checkpoints from Horizon and compares. A mismatch means
+the chain history under a ledger we already projected has changed — a reorg.
+
+**Recovery.** On detection the indexer:
+
+1. Walks its checkpoints newest→oldest to find the **fork ledger** — the
+   highest ledger whose stored hash still matches the chain.
+2. In a single transaction: deletes `EventLog` and ledger-stamped projection
+   rows (`Tip`, and `Refund` by cascade) above the fork ledger, deletes
+   `LedgerCheckpoint` rows above it, and resets `IndexerCursor` to the fork
+   ledger.
+3. Logs at `error` and increments the `indexer_reorgs_total` signal
+   (`monitor.noteReorg`) so alerting fires — a reorg is always page-worthy,
+   even when recovery succeeds.
+4. Returns; the next tick re-reads from `forkLedger + 1` and re-projects the
+   canonical events. Projections keyed deterministically (`Goal`,
+   `Subscription`, `CreditScore`, …) self-heal on re-projection; only the
+   ledger-stamped tables need explicit deletion.
+
+Because `INDEXER_FINALITY_DEPTH > 0`, a reorg shallower than the finality
+depth is corrected **before any projection happened** — detection there just
+resets the checkpoint window. The rollback path only runs for the
+(operationally near-impossible) case of a reorg deeper than the finality
+buffer.
+
+Tests: `backend/src/indexer/reorg.test.ts` drives fixtures simulating reorgs
+at depths 1, 5, and 15 (below, at, and beyond the finality depth).
+
+## 5. Helper Scripts
 
 Located in `scripts/`:
 

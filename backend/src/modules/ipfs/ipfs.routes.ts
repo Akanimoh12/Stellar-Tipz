@@ -5,12 +5,20 @@ import { MAX_IMAGE_SIZE_BYTES } from "./ipfs.service.js";
 import { ipfsUploadRateLimiter } from '../../common/middleware/rateLimiter.js';
 
 /**
- * Configure Multer in-memory storage with file size limits.
+ * Configure Multer in-memory storage with explicit limits (issue #077).
+ * - fileSize: 5 MB (MAX_IMAGE_SIZE_BYTES) — documented, tight
+ * - files: 1  — single image per request, disk-exhaustion guard (multer default is unlimited)
+ * - fields: 10 — generous for form metadata but bounded
+ * - file count enforced via fields([{maxCount:1}]) ; overall files limit is secondary guard
+ * Oversized payloads surface as MulterError LIMIT_FILE_SIZE/COUNT and are mapped to 413 PAYLOAD_TOO_LARGE.
  */
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: MAX_IMAGE_SIZE_BYTES,
+    files: 1,
+    fields: 10,
+    fieldSize: 1024 * 1024, // 1 MB field size to avoid large non-file fields
   },
 });
 
