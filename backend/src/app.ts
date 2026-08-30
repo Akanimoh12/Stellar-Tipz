@@ -10,6 +10,8 @@ import { globalRateLimiter } from './common/middleware/rateLimiter.js';
 import { metricsController, metricsMiddleware } from './common/observability/metrics.js';
 import { getSentryRequestHandler, getSentryErrorHandler } from './common/observability/sentry.js';
 import { logger } from './common/utils/logger.js';
+import { truncateStellarAddress, truncateEmail, truncateMessage } from './common/utils/logRedaction.js';
+import { openApiDocument } from './docs/openapi.js';
 import { requestId } from './common/middleware/requestId.js';
 import { requestTimeoutAndSignal } from './common/middleware/requestTimeout.js';
 import { healthRouter } from './modules/health/health.routes.js';
@@ -169,23 +171,84 @@ export function createApp(): Express {
   // Server-level timeout + client-disconnect AbortSignal (issue #090)
   app.use(requestTimeoutAndSignal);
   app.use(metricsMiddleware);
-  /**
-   * Right-sized JSON limits (issue #077).
-   * Default is tight (100kb, configurable via JSON_BODY_LIMIT) — far below the old 1mb blanket.
-   * Routes that legitimately need more (tip/profile writes) get a larger explicit limit via
-   * adaptiveJsonLimit below. Oversized bodies are mapped to 413 PAYLOAD_TOO_LARGE in errorHandler.
-   */
-  const defaultJsonLimit = (config as unknown as { payload?: { jsonLimit: string } })?.payload?.jsonLimit ?? '100kb'; // e.g. '100kb'
-  const largeJsonLimit = '500kb';
-  // Paths that need larger JSON bodies (documented per-route override)
-  const largeJsonPrefixes = [`${(config as unknown as { server?: { apiBasePath: string } })?.server?.apiBasePath ?? '/api/v1'}/tips`, `${(config as unknown as { server?: { apiBasePath: string } })?.server?.apiBasePath ?? '/api/v1'}/profiles`, `${(config as unknown as { server?: { apiBasePath: string } })?.server?.apiBasePath ?? '/api/v1'}/auth`];
-  const adaptiveJsonLimit = (req: express.Request, _res: express.Response, next: express.NextFunction) => {
-    const needsLarge = largeJsonPrefixes.some((prefix) => req.path.startsWith(prefix) || req.originalUrl.startsWith(prefix));
-    const limit = needsLarge ? largeJsonLimit : defaultJsonLimit;
-    return express.json({ limit, type: ['application/json', 'application/csp-report'] })(req, _res, next);
-  };
-  app.use(adaptiveJsonLimit);
-  app.use(pinoHttp({ logger }));
+  app.use(express.json({ limit: '1mb' }));
+  app.use(
+    pinoHttp({
+      logger,
+      redact: {
+        paths: [
+          // Auth headers and tokens
+          'req.headers.authorization',
+          'req.headers.cookie',
+          'req.headers["x-api-key"]',
+          'req.headers["x-auth-token"]',
+          'req.headers["x-access-token"]',
+          'req.headers.bearer',
+          // Request body tokens and keys
+          'req.body.token',
+          'req.body.accessToken',
+          'req.body.refreshToken',
+          'req.body.apiKey',
+          'req.body.privateKey',
+          'req.body.secret',
+          'req.body.password',
+          // Response body sensitive data
+          'res.body.token',
+          'res.body.accessToken',
+          'res.body.refreshToken',
+          'res.body.privateKey',
+          'res.body.secret',
+        ],
+        censor: '[REDACTED]',
+      },
+      serializers: {
+        req: (req) => {
+          // Only log safe subset of request body
+          const safeBody = req.body ? {
+            // Safe fields that can be logged
+            ...(req.body.username && { username: req.body.username }),
+            ...(req.body.email && { email: truncateEmail(req.body.email) }),
+            ...(req.body.amount && { amount: req.body.amount }),
+            ...(req.body.message && { message: truncateMessage(req.body.message) }),
+            ...(req.body.publicKey && { publicKey: truncateStellarAddress(req.body.publicKey) }),
+            ...(req.body.recipientAddress && { recipientAddress: truncateStellarAddress(req.body.recipientAddress) }),
+            ...(req.body.senderAddress && { senderAddress: truncateStellarAddress(req.body.senderAddress) }),
+            // Add type information for debugging
+            _bodyKeys: req.body ? Object.keys(req.body) : [],
+          } : undefined;
+
+          return {
+            id: req.id,
+            method: req.method,
+            url: req.url,
+            query: req.query,
+            params: req.params,
+            headers: {
+              ...req.headers,
+              // Explicitly redact sensitive headers
+              authorization: req.headers.authorization ? '[REDACTED]' : undefined,
+              cookie: req.headers.cookie ? '[REDACTED]' : undefined,
+              'x-api-key': req.headers['x-api-key'] ? '[REDACTED]' : undefined,
+              'x-auth-token': req.headers['x-auth-token'] ? '[REDACTED]' : undefined,
+              'x-access-token': req.headers['x-access-token'] ? '[REDACTED]' : undefined,
+            },
+            body: safeBody,
+            remoteAddress: req.connection?.remoteAddress,
+            remotePort: req.connection?.remotePort,
+          };
+        },
+        res: (res) => ({
+          statusCode: res.statusCode,
+          headers: {
+            ...res.getHeaders(),
+            // Ensure no sensitive headers are logged in response
+            'set-cookie': res.getHeaders()['set-cookie'] ? '[REDACTED]' : undefined,
+          },
+          // Don't log response body by default for security
+        }),
+      },
+    }),
+  );
 
   app.get('/metrics', metricsController);
 
