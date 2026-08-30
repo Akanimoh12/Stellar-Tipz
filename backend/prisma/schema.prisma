@@ -113,6 +113,21 @@ model IndexerCursor {
   updatedAt  DateTime @updatedAt
 }
 
+/// Recent (ledger, ledgerHash) pairs the indexer has processed, per topic —
+/// a short trailing window used to detect chain reorganizations (issue
+/// #1257). On each tick the newest checkpoints' hashes are re-compared
+/// against the chain; a mismatch triggers rollback + reprocess. Pruned to
+/// `INDEXER_REORG_LOOKBACK` entries per topic.
+model LedgerCheckpoint {
+  topic      String
+  ledger     Int
+  ledgerHash String
+  createdAt  DateTime @default(now())
+
+  @@id([topic, ledger])
+  @@index([topic, ledger(sort: Desc)])
+}
+
 /// Lifecycle status of a withdrawal. Set to CONFIRMED/FAILED by the indexer
 /// once the submitted Stellar transaction lands on-chain (see #943).
 enum WithdrawalStatus {
