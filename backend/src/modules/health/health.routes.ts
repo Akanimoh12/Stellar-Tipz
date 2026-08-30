@@ -1,6 +1,4 @@
-import { SorobanRpc } from '@stellar/stellar-sdk';
 import { Router } from 'express';
-import { config } from '../../config/index.js';
 import { prisma } from '../../db/prisma.js';
 import { redis } from '../../db/redis.js';
 import {
@@ -8,6 +6,7 @@ import {
   type HealthDependencies,
   type HealthService,
 } from './health.service.js';
+import { rpcCall } from '../../common/stellar/rpcClient.js';
 
 const dependencies: HealthDependencies = {
   postgres: async () => {
@@ -17,11 +16,10 @@ const dependencies: HealthDependencies = {
     await redis.ping();
   },
   'soroban-rpc': async () => {
-    const server = new SorobanRpc.Server(config.stellar.rpcUrl, {
-      allowHttp: config.stellar.rpcUrl.startsWith('http://'),
+    const health = await rpcCall((server) => server.getHealth(), {
+      operationName: 'getHealth',
     });
-    const health = await server.getHealth();
-    if (health.status !== 'healthy') throw new Error('Soroban RPC reported an unhealthy status');
+    if ((health as { status: string }).status !== 'healthy') throw new Error('Soroban RPC reported an unhealthy status');
   },
 };
 

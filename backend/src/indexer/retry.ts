@@ -1,56 +1,23 @@
 /**
- * Executes a function with exponential backoff retry logic.
- * Used for transient RPC errors that may occur during indexing.
+ * Re-export shared retry utility — standardised behaviour (issue #092).
+ * Keeps this file as the import surface for the indexer so existing imports keep working.
+ * The shared implementation lives in src/common/utils/retry.ts with full jitter,
+ * proper 4xx isolation and method/idempotency awareness.
+ *
+ * Backward-compat: default maxAttempts stays 5 (original indexer default) when
+ * caller omits options, matching existing tests. New callers should import from
+ * 'common/utils/retry.js' and rely on env-configured defaults (RETRY_MAX_ATTEMPTS=3).
  */
-export interface RetryOptions {
-  maxAttempts?: number;
-  initialDelayMs?: number;
-  maxDelayMs?: number;
-  factor?: number;
-}
+export type { RetryOptions } from "../common/utils/retry.js";
+export { isTransientError } from "../common/utils/retry.js";
+import { withRetry as sharedRetry } from "../common/utils/retry.js";
+import type { RetryOptions } from "../common/utils/retry.js";
 
-/** Returns true for transient errors that should be retried. */
-function isTransientError(error: unknown): boolean {
-  if (error instanceof Error) {
-    const message = error.message.toLowerCase();
-    return (
-      message.includes('timeout') ||
-      message.includes('network') ||
-      message.includes('connection') ||
-      message.includes('rate limit') ||
-      message.includes('too many requests') ||
-      message.includes('service unavailable') ||
-      message.includes('internal server error') ||
-      'status' in error && [429, 502, 503, 504].includes(Number((error as { status?: number }).status))
-    );
-  }
-  return false;
-}
-
-/**
- * Executes a function with exponential backoff retry logic.
- * Retries on transient errors (network timeouts, rate limits, 5xx status codes).
- */
 export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
-  const {
-    maxAttempts = 5,
-    initialDelayMs = 100,
-    maxDelayMs = 5000,
-    factor = 2,
-  } = options;
-
-  let attempt = 0;
-
-  while (true) {
-    try {
-      return await fn();
-    } catch (error) {
-      attempt++;
-      if (attempt >= maxAttempts || !isTransientError(error)) {
-        throw error;
-      }
-      const delay = Math.min(initialDelayMs * factor ** (attempt - 1), maxDelayMs);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
+  // Preserve indexer legacy default (5) when maxAttempts unspecified; shared default is env-driven (3)
+  const opts: RetryOptions = { maxAttempts: 5, ...options };
+  // For indexer internal retries, disable jitter by default to keep existing timer tests deterministic
+  // (callers can explicitly enable jitter via { jitter: true })
+  if (opts.jitter === undefined) opts.jitter = false;
+  return sharedRetry(fn, opts);
 }

@@ -4,6 +4,7 @@ import { config } from '../../config/index.js';
 import { prisma } from '../../db/prisma.js';
 import { BadRequestError, NotFoundError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
+import { rpcCall } from '../../common/stellar/rpcClient.js';
 import { TipStatus } from '../../types/enums.js';
 import type { RecordTipInput } from './tips.schema.js';
 import { serializeTip } from './tips.serializer.js';
@@ -96,6 +97,7 @@ export async function prepareTip(
   to: string,
   amount: string,
   message?: string,
+  opts: { signal?: AbortSignal } = {},
 ): Promise<PreparedTip> {
   const contractId = config.stellar.contractId;
   if (!contractId) {
@@ -108,11 +110,10 @@ export async function prepareTip(
     throw new BadRequestError('Recipient not found');
   }
 
-  const server = new SorobanRpc.Server(config.stellar.rpcUrl, {
-    allowHttp: config.stellar.rpcUrl.startsWith('http://'),
-  });
-
-  const sourceAccount = await server.getAccount(from).catch(() => {
+  const sourceAccount = await rpcCall(
+    (server) => server.getAccount(from),
+    { signal: opts.signal, operationName: 'getAccount' },
+  ).catch(() => {
     throw new BadRequestError('Source account not found on network');
   });
 
@@ -136,7 +137,10 @@ export async function prepareTip(
     .setTimeout(30)
     .build();
 
-  const simulateResponse = await server.simulateTransaction(tx).catch((err: Error) => {
+  const simulateResponse = await rpcCall(
+    (server) => server.simulateTransaction(tx),
+    { signal: opts.signal, operationName: 'simulateTransaction' },
+  ).catch((err: Error) => {
     logger.error({ err }, 'Transaction simulation failed');
     throw new BadRequestError('Transaction simulation failed');
   });

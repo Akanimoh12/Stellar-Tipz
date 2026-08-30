@@ -318,10 +318,7 @@ export async function refreshToken(refreshToken: string): Promise<TokenPair> {
     throw new UnauthorizedError("Invalid refresh token");
   }
 
-  if (tokenRecord.revokedAt) {
-    throw new UnauthorizedError("Refresh token revoked");
-  }
-
+  // Expiry check before revocation logic — expired tokens are not reuse candidates
   if (tokenRecord.expiresAt < new Date()) {
     throw new UnauthorizedError("Refresh token expired");
   }
@@ -369,7 +366,10 @@ export async function refreshToken(refreshToken: string): Promise<TokenPair> {
 
   const accessToken = generateAccessToken(payload);
 
-  logger.info({ userId: tokenRecord.userId }, "Token refreshed successfully");
+  logger.info(
+    { userId: tokenRecord.userId, sessionId: newSession.id, familyId: newSession.familyId },
+    "Token refreshed successfully — rotated within family",
+  );
 
   return {
     accessToken,

@@ -270,6 +270,9 @@ model AuthChallenge {
 
 /// Refresh token issued on login, stored hashed for rotation/revocation.
 /// The raw token value is never persisted — only its hash is stored here.
+/// `familyId` tracks the token lineage/family for reuse detection: all tokens
+/// derived from the same initial login share a family. Reuse of a revoked
+/// token revokes the entire family (self-healing, issue #080).
 model RefreshToken {
   id          String    @id @default(cuid())
   userId      String
