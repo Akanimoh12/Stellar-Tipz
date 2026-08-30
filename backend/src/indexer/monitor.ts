@@ -22,8 +22,21 @@ export interface IndexerMonitorReport {
   eventsProcessedTotal: number;
   /** Cumulative processing errors observed (projection failures). */
   errorsTotal: number;
+  /** Cumulative chain reorganizations detected & recovered (issue #1257). */
+  reorgsTotal: number;
+  /** The most recent reorg, if any — for the /health/ready and alert payload. */
+  lastReorg: ReorgObservation | null;
   /** Whether the indexer is considered healthy. */
   healthy: boolean;
+}
+
+/** A single detected-and-recovered chain reorg (issue #1257). */
+export interface ReorgObservation {
+  topic: string;
+  forkLedger: number;
+  divergedAt: number | null;
+  removed: { eventLog: number; tips: number; refunds: number };
+  at: string;
 }
 
 // In-process counters. These are intentionally module-level so multiple poll
@@ -33,6 +46,8 @@ let lastTickProcessed = 0;
 let eventsProcessedTotal = 0;
 let errorsTotal = 0;
 let unchangedIntervals = 0;
+let reorgsTotal = 0;
+let lastReorg: ReorgObservation | null = null;
 
 /**
  * Register the result of one indexer projection batch (a full poll tick).
@@ -65,6 +80,18 @@ export function noteProcessedLedger(ledger: number): void {
 /** Records a single projection/processing failure. */
 export function noteIndexerError(): void {
   errorsTotal++;
+}
+
+/**
+ * Records a detected-and-recovered chain reorganization (issue #1257). Always
+ * logs at `error` — a reorg is page-worthy even when recovery succeeds, and
+ * the count is exposed on /metrics and /health/ready so alerting can fire on
+ * `increase(indexer_reorgs_total[1h]) > 0`.
+ */
+export function noteReorg(o: Omit<ReorgObservation, 'at'>): void {
+  reorgsTotal++;
+  lastReorg = { ...o, at: new Date().toISOString() };
+  logger.error({ ...lastReorg }, 'Indexer recovered from a chain reorganization');
 }
 
 /** Whether the last observed tick advanced the cursor. */
@@ -117,6 +144,8 @@ export async function getIndexerReport(): Promise<IndexerMonitorReport> {
     lastTickProcessed,
     eventsProcessedTotal,
     errorsTotal,
+    reorgsTotal,
+    lastReorg,
     healthy,
   };
 }
@@ -127,12 +156,16 @@ export function getIndexerSnapshot(): {
   lastTickProcessed: number;
   eventsProcessedTotal: number;
   errorsTotal: number;
+  reorgsTotal: number;
+  lastReorg: ReorgObservation | null;
 } {
   return {
     lastProcessedLedger,
     lastTickProcessed,
     eventsProcessedTotal,
     errorsTotal,
+    reorgsTotal,
+    lastReorg,
   };
 }
 
@@ -143,4 +176,6 @@ export function resetIndexerMonitor(): void {
   eventsProcessedTotal = 0;
   errorsTotal = 0;
   unchangedIntervals = 0;
+  reorgsTotal = 0;
+  lastReorg = null;
 }
