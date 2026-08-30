@@ -8,7 +8,7 @@ export interface MetricsData {
   timestamp: string;
   service: string;
   uptime: number;
-  process: {
+  process: {https://github.com/StellarDevHub/Web3-Student-Lab/pull/1240
     memory: {
       rss: number;
       heapTotal: number;
@@ -42,6 +42,13 @@ export interface MetricsData {
     rows_pruned_total: Record<string, number>;
   };
   indexer?: {
+    /** Lag (ledgers) between the chain head and the last processed ledger. */
+    lag_ledgers: number;
+    last_processed_ledger: number | null;
+    stalled: boolean;
+    last_tick_processed: number;
+    events_processed_total: number;
+    errors_total: number;
     /** Events whose topic/version is not yet understood by the indexer. */
     unknown_events_total: number;
     /** Last ledger successfully processed by the indexer (for lag = chainHead - this). */
@@ -119,6 +126,34 @@ export async function getMetrics(): Promise<MetricsData> {
     }
   }
 
+  // Indexer lag/rate metrics (issue #1258) — lazy import to avoid a cycle and
+  // to keep the (fragile) DB/network reads from blocking the metrics endpoint
+  // when they fail.
+  let indexer: MetricsData['indexer'];
+  try {
+    const { getIndexerReport } = await import('../../indexer/monitor.js');
+    const report = await getIndexerReport();
+    indexer = {
+      lag_ledgers: report.lagLedgers,
+      last_processed_ledger: report.lastProcessedLedger,
+      stalled: report.stalled,
+      last_tick_processed: report.lastTickProcessed,
+      events_processed_total: report.eventsProcessedTotal,
+      errors_total: report.errorsTotal,
+    };
+  } catch {
+    const { getIndexerSnapshot } = await import('../../indexer/monitor.js');
+    const snap = getIndexerSnapshot();
+    indexer = {
+      lag_ledgers: 0,
+      last_processed_ledger: snap.lastProcessedLedger,
+      stalled: false,
+      last_tick_processed: snap.lastTickProcessed,
+      events_processed_total: snap.eventsProcessedTotal,
+      errors_total: snap.errorsTotal,
+    };
+  }
+
   // Circuit breaker states (issue #091) — lazy import to avoid cycle
   let circuitBreaker: Record<string, { state: string; failures: number; opens: number }> | undefined;
   try {
@@ -163,6 +198,7 @@ export async function getMetrics(): Promise<MetricsData> {
     retention: {
       rows_pruned_total: { ...retentionPrunedCounts },
     },
+    indexer,
     indexer: {
       unknown_events_total: unknownEventCount,
       last_processed_ledger: lastProcessedLedger,

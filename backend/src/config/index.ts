@@ -54,6 +54,8 @@ export const config = {
   indexer: {
     pollIntervalMs: env.INDEXER_POLL_INTERVAL_MS,
     startLedger: env.INDEXER_START_LEDGER,
+    lagThresholdLedgers: env.INDEXER_LAG_THRESHOLD_LEDGERS,
+    stallIntervals: env.INDEXER_STALL_INTERVALS,
   },
 
   twitter: {
