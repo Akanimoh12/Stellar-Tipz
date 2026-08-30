@@ -4,6 +4,7 @@ import { logger } from '../common/utils/logger.js';
 import type { DecodedEvent } from './sorobanClient.js';
 import { publishProjection } from './realtime-publisher.js';
 import * as notificationsService from '../modules/notifications/notifications.service.js';
+import { recordUnknownEvent, recordIndexerLedgerProcessed } from '../common/observability/metrics.js';
 
 /** Event topics that represent an on-chain tip. */
 const TIP_TOPICS = new Set(['tip', 'tip_sent']);
@@ -45,12 +46,22 @@ export async function projectEvent(event: DecodedEvent): Promise<void> {
     if (isNewEvent) {
       await publishProjection(event);
     }
+    recordIndexerLedgerProcessed(event.ledger);
     return;
   }
 
   const handler = PROJECTIONS[event.topic];
   if (handler) {
     await handler(event, isNewEvent);
+  } else if (!REFUND_TOPICS.has(event.topic)) {
+    // Unknown event type or version (issue #1261). The raw event was already
+    // persisted to EventLog above, so it can be replayed once a decoder ships.
+    // Surface it loudly and count it — never crash or stall the pipeline.
+    logger.warn(
+      { txHash: event.txHash, topic: event.topic, ledger: event.ledger },
+      'Indexer encountered an unknown event type/version; raw event persisted to EventLog',
+    );
+    recordUnknownEvent();
   }
   if (REFUND_TOPICS.has(event.topic)) {
     await projectRefund(event);
@@ -59,6 +70,7 @@ export async function projectEvent(event: DecodedEvent): Promise<void> {
   if (isNewEvent) {
     await publishProjection(event);
   }
+  recordIndexerLedgerProcessed(event.ledger);
 }
 
 /**
@@ -629,4 +641,5 @@ function addDays(from: Date, days: number): Date {
 
 function warnUnparseable(event: DecodedEvent, topic: string): void {
   logger.warn({ txHash: event.txHash, topic }, 'Skipping event with unparseable payload');
+  recordUnknownEvent();
 }

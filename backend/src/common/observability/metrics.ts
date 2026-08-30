@@ -41,6 +41,12 @@ export interface MetricsData {
   retention: {
     rows_pruned_total: Record<string, number>;
   };
+  indexer?: {
+    /** Events whose topic/version is not yet understood by the indexer. */
+    unknown_events_total: number;
+    /** Last ledger successfully processed by the indexer (for lag = chainHead - this). */
+    last_processed_ledger: number | null;
+  };
   circuitBreaker?: Record<string, { state: string; failures: number; opens: number }>;
   timeouts?: {
     request_timeout_ms: number;
@@ -58,6 +64,8 @@ let latencyCount = 0;
 let slowQueryCount = 0;
 let poolSaturationCount = 0;
 const retentionPrunedCounts: Record<string, number> = {};
+let unknownEventCount = 0;
+let lastProcessedLedger: number | null = null;
 
 export function recordRequest(duration: number) {
   requestCount++;
@@ -81,6 +89,16 @@ export function recordPoolSaturation(): void {
 /** Records rows removed by one completed retention batch. */
 export function recordRetentionPruned(model: string, count: number): void {
   retentionPrunedCounts[model] = (retentionPrunedCounts[model] ?? 0) + count;
+}
+
+/** Records an indexer event the indexer does not yet understand (issue #1261). */
+export function recordUnknownEvent(): void {
+  unknownEventCount++;
+}
+
+/** Records the last ledger successfully processed by the indexer (issue #1258 / #1261). */
+export function recordIndexerLedgerProcessed(ledger: number): void {
+  lastProcessedLedger = ledger;
 }
 
 export async function getMetrics(): Promise<MetricsData> {
@@ -144,6 +162,10 @@ export async function getMetrics(): Promise<MetricsData> {
     },
     retention: {
       rows_pruned_total: { ...retentionPrunedCounts },
+    },
+    indexer: {
+      unknown_events_total: unknownEventCount,
+      last_processed_ledger: lastProcessedLedger,
     },
     circuitBreaker,
     timeouts: {
