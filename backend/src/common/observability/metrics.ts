@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import { redis } from '../../db/redis.js';
-import { prisma } from '../../db/prisma.js';
 import { logger } from '../utils/logger.js';
 import { env } from '../../config/env.js';
 
@@ -8,7 +7,7 @@ export interface MetricsData {
   timestamp: string;
   service: string;
   uptime: number;
-  process: {https://github.com/StellarDevHub/Web3-Student-Lab/pull/1240
+  process: {
     memory: {
       rss: number;
       heapTotal: number;
