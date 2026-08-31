@@ -13,7 +13,7 @@ export const xHandleSchema = z.object({
       /^[a-zA-Z0-9_]+$/,
       "X handle must contain only letters, numbers, and underscores",
     ),
-});
+}).strict();
 
 export const fetchMetricsSchema = z.object({
   handle: z
@@ -29,7 +29,7 @@ export const fetchMetricsSchema = z.object({
     .number()
     .optional()
     .default(24 * 60 * 60 * 1000), // 24 hours
-});
+}).strict();
 
 export type XHandleInput = z.infer<typeof xHandleSchema>;
 export type FetchMetricsInput = z.infer<typeof fetchMetricsSchema>;

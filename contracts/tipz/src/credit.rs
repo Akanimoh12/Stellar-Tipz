@@ -14,7 +14,7 @@
 //!       + tip_sub  * 20 / 100   (0-20 pts — tip volume component)
 //!       + x_sub    * 30 / 100   (0-30 pts — X metrics component)
 //!       + age_sub  * 10 / 100   (0-10 pts — account age component)
-//!       + streak_bonus           (0-∞ pts — streak bonus component, capped at 100)
+//!       + streak_bonus           (0-10 pts — streak bonus component, capped)
 //!
 //! capped at 100
 //! ```
@@ -26,7 +26,11 @@
 //! | `tip_sub`  | `total_tips_received (stroops) / 10_000_000`       | 100 |
 //! | `x_sub`    | `min(followers/50, 50) + min((posts+replies×1.5)/10, 50)` | 100 |
 //! | `age_sub`  | `age_in_days / 10`  (0 when age < 1 day)          | 100 |
-//! | `streak_bonus` | `sum of supporter streak milestones / 7`        | 100 |
+//! | `streak_bonus` | `sum of supporter streak milestones / 7`        | 10  |
+//!
+//! The streak bonus is *not* weighted; it is added after the weighted parts and
+//! bounded by [`STREAK_BONUS_CAP`] so a long streak cannot dominate the other
+//! signals. The total is clamped to [`MAX_SCORE`] regardless.
 //!
 //! ## Tier boundaries
 //! | Tier    | Range   |
@@ -41,9 +45,12 @@ use soroban_sdk::{Address, Env};
 
 use crate::errors::ContractError;
 use crate::storage;
-use crate::types::{CreditBreakdown, CreditTier, Profile};
 use crate::types::CREDIT_DECAY_INACTIVITY_WINDOW_SECS;
 use crate::types::CREDIT_DECAY_RATE_PER_SEC;
+use crate::types::{CreditBreakdown, CreditTier, Profile};
+
+/// Maximum creators processed in a single `recompute_credit_scores_page` call.
+pub const MAX_RECOMPUTE_PAGE_SIZE: u32 = 50;
 
 /// Base score awarded to every registered profile.
 /// Places new creators in the Silver tier (40–59) by default.
@@ -84,6 +91,20 @@ pub const AGE_CAP: u32 = 100;
 
 /// Bonus score awarded for each 7-tip streak milestone.
 pub const STREAK_BONUS_SCORE: u32 = 1;
+
+/// Maximum number of points the streak bonus may contribute to the total score.
+///
+/// The streak bonus is accumulated per supporter milestone and is therefore
+/// unbounded at the source. Without this cap a creator with enough long-running
+/// supporter streaks could saturate the 0-100 score on that single signal
+/// alone, making the score one-dimensional. Capping it at 10 keeps the streak
+/// bonus meaningful (it can lift a creator a full tier boundary) while leaving
+/// tip volume, X metrics and account age as the dominant inputs.
+///
+/// Mirrors `caps.streakBonus` (env `CREDIT_SCORE_CAP_STREAK_BONUS`) in
+/// `backend/src/modules/credit/credit.config.ts` — the two implementations must
+/// agree.
+pub const STREAK_BONUS_CAP: u32 = 10;
 
 /// Tip volume (in stroops) that yields the maximum tip sub-score.
 const TIP_VOLUME_CAP: i128 = (TIP_CAP as i128) * TIP_DIVISOR;
@@ -152,16 +173,42 @@ pub fn get_credit_breakdown_for_profile(profile: &Profile, now: u64) -> CreditBr
         age_score,
         streak_score: 0,
         total,
+        // Staleness fields are zero here; callers with env access fill them in.
+        computed_at_ledger: 0,
+        ledger_age: 0,
+        is_stale: false,
     }
+}
+
+/// Bound a raw streak-bonus accumulator to [`STREAK_BONUS_CAP`].
+///
+/// The accumulator grows by one point per supporter 7-tip milestone and is
+/// therefore unbounded at the source; this is the single place that bounds it.
+/// Kept public and pure so the cap is testable without contract storage, and so
+/// it mirrors `computeStreakBonus` in the backend formula.
+pub fn cap_streak_bonus(raw_bonus: u32) -> u32 {
+    raw_bonus.min(STREAK_BONUS_CAP)
+}
+
+/// Build the weighted credit breakdown for `profile`, adding `raw_bonus` after
+/// bounding it with [`cap_streak_bonus`]. The total is clamped to
+/// [`MAX_SCORE`], so the result always lands in 0–100.
+pub fn get_credit_breakdown_with_raw_streak(
+    profile: &Profile,
+    now: u64,
+    raw_bonus: u32,
+) -> CreditBreakdown {
+    let mut breakdown = get_credit_breakdown_for_profile(profile, now);
+    let streak_score = cap_streak_bonus(raw_bonus);
+    breakdown.streak_score = streak_score;
+    breakdown.total = breakdown.total.saturating_add(streak_score).min(MAX_SCORE);
+    breakdown
 }
 
 /// Build the weighted credit breakdown for `profile` including streak bonus.
 pub fn get_credit_breakdown_with_streak(env: &Env, profile: &Profile, now: u64) -> CreditBreakdown {
-    let mut breakdown = get_credit_breakdown_for_profile(profile, now);
-    let streak_score = storage::get_creator_streak_bonus(env, &profile.owner).min(MAX_SCORE);
-    breakdown.streak_score = streak_score;
-    breakdown.total = breakdown.total.saturating_add(streak_score).min(MAX_SCORE);
-    breakdown
+    let raw_bonus = storage::get_creator_streak_bonus(env, &profile.owner);
+    get_credit_breakdown_with_raw_streak(profile, now, raw_bonus)
 }
 
 /// Compute the credit score (0–100) for `profile` at the given `now` timestamp
@@ -185,7 +232,7 @@ pub fn calculate_credit_score(profile: &Profile, now: u64) -> u32 {
     let inactivity_window = CREDIT_DECAY_INACTIVITY_WINDOW_SECS;
     let decay_rate = CREDIT_DECAY_RATE_PER_SEC;
 
-if elapsed_since_active > inactivity_window {
+    if elapsed_since_active > inactivity_window {
         let elapsed_beyond_window = elapsed_since_active.saturating_sub(inactivity_window) as u64;
         let decay_amount = elapsed_beyond_window.saturating_mul(decay_rate);
         // decay_amount may exceed the excess above base; cap at base-relative amount
@@ -236,7 +283,8 @@ pub fn get_credit_tier(env: &Env, address: &Address) -> Result<(u32, CreditTier)
     Ok((score, tier))
 }
 
-/// Load the profile for `address` and return the score component breakdown.
+/// Load the profile for `address` and return the score component breakdown,
+/// including staleness metadata (issue #1186).
 pub fn get_credit_breakdown(
     env: &Env,
     address: &Address,
@@ -247,5 +295,66 @@ pub fn get_credit_breakdown(
 
     let profile: Profile = storage::get_profile(env, address);
     let now = env.ledger().timestamp();
-    Ok(get_credit_breakdown_with_streak(env, &profile, now))
+    let mut breakdown = get_credit_breakdown_with_streak(env, &profile, now);
+
+    // Fill staleness metadata.
+    let computed_at = storage::get_credit_computed_ledger(env, address);
+    let current_ledger = env.ledger().sequence();
+    let ledger_age = current_ledger.saturating_sub(computed_at);
+    let threshold = storage::get_credit_staleness_threshold(env);
+    breakdown.computed_at_ledger = computed_at;
+    breakdown.ledger_age = ledger_age;
+    // A score that was never stored (computed_at == 0) is always stale.
+    breakdown.is_stale = computed_at == 0 || ledger_age > threshold;
+
+    Ok(breakdown)
+}
+
+/// Record the current ledger as the moment when a creator's score was last stored.
+/// Call this whenever `profile.credit_score` is written to persistent storage.
+pub fn mark_credit_computed(env: &Env, address: &Address) {
+    storage::set_credit_computed_ledger(env, address, env.ledger().sequence());
+}
+
+/// Recompute credit scores for a page of creators starting at `cursor`.
+///
+/// Returns `(next_cursor, is_done)`:
+/// - `next_cursor` is the index of the first unprocessed creator (pass back on
+///   the next call to continue).
+/// - `is_done` is `true` when the full creator set has been covered.
+///
+/// `limit` is clamped to [`MAX_RECOMPUTE_PAGE_SIZE`] to bound CPU usage.
+/// Partial completion leaves no half-updated state because each profile write
+/// is independent and idempotent.
+pub fn recompute_credit_scores_page(
+    env: &Env,
+    cursor: u32,
+    limit: u32,
+) -> (u32, bool) {
+    let limit = limit.min(MAX_RECOMPUTE_PAGE_SIZE);
+    let total = storage::get_creator_index_count(env);
+
+    if cursor >= total {
+        return (cursor, true);
+    }
+
+    let end = (cursor + limit).min(total);
+    let now = env.ledger().timestamp();
+
+    for i in cursor..end {
+        if let Some(addr) = storage::get_creator_by_index(env, i) {
+            if storage::has_profile(env, &addr) {
+                let mut profile = storage::get_profile(env, &addr);
+                let new_score = calculate_credit_score_with_streak(env, &profile, now);
+                if profile.credit_score != new_score {
+                    profile.credit_score = new_score;
+                    storage::set_profile(env, &profile);
+                }
+                mark_credit_computed(env, &addr);
+            }
+        }
+    }
+
+    let next = end;
+    (next, next >= total)
 }

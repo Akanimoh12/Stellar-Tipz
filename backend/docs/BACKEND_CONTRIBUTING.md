@@ -58,3 +58,24 @@ it('starts empty', async () => {
 
 > **Note:** `resetDb` requires a running PostgreSQL instance (see `make -C backend db-up`).
 > Unit tests that mock the Prisma client do not need it.
+
+## N+1 query guard (issue #1243)
+
+Every list/pagination endpoint must have an N+1 guard.  Use the
+`assertConstantQueryCount` helper from `src/common/testing/queryCounter.ts`:
+
+```ts
+import { assertConstantQueryCount } from '../../src/common/testing/queryCounter.js';
+
+it('fires a constant number of queries for any page size', async () => {
+  await assertConstantQueryCount(async (pageSize) => {
+    return myService.listItems({ page: 1, limit: pageSize });
+  });
+});
+```
+
+The helper runs your function twice — once with page size 1, once with 50 — and
+fails if the number of database queries changes.  Add your test to
+`tests/nPlusOne.test.ts` or alongside your service in a `*.test.ts` file.
+
+See [`docs/N_PLUS_ONE_DETECTION.md`](./N_PLUS_ONE_DETECTION.md) for full documentation.

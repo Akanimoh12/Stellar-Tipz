@@ -5,6 +5,56 @@
 
 ---
 
+## Backend REST API versioning and deprecation policy
+
+The backend REST API uses major versions in its URL (`/api/v1`, `/api/v2`, and so on). Each
+major version has an independently mountable router, allowing an old and a new version to run
+concurrently during migrations. Only `v1` is currently available; a production `v2` has not been
+created.
+
+Breaking response, request, authentication, or endpoint changes require a new major version.
+Backward-compatible fields and endpoints may be added within the current version.
+
+Deprecated endpoints follow this lifecycle:
+
+1. The endpoint is documented as deprecated and a replacement is provided.
+2. Responses include `Deprecation`, `Sunset`, and `Link` headers. `Deprecation` uses the structured
+   timestamp defined by [RFC 9745](https://www.rfc-editor.org/rfc/rfc9745.html), while `Sunset` uses
+   the HTTP date defined by [RFC 8594](https://www.rfc-editor.org/rfc/rfc8594.html).
+3. Clients receive at least 180 days between the announced deprecation and sunset dates unless an
+   urgent security or legal issue requires faster removal.
+4. Usage is logged with the authenticated user or API-key identifier when available. Public clients
+   should send `X-Client-Id` (for example, `mobile-ios/4.2`); otherwise the user agent or source IP is
+   recorded. Authorization credentials and raw API-key secrets are never logged.
+5. At or after the sunset date, the endpoint may return `410 Gone` before removal. Removal happens
+   only after the documented sunset date or in a later major API version.
+
+Example response headers:
+
+```http
+Deprecation: @1787702400
+Sunset: Sun, 28 Feb 2027 00:00:00 GMT
+Link: </api/v1/docs>; rel="deprecation", </api/v1/profiles/by-username/alice>; rel="successor-version"
+```
+
+### Currently deprecated REST endpoints
+
+| Endpoint | Replacement | Deprecated | Sunset |
+|---|---|---|---|
+| `GET /api/v1/profiles/username/:username` | `GET /api/v1/profiles/by-username/:username` | 2026-08-26 | 2027-02-28 |
+
+### REST list pagination
+
+Tips, refunds, notifications, withdrawals, and subscriptions use cursor pagination. Pass `limit`
+on the first request, then send the response's opaque `nextCursor` as `cursor` on the next request.
+Cursors are signed, tied to the authenticated user and active filters, and must not be decoded or
+constructed by clients. A `null` `nextCursor` means the final page has been reached.
+
+The legacy `offset` parameter remains available until 2027-02-28. Responses to requests that use
+it include `Deprecation` and `Sunset` headers. `cursor` and `offset` cannot be supplied together.
+
+---
+
 ## Quick Start
 
 ### Install dependencies
@@ -1308,9 +1358,23 @@ fn get_archived_goals(env: Env, creator: Address) -> Vec<Goal>
 
 ## Multi-Token Support
 
+Only tokens on the admin-managed allowlist can be tipped. A token contract is
+arbitrary code — it can report fake balances, run hooks inside `transfer`, or
+exhaust the caller's budget — so each one is vetted before it is accepted.
+
 ### `add_accepted_token`
 
-Add a token to the whitelist (admin only).
+Add a token to the allowlist (admin only).
+
+Probes the token contract for its `decimals` and `symbol` and snapshots both on
+the `AcceptedToken` entry. The probe doubles as vetting: an address that cannot
+answer those SEP-41 calls — or the contract's own address — is rejected with
+`TokenNotAccepted` rather than admitted. Freezing the metadata at add-time means
+a later upgrade of the token contract cannot retroactively change how existing
+balances are interpreted.
+
+Re-adding a previously removed token re-enables it and refreshes the recorded
+metadata; `added_at` is set to the time of that re-admission.
 
 ```rust
 fn add_accepted_token(env: Env, admin: Address, token: Address, oracle: Option<Address>)
@@ -1319,12 +1383,22 @@ fn add_accepted_token(env: Env, admin: Address, token: Address, oracle: Option<A
 
 **Auth**: Require from `admin`
 **Events**: `("token", "added")` → `(token, oracle)`
+**Errors**: `NotAuthorized`, `TokenNotAccepted` (failed add-time vetting)
 
 ---
 
 ### `remove_accepted_token`
 
-Remove a token from the whitelist (admin only).
+Remove a token from the allowlist (admin only).
+
+Disables the token for **new** tips only. The entry and every accrued creator
+balance are deliberately retained, so delisting can never strand funds:
+[`withdraw_token`](#withdraw_token) performs no allowlist check and
+[`get_token_balances`](#get_token_balances) walks the full token list. A creator
+tipped in a token that is later delisted can always still withdraw that balance.
+
+Returns `TokenNotAccepted` if the token was never added, so a mistyped address
+is reported rather than silently succeeding.
 
 ```rust
 fn remove_accepted_token(env: Env, admin: Address, token: Address) -> Result<(), ContractError>
@@ -1332,16 +1406,21 @@ fn remove_accepted_token(env: Env, admin: Address, token: Address) -> Result<(),
 
 **Auth**: Require from `admin`
 **Events**: `("token", "removed")` → `(token)`
+**Errors**: `NotAuthorized`, `TokenNotAccepted` (token was never added)
 
 ---
 
 ### `get_accepted_tokens`
 
-Get list of all accepted tokens.
+Get the list of currently enabled tokens. Delisted tokens are omitted here but
+their balances remain visible via `get_token_balances` and remain withdrawable.
 
 ```rust
 fn get_accepted_tokens(env: Env) -> Vec<AcceptedToken>
 ```
+
+Each entry carries `token_address`, `oracle_address`, `enabled`, `added_at`, and
+the `decimals` / `symbol` recorded when the token was admitted.
 
 **Auth**: None (read-only)
 

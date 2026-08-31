@@ -36,6 +36,7 @@ const fakeDeliveries = [
     nextAttemptAt: null,
     createdAt: new Date("2026-07-01T00:00:00Z"),
     updatedAt: new Date("2026-07-01T00:00:00Z"),
+    subscription: { ownerId: "user_01", deletedAt: null },
   },
   {
     id: "del_02",
@@ -46,6 +47,7 @@ const fakeDeliveries = [
     nextAttemptAt: new Date("2026-07-02T00:00:00Z"),
     createdAt: new Date("2026-07-01T01:00:00Z"),
     updatedAt: new Date("2026-07-01T02:00:00Z"),
+    subscription: { ownerId: "user_01", deletedAt: null },
   },
 ];
 
@@ -58,7 +60,7 @@ describe("listDeliveries (issue #1001)", () => {
     );
     vi.mocked(prisma.webhookDelivery.count).mockResolvedValueOnce(2 as never);
 
-    const result = await listDeliveries(1, 20);
+    const result = await listDeliveries("user_01", 1, 20);
 
     expect(result.entries).toHaveLength(2);
     expect(result.total).toBe(2);
@@ -74,7 +76,7 @@ describe("listDeliveries (issue #1001)", () => {
     );
     vi.mocked(prisma.webhookDelivery.count).mockResolvedValueOnce(1 as never);
 
-    await listDeliveries(1, 20, "sub_01");
+    await listDeliveries("user_01", 1, 20, "sub_01");
 
     expect(prisma.webhookDelivery.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -89,7 +91,7 @@ describe("listDeliveries (issue #1001)", () => {
     );
     vi.mocked(prisma.webhookDelivery.count).mockResolvedValueOnce(1 as never);
 
-    await listDeliveries(1, 20, undefined, "SUCCESS");
+    await listDeliveries("user_01", 1, 20, undefined, "SUCCESS");
 
     expect(prisma.webhookDelivery.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -102,7 +104,7 @@ describe("listDeliveries (issue #1001)", () => {
     vi.mocked(prisma.webhookDelivery.findMany).mockResolvedValueOnce([] as never);
     vi.mocked(prisma.webhookDelivery.count).mockResolvedValueOnce(0 as never);
 
-    const result = await listDeliveries(1, 20);
+    const result = await listDeliveries("user_01", 1, 20);
 
     expect(result.entries).toHaveLength(0);
     expect(result.total).toBe(0);
@@ -114,7 +116,7 @@ describe("listDeliveries (issue #1001)", () => {
     );
     vi.mocked(prisma.webhookDelivery.count).mockResolvedValueOnce(2 as never);
 
-    const result = await listDeliveries(1, 20);
+    const result = await listDeliveries("user_01", 1, 20);
 
     for (const entry of result.entries) {
       expect(() => new Date(entry.createdAt).toISOString()).not.toThrow();
@@ -131,7 +133,7 @@ describe("getDelivery (issue #1001)", () => {
       fakeDeliveries[0] as never,
     );
 
-    const result = await getDelivery("del_01");
+    const result = await getDelivery("user_01", "del_01");
 
     expect(result.id).toBe("del_01");
     expect(result.status).toBe("SUCCESS");
@@ -142,7 +144,7 @@ describe("getDelivery (issue #1001)", () => {
   it("throws NotFoundError when delivery does not exist", async () => {
     vi.mocked(prisma.webhookDelivery.findUnique).mockResolvedValueOnce(null);
 
-    await expect(getDelivery("ghost")).rejects.toMatchObject({
+    await expect(getDelivery("user_01", "ghost")).rejects.toMatchObject({
       statusCode: 404,
     });
   });
@@ -276,6 +278,17 @@ describe("deleteSubscription (issue #997)", () => {
     );
 
     await expect(deleteSubscription("someone_else", "wh_sub_01")).rejects.toMatchObject({
+      statusCode: 403,
+    });
+  });
+
+  it("rejects delivery access through a subscription owned by another user", async () => {
+    vi.mocked(prisma.webhookDelivery.findUnique).mockResolvedValueOnce({
+      ...fakeDeliveries[0],
+      subscription: { ownerId: "user_01", deletedAt: null },
+    } as never);
+
+    await expect(getDelivery("user_02", "del_01")).rejects.toMatchObject({
       statusCode: 403,
     });
   });

@@ -193,27 +193,26 @@ export async function getTopTippers(
 
   const total = (await prisma.tip.groupBy({ by: ['fromAddress'] })).length;
 
-  const entries: TopTipperEntry[] = await Promise.all(
-    grouped.map(async (row) => {
-      const user = await prisma.user.findUnique({
-        where: { stellarAddress: row.fromAddress },
-        select: {
-          id: true,
-          stellarAddress: true,
-          username: true,
-          displayName: true,
-        },
-      });
-      return {
-        userId: user?.id ?? '',
-        stellarAddress: row.fromAddress,
-        username: user?.username ?? null,
-        displayName: user?.displayName ?? null,
-        totalTipsStroops: (row._sum.amountStroops ?? 0n).toString(),
-        tipCount: row._count,
-      };
-    }),
-  );
+  // Batch-fetch user profiles for all tippers on this page in a single query
+  // instead of one findUnique per row (N+1 fix, issue #1243).
+  const addresses = grouped.map((r) => r.fromAddress);
+  const users = await prisma.user.findMany({
+    where: { stellarAddress: { in: addresses } },
+    select: { id: true, stellarAddress: true, username: true, displayName: true },
+  });
+  const userMap = new Map(users.map((u) => [u.stellarAddress, u]));
+
+  const entries: TopTipperEntry[] = grouped.map((row) => {
+    const user = userMap.get(row.fromAddress);
+    return {
+      userId: user?.id ?? '',
+      stellarAddress: row.fromAddress,
+      username: user?.username ?? null,
+      displayName: user?.displayName ?? null,
+      totalTipsStroops: (row._sum.amountStroops ?? 0n).toString(),
+      tipCount: row._count,
+    };
+  });
 
   return { entries, total, page, limit };
 }
@@ -468,22 +467,26 @@ export async function getCreatorAnalytics(
     .sort((a, b) => (b[1].totalStroops > a[1].totalStroops ? 1 : -1))
     .slice(0, 10);
 
-  const topTippers: CreatorTopTipperEntry[] = await Promise.all(
-    sortedTippers.map(async ([address, data]) => {
-      const tipper = await prisma.user.findUnique({
-        where: { stellarAddress: address },
-        select: { id: true, stellarAddress: true, username: true, displayName: true },
-      });
-      return {
-        userId: tipper?.id ?? '',
-        stellarAddress: address,
-        username: tipper?.username ?? null,
-        displayName: tipper?.displayName ?? null,
-        totalTipsStroops: data.totalStroops.toString(),
-        tipCount: data.count,
-      };
-    }),
-  );
+  // Batch-fetch user profiles for all top tippers in a single query
+  // instead of one findUnique per tipper (N+1 fix, issue #1243).
+  const tipperAddresses = sortedTippers.map(([address]) => address);
+  const tipperUsers = await prisma.user.findMany({
+    where: { stellarAddress: { in: tipperAddresses } },
+    select: { id: true, stellarAddress: true, username: true, displayName: true },
+  });
+  const tipperUserMap = new Map(tipperUsers.map((u) => [u.stellarAddress, u]));
+
+  const topTippers: CreatorTopTipperEntry[] = sortedTippers.map(([address, data]) => {
+    const tipper = tipperUserMap.get(address);
+    return {
+      userId: tipper?.id ?? '',
+      stellarAddress: address,
+      username: tipper?.username ?? null,
+      displayName: tipper?.displayName ?? null,
+      totalTipsStroops: data.totalStroops.toString(),
+      tipCount: data.count,
+    };
+  });
 
   return {
     summary,
