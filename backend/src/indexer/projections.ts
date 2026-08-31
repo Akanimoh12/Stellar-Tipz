@@ -1,9 +1,11 @@
 import type { Prisma } from '@prisma/client';
+import type { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { prisma } from '../db/prisma.js';
 import { logger } from '../common/utils/logger.js';
 import type { DecodedEvent } from './sorobanClient.js';
 import { publishProjection } from './realtime-publisher.js';
 import * as notificationsService from '../modules/notifications/notifications.service.js';
+import { recordUnknownEvent, recordIndexerLedgerProcessed } from '../common/observability/metrics.js';
 
 /** Event topics that represent an on-chain tip. */
 const TIP_TOPICS = new Set(['tip', 'tip_sent']);
@@ -45,12 +47,22 @@ export async function projectEvent(event: DecodedEvent): Promise<void> {
     if (isNewEvent) {
       await publishProjection(event);
     }
+    recordIndexerLedgerProcessed(event.ledger);
     return;
   }
 
   const handler = PROJECTIONS[event.topic];
   if (handler) {
     await handler(event, isNewEvent);
+  } else if (!REFUND_TOPICS.has(event.topic)) {
+    // Unknown event type or version (issue #1261). The raw event was already
+    // persisted to EventLog above, so it can be replayed once a decoder ships.
+    // Surface it loudly and count it — never crash or stall the pipeline.
+    logger.warn(
+      { txHash: event.txHash, topic: event.topic, ledger: event.ledger },
+      'Indexer encountered an unknown event type/version; raw event persisted to EventLog',
+    );
+    recordUnknownEvent();
   }
   if (REFUND_TOPICS.has(event.topic)) {
     await projectRefund(event);
@@ -59,6 +71,7 @@ export async function projectEvent(event: DecodedEvent): Promise<void> {
   if (isNewEvent) {
     await publishProjection(event);
   }
+  recordIndexerLedgerProcessed(event.ledger);
 }
 
 /**
@@ -73,15 +86,31 @@ async function persistEventLog(event: DecodedEvent): Promise<boolean> {
   });
   if (existing) return false;
 
-  await prisma.eventLog.create({
-    data: {
-      topic: event.topic,
-      ledger: event.ledger,
-      txHash: event.txHash,
-      data: (event.value ?? {}) as Prisma.InputJsonValue,
-    },
-  });
-  return true;
+  try {
+    await prisma.eventLog.create({
+      data: {
+        topic: event.topic,
+        ledger: event.ledger,
+        txHash: event.txHash,
+        data: (event.value ?? {}) as Prisma.InputJsonValue,
+      },
+    });
+    return true;
+  } catch (err) {
+    // Two workers may process the same ledger range concurrently. The unique
+    // (txHash, topic, ledger) constraint (schema) is the source of truth: a
+    // P2002 here means another worker already persisted this exact event, so
+    // this is a replay, not an error — treat it as already-seen and continue.
+    const error = err as PrismaClientKnownRequestError;
+    if (error?.code === 'P2002') {
+      logger.debug(
+        { txHash: event.txHash, topic: event.topic, ledger: event.ledger },
+        'Event insert raced with a duplicate; treating as replay',
+      );
+      return false;
+    }
+    throw err;
+  }
 }
 
 /** Upsert the Tip row. txHash is unique, so replays are no-ops. */
@@ -119,6 +148,11 @@ interface ParsedRefund {
   reason?: string;
 }
 
+/**
+ * Project a refund event. Wraps refund upsert + tip status update in a single
+ * transaction (isolation RepeatableRead, timeout 5000ms) to prevent partial state
+ * (refund without tip status). No external network calls are held inside.
+ */
 async function projectRefund(event: DecodedEvent): Promise<void> {
   const refund = parseRefund(event.value);
   if (!refund) {
@@ -126,33 +160,42 @@ async function projectRefund(event: DecodedEvent): Promise<void> {
     return;
   }
 
-  const tip = await prisma.tip.findUnique({ where: { txHash: refund.tipTxHash } });
-  if (!tip) {
-    logger.warn({ tipTxHash: refund.tipTxHash }, 'Refund event references unknown tip, skipping');
-    return;
-  }
+  await prisma.$transaction(
+    async (tx) => {
+      const tip = await tx.tip.findUnique({ where: { txHash: refund.tipTxHash } });
+      if (!tip) {
+        logger.warn({ tipTxHash: refund.tipTxHash }, 'Refund event references unknown tip, skipping');
+        return;
+      }
 
-  await prisma.refund.upsert({
-    where: { tipId: tip.id },
-    create: {
-      tipId: tip.id,
-      amount: refund.amount,
-      reason: refund.reason ?? '',
-      txHash: event.txHash,
-      status: 'completed',
-    },
-    update: {
-      amount: refund.amount,
-      reason: refund.reason ?? '',
-      txHash: event.txHash,
-      status: 'completed',
-    },
-  });
+      await tx.refund.upsert({
+        where: { tipId: tip.id },
+        create: {
+          tipId: tip.id,
+          amount: refund.amount,
+          reason: refund.reason ?? '',
+          txHash: event.txHash,
+          status: 'completed',
+        },
+        update: {
+          amount: refund.amount,
+          reason: refund.reason ?? '',
+          txHash: event.txHash,
+          status: 'completed',
+        },
+      });
 
-  await prisma.tip.update({
-    where: { id: tip.id },
-    data: { status: 'REFUNDED' },
-  });
+      await tx.tip.update({
+        where: { id: tip.id },
+        data: { status: 'REFUNDED' },
+      });
+    },
+    {
+      timeout: 5000,
+      maxWait: 2000,
+      isolationLevel: "RepeatableRead",
+    },
+  );
 }
 
 /**
@@ -295,10 +338,11 @@ async function projectGoalSet(event: DecodedEvent): Promise<void> {
       title,
       targetStroops,
       raisedStroops: 0n,
+      // version defaults to 0
       deadline: deadlineAt,
       status: 'ACTIVE',
     },
-    update: { title, targetStroops, deadline: deadlineAt, status: 'ACTIVE' },
+    update: { title, targetStroops, deadline: deadlineAt, status: 'ACTIVE', version: { increment: 1 } },
   });
 }
 
@@ -328,7 +372,7 @@ async function projectGoalReached(event: DecodedEvent): Promise<void> {
       raisedStroops,
       status: 'COMPLETED',
     },
-    update: { targetStroops, raisedStroops, status: 'COMPLETED' },
+    update: { targetStroops, raisedStroops, status: 'COMPLETED', version: { increment: 1 } },
   });
 
   // Only notify on the transition into COMPLETED, so replaying this event never
@@ -391,7 +435,7 @@ async function projectGoalCancelled(event: DecodedEvent): Promise<void> {
   }
   const userId = await ensureUserId(creator);
   // updateMany is a no-op (not an error) when the creator has no goal row yet.
-  await prisma.goal.updateMany({ where: { id: goalId(userId) }, data: { status: 'CANCELLED' } });
+  await prisma.goal.updateMany({ where: { id: goalId(userId) }, data: { status: 'CANCELLED', version: { increment: 1 } } as never });
 }
 
 // ── Subscription projections (issue #900) ─────────────────────────────────────
@@ -510,33 +554,41 @@ async function projectCreditScoreUpdated(event: DecodedEvent): Promise<void> {
 
   const userId = await ensureUserId(creator);
 
-  // Upsert the current credit score
-  await prisma.creditScore.upsert({
-    where: { userId },
-    create: {
-      userId,
-      value: newScoreValue,
-      computedAt: new Date(),
-    },
-    update: {
-      value: newScoreValue,
-      computedAt: new Date(),
-    },
-  });
-
-  // Append to history only if a row with the same (userId, value, ledger) doesn't exist.
-  // Use a deterministic id to ensure idempotency on replay.
+  // Transactional: creditScore + history are updated atomically
+  // (isolation ReadCommitted, timeout 5000ms). No external calls inside.
   const historyId = `credit_history_${userId}_${event.ledger}`;
-  await prisma.creditScoreHistory.upsert({
-    where: { id: historyId },
-    create: {
-      id: historyId,
-      userId,
-      value: newScoreValue,
-      computedAt: new Date(),
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.creditScore.upsert({
+        where: { userId },
+        create: {
+          userId,
+          value: newScoreValue,
+          computedAt: new Date(),
+        },
+        update: {
+          value: newScoreValue,
+          computedAt: new Date(),
+        },
+      });
+
+      await tx.creditScoreHistory.upsert({
+        where: { id: historyId },
+        create: {
+          id: historyId,
+          userId,
+          value: newScoreValue,
+          computedAt: new Date(),
+        },
+        update: {},
+      });
     },
-    update: {},
-  });
+    {
+      timeout: 5000,
+      maxWait: 2000,
+      isolationLevel: "ReadCommitted",
+    },
+  );
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -606,4 +658,5 @@ function addDays(from: Date, days: number): Date {
 
 function warnUnparseable(event: DecodedEvent, topic: string): void {
   logger.warn({ txHash: event.txHash, topic }, 'Skipping event with unparseable payload');
+  recordUnknownEvent();
 }

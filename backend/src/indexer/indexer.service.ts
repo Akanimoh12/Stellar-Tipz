@@ -5,6 +5,7 @@ import { CursorStore } from './cursor.store.js';
 import { EventLogStore } from './event-log.store.js';
 import { registerClosable } from '../common/utils/lifecycle.js';
 import type { IndexerStatus } from './indexer.types.js';
+import { prisma } from '../db/prisma.js';
 
 export class IndexerService {
   private client: SorobanClient;
@@ -81,7 +82,13 @@ export class IndexerService {
     await this.processLedgerRange(fromLedger, targetLedger);
   }
 
+  /**
+   * Process a ledger range. External RPC fetch happens OUTSIDE the transaction;
+   * persist + cursor advance are wrapped atomically (isolation ReadCommitted,
+   * timeout 10000ms). If persist fails, cursor is not advanced (replay safe).
+   */
   private async processLedgerRange(fromLedger: number, toLedger?: number): Promise<void> {
+    // External call — never inside transaction
     const contractIds = this.contractId ? [this.contractId] : undefined;
     const events = await this.client.getAllEvents(fromLedger, { contractIds });
     if (events.length === 0) {
@@ -89,16 +96,50 @@ export class IndexerService {
       return;
     }
 
+    const maxLedger = Math.max(...events.map((e) => e.ledger));
+
     try {
-      await this.events.persist(events);
+      // Wrap persist + cursor in a single transaction for atomicity
+      await prisma.$transaction(
+        async (tx) => {
+          // Persist events using the transaction client for atomicity
+          // (delegate to store but with tx, or inline)
+          for (const e of events) {
+            const id = `${e.txHash}:${e.ledger}:${e.topic}`.slice(0, 30);
+            // Use create with deterministic id; ignore P2002 (idempotent)
+            try {
+              await (tx as typeof prisma).eventLog.create({
+                data: {
+                  id,
+                  topic: e.topic,
+                  ledger: e.ledger,
+                  txHash: e.txHash,
+                  data: { contractId: e.contractId, value: e.value, eventId: e.id } as never,
+                },
+              });
+            } catch (err: unknown) {
+              const code = (err as { code?: string }).code;
+              if (code === "P2002") continue;
+              throw err;
+            }
+          }
+          await (tx as typeof prisma).indexerCursor.upsert({
+            where: { topic: "contract_events" },
+            create: { topic: "contract_events", lastLedger: maxLedger },
+            update: { lastLedger: maxLedger },
+          });
+        },
+        {
+          timeout: 10000,
+          maxWait: 3000,
+          isolationLevel: "ReadCommitted",
+        },
+      );
     } catch (err) {
-      // Don't advance cursor on failure - allows replay safety
-      logger.error({ err, fromLedger }, 'Failed to persist events; cursor not advanced');
+      logger.error({ err, fromLedger }, "Failed to persist events; cursor not advanced");
       throw err;
     }
 
-    const maxLedger = Math.max(...events.map((e) => e.ledger));
-    await this.cursors.advance('contract_events', maxLedger);
-    logger.debug({ count: events.length, maxLedger }, 'Indexer processed events');
+    logger.debug({ count: events.length, maxLedger }, "Indexer processed events");
   }
 }

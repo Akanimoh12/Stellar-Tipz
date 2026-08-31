@@ -5,8 +5,20 @@ import { queryCounterMiddleware } from '../common/testing/queryCounter.js';
 
 /** Singleton Prisma client. Import `prisma` everywhere you need DB access. */
 export const prisma = new PrismaClient({
+  datasources: { db: { url: databaseUrl.toString() } },
   log: env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
 });
+
+/**
+ * Explicit opt-in client for admin, audit, privacy recovery, and reactivation
+ * workflows that must inspect logically deleted rows. Do not use for public
+ * or ordinary application reads.
+ */
+export const prismaIncludingDeleted = new PrismaClient({
+  log: env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+});
+
+prisma.$use(softDeleteMiddleware);
 
 // Instrument slow queries. Queries slower than the configured threshold are
 // logged (with model/operation/duration/request id, never parameters) and

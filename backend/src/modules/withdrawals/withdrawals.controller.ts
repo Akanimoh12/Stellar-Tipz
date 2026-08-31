@@ -13,9 +13,14 @@ export async function getMyWithdrawals(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { limit, offset } = withdrawalHistoryQuerySchema.parse(req.query);
-    const result = await withdrawalsService.getWithdrawalHistory(req.user!.id, limit, offset);
-    res.status(200).json({ data: result });
+    const { limit, cursor, offset } = withdrawalHistoryQuerySchema.parse(req.query);
+    const result = await withdrawalsService.getWithdrawalHistory(
+      req.user!.id,
+      limit,
+      cursor,
+      offset,
+    );
+    res.status(200).json(result);
   } catch (err) {
     next(err);
   }

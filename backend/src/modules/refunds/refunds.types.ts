@@ -10,3 +10,15 @@ export interface RefundResponse {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface PreparedRefundTx {
+  unsignedTxXdr: string;
+  contractId: string;
+  networkPassphrase: string;
+}
+
+export interface SubmittedRefundResolution {
+  id: string;
+  status: string;
+  txHash: string;
+}

@@ -34,7 +34,7 @@ export function getSentryRequestHandler() {
 
 export function getSentryErrorHandler() {
   if (!env.SENTRY_DSN) {
-    return (_err: any, _req: any, _res: any, next: any) => next();
+    return (err: any, _req: any, _res: any, next: any) => next(err);
   }
   return Sentry.Handlers.errorHandler();
 }

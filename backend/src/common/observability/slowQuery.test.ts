@@ -81,6 +81,25 @@ describe('createSlowQueryMiddleware (issue #095)', () => {
     expect((await getMetrics()).database.slow_queries_total).toBe(before);
   });
 
+  it('logs and counts Prisma pool acquisition timeouts', async () => {
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
+    const before = (await getMetrics()).database.pool_saturation_total;
+    const middleware = createSlowQueryMiddleware({ thresholdMs: 1000, enabled: true });
+    const next = vi.fn(async () => {
+      throw Object.assign(new Error('pool timeout'), { code: 'P2024' });
+    });
+
+    await expect(middleware(params(), next)).rejects.toMatchObject({ code: 'P2024' });
+
+    expect(error).toHaveBeenCalledOnce();
+    expect(error.mock.calls[0][0]).toMatchObject({
+      event: 'database_pool_saturated',
+      model: 'Tip',
+      operation: 'findMany',
+    });
+    expect((await getMetrics()).database.pool_saturation_total).toBe(before + 1);
+  });
+
   it('is a no-op when disabled', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     const middleware = createSlowQueryMiddleware({ thresholdMs: 1, enabled: false });
