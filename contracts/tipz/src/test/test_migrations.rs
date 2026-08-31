@@ -5,9 +5,9 @@
 use soroban_sdk::{testutils::Address as _, Address, Env};
 
 use crate::errors::ContractError;
-use crate::CONTRACT_VERSION;
 use crate::TipzContract;
 use crate::TipzContractClient;
+use crate::CONTRACT_VERSION;
 
 struct TestCtx<'a> {
     env: Env,

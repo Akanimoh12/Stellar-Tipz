@@ -5,6 +5,6 @@ export const createModerationReportSchema = z.object({
   targetId: z.string().min(1).max(160),
   reason: z.enum(['spam', 'harassment', 'impersonation', 'fraud', 'illegal_content', 'other']),
   details: z.string().max(2_000).optional(),
-});
+}).strict();
 
 export type CreateModerationReportInput = z.infer<typeof createModerationReportSchema>;

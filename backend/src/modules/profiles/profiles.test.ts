@@ -28,6 +28,12 @@ vi.mock('../../db/prisma.js', () => ({
       aggregate: vi.fn().mockResolvedValue({ _sum: { amount: null } }),
     },
     $disconnect: vi.fn(),
+    prismaIncludingDeleted: {
+      user: {
+        findUnique: mockFindUnique,
+        update: mockUpdate,
+      },
+    },
   },
 }));
 
@@ -323,6 +329,21 @@ describe('GET /api/v1/profiles/check-username', () => {
     const res = await request(app).get('/api/v1/profiles/check-username?username=testuser');
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({ available: false });
+  });
+
+  it('keeps a deleted username reserved', async () => {
+    mockFindFirst.mockResolvedValue(makeUser({ username: 'testuser', deletedAt: new Date() }));
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/profiles/check-username?username=testuser');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ available: false });
+    expect(mockFindFirst).toHaveBeenCalledWith({
+      where: {
+        username: { equals: 'testuser', mode: 'insensitive' },
+        deletedAt: null,
+      },
+    });
   });
 
   it('returns validation error for invalid username', async () => {

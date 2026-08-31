@@ -6,12 +6,21 @@ import { logger } from '../utils/logger.js';
 // (metrics -> prisma -> slowQuery -> metrics) that would otherwise leave this
 // export undefined when prisma registers the middleware at import time.
 let recordSlowQueryRef: ((ms: number) => void) | null = null;
+let recordPoolSaturationRef: (() => void) | null = null;
 async function recordSlowQuery(ms: number): Promise<void> {
   if (!recordSlowQueryRef) {
     const metrics = await import('./metrics.js');
     recordSlowQueryRef = metrics.recordSlowQuery;
   }
   recordSlowQueryRef(ms);
+}
+
+async function recordPoolSaturation(): Promise<void> {
+  if (!recordPoolSaturationRef) {
+    const metrics = await import('./metrics.js');
+    recordPoolSaturationRef = metrics.recordPoolSaturation;
+  }
+  recordPoolSaturationRef();
 }
 
 export interface SlowQueryOptions {
@@ -35,7 +44,24 @@ export function createSlowQueryMiddleware(options: SlowQueryOptions) {
     next: (params: Prisma.MiddlewareParams) => Promise<unknown>,
   ): Promise<unknown> {
     const start = performance.now();
-    const result = await next(params);
+    let result: unknown;
+    try {
+      result = await next(params);
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code === 'P2024') {
+        logger.error(
+          {
+            event: 'database_pool_saturated',
+            model: params.model ?? 'unknown',
+            operation: params.action,
+          },
+          'Database connection pool is saturated',
+        );
+        await recordPoolSaturation();
+      }
+      throw error;
+    }
     const durationMs = performance.now() - start;
 
     if (options.enabled && durationMs >= options.thresholdMs) {

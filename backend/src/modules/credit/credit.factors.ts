@@ -61,6 +61,13 @@ export function getCreditScoreFactors(): CreditScoreFactors {
       divisor: config.divisors.age,
       cap: config.caps.ageSub,
     },
+    {
+      name: 'Streak Bonus',
+      weight: 0,
+      maxContribution: config.caps.streakBonus,
+      description: 'Supporter tip streaks — 1 point per 7-tip milestone, capped',
+      cap: config.caps.streakBonus,
+    },
   ];
 
   const totalWeight = factors.reduce((sum, f) => sum + f.weight, 0);
