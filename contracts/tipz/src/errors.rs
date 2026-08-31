@@ -61,6 +61,10 @@ pub enum ContractError {
 }
 
 impl ContractError {
+    /// A token contract failed add-time vetting: it is either the contract's own
+    /// address or could not answer the SEP-41 `decimals`/`symbol` calls, so it is
+    /// not admitted to the allowlist (issue #1182).
+    pub const InvalidToken: Self = Self::TokenNotAccepted;
     pub const AlreadyInitialized: Self = Self::AlreadyInit;
     pub const AdminChangeAlreadyPending: Self = Self::AdminChangePending;
     pub const AdminChangeTimelockNotMet: Self = Self::AdminTimelockNotMet;

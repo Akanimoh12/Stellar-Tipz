@@ -1,7 +1,30 @@
-//! Multi-token support for tipping with any Stellar asset.
+//! Multi-token support for tipping with vetted Stellar assets.
 //!
-//! Extends the tipping system to accept any Stellar asset (USDC, yXLM, etc.)
+//! Extends the tipping system to accept non-native assets (USDC, yXLM, etc.)
 //! in addition to native XLM, with on-chain price conversion for leaderboard ranking.
+//!
+//! ## Allowlist (issue #1182)
+//!
+//! A token contract is arbitrary code: it can report fake balances, run hooks
+//! inside `transfer`, or burn the caller's whole budget. Every token therefore
+//! has to be vetted by the admin before it can be tipped:
+//!
+//! - [`add_accepted_token`] is admin-only and probes the token contract for its
+//!   `decimals` and `symbol`, snapshotting both. A contract that cannot answer
+//!   those SEP-41 calls is rejected outright, and a later malicious upgrade of
+//!   the token cannot retroactively change how existing balances are read.
+//! - [`send_tip_token`] rejects any token that is not currently enabled, and it
+//!   does so **before** making any call into the token contract.
+//! - [`remove_accepted_token`] disables a token for new tips but deliberately
+//!   keeps its entry and every accrued balance intact.
+//!
+//! ## Removal must never strand funds
+//!
+//! [`withdraw_token`] intentionally performs **no** allowlist check, and
+//! [`get_token_balances`] walks the full token list rather than only the
+//! enabled ones. A creator who was tipped in a token that is later delisted can
+//! always still see and withdraw that balance. Tests pin this behaviour; do not
+//! "tidy up" by adding an `is_token_accepted` guard to the withdraw path.
 
 use soroban_sdk::{token, Address, Env, String, Vec};
 
@@ -11,10 +34,19 @@ use crate::events;
 use crate::goals;
 use crate::leaderboard;
 use crate::storage;
-use crate::types::{AcceptedToken, Tip};
+use crate::types::AcceptedToken;
 use crate::validation::{validate_message, validate_tip_for_creator};
 
-/// Add a token to the whitelist of accepted tokens (admin only)
+/// Add a token to the allowlist of accepted tokens (admin only).
+///
+/// Probes the token contract for its `decimals` and `symbol` and stores both
+/// alongside the entry. The probe doubles as a vetting step: an address that is
+/// not a working SEP-41 token contract cannot answer, and the call is rejected
+/// with [`ContractError::InvalidToken`] instead of being admitted.
+///
+/// Re-adding a token that was previously removed re-enables it and refreshes
+/// the recorded metadata; `added_at` is set to the time of this admission,
+/// since re-adding is a fresh vetting decision.
 pub fn add_accepted_token(
     env: &Env,
     admin: &Address,
@@ -24,11 +56,31 @@ pub fn add_accepted_token(
     storage::extend_instance_ttl(env);
     crate::admin::require_admin(env, admin)?;
 
+    // Never allow the contract itself onto the allowlist: tipping it would let
+    // the contract's own balance be counted as a creator balance.
+    if token == &env.current_contract_address() {
+        return Err(ContractError::InvalidToken);
+    }
+
+    // Probe the token contract. `try_*` keeps a hostile or non-token contract
+    // from trapping the whole invocation - it fails the add instead.
+    let token_client = token::TokenClient::new(env, token);
+    let decimals = token_client
+        .try_decimals()
+        .map_err(|_| ContractError::InvalidToken)?
+        .map_err(|_| ContractError::InvalidToken)?;
+    let symbol = token_client
+        .try_symbol()
+        .map_err(|_| ContractError::InvalidToken)?
+        .map_err(|_| ContractError::InvalidToken)?;
+
     let accepted_token = AcceptedToken {
         token_address: token.clone(),
         oracle_address: oracle.clone(),
         enabled: true,
         added_at: env.ledger().timestamp(),
+        decimals,
+        symbol,
     };
 
     storage::set_accepted_token(env, token, &accepted_token);
@@ -52,7 +104,14 @@ pub fn add_accepted_token(
     Ok(())
 }
 
-/// Remove a token from the whitelist (admin only)
+/// Remove a token from the allowlist (admin only).
+///
+/// Disables the token for **new** tips only. The entry and every accrued
+/// creator balance are deliberately left in place so delisting can never
+/// strand funds — see [`withdraw_token`] and [`get_token_balances`].
+///
+/// Returns [`ContractError::TokenNotAccepted`] if the token was never added, so
+/// a typo'd address is reported rather than silently "succeeding".
 pub fn remove_accepted_token(
     env: &Env,
     admin: &Address,
@@ -61,10 +120,11 @@ pub fn remove_accepted_token(
     storage::extend_instance_ttl(env);
     crate::admin::require_admin(env, admin)?;
 
-    if let Some(mut config) = storage::get_accepted_token(env, token) {
-        config.enabled = false;
-        storage::set_accepted_token(env, token, &config);
-    }
+    let mut config =
+        storage::get_accepted_token(env, token).ok_or(ContractError::TokenNotAccepted)?;
+    config.enabled = false;
+    // Retained, not deleted: existing balances stay withdrawable.
+    storage::set_accepted_token(env, token, &config);
 
     events::emit_token_removed(env, token);
 
@@ -132,7 +192,9 @@ pub fn send_tip_token(
 ) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     let config = storage::get_runtime_config(env).ok_or(ContractError::NotInitialized)?;
-    if storage::is_paused(env, crate::types::PauseFlag::Tips) || storage::is_paused(env, crate::types::PauseFlag::All) {
+    if storage::is_paused(env, crate::types::PauseFlag::Tips)
+        || storage::is_paused(env, crate::types::PauseFlag::All)
+    {
         return Err(ContractError::ContractPaused);
     }
     tipper.require_auth();
@@ -226,7 +288,12 @@ pub fn send_tip_token(
     Ok(())
 }
 
-/// Withdraw accumulated tips in a specific token
+/// Withdraw accumulated tips in a specific token.
+///
+/// **Deliberately does not check the allowlist.** A creator who was tipped in a
+/// token that the admin later delisted must still be able to withdraw that
+/// balance — removing a token blocks new tips, never withdrawals (issue #1182).
+/// Adding an `is_token_accepted` guard here would strand funds.
 pub fn withdraw_token(
     env: &Env,
     caller: &Address,
@@ -259,14 +326,14 @@ pub fn withdraw_token(
     // Set reentrancy guard before external token calls
     storage::set_reentrancy_guard(env, true);
     // Transfer net amount to creator
-    token_client.transfer(&contract_address, caller, &net)?;
+    token_client.transfer(&contract_address, caller, &net);
     // Clear reentrancy guard after first transfer
     storage::set_reentrancy_guard(env, false);
 
     // Transfer fee to collector (if fee > 0)
     if fee > 0 {
         storage::set_reentrancy_guard(env, true);
-        token_client.transfer(&contract_address, &fee_collector, &fee)?;
+        token_client.transfer(&contract_address, &fee_collector, &fee);
         // Clear reentrancy guard after second transfer
         storage::set_reentrancy_guard(env, false);
     }
@@ -291,7 +358,10 @@ pub fn withdraw_token(
     Ok(())
 }
 
-/// Get all token balances for a creator
+/// Get all token balances for a creator.
+///
+/// Walks the full token list rather than only the enabled tokens, so balances
+/// in delisted tokens stay visible and therefore withdrawable (issue #1182).
 pub fn get_token_balances(env: &Env, creator: &Address) -> Vec<crate::types::TokenBalance> {
     let token_list = storage::get_accepted_token_list(env);
     let mut result = Vec::new(env);
