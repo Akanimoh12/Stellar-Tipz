@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { env } from '../config/env.js';
 import { createSlowQueryMiddleware } from '../common/observability/slowQuery.js';
+import { queryCounterMiddleware } from '../common/testing/queryCounter.js';
 import { softDeleteMiddleware } from './softDelete.js';
 
 const databaseUrl = new URL(env.DATABASE_URL);
@@ -37,3 +38,8 @@ prisma.$use(
     enabled: env.NODE_ENV !== 'test',
   }),
 );
+
+// Track queries executed during countQueries() contexts (issue #1243).
+// This middleware is always registered but is a no-op unless a
+// countQueries()/assertConstantQueryCount() context is active.
+prisma.$use(queryCounterMiddleware);
