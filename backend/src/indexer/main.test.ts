@@ -18,6 +18,7 @@ vi.mock('../db/prisma.js', () => ({
 vi.mock('../common/utils/lifecycle.js', () => ({
   registerClosable: vi.fn(),
   closeAll: mockCloseAll,
+  closeAllWithTimeout: vi.fn(),
 }));
 
 describe('bootstrapIndexer', () => {

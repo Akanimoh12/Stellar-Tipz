@@ -75,3 +75,11 @@ export {
 export { recordDeadLetter, attachDeadLetterHandler, listDeadLetterJobs } from './deadLetter.js';
 
 export { bootstrapJobs } from './main.js';
+
+export { RETENTION_QUEUE, getRetentionQueue } from './retention.queue.js';
+export {
+  RETENTION_DAYS,
+  runRetentionPrune,
+  createRetentionWorker,
+  scheduleRetentionPrune,
+} from './retention.worker.js';

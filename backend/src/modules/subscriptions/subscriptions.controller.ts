@@ -15,15 +15,16 @@ export async function getMySubscriptions(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { role, status, limit, offset } = listSubscriptionsQuerySchema.parse(req.query);
+    const { role, status, limit, cursor, offset } = listSubscriptionsQuerySchema.parse(req.query);
     const result = await subscriptionsService.listMySubscriptions(
       req.user!.id,
       role,
       status,
       limit,
+      cursor,
       offset,
     );
-    res.status(200).json({ data: result });
+    res.status(200).json(result);
   } catch (err) {
     next(err);
   }

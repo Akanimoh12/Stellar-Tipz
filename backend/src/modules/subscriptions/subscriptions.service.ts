@@ -1,8 +1,10 @@
 import { Contract, TransactionBuilder, SorobanRpc, nativeToScVal, Networks, Keypair } from '@stellar/stellar-sdk';
 import { config } from '../../config/index.js';
 import { prisma } from '../../db/prisma.js';
+import type { Prisma } from '@prisma/client';
 import { BadRequestError, NotFoundError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
+import { rpcCall } from '../../common/stellar/rpcClient.js';
 import type {
   SubscriptionResponse,
   PreparedSubscriptionTx,
@@ -10,6 +12,11 @@ import type {
   SubmittedSubscriptionCancel,
   SubscriptionIntervalName,
 } from './subscriptions.types.js';
+import {
+  createCursorScope,
+  descendingCursorCondition,
+  toCursorPage,
+} from '../../common/pagination/cursor.js';
 
 /** Maps the API's interval name onto the raw day count the contract expects. */
 export const INTERVAL_DAYS: Record<SubscriptionIntervalName, number> = {
@@ -64,21 +71,32 @@ export async function listMySubscriptions(
   role: 'tipper' | 'creator',
   status: SubscriptionResponse['status'] | undefined,
   limit: number,
-  offset: number,
-): Promise<SubscriptionResponse[]> {
+  cursor?: string,
+  offset?: number,
+): Promise<{ data: SubscriptionResponse[]; nextCursor: string | null }> {
+  const scope = createCursorScope('subscriptions', { userId, role, status });
+  const cursorCondition = descendingCursorCondition('createdAt', cursor, scope);
+  const baseWhere: Prisma.SubscriptionWhereInput = {
+    ...(role === 'tipper' ? { tipperId: userId } : { creatorId: userId }),
+    deletedAt: null,
+    ...(status ? { status } : {}),
+  };
+  const where: Prisma.SubscriptionWhereInput = cursorCondition
+    ? { AND: [baseWhere, cursorCondition as Prisma.SubscriptionWhereInput] }
+    : baseWhere;
   const subscriptions = await prisma.subscription.findMany({
-    where: {
-      ...(role === 'tipper' ? { tipperId: userId } : { creatorId: userId }),
-      deletedAt: null,
-      ...(status ? { status } : {}),
-    },
+    where,
     include: { tipper: true, creator: true },
-    orderBy: { createdAt: 'desc' },
-    skip: offset,
-    take: limit,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    ...(offset !== undefined ? { skip: offset } : {}),
+    take: limit + 1,
   });
+  const page = toCursorPage(subscriptions, limit, scope, (subscription) => subscription.createdAt);
 
-  return subscriptions.map(serializeSubscription);
+  return {
+    data: page.data.map(serializeSubscription),
+    nextCursor: page.nextCursor,
+  };
 }
 
 async function loadCreatorByAddress(creatorStellarAddress: string) {
@@ -119,8 +137,9 @@ export async function prepareCreateSubscription(
   const parsedAmount = BigInt(amountStroops);
   if (parsedAmount <= 0) throw new BadRequestError('Amount must be positive');
 
-  const server = getServer();
-  const sourceAccount = await server.getAccount(tipper.stellarAddress).catch(() => {
+  const sourceAccount = await rpcCall((server) => server.getAccount(tipper.stellarAddress), {
+    operationName: 'getAccount',
+  }).catch(() => {
     throw new BadRequestError('Source account not found on network');
   });
   const networkPassphrase = getNetworkPassphrase();
@@ -139,7 +158,9 @@ export async function prepareCreateSubscription(
     .setTimeout(30)
     .build();
 
-  const simulateResponse = await server.simulateTransaction(tx).catch((err: Error) => {
+  const simulateResponse = await rpcCall((server) => server.simulateTransaction(tx), {
+    operationName: 'simulateTransaction',
+  }).catch((err: Error) => {
     logger.error({ err }, 'Subscription creation simulation failed');
     throw new BadRequestError('Transaction simulation failed');
   });
@@ -182,8 +203,9 @@ export async function submitCreateSubscription(
   const networkPassphrase = getNetworkPassphrase();
   const tx = TransactionBuilder.fromXDR(signedTxXdr, networkPassphrase);
 
-  const server = getServer();
-  const sendResponse = await server.sendTransaction(tx).catch((err: Error) => {
+  const sendResponse = await rpcCall((server) => server.sendTransaction(tx), {
+    operationName: 'sendTransaction',
+  }).catch((err: Error) => {
     logger.error({ err }, 'Subscription creation submission failed');
     throw new BadRequestError('Failed to submit subscription transaction');
   });
@@ -254,8 +276,9 @@ export async function prepareCancelSubscription(
 
   await loadOwnedActiveSubscription(tipperId, creatorStellarAddress);
 
-  const server = getServer();
-  const sourceAccount = await server.getAccount(tipper.stellarAddress).catch(() => {
+  const sourceAccount = await rpcCall((server) => server.getAccount(tipper.stellarAddress), {
+    operationName: 'getAccount',
+  }).catch(() => {
     throw new BadRequestError('Source account not found on network');
   });
   const networkPassphrase = getNetworkPassphrase();
@@ -272,7 +295,9 @@ export async function prepareCancelSubscription(
     .setTimeout(30)
     .build();
 
-  const simulateResponse = await server.simulateTransaction(tx).catch((err: Error) => {
+  const simulateResponse = await rpcCall((server) => server.simulateTransaction(tx), {
+    operationName: 'simulateTransaction',
+  }).catch((err: Error) => {
     logger.error({ err }, 'Subscription cancellation simulation failed');
     throw new BadRequestError('Transaction simulation failed');
   });
@@ -305,8 +330,9 @@ export async function submitCancelSubscription(
   const networkPassphrase = getNetworkPassphrase();
   const tx = TransactionBuilder.fromXDR(signedTxXdr, networkPassphrase);
 
-  const server = getServer();
-  const sendResponse = await server.sendTransaction(tx).catch((err: Error) => {
+  const sendResponse = await rpcCall((server) => server.sendTransaction(tx), {
+    operationName: 'sendTransaction',
+  }).catch((err: Error) => {
     logger.error({ err }, 'Subscription cancellation submission failed');
     throw new BadRequestError('Failed to submit cancellation transaction');
   });
@@ -346,10 +372,11 @@ export async function chargeSubscriptionOnChain(
   if (!keeperSecretKey) throw new Error('Subscription keeper secret key is not configured');
 
   const keeperKeypair = Keypair.fromSecret(keeperSecretKey);
-  const server = getServer();
   const networkPassphrase = getNetworkPassphrase();
 
-  const keeperAccount = await server.getAccount(keeperKeypair.publicKey());
+  const keeperAccount = await rpcCall((server) => server.getAccount(keeperKeypair.publicKey()), {
+    operationName: 'getAccount',
+  });
   const contract = new Contract(contractId);
 
   const tx = new TransactionBuilder(keeperAccount, { fee: '100', networkPassphrase })
@@ -363,7 +390,9 @@ export async function chargeSubscriptionOnChain(
     .setTimeout(30)
     .build();
 
-  const simulateResponse = await server.simulateTransaction(tx);
+  const simulateResponse = await rpcCall((server) => server.simulateTransaction(tx), {
+    operationName: 'simulateTransaction',
+  });
   if (SorobanRpc.Api.isSimulationError(simulateResponse)) {
     throw new Error(`Simulation error: ${simulateResponse.error}`);
   }
@@ -371,7 +400,9 @@ export async function chargeSubscriptionOnChain(
   const prepared = SorobanRpc.assembleTransaction(tx, simulateResponse).build();
   prepared.sign(keeperKeypair);
 
-  const sendResponse = await server.sendTransaction(prepared);
+  const sendResponse = await rpcCall((server) => server.sendTransaction(prepared), {
+    operationName: 'sendTransaction',
+  });
   if (sendResponse.status === 'ERROR') {
     throw new Error('Subscription charge transaction rejected by the network');
   }

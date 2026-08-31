@@ -105,11 +105,46 @@ curl http://localhost:4000/health
 # {"status":"ok"}
 ```
 
+Readiness (`/health/ready`) includes an **indexer lag** check (issue #1258):
+if the indexer falls more than `INDEXER_LAG_THRESHOLD_LEDGERS` behind the chain
+head, or its cursor is stalled across `INDEXER_STALL_INTERVALS` consecutive
+polls, the endpoint reports `status: fail` with a 503 so the orchestrator stops
+routing traffic to a stale instance.
+
+```bash
+curl http://localhost:4000/health/ready
+# {"status":"fail","checks":[{"name":"indexer","status":"fail","message":"Indexer lag 8120 (threshold 50)"},...]}
+```
+
 ## Configuration
 
 | Env Var | Description | Default |
 |---------|-------------|---------|
 | `INDEXER_START_LEDGER` | First ledger to index on initial run | Latest ledger |
 | `INDEXER_POLL_INTERVAL_MS` | Poll loop interval in milliseconds | 5000 |
+| `INDEXER_LAG_THRESHOLD_LEDGERS` | Lag behind chain head before `/health/ready` is unhealthy | 50 |
+| `INDEXER_STALL_INTERVALS` | Consecutive unchanged-cursor polls that trigger a stall alert | 3 |
 | `STELLAR_RPC_URL` | Soroban RPC endpoint | Required |
 | `STELLAR_CONTRACT_ID` | Target contract for events | Optional (all contracts) |
+
+## Monitoring & Alerting (issue #1258)
+
+The indexer exposes real-time health/lag metrics via both `/health/ready` and
+the `/metrics` endpoint:
+
+| Metric | Meaning |
+|--------|---------|
+| `indexer.lag_ledgers` | `chain head ledger − last processed ledger` |
+| `indexer.last_processed_ledger` | Last ledger successfully indexed |
+| `indexer.stalled` | True when the cursor is unchanged across `INDEXER_STALL_INTERVALS` polls |
+| `indexer.last_tick_processed` | Events projected in the last completed tick |
+| `indexer.events_processed_total` | Cumulative events processed (processing rate can be derived) |
+| `indexer.errors_total` | Cumulative projection/processing errors (error rate can be derived) |
+
+```bash
+curl http://localhost:4000/metrics | python -m json.tool | grep -A20 indexer
+```
+
+A **sustained-lag alert** fires when `lag_ledgers` exceeds the threshold, and a
+**stalled-cursor alert** fires when the cursor hasn't advanced across the
+configured polls — which a lag threshold alone misses during low chain activity.

@@ -3,7 +3,9 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    symbol_short, testutils::{Address as _, Events}, Address, Env, IntoVal, Symbol,
+    symbol_short,
+    testutils::{Address as _, Events},
+    Address, Env, IntoVal, Symbol,
 };
 
 use crate::types::AdminAuditEntry;
@@ -57,7 +59,10 @@ fn test_admin_audit_trail_recorded_on_actions() {
     assert_eq!(entry.id, 1);
     assert_eq!(entry.actor, ctx.admin);
     assert_eq!(entry.action_kind, Symbol::new(&ctx.env, "set_fee_delay"));
-    assert_eq!(entry.before_value, soroban_sdk::String::from_str(&ctx.env, "288"));
+    assert_eq!(
+        entry.before_value,
+        soroban_sdk::String::from_str(&ctx.env, "288")
+    );
     assert_eq!(
         entry.after_value,
         soroban_sdk::String::from_str(&ctx.env, "24")
@@ -74,13 +79,25 @@ fn test_admin_audit_trail_recorded_on_actions() {
     // Newest first
     let unpause_entry = history.get(0).unwrap();
     assert_eq!(unpause_entry.action_kind, Symbol::new(&ctx.env, "unpause"));
-    assert_eq!(unpause_entry.before_value, soroban_sdk::String::from_str(&ctx.env, "true"));
-    assert_eq!(unpause_entry.after_value, soroban_sdk::String::from_str(&ctx.env, "false"));
+    assert_eq!(
+        unpause_entry.before_value,
+        soroban_sdk::String::from_str(&ctx.env, "true")
+    );
+    assert_eq!(
+        unpause_entry.after_value,
+        soroban_sdk::String::from_str(&ctx.env, "false")
+    );
 
     let pause_entry = history.get(1).unwrap();
     assert_eq!(pause_entry.action_kind, Symbol::new(&ctx.env, "pause"));
-    assert_eq!(pause_entry.before_value, soroban_sdk::String::from_str(&ctx.env, "false"));
-    assert_eq!(pause_entry.after_value, soroban_sdk::String::from_str(&ctx.env, "true"));
+    assert_eq!(
+        pause_entry.before_value,
+        soroban_sdk::String::from_str(&ctx.env, "false")
+    );
+    assert_eq!(
+        pause_entry.after_value,
+        soroban_sdk::String::from_str(&ctx.env, "true")
+    );
 }
 
 #[test]
@@ -111,8 +128,10 @@ fn test_admin_audit_pagination() {
     let ctx = setup();
 
     for i in 0..10 {
-        ctx.client
-            .set_fee_change_delay(&ctx.admin, &(crate::admin::MIN_FEE_CHANGE_DELAY_LEDGERS + i));
+        ctx.client.set_fee_change_delay(
+            &ctx.admin,
+            &(crate::admin::MIN_FEE_CHANGE_DELAY_LEDGERS + i),
+        );
     }
 
     let count = ctx.client.get_admin_audit_count();
@@ -139,8 +158,10 @@ fn test_admin_audit_ring_buffer_wraparound() {
 
     // Perform 105 admin actions (exceeding 100 capacity)
     for i in 0..105 {
-        ctx.client
-            .set_fee_change_delay(&ctx.admin, &(crate::admin::MIN_FEE_CHANGE_DELAY_LEDGERS + (i % 800)));
+        ctx.client.set_fee_change_delay(
+            &ctx.admin,
+            &(crate::admin::MIN_FEE_CHANGE_DELAY_LEDGERS + (i % 800)),
+        );
     }
 
     let total_count = ctx.client.get_admin_audit_count();

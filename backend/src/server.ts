@@ -3,9 +3,9 @@ import { createApp } from './app.js';
 import { env } from '@/config/env.js';
 import { logger } from './common/utils/logger.js';
 import { initSentry } from './common/observability/sentry.js';
-import { prisma } from './db/prisma.js';
+import { prisma, prismaIncludingDeleted } from './db/prisma.js';
 import { redis } from './db/redis.js';
-import { registerClosable, closeAll } from './common/utils/lifecycle.js';
+import { registerClosable, closeAll, withShutdownTimeout } from './common/utils/lifecycle.js';
 import { startIndexer } from './indexer/index.js';
 import {
   createCreditRecomputeWorker,
@@ -27,6 +27,10 @@ async function bootstrap(): Promise<void> {
     close: () => prisma.$disconnect(),
   });
   registerClosable({
+    name: 'PrismaIncludingDeleted',
+    close: () => prismaIncludingDeleted.$disconnect(),
+  });
+  registerClosable({
     name: 'Redis',
     close: async () => {
       await redis.quit();
@@ -38,7 +42,7 @@ async function bootstrap(): Promise<void> {
   registerClosable({
     name: 'Indexer',
     close: async () => {
-      indexer.stop();
+      await indexer.stop();
     },
   });
 
@@ -69,13 +73,27 @@ async function bootstrap(): Promise<void> {
     logger.info(`🚀 Stellar Tipz backend listening on http://localhost:${env.PORT}`);
   });
 
+  let shuttingDown = false;
   const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info(`${signal} received, shutting down...`);
-    httpServer.close(async () => {
-      await closeAll();
+    const stopAccepting = new Promise<void>((resolve, reject) => {
+      httpServer.close((error?: Error) => {
+        const code = (error as (Error & { code?: string }) | undefined)?.code;
+        if (error && code !== 'ERR_SERVER_NOT_RUNNING') reject(error);
+        else resolve();
+      });
+    });
+    const completed = await withShutdownTimeout(
+      () => Promise.all([stopAccepting, closeAll()]).then(() => undefined),
+      30_000,
+      () => process.exit(1),
+    );
+    if (completed) {
       logger.info('Graceful shutdown complete');
       process.exit(0);
-    });
+    }
   };
 
   process.on('SIGINT', () => void shutdown('SIGINT'));

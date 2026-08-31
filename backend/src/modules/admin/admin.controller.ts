@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { BadRequestError } from '../../common/errors/AppError.js';
 import {
+  createAuditLogSchema,
   listAuditLogsQuerySchema,
   platformStatsResponseSchema,
 } from './admin.schema.js';
@@ -58,7 +59,11 @@ export async function createAuditLogController(
     throw new BadRequestError('Unauthorized');
   }
 
-  const { action, target, metadata } = req.body;
+  const parsed = createAuditLogSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new BadRequestError('Invalid audit log payload', parsed.error.issues);
+  }
+  const { action, target, metadata } = parsed.data;
 
   const log = await logAuditAction(
     auth.sub,

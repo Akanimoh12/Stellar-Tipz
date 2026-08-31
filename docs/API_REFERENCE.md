@@ -5,6 +5,56 @@
 
 ---
 
+## Backend REST API versioning and deprecation policy
+
+The backend REST API uses major versions in its URL (`/api/v1`, `/api/v2`, and so on). Each
+major version has an independently mountable router, allowing an old and a new version to run
+concurrently during migrations. Only `v1` is currently available; a production `v2` has not been
+created.
+
+Breaking response, request, authentication, or endpoint changes require a new major version.
+Backward-compatible fields and endpoints may be added within the current version.
+
+Deprecated endpoints follow this lifecycle:
+
+1. The endpoint is documented as deprecated and a replacement is provided.
+2. Responses include `Deprecation`, `Sunset`, and `Link` headers. `Deprecation` uses the structured
+   timestamp defined by [RFC 9745](https://www.rfc-editor.org/rfc/rfc9745.html), while `Sunset` uses
+   the HTTP date defined by [RFC 8594](https://www.rfc-editor.org/rfc/rfc8594.html).
+3. Clients receive at least 180 days between the announced deprecation and sunset dates unless an
+   urgent security or legal issue requires faster removal.
+4. Usage is logged with the authenticated user or API-key identifier when available. Public clients
+   should send `X-Client-Id` (for example, `mobile-ios/4.2`); otherwise the user agent or source IP is
+   recorded. Authorization credentials and raw API-key secrets are never logged.
+5. At or after the sunset date, the endpoint may return `410 Gone` before removal. Removal happens
+   only after the documented sunset date or in a later major API version.
+
+Example response headers:
+
+```http
+Deprecation: @1787702400
+Sunset: Sun, 28 Feb 2027 00:00:00 GMT
+Link: </api/v1/docs>; rel="deprecation", </api/v1/profiles/by-username/alice>; rel="successor-version"
+```
+
+### Currently deprecated REST endpoints
+
+| Endpoint | Replacement | Deprecated | Sunset |
+|---|---|---|---|
+| `GET /api/v1/profiles/username/:username` | `GET /api/v1/profiles/by-username/:username` | 2026-08-26 | 2027-02-28 |
+
+### REST list pagination
+
+Tips, refunds, notifications, withdrawals, and subscriptions use cursor pagination. Pass `limit`
+on the first request, then send the response's opaque `nextCursor` as `cursor` on the next request.
+Cursors are signed, tied to the authenticated user and active filters, and must not be decoded or
+constructed by clients. A `null` `nextCursor` means the final page has been reached.
+
+The legacy `offset` parameter remains available until 2027-02-28. Responses to requests that use
+it include `Deprecation` and `Sunset` headers. `cursor` and `offset` cannot be supplied together.
+
+---
+
 ## Quick Start
 
 ### Install dependencies

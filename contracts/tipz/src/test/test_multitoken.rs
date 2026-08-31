@@ -72,11 +72,11 @@ fn test_tip_with_usdc() {
 
     // Register USDC token
     let usdc_token = env.register_stellar_asset_contract_v2(admin.clone());
-    let usdc_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &usdc_token);
+    let usdc_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &usdc_token.address());
     usdc_admin_client.mint(&tipper, &10000);
 
     // Add USDC to whitelist
-    client.add_accepted_token(&admin, &usdc_token, &None);
+    client.add_accepted_token(&admin, &usdc_token.address(), &None);
 
     // Register creator
     client.register_profile(
@@ -93,7 +93,7 @@ fn test_tip_with_usdc() {
         &tipper,
         &creator,
         &1000,
-        &usdc_token,
+        &usdc_token.address(),
         &String::from_str(&env, "Here's some USDC!"),
         &false,
     );
@@ -116,11 +116,11 @@ fn test_withdraw_specific_token() {
 
     // Register USDC token
     let usdc_token = env.register_stellar_asset_contract_v2(admin.clone());
-    let usdc_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &usdc_token);
+    let usdc_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &usdc_token.address());
     usdc_admin_client.mint(&tipper, &10000);
 
     // Add USDC to whitelist
-    client.add_accepted_token(&admin, &usdc_token, &None);
+    client.add_accepted_token(&admin, &usdc_token.address(), &None);
 
     // Register creator
     client.register_profile(
@@ -137,13 +137,13 @@ fn test_withdraw_specific_token() {
         &tipper,
         &creator,
         &1000,
-        &usdc_token,
+        &usdc_token.address(),
         &String::from_str(&env, "Tip"),
         &false,
     );
 
     // Withdraw USDC
-    client.withdraw_token(&creator, &usdc_token, &500);
+    client.withdraw_token(&creator, &usdc_token.address(), &500);
 
     // Check remaining balance
     let balances = client.get_token_balances(&creator);

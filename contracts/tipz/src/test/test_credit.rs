@@ -20,7 +20,10 @@
 use soroban_sdk::{testutils::Address as _, Address, Env, Map, String, Symbol};
 
 use crate::{
-    credit::{calculate_credit_score, get_credit_tier, get_tier, BASE_SCORE},
+    credit::{
+        calculate_credit_score, cap_streak_bonus, get_credit_breakdown_with_raw_streak,
+        get_credit_tier, get_tier, BASE_SCORE, MAX_SCORE, STREAK_BONUS_CAP,
+    },
     storage::DataKey,
     types::{CreditTier, Profile, VerificationStatus, VerificationType},
     TipzContract,
@@ -866,4 +869,138 @@ fn unique_tippers_does_not_affect_score_today() {
         calculate_credit_score(&a, now),
         calculate_credit_score(&b, now)
     );
+}
+
+// ── streak bonus cap (issue #1188) ────────────────────────────────────────────
+
+/// The streak bonus is a raw, unbounded accumulator; `cap_streak_bonus` is the
+/// single place that bounds it before it reaches the score.
+#[test]
+fn streak_bonus_below_cap_passes_through() {
+    assert_eq!(cap_streak_bonus(0), 0);
+    assert_eq!(cap_streak_bonus(1), 1);
+    assert_eq!(cap_streak_bonus(STREAK_BONUS_CAP - 1), STREAK_BONUS_CAP - 1);
+    assert_eq!(cap_streak_bonus(STREAK_BONUS_CAP), STREAK_BONUS_CAP);
+}
+
+#[test]
+fn streak_bonus_above_cap_is_clamped() {
+    assert_eq!(cap_streak_bonus(STREAK_BONUS_CAP + 1), STREAK_BONUS_CAP);
+    assert_eq!(cap_streak_bonus(1_000), STREAK_BONUS_CAP);
+    assert_eq!(cap_streak_bonus(u32::MAX), STREAK_BONUS_CAP);
+}
+
+/// Regression for #1188: before the cap, a long enough streak alone lifted a
+/// profile with no tips, no X presence and a brand-new account to 100.
+#[test]
+fn long_streak_alone_cannot_dominate_the_score() {
+    let env = Env::default();
+    let now = env.ledger().timestamp();
+    let profile = blank_profile(&env, now);
+
+    let breakdown = get_credit_breakdown_with_raw_streak(&profile, now, u32::MAX);
+
+    assert_eq!(breakdown.streak_score, STREAK_BONUS_CAP);
+    assert_eq!(breakdown.total, BASE_SCORE + STREAK_BONUS_CAP);
+    assert!(
+        breakdown.total < MAX_SCORE,
+        "streak alone must not saturate the score"
+    );
+    assert_eq!(get_tier(breakdown.total), CreditTier::Silver);
+}
+
+/// The cap must leave the other signals as the dominant inputs: a creator with
+/// real tip volume and X presence must out-score a pure-streak creator.
+#[test]
+fn weighted_signals_outrank_a_maximal_streak() {
+    let env = Env::default();
+    let now = 400 * 86_400;
+
+    let mut earned = blank_profile(&env, now);
+    earned.registered_at = 0;
+    earned.total_tips_received = 1_000_000_000; // 100 XLM → tip sub-score maxed
+    earned.x_followers = 2_500;
+    earned.x_engagement_avg = 500;
+
+    let streaker = blank_profile(&env, now);
+
+    let earned_total = get_credit_breakdown_with_raw_streak(&earned, now, 0).total;
+    let streaker_total = get_credit_breakdown_with_raw_streak(&streaker, now, u32::MAX).total;
+
+    assert!(
+        earned_total > streaker_total,
+        "earned signals ({earned_total}) must outrank a maximal streak ({streaker_total})"
+    );
+}
+
+/// Property test: over a wide sweep of profiles — including extreme streaks,
+/// tip volumes, follower counts and account ages — the score stays inside
+/// 0–100 and the streak contribution never exceeds the documented cap.
+#[test]
+fn score_stays_within_zero_and_one_hundred_over_random_inputs() {
+    let env = Env::default();
+
+    // Deterministic LCG so a CI failure is reproducible.
+    let mut seed: u64 = 1188;
+    let mut next = move || {
+        seed = seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        seed >> 33
+    };
+
+    // Values that sit exactly on the saturation boundaries, so the sweep always
+    // hits them rather than relying on the uniform draw.
+    let extreme_streaks = [0u32, 1, STREAK_BONUS_CAP, STREAK_BONUS_CAP + 1, u32::MAX];
+    let extreme_tips = [0i128, 1, 1_000_000_000, i128::MAX];
+
+    for i in 0..5_000u64 {
+        let now = 1_000 * 86_400;
+        let mut profile = blank_profile(&env, now);
+
+        profile.total_tips_received = if i % 3 == 0 {
+            extreme_tips[(next() as usize) % extreme_tips.len()]
+        } else {
+            (next() % 5_000_000_000) as i128
+        };
+        profile.x_followers = if i % 4 == 0 {
+            u32::MAX
+        } else {
+            (next() % 1_000_000) as u32
+        };
+        profile.x_engagement_avg = if i % 5 == 0 {
+            u32::MAX
+        } else {
+            (next() % 1_000_000) as u32
+        };
+        // Registration in the future, today, and far in the past.
+        profile.registered_at = (next() % (now + 86_400)) as u64;
+
+        let raw_streak = if i % 2 == 0 {
+            extreme_streaks[(next() as usize) % extreme_streaks.len()]
+        } else {
+            (next() % 1_000_000) as u32
+        };
+
+        let breakdown = get_credit_breakdown_with_raw_streak(&profile, now, raw_streak);
+
+        assert!(
+            breakdown.total <= MAX_SCORE,
+            "iteration {i}: total {} exceeded MAX_SCORE (tips={}, followers={}, engagement={}, registered_at={}, streak={})",
+            breakdown.total,
+            profile.total_tips_received,
+            profile.x_followers,
+            profile.x_engagement_avg,
+            profile.registered_at,
+            raw_streak
+        );
+        assert!(
+            breakdown.streak_score <= STREAK_BONUS_CAP,
+            "iteration {i}: streak_score {} exceeded STREAK_BONUS_CAP",
+            breakdown.streak_score
+        );
+        assert!(breakdown.total >= BASE_SCORE);
+        // `get_tier` must agree with the score it is handed.
+        let _ = get_tier(breakdown.total);
+    }
 }
