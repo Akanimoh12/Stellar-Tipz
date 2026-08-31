@@ -13,9 +13,7 @@ fn is_profile_verification_expired(env: &Env, profile: &Profile) -> bool {
     }
     match profile.verification.verified_at {
         Some(verified_at) => {
-            env.ledger()
-                .timestamp()
-                .saturating_sub(verified_at)
+            env.ledger().timestamp().saturating_sub(verified_at)
                 > storage::get_domain_reverification_interval(env)
         }
         None => true,

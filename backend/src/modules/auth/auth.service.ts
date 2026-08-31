@@ -1,4 +1,3 @@
-import jwt from "jsonwebtoken";
 import { randomBytes, createHash } from "crypto";
 import { prisma } from "../../db/prisma.js";
 import { env } from "../../config/env.js";
@@ -14,6 +13,10 @@ import type {
   ChallengeResponse,
 } from "./auth.types.js";
 import { verifyEd25519Signature } from "./signature.js";
+import {
+  signAccessToken as signJwt,
+  verifyAccessToken as verifyJwt,
+} from "./jwt.js";
 
 /**
  * Helper to hash a refresh token.
@@ -30,24 +33,25 @@ function generateChallenge(): string {
 }
 
 /**
- * Creates a JWT access token.
+ * Creates a JWT access token with kid header (rotation-aware).
  */
 function generateAccessToken(payload: AuthPayload): string {
-  return jwt.sign(payload, env.JWT_SECRET, {
-    expiresIn: env.JWT_EXPIRES_IN,
-  } as jwt.SignOptions);
+  return signJwt(payload);
 }
 
 /**
  * Creates a refresh token and stores it in the database.
+ * If a transaction client is provided, the create is executed inside it;
+ * otherwise it uses the global prisma client.
  */
-async function generateRefreshToken(userId: string): Promise<string> {
+async function generateRefreshToken(userId: string, tx?: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]): Promise<string> {
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(
     Date.now() + parseDuration(env.REFRESH_TOKEN_EXPIRES_IN),
   );
 
-  await prisma.refreshToken.create({
+  const client = (tx as typeof prisma) ?? prisma;
+  await client.refreshToken.create({
     data: {
       userId,
       hashedToken: hashToken(token),
@@ -83,6 +87,11 @@ function parseDuration(duration: string): number {
 /**
  * Creates an authentication challenge for a Stellar wallet address.
  * The challenge is bound to the address and network to prevent cross-address/network replay attacks.
+ *
+ * Transactional boundary: find-or-create is wrapped in an interactive transaction
+ * (isolation ReadCommitted, timeout 5000ms, maxWait 2000ms). Expired cleanup
+ * happens outside the transaction to keep it short. No external network calls
+ * are held inside the transaction.
  */
 export async function createChallenge(
   stellarAddress: string,
@@ -90,7 +99,7 @@ export async function createChallenge(
 ): Promise<ChallengeResponse> {
   const boundNetwork = network || env.STELLAR_NETWORK;
 
-  // Clean up expired challenges for this address
+  // Cleanup outside transaction (short, non-blocking)
   await prisma.authChallenge.deleteMany({
     where: {
       stellarAddress,
@@ -98,7 +107,7 @@ export async function createChallenge(
     },
   });
 
-  // Check for existing unused challenge for this address and network
+  // Fast path: return existing without transaction
   const existingChallenge = await prisma.authChallenge.findFirst({
     where: {
       stellarAddress,
@@ -120,36 +129,67 @@ export async function createChallenge(
     };
   }
 
-  // Create new challenge
-  const challenge = generateChallenge();
-  const expiresAt = new Date(
-    Date.now() + env.AUTH_CHALLENGE_TTL_SECONDS * 1000,
-  );
+  // Wrap find-or-create in transaction to prevent race creating duplicates
+  return prisma.$transaction(
+    async (tx) => {
+      const existing = await tx.authChallenge.findFirst({
+        where: {
+          stellarAddress,
+          network: boundNetwork,
+          usedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+      });
+      if (existing) {
+        return {
+          challenge: existing.challenge,
+          expiresAt: existing.expiresAt.toISOString(),
+          network: existing.network,
+        };
+      }
 
-  await prisma.authChallenge.create({
-    data: {
-      stellarAddress,
-      challenge,
-      network: boundNetwork,
-      expiresAt,
+      const challenge = generateChallenge();
+      const expiresAt = new Date(
+        Date.now() + env.AUTH_CHALLENGE_TTL_SECONDS * 1000,
+      );
+
+      await tx.authChallenge.create({
+        data: {
+          stellarAddress,
+          challenge,
+          network: boundNetwork,
+          expiresAt,
+        },
+      });
+
+      logger.info(
+        { stellarAddress, network: boundNetwork },
+        "Created new auth challenge",
+      );
+
+      return {
+        challenge,
+        expiresAt: expiresAt.toISOString(),
+        network: boundNetwork,
+      };
     },
-  });
-
-  logger.info(
-    { stellarAddress, network: boundNetwork },
-    "Created new auth challenge",
+    {
+      timeout: 5000,
+      maxWait: 2000,
+      isolationLevel: "ReadCommitted",
+    },
   );
-
-  return {
-    challenge,
-    expiresAt: expiresAt.toISOString(),
-    network: boundNetwork,
-  };
 }
 
 /**
  * Verifies a signed challenge and returns JWT tokens.
  * Uses ed25519 signature verification to prove wallet ownership.
+ *
+ * Transactional boundary: challenge consumption + user find-or-create +
+ * refresh token creation are wrapped in a single interactive transaction
+ * (isolation RepeatableRead, timeout 8000ms). Signature verification
+ * (CPU work) happens BEFORE the transaction; token signing (no DB) happens
+ * AFTER commit. No external network calls are held inside the transaction.
  */
 export async function verifyChallenge(
   stellarAddress: string,
@@ -159,7 +199,7 @@ export async function verifyChallenge(
 ): Promise<TokenPair> {
   const expectedNetwork = network || env.STELLAR_NETWORK;
 
-  // Find the challenge
+  // Find the challenge (outside transaction for early validation)
   const authChallenge = await prisma.authChallenge.findUnique({
     where: { challenge },
   });
@@ -168,12 +208,10 @@ export async function verifyChallenge(
     throw new BadRequestError("Invalid challenge");
   }
 
-  // Validate that the challenge belongs to the requesting address
   if (authChallenge.stellarAddress !== stellarAddress) {
     throw new BadRequestError("Challenge address mismatch");
   }
 
-  // Validate that the challenge is for the correct network
   if (authChallenge.network !== expectedNetwork) {
     throw new BadRequestError("Challenge network mismatch");
   }
@@ -186,7 +224,7 @@ export async function verifyChallenge(
     throw new BadRequestError("Challenge expired");
   }
 
-  // Verify the ed25519 signature
+  // Verify the ed25519 signature BEFORE opening transaction (keep tx short)
   const isValidSignature = verifyEd25519Signature(
     stellarAddress,
     challenge,
@@ -197,25 +235,52 @@ export async function verifyChallenge(
     throw new UnauthorizedError("Invalid signature");
   }
 
-  // Mark challenge as used
-  await prisma.authChallenge.update({
-    where: { id: authChallenge.id },
-    data: { usedAt: new Date() },
-  });
+  // Wrap DB writes in transaction: mark used + find-or-create user + create refresh token
+  const { user, refreshToken } = await prisma.$transaction(
+    async (tx) => {
+      // Re-check and mark challenge as used inside tx to prevent double-use race
+      const fresh = await tx.authChallenge.findUnique({ where: { challenge } });
+      if (!fresh || fresh.usedAt) {
+        throw new ConflictError("Challenge already used");
+      }
+      await tx.authChallenge.update({
+        where: { id: fresh.id },
+        data: { usedAt: new Date() },
+      });
 
-  // Find or create user
-  let user = await prisma.user.findUnique({
-    where: { stellarAddress },
-  });
+      let user = await tx.user.findUnique({
+        where: { stellarAddress },
+      });
 
-  if (!user) {
-    user = await prisma.user.create({
-      data: { stellarAddress },
-    });
-    logger.info({ stellarAddress, userId: user.id }, "Created new user");
-  }
+      if (!user) {
+        user = await tx.user.create({
+          data: { stellarAddress },
+        });
+        logger.info({ stellarAddress, userId: user.id }, "Created new user");
+      }
 
-  // Generate tokens
+      const token = randomBytes(32).toString("hex");
+      const expiresAt = new Date(
+        Date.now() + parseDuration(env.REFRESH_TOKEN_EXPIRES_IN),
+      );
+      await tx.refreshToken.create({
+        data: {
+          userId: user.id,
+          hashedToken: hashToken(token),
+          expiresAt,
+        },
+      });
+
+      return { user, refreshToken: token };
+    },
+    {
+      timeout: 8000,
+      maxWait: 2000,
+      isolationLevel: "RepeatableRead",
+    },
+  );
+
+  // Sign access token AFTER transaction commit (no DB)
   const payload: AuthPayload = {
     userId: user.id,
     stellarAddress: user.stellarAddress,
@@ -224,7 +289,6 @@ export async function verifyChallenge(
   };
 
   const accessToken = generateAccessToken(payload);
-  const refreshToken = await generateRefreshToken(user.id);
 
   logger.info(
     { stellarAddress, userId: user.id },
@@ -239,9 +303,12 @@ export async function verifyChallenge(
 
 /**
  * Refreshes an access token using a refresh token.
+ *
+ * Transactional boundary: revoke old + create new refresh token in a single
+ * transaction (isolation ReadCommitted, timeout 5000ms). Validation
+ * happens before transaction; signing happens after.
  */
 export async function refreshToken(refreshToken: string): Promise<TokenPair> {
-  // Find the refresh token
   const tokenRecord = await prisma.refreshToken.findUnique({
     where: { hashedToken: hashToken(refreshToken) },
     include: { user: true },
@@ -251,21 +318,45 @@ export async function refreshToken(refreshToken: string): Promise<TokenPair> {
     throw new UnauthorizedError("Invalid refresh token");
   }
 
-  if (tokenRecord.revokedAt) {
-    throw new UnauthorizedError("Refresh token revoked");
-  }
-
+  // Expiry check before revocation logic — expired tokens are not reuse candidates
   if (tokenRecord.expiresAt < new Date()) {
     throw new UnauthorizedError("Refresh token expired");
   }
 
-  // Revoke old token
-  await prisma.refreshToken.update({
-    where: { id: tokenRecord.id },
-    data: { revokedAt: new Date() },
-  });
+  const newRefreshToken = await prisma.$transaction(
+    async (tx) => {
+      const fresh = await tx.refreshToken.findUnique({
+        where: { hashedToken: hashToken(refreshToken) },
+        include: { user: true },
+      });
+      if (!fresh || fresh.revokedAt || fresh.expiresAt < new Date()) {
+        throw new UnauthorizedError("Invalid refresh token");
+      }
+      await tx.refreshToken.update({
+        where: { id: fresh.id },
+        data: { revokedAt: new Date() },
+      });
 
-  // Generate new tokens with updated user info
+      const token = randomBytes(32).toString("hex");
+      const expiresAt = new Date(
+        Date.now() + parseDuration(env.REFRESH_TOKEN_EXPIRES_IN),
+      );
+      await tx.refreshToken.create({
+        data: {
+          userId: fresh.userId,
+          hashedToken: hashToken(token),
+          expiresAt,
+        },
+      });
+      return token;
+    },
+    {
+      timeout: 5000,
+      maxWait: 2000,
+      isolationLevel: "ReadCommitted",
+    },
+  );
+
   const payload: AuthPayload = {
     userId: tokenRecord.userId,
     stellarAddress: tokenRecord.user.stellarAddress,
@@ -274,9 +365,11 @@ export async function refreshToken(refreshToken: string): Promise<TokenPair> {
   };
 
   const accessToken = generateAccessToken(payload);
-  const newRefreshToken = await generateRefreshToken(tokenRecord.userId);
 
-  logger.info({ userId: tokenRecord.userId }, "Token refreshed successfully");
+  logger.info(
+    { userId: tokenRecord.userId, sessionId: newSession.id, familyId: newSession.familyId },
+    "Token refreshed successfully — rotated within family",
+  );
 
   return {
     accessToken,
@@ -310,12 +403,9 @@ export async function revokeRefreshToken(refreshToken: string): Promise<void> {
 }
 
 /**
- * Verifies a JWT access token and returns the payload.
+ * Verifies a JWT access token (rotation-aware) and returns the payload.
+ * Delegates to jwt.ts which handles kid validation and multi-key verification.
  */
 export function verifyAccessToken(token: string): AuthPayload {
-  try {
-    return jwt.verify(token, env.JWT_SECRET) as AuthPayload;
-  } catch {
-    throw new UnauthorizedError("Invalid or expired access token");
-  }
+  return verifyJwt(token);
 }

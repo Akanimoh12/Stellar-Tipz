@@ -91,10 +91,10 @@ function formatCreditScoreResponse(user: {
   if (!user.creditScore) {
     return {
       userId: user.id,
-      score: BASE_SCORE,
+      score: creditScoreConfig.weights.base,
       tier: 'Silver',
       components: {
-        base: BASE_SCORE,
+        base: creditScoreConfig.weights.base,
         tipVolume: 0,
         xMetrics: 0,
         accountAge: 0,
@@ -113,7 +113,7 @@ function formatCreditScoreResponse(user: {
     score: user.creditScore.value,
     tier,
     components: {
-      base: BASE_SCORE,
+      base: creditScoreConfig.weights.base,
       tipVolume: 0,
       xMetrics: 0,
       accountAge: 0,
@@ -220,15 +220,26 @@ export async function recalculateCreditScore(userId: string): Promise<CreditScor
     streakBonus,
   });
 
-  const creditScore = await prisma.creditScore.upsert({
-    where: { userId: user.id },
-    update: { value: result.score, computedAt: new Date() },
-    create: { userId: user.id, value: result.score },
-  });
-
-  await prisma.creditScoreHistory.create({
-    data: { userId: user.id, value: result.score },
-  });
+  // Transactional boundary: creditScore upsert + history insert are atomic
+  // (isolation ReadCommitted, timeout 5000ms). Reads and cache writes stay outside.
+  const creditScore = await prisma.$transaction(
+    async (tx) => {
+      const cs = await tx.creditScore.upsert({
+        where: { userId: user.id },
+        update: { value: result.score, computedAt: new Date() },
+        create: { userId: user.id, value: result.score },
+      });
+      await tx.creditScoreHistory.create({
+        data: { userId: user.id, value: result.score },
+      });
+      return cs;
+    },
+    {
+      timeout: 5000,
+      maxWait: 2000,
+      isolationLevel: "ReadCommitted",
+    },
+  );
 
   const response = {
     userId: user.id,

@@ -84,7 +84,9 @@ export async function listDeliveriesController(
 ) {
   try {
     const query = deliveryQuerySchema.parse(req.query);
+    const auth = req.auth as AuthPayload;
     const result = await listDeliveries(
+      auth.userId,
       query.page,
       query.limit,
       query.subscriptionId,
@@ -106,8 +108,9 @@ export async function getDeliveryController(
   next: NextFunction,
 ) {
   try {
+    const auth = req.auth as AuthPayload;
     const { id } = deliveryIdParamSchema.parse(req.params);
-    const result = await getDelivery(id);
+    const result = await getDelivery(auth.userId, id);
     res.json({ data: result });
   } catch (error) {
     if (error instanceof z.ZodError) {

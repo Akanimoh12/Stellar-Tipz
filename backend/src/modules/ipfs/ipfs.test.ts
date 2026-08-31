@@ -1,13 +1,43 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import request from "supertest";
+import sharp from "sharp";
 import { createApp } from "../../app.js";
 import { config } from "../../config/index.js";
 import { BadRequestError, BadGatewayError, ServiceUnavailableError } from "../../common/errors/AppError.js";
 import { buildGatewayUrl, isValidCid } from "./ipfs.utils.js";
-import { validateImageFile, pinImageToIpfs, MAX_IMAGE_SIZE_BYTES } from "./ipfs.service.js";
+import {
+  verifyAndSanitizeImage,
+  pinImageToIpfs,
+  MAX_IMAGE_SIZE_BYTES,
+  MAX_IMAGE_DIMENSION_PX,
+} from "./ipfs.service.js";
 
 const VALID_CID_V0 = "QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco";
 const VALID_CID_V1 = "bafybeicn72vedxjQkDDP1mXWo6uco72vedxjQkDDP1mXWo6uco72vedxj";
+
+const SVG_PAYLOAD = `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`;
+
+async function makePng(width = 8, height = 8): Promise<Buffer> {
+  return sharp({
+    create: { width, height, channels: 3, background: { r: 10, g: 120, b: 200 } },
+  })
+    .png()
+    .toBuffer();
+}
+
+async function makeJpegWithExif(): Promise<Buffer> {
+  return sharp({
+    create: { width: 8, height: 8, channels: 3, background: { r: 200, g: 50, b: 50 } },
+  })
+    .withMetadata({
+      exif: {
+        IFD0: { Copyright: "Jane Doe" },
+        IFD3: { GPSLatitude: "40/1,26/1,4614/100", GPSLongitude: "79/1,58/1,5541/100" },
+      },
+    })
+    .jpeg()
+    .toBuffer();
+}
 
 describe("IPFS Module", () => {
   const app = createApp();
@@ -50,57 +80,61 @@ describe("IPFS Module", () => {
     });
   });
 
-  describe("Image Upload Validation (#981)", () => {
-    it("should accept valid image MIME types", () => {
-      const validTypes = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"];
-      for (const mimetype of validTypes) {
-        expect(() =>
-          validateImageFile({
-            mimetype,
-            size: 1024,
-            buffer: Buffer.from("fake-image-bytes"),
-          })
-        ).not.toThrow();
-      }
+  describe("Image Upload Validation & Sanitization (#1232)", () => {
+    it("should accept a valid image verified by its actual magic bytes", async () => {
+      const buffer = await makePng();
+      const result = await verifyAndSanitizeImage({ size: buffer.length, buffer });
+      expect(result.format).toBe("png");
+      expect(result.mimeType).toBe("image/png");
+      expect(result.width).toBe(8);
+      expect(result.height).toBe(8);
     });
 
-    it("should throw BadRequestError for missing or empty file", () => {
-      expect(() => validateImageFile(undefined)).toThrow(BadRequestError);
-      expect(() =>
-        validateImageFile({
-          mimetype: "image/png",
-          size: 0,
-          buffer: Buffer.alloc(0),
-        })
-      ).toThrow(BadRequestError);
+    it("should throw BadRequestError for missing or empty file", async () => {
+      await expect(verifyAndSanitizeImage(undefined)).rejects.toThrow(BadRequestError);
+      await expect(
+        verifyAndSanitizeImage({ size: 0, buffer: Buffer.alloc(0) })
+      ).rejects.toThrow(BadRequestError);
     });
 
-    it("should throw BadRequestError for unsupported file types", () => {
-      expect(() =>
-        validateImageFile({
-          mimetype: "application/pdf",
-          size: 1024,
-          buffer: Buffer.from("pdf-bytes"),
-        })
-      ).toThrow(BadRequestError);
-
-      expect(() =>
-        validateImageFile({
-          mimetype: "text/plain",
-          size: 1024,
-          buffer: Buffer.from("text-bytes"),
-        })
-      ).toThrow(BadRequestError);
+    it("should reject a file whose content-type/extension is spoofed (magic bytes don't match)", async () => {
+      // A plain text/PDF-like buffer masquerading as a PNG via its declared
+      // mimetype and filename — the client's claim is never trusted.
+      const buffer = Buffer.from("%PDF-1.4 not actually an image");
+      await expect(
+        verifyAndSanitizeImage({ size: buffer.length, buffer })
+      ).rejects.toThrow(BadRequestError);
     });
 
-    it("should throw BadRequestError for files exceeding maximum size limit", () => {
-      expect(() =>
-        validateImageFile({
-          mimetype: "image/png",
-          size: MAX_IMAGE_SIZE_BYTES + 1,
-          buffer: Buffer.alloc(MAX_IMAGE_SIZE_BYTES + 1),
-        })
-      ).toThrow(BadRequestError);
+    it("should reject SVG files outright, even with a valid image mimetype claim", async () => {
+      const buffer = Buffer.from(SVG_PAYLOAD);
+      await expect(
+        verifyAndSanitizeImage({ size: buffer.length, buffer })
+      ).rejects.toThrow(BadRequestError);
+    });
+
+    it("should throw BadRequestError for files exceeding the maximum byte-size limit", async () => {
+      const buffer = await makePng();
+      await expect(
+        verifyAndSanitizeImage({ size: MAX_IMAGE_SIZE_BYTES + 1, buffer })
+      ).rejects.toThrow(BadRequestError);
+    });
+
+    it("should throw BadRequestError for images exceeding the maximum pixel dimensions", async () => {
+      const buffer = await makePng(MAX_IMAGE_DIMENSION_PX + 1, 4);
+      await expect(
+        verifyAndSanitizeImage({ size: buffer.length, buffer })
+      ).rejects.toThrow(BadRequestError);
+    });
+
+    it("should strip EXIF metadata, including GPS, from the sanitized output", async () => {
+      const original = await makeJpegWithExif();
+      const originalMeta = await sharp(original).metadata();
+      expect(originalMeta.exif).toBeDefined();
+
+      const result = await verifyAndSanitizeImage({ size: original.length, buffer: original });
+      const sanitizedMeta = await sharp(result.buffer).metadata();
+      expect(sanitizedMeta.exif).toBeUndefined();
     });
   });
 
@@ -123,10 +157,11 @@ describe("IPFS Module", () => {
       (config.ipfs as { apiUrl?: string }).apiUrl = "http://localhost:5001";
 
       try {
+        const buffer = await makePng();
         const file = {
           mimetype: "image/png",
-          size: 500,
-          buffer: Buffer.from("sample-image-content"),
+          size: buffer.length,
+          buffer,
           originalname: "test.png",
         };
 
@@ -143,9 +178,9 @@ describe("IPFS Module", () => {
       (config.ipfs as { apiUrl?: string }).apiUrl = "";
 
       try {
-        const buffer = Buffer.from("test-fallback-data");
+        const buffer = await makePng();
         const file = {
-          mimetype: "image/jpeg",
+          mimetype: "image/png",
           size: buffer.length,
           buffer,
         };
@@ -171,10 +206,11 @@ describe("IPFS Module", () => {
       (config.ipfs as { apiUrl?: string }).apiUrl = "http://localhost:5001";
 
       try {
+        const buffer = await makePng();
         const file = {
           mimetype: "image/png",
-          size: 100,
-          buffer: Buffer.from("test-data"),
+          size: buffer.length,
+          buffer,
         };
 
         const result = await pinImageToIpfs(file);
@@ -200,10 +236,11 @@ describe("IPFS Module", () => {
       (config.server as { nodeEnv: string }).nodeEnv = "production";
 
       try {
+        const buffer = await makePng();
         const file = {
           mimetype: "image/png",
-          size: 100,
-          buffer: Buffer.from("test-prod-data"),
+          size: buffer.length,
+          buffer,
         };
 
         await expect(pinImageToIpfs(file)).rejects.toThrow(BadGatewayError);
@@ -223,10 +260,11 @@ describe("IPFS Module", () => {
       (config.server as { nodeEnv: string }).nodeEnv = "production";
 
       try {
+        const buffer = await makePng();
         const file = {
           mimetype: "image/png",
-          size: 100,
-          buffer: Buffer.from("test-net-err"),
+          size: buffer.length,
+          buffer,
         };
 
         await expect(pinImageToIpfs(file)).rejects.toThrow(ServiceUnavailableError);
@@ -237,11 +275,12 @@ describe("IPFS Module", () => {
     });
   });
 
-  describe("HTTP Routes Integration (#981, #983, #985)", () => {
+  describe("HTTP Routes Integration (#981, #983, #985, #1232)", () => {
     it("POST /api/v1/ipfs/upload should successfully process valid image file", async () => {
+      const buffer = await makePng();
       const response = await request(app)
         .post("/api/v1/ipfs/upload")
-        .attach("file", Buffer.from("fake-png-data"), {
+        .attach("file", buffer, {
           filename: "avatar.png",
           contentType: "image/png",
         });
@@ -253,11 +292,12 @@ describe("IPFS Module", () => {
     });
 
     it("POST /api/v1/ipfs/upload should accept 'image' field name", async () => {
+      const buffer = await makePng();
       const response = await request(app)
         .post("/api/v1/ipfs/upload")
-        .attach("image", Buffer.from("fake-jpeg-data"), {
-          filename: "profile.jpeg",
-          contentType: "image/jpeg",
+        .attach("image", buffer, {
+          filename: "profile.png",
+          contentType: "image/png",
         });
 
       expect(response.status).toBe(201);
@@ -278,6 +318,30 @@ describe("IPFS Module", () => {
         .attach("file", Buffer.from("document content"), {
           filename: "document.pdf",
           contentType: "application/pdf",
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBeDefined();
+    });
+
+    it("POST /api/v1/ipfs/upload should return 400 Bad Request for a spoofed content-type (fake bytes claiming image/png)", async () => {
+      const response = await request(app)
+        .post("/api/v1/ipfs/upload")
+        .attach("file", Buffer.from("this is not real image data"), {
+          filename: "avatar.png",
+          contentType: "image/png",
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBeDefined();
+    });
+
+    it("POST /api/v1/ipfs/upload should return 400 Bad Request for SVG uploads", async () => {
+      const response = await request(app)
+        .post("/api/v1/ipfs/upload")
+        .attach("file", Buffer.from(SVG_PAYLOAD), {
+          filename: "logo.svg",
+          contentType: "image/svg+xml",
         });
 
       expect(response.status).toBe(400);

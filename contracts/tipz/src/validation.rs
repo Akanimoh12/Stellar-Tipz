@@ -131,12 +131,26 @@ pub fn validate_tip_amount(amount: i128, min_amount: i128) -> Result<(), Contrac
     Ok(())
 }
 
-pub fn validate_withdrawal_amount(amount: i128, min_amount: i128, balance: i128) -> Result<i128, ContractError> {
-    if amount < 0 { return Err(ContractError::InvalidAmount); }
-    if balance <= 0 { return Err(ContractError::InsufficientBalance); }
-    if amount == 0 { return Ok(balance); }
-    if amount < min_amount { return Err(ContractError::WdrBelowMin); }
-    if amount > balance { return Err(ContractError::InsufficientBalance); }
+pub fn validate_withdrawal_amount(
+    amount: i128,
+    min_amount: i128,
+    balance: i128,
+) -> Result<i128, ContractError> {
+    if amount < 0 {
+        return Err(ContractError::InvalidAmount);
+    }
+    if balance <= 0 {
+        return Err(ContractError::InsufficientBalance);
+    }
+    if amount == 0 {
+        return Ok(balance);
+    }
+    if amount < min_amount {
+        return Err(ContractError::WdrBelowMin);
+    }
+    if amount > balance {
+        return Err(ContractError::InsufficientBalance);
+    }
     Ok(amount)
 }
 
@@ -303,10 +317,7 @@ pub fn validate_profile_count(env: &Env) -> Result<(), ContractError> {
 /// Uses a separate counter from the general-purpose rate limiter
 /// to prevent an attacker from exhausting the registration budget
 /// with cheap non-registration operations.
-pub fn validate_registration_rate_limit(
-    env: &Env,
-    address: &Address,
-) -> Result<(), ContractError> {
+pub fn validate_registration_rate_limit(env: &Env, address: &Address) -> Result<(), ContractError> {
     let mut status =
         storage::get_rate_limit_status(env, address).unwrap_or(crate::types::RateLimitStatus {
             count: 0,

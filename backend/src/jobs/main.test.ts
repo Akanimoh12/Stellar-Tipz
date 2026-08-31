@@ -1,8 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const { mockRegisterClosable, mockCloseAll, mockPrismaDisconnect, mockRedisQuit, mockScheduleRepeatable } = vi.hoisted(() => ({
+const { mockRegisterClosable, mockCloseAll, mockCloseAllWithTimeout, mockPrismaDisconnect, mockRedisQuit, mockScheduleRepeatable } = vi.hoisted(() => ({
   mockRegisterClosable: vi.fn(),
   mockCloseAll: vi.fn(),
+  mockCloseAllWithTimeout: vi.fn(),
   mockPrismaDisconnect: vi.fn(),
   mockRedisQuit: vi.fn(),
   mockScheduleRepeatable: vi.fn().mockResolvedValue(undefined),
@@ -11,6 +12,7 @@ const { mockRegisterClosable, mockCloseAll, mockPrismaDisconnect, mockRedisQuit,
 vi.mock('../common/utils/lifecycle.js', () => ({
   registerClosable: mockRegisterClosable,
   closeAll: mockCloseAll,
+  closeAllWithTimeout: mockCloseAllWithTimeout,
 }));
 
 vi.mock('../db/prisma.js', () => ({

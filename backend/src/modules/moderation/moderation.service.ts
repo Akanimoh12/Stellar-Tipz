@@ -12,7 +12,10 @@ export async function createModerationReport(
       action: 'moderation.report.created',
       target: `${input.targetType}:${input.targetId}`,
       metadata: {
-        ...input,
+        targetType: input.targetType,
+        targetId: input.targetId,
+        reason: input.reason,
+        details: input.details,
         reporterId,
       } as Prisma.InputJsonValue,
     },
