@@ -42,6 +42,10 @@ vi.mock('../../db/redis.js', () => ({
     get: mockRedisGet,
     setex: mockRedisSetex,
     del: mockRedisDel,
+    // The global rate limiter needs these on every request.
+    zcount: vi.fn().mockResolvedValue(0),
+    zadd: vi.fn().mockResolvedValue(1),
+    expire: vi.fn().mockResolvedValue(1),
   },
 }));
 

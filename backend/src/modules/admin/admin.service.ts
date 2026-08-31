@@ -1,9 +1,38 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { logger } from '../../common/utils/logger.js';
 import type { AuditLogEntry, PlatformStats } from './admin.types.js';
 
+/** How many days back `activeUsersLast30Days` looks. */
+const ACTIVE_WINDOW_DAYS = 30;
+const ACTIVE_WINDOW_MS = ACTIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
+/** Maps a persisted audit row onto the DTO returned by the API. */
+function toAuditLogEntry(log: {
+  id: string;
+  actor: string;
+  action: string;
+  target: string | null;
+  metadata: Prisma.JsonValue;
+  createdAt: Date;
+}): AuditLogEntry {
+  return {
+    id: log.id,
+    actor: log.actor,
+    action: log.action,
+    target: log.target,
+    metadata: (log.metadata as Record<string, unknown> | null) ?? {},
+    createdAt: log.createdAt,
+  };
+}
+
 /**
- * Log an admin action for audit trail.
+ * Records an admin action in the audit trail.
+ *
+ * @param actor - Id of the admin (or "system") performing the action.
+ * @param action - Machine-readable action name, e.g. "admin.user.ban".
+ * @param target - Id of the entity acted on, when applicable.
+ * @param metadata - Structured context (before/after values, reason…).
  */
 export async function logAuditAction(
   actor: string,
@@ -11,37 +40,22 @@ export async function logAuditAction(
   target: string | null = null,
   metadata: Record<string, unknown> = {},
 ): Promise<AuditLogEntry> {
-  logger.info(
-    {
-      actor,
-      action,
-      target,
-      metadata,
-    },
-    'Admin action logged',
-  );
+  logger.info({ actor, action, target, metadata }, 'Admin action logged');
 
   const auditLog = await prisma.auditLog.create({
     data: {
       actor,
       action,
       target,
-      metadata: metadata as any,
+      metadata: metadata as Prisma.InputJsonValue,
     },
   });
 
-  return {
-    id: auditLog.id,
-    actor: auditLog.actor,
-    action: auditLog.action,
-    target: auditLog.target,
-    metadata: (auditLog.metadata as Record<string, unknown>) || {},
-    createdAt: auditLog.createdAt,
-  };
+  return toAuditLogEntry(auditLog);
 }
 
 /**
- * List audit logs with optional filtering.
+ * Lists audit logs newest-first, optionally filtered by action and/or actor.
  */
 export async function listAuditLogs(
   limit: number,
@@ -49,7 +63,7 @@ export async function listAuditLogs(
   action?: string,
   actor?: string,
 ): Promise<AuditLogEntry[]> {
-  const where: any = {};
+  const where: Prisma.AuditLogWhereInput = {};
   if (action) where.action = action;
   if (actor) where.actor = actor;
 
@@ -60,18 +74,11 @@ export async function listAuditLogs(
     take: limit,
   });
 
-  return logs.map((log) => ({
-    id: log.id,
-    actor: log.actor,
-    action: log.action,
-    target: log.target,
-    metadata: (log.metadata as Record<string, unknown>) || {},
-    createdAt: log.createdAt,
-  }));
+  return logs.map(toAuditLogEntry);
 }
 
 /**
- * Get platform-wide statistics for the dashboard.
+ * Aggregates platform-wide statistics for the admin dashboard.
  */
 export async function getPlatformStats(): Promise<PlatformStats> {
   const [
@@ -95,17 +102,15 @@ export async function getPlatformStats(): Promise<PlatformStats> {
     prisma.user.count({
       where: {
         deletedAt: null,
-        createdAt: {
-          gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-        },
+        createdAt: { gte: new Date(Date.now() - ACTIVE_WINDOW_MS) },
       },
     }),
     prisma.subscription.count({ where: { deletedAt: null } }),
     prisma.refund.count(),
   ]);
 
-  const totalTipAmount = totalTipAmountResult._sum.amountStroops || BigInt(0);
-  const averageTip =
+  const totalTipAmount = totalTipAmountResult._sum.amountStroops ?? BigInt(0);
+  const averageTipAmount =
     totalTips > 0 ? (totalTipAmount / BigInt(totalTips)).toString() : '0';
 
   return {
@@ -116,6 +121,6 @@ export async function getPlatformStats(): Promise<PlatformStats> {
     activeUsersLast30Days,
     totalSubscriptions,
     totalRefunds,
-    averageTipAmount: averageTip,
+    averageTipAmount,
   };
 }
