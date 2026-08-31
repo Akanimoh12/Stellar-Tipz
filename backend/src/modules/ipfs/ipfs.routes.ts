@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import multer from "multer";
 import { uploadImageController, getGatewayUrlController } from "./ipfs.controller.js";
 import { MAX_IMAGE_SIZE_BYTES } from "./ipfs.service.js";
+import { ipfsUploadRateLimiter } from '../../common/middleware/rateLimiter.js';
 
 /**
  * Configure Multer in-memory storage with explicit limits (issue #077).
@@ -65,8 +66,8 @@ export const ipfsRouter = Router();
  * Image upload & pin endpoint.
  * Accepts multipart/form-data with field 'file' or 'image'.
  */
-ipfsRouter.post("/upload", uploadImageMiddleware, uploadImageController);
-ipfsRouter.post("/", uploadImageMiddleware, uploadImageController);
+ipfsRouter.post("/upload", ipfsUploadRateLimiter, uploadImageMiddleware, uploadImageController);
+ipfsRouter.post("/", ipfsUploadRateLimiter, uploadImageMiddleware, uploadImageController);
 
 /**
  * Gateway URL builder endpoint.

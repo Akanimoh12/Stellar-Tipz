@@ -230,6 +230,54 @@ The pull-request CI rehearses the newest migration against a seeded PostgreSQL
 16 database: it applies the complete history, runs the Prisma seed, executes
 the newest `down.sql`, and verifies that the database schema changed.
 
+## 4a. Chain finality & indexer reorg handling (issue #1257)
+
+**Finality policy.** Stellar reaches agreement through SCP: a ledger is either
+*externalized* (final) or it is not — there is no probabilistic confirmation
+and deep reorgs of externalized ledgers do not occur in normal operation. The
+indexer nonetheless keeps a small confirmation buffer so a transient RPC-level
+inconsistency (a node briefly serving an un-externalized candidate, a
+load-balanced RPC pool momentarily disagreeing) can never reach a projection.
+
+- `INDEXER_FINALITY_DEPTH` (default **10** ledgers, ~50s): the poll loop only
+  projects events at ledgers `<= head - INDEXER_FINALITY_DEPTH`. Events past
+  that boundary are left for a later tick. Set to `0` to process at head
+  (not recommended for production).
+- `INDEXER_REORG_LOOKBACK` (default **64**): how many recently-processed
+  `(ledger, hash)` pairs are retained in `LedgerCheckpoint` for detection.
+  Keep it well above `INDEXER_FINALITY_DEPTH`.
+
+**Detection.** After each successful tick the indexer records the ledger hash
+of the highest ledger it processed (`LedgerCheckpoint`, keyed by
+`topic + ledger`). At the start of every tick it re-fetches the current hash
+of its most recent checkpoints from Horizon and compares. A mismatch means
+the chain history under a ledger we already projected has changed — a reorg.
+
+**Recovery.** On detection the indexer:
+
+1. Walks its checkpoints newest→oldest to find the **fork ledger** — the
+   highest ledger whose stored hash still matches the chain.
+2. In a single transaction: deletes `EventLog` and ledger-stamped projection
+   rows (`Tip`, and `Refund` by cascade) above the fork ledger, deletes
+   `LedgerCheckpoint` rows above it, and resets `IndexerCursor` to the fork
+   ledger.
+3. Logs at `error` and increments the `indexer_reorgs_total` signal
+   (`monitor.noteReorg`) so alerting fires — a reorg is always page-worthy,
+   even when recovery succeeds.
+4. Returns; the next tick re-reads from `forkLedger + 1` and re-projects the
+   canonical events. Projections keyed deterministically (`Goal`,
+   `Subscription`, `CreditScore`, …) self-heal on re-projection; only the
+   ledger-stamped tables need explicit deletion.
+
+Because `INDEXER_FINALITY_DEPTH > 0`, a reorg shallower than the finality
+depth is corrected **before any projection happened** — detection there just
+resets the checkpoint window. The rollback path only runs for the
+(operationally near-impossible) case of a reorg deeper than the finality
+buffer.
+
+Tests: `backend/src/indexer/reorg.test.ts` drives fixtures simulating reorgs
+at depths 1, 5, and 15 (below, at, and beyond the finality depth).
+
 ## 5. Helper Scripts
 
 Located in `scripts/`:

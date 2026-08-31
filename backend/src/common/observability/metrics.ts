@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import { redis } from '../../db/redis.js';
-import { prisma } from '../../db/prisma.js';
 import { logger } from '../utils/logger.js';
 import { env } from '../../config/env.js';
 
@@ -41,6 +40,19 @@ export interface MetricsData {
   retention: {
     rows_pruned_total: Record<string, number>;
   };
+  indexer?: {
+    /** Lag (ledgers) between the chain head and the last processed ledger. */
+    lag_ledgers: number;
+    last_processed_ledger: number | null;
+    stalled: boolean;
+    last_tick_processed: number;
+    events_processed_total: number;
+    errors_total: number;
+    /** Events whose topic/version is not yet understood by the indexer. */
+    unknown_events_total: number;
+    /** Last ledger successfully processed by the indexer (for lag = chainHead - this). */
+    last_processed_ledger: number | null;
+  };
   circuitBreaker?: Record<string, { state: string; failures: number; opens: number }>;
   timeouts?: {
     request_timeout_ms: number;
@@ -58,6 +70,8 @@ let latencyCount = 0;
 let slowQueryCount = 0;
 let poolSaturationCount = 0;
 const retentionPrunedCounts: Record<string, number> = {};
+let unknownEventCount = 0;
+let lastProcessedLedger: number | null = null;
 
 export function recordRequest(duration: number) {
   requestCount++;
@@ -83,6 +97,16 @@ export function recordRetentionPruned(model: string, count: number): void {
   retentionPrunedCounts[model] = (retentionPrunedCounts[model] ?? 0) + count;
 }
 
+/** Records an indexer event the indexer does not yet understand (issue #1261). */
+export function recordUnknownEvent(): void {
+  unknownEventCount++;
+}
+
+/** Records the last ledger successfully processed by the indexer (issue #1258 / #1261). */
+export function recordIndexerLedgerProcessed(ledger: number): void {
+  lastProcessedLedger = ledger;
+}
+
 export async function getMetrics(): Promise<MetricsData> {
   logger.debug('Collecting metrics');
 
@@ -99,6 +123,34 @@ export async function getMetrics(): Promise<MetricsData> {
     } catch {
       redisInfo = undefined;
     }
+  }
+
+  // Indexer lag/rate metrics (issue #1258) — lazy import to avoid a cycle and
+  // to keep the (fragile) DB/network reads from blocking the metrics endpoint
+  // when they fail.
+  let indexer: MetricsData['indexer'];
+  try {
+    const { getIndexerReport } = await import('../../indexer/monitor.js');
+    const report = await getIndexerReport();
+    indexer = {
+      lag_ledgers: report.lagLedgers,
+      last_processed_ledger: report.lastProcessedLedger,
+      stalled: report.stalled,
+      last_tick_processed: report.lastTickProcessed,
+      events_processed_total: report.eventsProcessedTotal,
+      errors_total: report.errorsTotal,
+    };
+  } catch {
+    const { getIndexerSnapshot } = await import('../../indexer/monitor.js');
+    const snap = getIndexerSnapshot();
+    indexer = {
+      lag_ledgers: 0,
+      last_processed_ledger: snap.lastProcessedLedger,
+      stalled: false,
+      last_tick_processed: snap.lastTickProcessed,
+      events_processed_total: snap.eventsProcessedTotal,
+      errors_total: snap.errorsTotal,
+    };
   }
 
   // Circuit breaker states (issue #091) — lazy import to avoid cycle
@@ -144,6 +196,11 @@ export async function getMetrics(): Promise<MetricsData> {
     },
     retention: {
       rows_pruned_total: { ...retentionPrunedCounts },
+    },
+    indexer,
+    indexer: {
+      unknown_events_total: unknownEventCount,
+      last_processed_ledger: lastProcessedLedger,
     },
     circuitBreaker,
     timeouts: {

@@ -23,6 +23,8 @@ export interface CreditScoreFormula {
     xSub: number;
     ageSub: number;
     tipSub: number;
+    /** Maximum points the streak bonus may contribute to the total score. */
+    streakBonus: number;
   };
 }
 
@@ -77,6 +79,21 @@ export function computeAgeSubScore(accountAgeDays: number, config: CreditScoreFo
 }
 
 /**
+ * Pure function: compute the streak bonus contribution.
+ * The raw bonus (1 point per 7-tip supporter streak milestone) is an unbounded
+ * accumulator, so it is clamped to [0, caps.streakBonus] before it reaches the
+ * score — otherwise a long streak alone could saturate the 0-100 range and make
+ * the score one-dimensional. The cap is itself floored at caps.max so a
+ * misconfigured value cannot push the total above the maximum.
+ * Mirrors `cap_streak_bonus` in contracts/tipz/src/credit.rs.
+ */
+export function computeStreakBonus(rawStreakBonus: number, config: CreditScoreFormula): number {
+  if (Number.isNaN(rawStreakBonus)) return 0;
+  const cap = clamp(config.caps.streakBonus, 0, config.caps.max);
+  return clamp(Math.floor(rawStreakBonus), 0, cap);
+}
+
+/**
  * Pure function: compute the weighted score from a sub-score.
  * Applies weight percentage and caps at max score.
  */
@@ -124,7 +141,7 @@ export function computeCreditScore(
   const tipScore = applyWeight(tipSub, config.weights.tip, config.caps.max);
   const xScore = applyWeight(xSub, config.weights.x, config.caps.max);
   const ageScore = applyWeight(ageSub, config.weights.age, config.caps.max);
-  const streakBonus = clamp(input.streakBonus, 0, config.caps.max);
+  const streakBonus = computeStreakBonus(input.streakBonus, config);
 
   // Combine components and cap at max
   const total = clamp(

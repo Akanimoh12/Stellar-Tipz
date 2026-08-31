@@ -69,6 +69,20 @@ export const envSchema = z.object({
   REALTIME_REDIS_ADAPTER_ENABLED: booleanString,
 
   JWT_SECRET: z.string().min(8),
+  /**
+   * Optional JSON or comma-separated map of kid->secret for key rotation.
+   * Supported formats:
+   *  - JSON object: '{"kid1":"secret1","kid2":"secret2"}'
+   *  - JSON array:  '[{"kid":"kid1","secret":"secret1"}]'
+   *  - CSV:         'kid1:secret1,kid2:secret2'
+   * When absent, single-secret mode is used (kid="primary").
+   * Rotation: add new kid/secret to this map, set JWT_CURRENT_KID to the new kid,
+   * keep old keys for at least 2× JWT_EXPIRES_IN (documented window) to allow
+   * in-flight tokens to expire, then remove the retired kid.
+   */
+  JWT_SECRETS: z.string().optional(),
+  /** Kid to use when signing new tokens. Must exist in JWT_SECRETS when rotation is configured. */
+  JWT_CURRENT_KID: z.string().optional(),
   /** Access token TTL — must be a duration string like "15m" or "1h". */
   JWT_EXPIRES_IN: durationString.default('15m'),
   /** Refresh token TTL — must be a duration string like "7d" or "30d". */
@@ -97,6 +111,24 @@ export const envSchema = z.object({
 
   INDEXER_POLL_INTERVAL_MS: z.coerce.number().default(5000),
   INDEXER_START_LEDGER: z.coerce.number().optional(),
+  /** Ledgers behind the chain head after which /health/ready turns unhealthy. */
+  INDEXER_LAG_THRESHOLD_LEDGERS: z.coerce.number().int().positive().default(50),
+  /** Consecutive polls with an unchanged cursor that trigger a stall alert. */
+  INDEXER_STALL_INTERVALS: z.coerce.number().int().positive().default(3),
+  /**
+   * Confirmation depth (issue #1257). The indexer only projects events at
+   * ledgers at or below `head - INDEXER_FINALITY_DEPTH`, so a ledger that is
+   * later dropped by a reorg was never projected. Stellar reaches
+   * near-instant finality via SCP (a validated ledger is externalized, not
+   * probabilistically confirmed), so a small buffer is ample; the default is
+   * deliberately conservative. `0` disables the gate (process at head).
+   */
+  INDEXER_FINALITY_DEPTH: z.coerce.number().int().min(0).default(10),
+  /**
+   * How many recently-processed ledger hashes to retain for reorg detection
+   * (issue #1257). Must comfortably exceed `INDEXER_FINALITY_DEPTH`.
+   */
+  INDEXER_REORG_LOOKBACK: z.coerce.number().int().positive().default(64),
 
   CREDIT_RECOMPUTE_CRON: z.string().default('0 */6 * * *'),
   /** Cron expression for the daily analytics rollup job. Runs at 00:05 UTC daily by default. */

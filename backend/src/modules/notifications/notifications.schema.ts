@@ -8,13 +8,13 @@ export const notificationsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().min(1, 'Invalid cursor').optional(),
   offset: z.coerce.number().int().min(0).optional(),
-}).refine((query) => query.cursor === undefined || query.offset === undefined, {
+}).strict().refine((query) => query.cursor === undefined || query.offset === undefined, {
   message: 'cursor and offset cannot be used together',
 });
 
 export const notificationIdParamSchema = z.object({
   id: z.string().min(1),
-});
+}).strict();
 
 export const updateNotificationPreferencesSchema = z
   .object({
@@ -22,6 +22,7 @@ export const updateNotificationPreferencesSchema = z
     goalReached: z.boolean().optional(),
     subscriptionCharged: z.boolean().optional(),
   })
+  .strict()
   .refine((data) => Object.keys(data).length > 0, {
     message: 'At least one preference must be provided',
   });

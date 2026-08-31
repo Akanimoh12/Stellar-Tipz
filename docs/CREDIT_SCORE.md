@@ -19,12 +19,12 @@ score = BASE_SCORE (40)
       + tip_sub  * 20 / 100   →  0–20 pts  (tip volume component)
       + x_sub    * 30 / 100   →  0–30 pts  (X metrics component)
       + age_sub  * 10 / 100   →  0–10 pts  (account age component)
-      + streak_bonus           →  0–∞ pts  (streak bonus component)
+      + streak_bonus           →  0–10 pts (streak bonus component, capped)
 
 Maximum score: 100 (capped)
 ```
 
-Each sub-score is independently capped at 100 before weighting. The streak bonus is added after weighting and is also capped at 100.
+Each sub-score is independently capped at 100 before weighting. The streak bonus is **not** weighted: it is added after the weighted parts and is bounded by its own cap (`STREAK_BONUS_CAP` / `CREDIT_SCORE_CAP_STREAK_BONUS`, default **10**). The total is then clamped to 100.
 
 ### Component Breakdown
 
@@ -34,7 +34,7 @@ Each sub-score is independently capped at 100 before weighting. The streak bonus
 | **Tip volume** | 20% | 20 pts | `total_tips_received` (stroops) |
 | **X metrics** | 30% | 30 pts | `x_followers` + `x_engagement_avg` |
 | **Account age** | 10% | 10 pts | Days since `registered_at` |
-| **Streak bonus** | — | Uncapped (capped at 100 total) | 1 point per 7-tip streak milestone |
+| **Streak bonus** | — | 10 pts | 1 point per 7-tip streak milestone |
 
 ---
 
@@ -99,26 +99,43 @@ Accounts younger than 1 day contribute **0** to the age component.
 
 Maximum reached after ~1,000 days (~2.7 years).
 
-### 4. Streak Bonus (uncapped, but total score capped at 100)
+### 4. Streak Bonus (max contribution: 10 pts)
 
 ```
-streak_bonus = sum of all supporter streak milestones / 7
+raw_streak_bonus = sum of all supporter streak milestones
+streak_bonus     = min(raw_streak_bonus, STREAK_BONUS_CAP)   // default cap: 10
 
 Each supporter earns 1 bonus point for every 7 consecutive tips to the same creator.
-The creator's total streak bonus is the sum of all supporter bonus points.
+The creator's raw streak bonus is the sum of all supporter bonus points.
 ```
 
-| Supporter streak | Bonus points | Creator's total streak bonus |
-|------------------|--------------|------------------------------|
+| Supporter streak | Bonus points | Creator's raw streak bonus |
+|------------------|--------------|----------------------------|
 | 0-6 tips | 0 | 0 |
 | 7-13 tips | 1 | 1 |
 | 14-20 tips | 2 | 2 |
 | 21-27 tips | 3 | 3 |
 | ... | ... | ... |
 
-The streak bonus is added after all other components and is also capped at 100 to ensure the total score never exceeds 100.
+The raw accumulator is unbounded — it grows with every supporter milestone — so it is
+clamped to `STREAK_BONUS_CAP` **before** it is added to the score. Without that clamp a
+long enough streak alone lifts a creator with zero tips, zero X presence and a brand-new
+account from the base score (40) to the maximum (100), making the score one-dimensional.
+The total is still clamped to 100 afterwards.
 
-**Example**: If a creator has 10 supporters each on a 14-tip streak, the creator receives 10 × 2 = 20 streak bonus points.
+**Example**: A creator with 10 supporters each on a 14-tip streak has a raw bonus of
+10 × 2 = 20 points, which contributes **10** points (the cap) to the score.
+
+#### Configuring the cap
+
+| Implementation | Constant | Default | Override |
+|----------------|----------|---------|----------|
+| Soroban contract | `STREAK_BONUS_CAP` in [`contracts/tipz/src/credit.rs`](../contracts/tipz/src/credit.rs) | 10 | Contract redeploy |
+| Backend | `caps.streakBonus` in [`credit.config.ts`](../backend/src/modules/credit/credit.config.ts) | 10 | `CREDIT_SCORE_CAP_STREAK_BONUS` |
+
+The two must stay in agreement. The backend additionally floors the effective cap at
+`caps.max`, so a misconfigured `CREDIT_SCORE_CAP_STREAK_BONUS` can never push the total
+above 100.
 
 ---
 
@@ -130,7 +147,8 @@ The streak bonus is added after all other components and is also capped at 100 t
 | Active tipper, no X | 10 | 0 | 0 | 30 | 0 | 43 | Silver |
 | X presence, no tips | 0 | 2,500 | 100 | 60 | 0 | 53 | Silver |
 | Established creator | 50 | 2,500 | 200 | 365 | 5 | 72 | Gold |
-| Elite creator | 100+ | 2,500+ | 500+ | 1,000+ | 20+ | 100 | Diamond |
+| Elite creator | 100+ | 2,500+ | 500+ | 1,000+ | 20+ (capped to 10) | 100 | Diamond |
+| Streak-only creator | 0 | 0 | 0 | 0 | 1,000 (capped to 10) | 50 | Silver |
 
 ---
 
@@ -188,7 +206,8 @@ let age_sub: u32 = {
     (age_days as u32 / AGE_DIVISOR).min(AGE_CAP)
 };
 
-let streak_score = storage::get_creator_streak_bonus(env, &profile.owner).min(MAX_SCORE);
+// Bound the unbounded raw accumulator before it reaches the score.
+let streak_score = cap_streak_bonus(storage::get_creator_streak_bonus(env, &profile.owner));
 
 let total = (BASE_SCORE
     + tip_sub * TIP_WEIGHT / MAX_SCORE
@@ -217,6 +236,7 @@ const AGE_DIVISOR = 10;
 const X_SUB_CAP = 50;
 const AGE_CAP = 100;
 const TIP_CAP = 100;
+const STREAK_BONUS_CAP = 10; // CREDIT_SCORE_CAP_STREAK_BONUS
 ```
 
 Core calculation:
@@ -230,7 +250,7 @@ function computeCreditScore(input: ComputeCreditScoreInput) {
   const tipScore = Math.floor((tipSub * TIP_WEIGHT) / MAX_SCORE);
   const xScore = Math.floor((xSub * X_WEIGHT) / MAX_SCORE);
   const ageScore = Math.floor((ageSub * AGE_WEIGHT) / MAX_SCORE);
-  const streakBonus = clamp(input.streakBonus, 0, MAX_SCORE);
+  const streakBonus = clamp(Math.floor(input.streakBonus), 0, STREAK_BONUS_CAP);
 
   const total = clamp(BASE_SCORE + tipScore + xScore + ageScore + streakBonus, 0, MAX_SCORE);
   return { score: total, tier: computeTier(total), components: { base: BASE_SCORE, tipVolume: tipScore, xMetrics: xScore, accountAge: ageScore, streakBonus } };
@@ -247,11 +267,33 @@ Both implementations produce identical results for the same inputs, ensuring con
 2. **Admin update**: The admin calls `update_x_metrics(target, x_followers, x_engagement_avg)` or the batch variant `batch_update_x_metrics` (up to 50 creators per call)
 3. **Recalculation**: The contract recalculates and stores the new credit score on the profile
 4. **Event**: A `CreditScoreUpdated` event is emitted with the old and new scores
-5. **Streak updates**: When a supporter sends a tip, their streak is tracked. Every 7 consecutive tips to the same creator increments the creator's streak bonus by 1 point
+5. **Streak updates**: When a supporter sends a tip, their streak is tracked. Every 7 consecutive tips to the same creator increments the creator's raw streak bonus by 1 point; the contribution to the score is capped at `STREAK_BONUS_CAP` (10)
 
 ### Why Off-chain?
 
 The X API cannot be called directly from a smart contract. The admin role acts as a trusted oracle. Future versions may use a decentralized oracle.
+
+---
+
+## Migration: introducing the streak bonus cap
+
+The streak bonus was previously unbounded (see #1188). Capping it lowers the score of any
+creator whose raw streak accumulator exceeded `STREAK_BONUS_CAP` (10).
+
+**Existing scores are recomputed, not grandfathered.** Grandfathering was rejected because
+the score is a comparative signal shown on a shared leaderboard: leaving old scores on the
+old formula would mean two creators with identical activity showing different scores
+depending on when they were last scored.
+
+| Surface | Behaviour |
+|---------|-----------|
+| **On-chain (Soroban)** | No storage migration is required — the score is derived on read. `get_credit_tier` and `get_credit_breakdown` return the capped value immediately on the next call. The `credit_score` field cached on a `Profile` is refreshed the next time the score is written (a tip, an `update_x_metrics` call, or the batch variant). |
+| **Backend (Postgres)** | Stored `CreditScore` rows are recomputed by the existing recompute job (`backend/src/jobs/creditRecompute.worker.ts`, `recomputeAllScores`) or on demand via [`credit.backfill.ts`](../backend/src/modules/credit/credit.backfill.ts) (`backfillCreditScores`). Run the backfill once after deploying. |
+| **Cache** | Redis entries expire after `CREDIT_SCORE_CACHE_TTL_SECONDS` (default 5 min); no manual flush is needed, though flushing the `credit:*` keys makes the change visible immediately. |
+| **History** | `CreditScoreHistory` rows are **not** rewritten. They are an audit trail of what the score was at the time, so a one-off step down after the backfill is expected and intentional. |
+
+Impact is bounded: no creator can lose more than `raw_streak_bonus - 10` points, and only
+creators who were leaning on the uncapped bonus are affected at all.
 
 ---
 
@@ -266,3 +308,4 @@ The X API cannot be called directly from a smart contract. The admin role acts a
 | **Account age (10% weight)** | Rewards longevity; prevents hit-and-run accounts from scoring high |
 | **Integer math only** | Soroban does not support floating-point arithmetic |
 | **Per-component caps** | Prevents gaming by inflating a single metric |
+| **Streak bonus cap (10)** | The raw streak accumulator is unbounded; capping it keeps the bonus meaningful (it can lift a creator across a tier boundary) while leaving tip volume, X metrics and account age as the dominant signals |

@@ -10,8 +10,9 @@
   "scripts": {
     "prepare": "husky",
     "dev": "tsx watch src/server.ts",
-    "indexer": "tsx src/indexer/main.ts",
-    "indexer:dev": "tsx watch src/indexer/main.ts",
+  "indexer": "tsx src/indexer/main.ts",
+  "indexer:dev": "tsx watch src/indexer/main.ts",
+  "indexer:backfill": "tsx src/indexer/backfill.main.ts",
     "jobs": "tsx src/jobs/main.ts",
     "jobs:dev": "tsx watch src/jobs/main.ts",
     "build": "tsc -p tsconfig.json",
@@ -23,10 +24,16 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:integration:watch": "vitest --config vitest.integration.config.ts",
+    "test:db:up": "docker compose -f docker-compose.test.yml up -d",
+    "test:db:down": "docker compose -f docker-compose.test.yml down",
+    "test:db:reset": "docker compose -f docker-compose.test.yml down -v && docker compose -f docker-compose.test.yml up -d",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "backup:verify": "tsx scripts/verify-backup-restore.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

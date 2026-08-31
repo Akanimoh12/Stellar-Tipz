@@ -1,6 +1,6 @@
 import { logger } from '../../common/utils/logger.js';
 
-export type DependencyName = 'postgres' | 'redis' | 'soroban-rpc';
+export type DependencyName = 'postgres' | 'redis' | 'soroban-rpc' | 'indexer';
 
 export type HealthCheckResult = {
   name: DependencyName;
@@ -82,7 +82,7 @@ export function createHealthService(
   }
 
   async function runReadyChecks(): Promise<HealthResponse> {
-    const names: DependencyName[] = ['postgres', 'redis', 'soroban-rpc'];
+    const names: DependencyName[] = ['postgres', 'redis', 'soroban-rpc', 'indexer'];
     const checks = await Promise.all(names.map(checkDependency));
 
     return {

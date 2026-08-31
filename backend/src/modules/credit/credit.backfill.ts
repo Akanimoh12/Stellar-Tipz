@@ -54,15 +54,23 @@ export async function backfillCreditScores(): Promise<BackfillResult> {
           streakBonus,
         });
 
-        await prisma.creditScore.upsert({
-          where: { userId: user.id },
-          update: { value: scoreResult.score, computedAt: new Date() },
-          create: { userId: user.id, value: scoreResult.score },
-        });
-
-        await prisma.creditScoreHistory.create({
-          data: { userId: user.id, value: scoreResult.score },
-        });
+        await prisma.$transaction(
+          async (tx) => {
+            await tx.creditScore.upsert({
+              where: { userId: user.id },
+              update: { value: scoreResult.score, computedAt: new Date() },
+              create: { userId: user.id, value: scoreResult.score },
+            });
+            await tx.creditScoreHistory.create({
+              data: { userId: user.id, value: scoreResult.score },
+            });
+          },
+          {
+            timeout: 5000,
+            maxWait: 2000,
+            isolationLevel: "ReadCommitted",
+          },
+        );
 
         result.processed++;
       } catch (err) {

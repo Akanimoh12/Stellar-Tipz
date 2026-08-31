@@ -2,52 +2,40 @@ import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 import pinoHttp from 'pino-http';
+import swaggerUi from 'swagger-ui-express';
 import { env } from './config/env.js';
 import { createV1Router } from './api/v1.routes.js';
 import { createVersionedApiRouter, parseVersionedApiBasePath } from './api/versioning.js';
 import { errorHandler, notFoundHandler } from './common/middleware/errorHandler.js';
-import { globalRateLimiter } from './common/middleware/rateLimiter.js';
+import { globalRateLimiter, mutationRateLimiter } from './common/middleware/rateLimiter.js';
 import { metricsController, metricsMiddleware } from './common/observability/metrics.js';
 import { getSentryRequestHandler, getSentryErrorHandler } from './common/observability/sentry.js';
 import { logger } from './common/utils/logger.js';
+import { truncateStellarAddress, truncateEmail, truncateMessage } from './common/utils/logRedaction.js';
+import { openApiDocument } from './docs/openapi.js';
 import { requestId } from './common/middleware/requestId.js';
 import { requestTimeoutAndSignal } from './common/middleware/requestTimeout.js';
 import { healthRouter } from './modules/health/health.routes.js';
-import { config } from './config/index.js';
+import { optionalAuth } from './modules/auth/auth.middleware.js';
+import { registerGoalsDocs } from './modules/goals/goals.openapi.js';
+import { registerSubscriptionsDocs } from './modules/subscriptions/subscriptions.openapi.js';
 
 /**
  * HSTS max-age: 1 year (31536000 seconds).
- * This is the recommended minimum for HSTS preload inclusion and is
- * explicitly documented so a future helmet upgrade that changes the default
- * is caught by tests. Only enabled in production to avoid breaking http
- * in dev/test (see helmet config below).
  */
-const HSTS_MAX_AGE_SECONDS = 31536000; // 1 year
+const HSTS_MAX_AGE_SECONDS = 31536000;
 
-/**
- * Strict CSP for the JSON API — no inline scripts or styles are needed
- * because API responses are JSON, not HTML. `script-src 'self'` with NO
- * `unsafe-inline` is the whole point of CSP for XSS mitigation (issue #079).
- *
- * Swagger UI at /api/v1/docs is the ONLY place that needs inline code;
- * it gets a scoped relaxation via `docsCspDirectives` below. That exception
- * is documented and limited to the docs route — the pragmatic fix per guidance.
- */
 function buildStrictCspDirectives(): Record<string, Iterable<string>> {
   const directives: Record<string, Iterable<string>> = {
     'default-src': ["'self'"],
     'base-uri': ["'self'"],
     'font-src': ["'self'", 'https:', 'data:'],
     'form-action': ["'self'"],
-    // API must not be framed — prevents clickjacking. The OG/embed route
-    // overrides this to allow framing (see #066 handling below).
     'frame-ancestors': ["'none'"],
     'img-src': ["'self'", 'data:'],
     'object-src': ["'none'"],
-    // No unsafe-inline — API has no inline scripts
     'script-src': ["'self'"],
     'script-src-attr': ["'none'"],
-    // No unsafe-inline for styles either — API is JSON
     'style-src': ["'self'"],
     'upgrade-insecure-requests': [],
   };
@@ -57,13 +45,6 @@ function buildStrictCspDirectives(): Record<string, Iterable<string>> {
   return directives;
 }
 
-/**
- * Relaxed CSP for Swagger UI — Swagger's inline scripts/styles require
- * `unsafe-inline`. This is scoped ONLY to /api/v1/docs (and its subpaths)
- * via a route-specific helmet override. The relaxation is documented here
- * because Swagger UI cannot run without inline code and the alternative
- * (nonces/hashes) would require patching swagger-ui-express internals.
- */
 function buildDocsCspDirectives(): Record<string, Iterable<string>> {
   const strict = buildStrictCspDirectives();
   return {
@@ -71,7 +52,6 @@ function buildDocsCspDirectives(): Record<string, Iterable<string>> {
     'script-src': ["'self'", "'unsafe-inline'"],
     'style-src': ["'self'", "'unsafe-inline'", 'https:'],
     'img-src': ["'self'", 'data:', 'https:'],
-    // Docs may be framed by self for preview; keep strict for others
     'frame-ancestors': ["'self'"],
   };
 }
@@ -89,40 +69,33 @@ export function createApp(): Express {
   const strictCspDirectives = buildStrictCspDirectives();
   const docsCspDirectives = buildDocsCspDirectives();
 
-  // Explicit helmet configuration — every header is set intentionally so a
-  // dependency bump that drops or changes a default breaks the security
-  // header tests rather than silently weakening policy.
   app.use(
     helmet({
       contentSecurityPolicy: {
         directives: strictCspDirectives,
       },
-      // Cross-Origin policies — explicit even when disabled
-      crossOriginEmbedderPolicy: false, // No cross-origin isolation needed for JSON API
+      crossOriginEmbedderPolicy: false,
       crossOriginOpenerPolicy: { policy: 'same-origin' },
       crossOriginResourcePolicy: { policy: 'same-site' },
       originAgentCluster: true,
-      referrerPolicy: { policy: 'no-referrer' }, // Explicit: do not leak referrer
+      referrerPolicy: { policy: 'no-referrer' },
       strictTransportSecurity: isProduction
         ? {
             maxAge: HSTS_MAX_AGE_SECONDS,
             includeSubDomains: true,
             preload: true,
           }
-        : false, // HSTS only in production — http in dev/test would break
-      xContentTypeOptions: true, // X-Content-Type-Options: nosniff
-      xDnsPrefetchControl: { allow: false }, // X-DNS-Prefetch-Control: off
-      xDownloadOptions: true, // X-Download-Options: noopen
-      xFrameOptions: { action: 'deny' }, // X-Frame-Options: DENY (embed route overrides)
-      xPermittedCrossDomainPolicies: { permittedPolicies: 'none' }, // X-Permitted-Cross-Domain-Policies: none
-      hidePoweredBy: true, // Remove X-Powered-By
-      xXssProtection: false, // Disable deprecated X-XSS-Protection
+        : false,
+      xContentTypeOptions: true,
+      xDnsPrefetchControl: { allow: false },
+      xDownloadOptions: true,
+      xFrameOptions: { action: 'deny' },
+      xPermittedCrossDomainPolicies: { permittedPolicies: 'none' },
+      hidePoweredBy: true,
+      xXssProtection: false,
     }),
   );
 
-  // Permissions-Policy: deny unused browser features. Helmet v7 does not set
-  // this header, so we add it explicitly. The test asserts the exact value so
-  // a missing permission is a failing build.
   app.use((_req, res, next) => {
     res.setHeader(
       'Permissions-Policy',
@@ -131,78 +104,127 @@ export function createApp(): Express {
     next();
   });
 
-  // Scoped relaxed CSP for Swagger UI — must run AFTER global helmet so it
-  // overwrites the strict policy only for /docs. This is the documented
-  // exception: Swagger UI needs unsafe-inline for its inline scripts/styles.
   const docsMount = `${env.API_BASE_PATH}/docs`;
   app.use(docsMount, helmet.contentSecurityPolicy({ directives: docsCspDirectives }));
 
-  // Embeddable route (#066) — OG images are designed to be embedded in
-  // <img> and <iframe> contexts on third-party sites, so they need a
-  // permissive frame policy. We remove the global DENY and set a permissive
-  // CSP frame-ancestors. This middleware runs after global helmet and before
-  // the versioned router, so only /og/* gets the relaxed frame policy.
+  // Serve Swagger UI & raw OpenAPI JSON
+  app.get(`${docsMount}/openapi.json`, (_req, res) => {
+    res.json(openApiDocument);
+  });
+  app.use(docsMount, swaggerUi.serve, swaggerUi.setup(openApiDocument));
+
   const ogMount = `${env.API_BASE_PATH}/og`;
   app.use(ogMount, (_req, res, next) => {
-    // Remove DENY so the route can be framed; CSP frame-ancestors governs modern browsers.
     res.removeHeader('X-Frame-Options');
-    // Set X-Frame-Options to allow embedding — use "ALLOWALL" via CSP, but for
-    // legacy browsers we explicitly set a permissive value; the header test
-    // expects this route to NOT be DENY.
     res.setHeader('X-Frame-Options', 'ALLOWALL');
     next();
   });
   app.use(ogMount, helmet.contentSecurityPolicy({ directives: { ...strictCspDirectives, 'frame-ancestors': ['*'] } }));
+
   app.use(
     cors({
-      // env.CORS_ORIGIN is already validated as a list of absolute origins at
-      // startup (see config/cors.ts), so a misconfigured origin never reaches
-      // request time.
       origin: env.CORS_ORIGIN,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
     }),
   );
+
+  app.use(optionalAuth);
   app.use(globalRateLimiter);
+  app.use(mutationRateLimiter);
   app.use(requestId);
-  // Server-level timeout + client-disconnect AbortSignal (issue #090)
   app.use(requestTimeoutAndSignal);
   app.use(metricsMiddleware);
-  /**
-   * Right-sized JSON limits (issue #077).
-   * Default is tight (100kb, configurable via JSON_BODY_LIMIT) — far below the old 1mb blanket.
-   * Routes that legitimately need more (tip/profile writes) get a larger explicit limit via
-   * adaptiveJsonLimit below. Oversized bodies are mapped to 413 PAYLOAD_TOO_LARGE in errorHandler.
-   */
-  const defaultJsonLimit = (config as unknown as { payload?: { jsonLimit: string } })?.payload?.jsonLimit ?? '100kb'; // e.g. '100kb'
-  const largeJsonLimit = '500kb';
-  // Paths that need larger JSON bodies (documented per-route override)
-  const largeJsonPrefixes = [`${(config as unknown as { server?: { apiBasePath: string } })?.server?.apiBasePath ?? '/api/v1'}/tips`, `${(config as unknown as { server?: { apiBasePath: string } })?.server?.apiBasePath ?? '/api/v1'}/profiles`, `${(config as unknown as { server?: { apiBasePath: string } })?.server?.apiBasePath ?? '/api/v1'}/auth`];
-  const adaptiveJsonLimit = (req: express.Request, _res: express.Response, next: express.NextFunction) => {
-    const needsLarge = largeJsonPrefixes.some((prefix) => req.path.startsWith(prefix) || req.originalUrl.startsWith(prefix));
-    const limit = needsLarge ? largeJsonLimit : defaultJsonLimit;
-    return express.json({ limit, type: ['application/json', 'application/csp-report'] })(req, _res, next);
-  };
-  app.use(adaptiveJsonLimit);
-  app.use(pinoHttp({ logger }));
+  app.use(express.json({ limit: '1mb' }));
+
+  app.use(
+    pinoHttp({
+      logger,
+      redact: {
+        paths: [
+          'req.headers.authorization',
+          'req.headers.cookie',
+          'req.headers["x-api-key"]',
+          'req.headers["x-auth-token"]',
+          'req.headers["x-access-token"]',
+          'req.headers.bearer',
+          'req.body.token',
+          'req.body.accessToken',
+          'req.body.refreshToken',
+          'req.body.apiKey',
+          'req.body.privateKey',
+          'req.body.secret',
+          'req.body.password',
+          'res.body.token',
+          'res.body.accessToken',
+          'res.body.refreshToken',
+          'res.body.privateKey',
+          'res.body.secret',
+        ],
+        censor: '[REDACTED]',
+      },
+      serializers: {
+        req: (req) => {
+          const safeBody = req.body ? {
+            ...(req.body.username && { username: req.body.username }),
+            ...(req.body.email && { email: truncateEmail(req.body.email) }),
+            ...(req.body.amount && { amount: req.body.amount }),
+            ...(req.body.message && { message: truncateMessage(req.body.message) }),
+            ...(req.body.publicKey && { publicKey: truncateStellarAddress(req.body.publicKey) }),
+            ...(req.body.recipientAddress && { recipientAddress: truncateStellarAddress(req.body.recipientAddress) }),
+            ...(req.body.senderAddress && { senderAddress: truncateStellarAddress(req.body.senderAddress) }),
+            _bodyKeys: req.body ? Object.keys(req.body) : [],
+          } : undefined;
+
+          return {
+            id: req.id,
+            method: req.method,
+            url: req.url,
+            query: req.query,
+            params: req.params,
+            headers: {
+              ...req.headers,
+              authorization: req.headers.authorization ? '[REDACTED]' : undefined,
+              cookie: req.headers.cookie ? '[REDACTED]' : undefined,
+              'x-api-key': req.headers['x-api-key'] ? '[REDACTED]' : undefined,
+              'x-auth-token': req.headers['x-auth-token'] ? '[REDACTED]' : undefined,
+              'x-access-token': req.headers['x-access-token'] ? '[REDACTED]' : undefined,
+            },
+            body: safeBody,
+            remoteAddress: req.connection?.remoteAddress,
+            remotePort: req.connection?.remotePort,
+          };
+        },
+        res: (res) => ({
+          statusCode: res.statusCode,
+          headers: {
+            ...res.getHeaders(),
+            'set-cookie': res.getHeaders()['set-cookie'] ? '[REDACTED]' : undefined,
+          },
+        }),
+      },
+    }),
+  );
 
   app.get('/metrics', metricsController);
 
-  // CSP violation reporting endpoint — configurable via CSP_REPORT_URI.
-  // Browsers POST JSON reports here when CSP is violated. We log the report
-  // as a security event for monitoring. No auth required.
   const cspReportPath = `${env.API_BASE_PATH}/csp-reports`;
   app.post(cspReportPath, (req, res) => {
     logger.warn({ cspReport: req.body, ip: req.ip }, 'CSP violation reported');
     res.status(204).end();
   });
 
+  // Maintainer's versioned router pattern (replaces manual route mounts)
   const { rootPath, version } = parseVersionedApiBasePath(env.API_BASE_PATH);
   app.use(
     rootPath,
     createVersionedApiRouter([{ version, router: createV1Router() }]),
   );
+
+  // Register OpenAPI path docs for feature modules
+  registerGoalsDocs();
+  registerSubscriptionsDocs();
 
   app.use(getSentryErrorHandler());
   app.use(notFoundHandler);

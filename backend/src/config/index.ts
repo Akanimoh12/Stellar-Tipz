@@ -30,6 +30,8 @@ export const config = {
 
   auth: {
     jwtSecret: env.JWT_SECRET,
+    jwtSecrets: env.JWT_SECRETS,
+    jwtCurrentKid: env.JWT_CURRENT_KID,
     jwtExpiresIn: env.JWT_EXPIRES_IN,
     refreshTokenExpiresIn: env.REFRESH_TOKEN_EXPIRES_IN,
     challengeTtlSeconds: env.AUTH_CHALLENGE_TTL_SECONDS,
@@ -56,6 +58,12 @@ export const config = {
   indexer: {
     pollIntervalMs: env.INDEXER_POLL_INTERVAL_MS,
     startLedger: env.INDEXER_START_LEDGER,
+    lagThresholdLedgers: env.INDEXER_LAG_THRESHOLD_LEDGERS,
+    stallIntervals: env.INDEXER_STALL_INTERVALS,
+    /** Confirmation depth before an event is projected (issue #1257). */
+    finalityDepth: env.INDEXER_FINALITY_DEPTH,
+    /** Recent ledger hashes retained for reorg detection (issue #1257). */
+    reorgLookback: env.INDEXER_REORG_LOOKBACK,
   },
 
   twitter: {

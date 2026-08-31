@@ -14,7 +14,7 @@
 //!       + tip_sub  * 20 / 100   (0-20 pts — tip volume component)
 //!       + x_sub    * 30 / 100   (0-30 pts — X metrics component)
 //!       + age_sub  * 10 / 100   (0-10 pts — account age component)
-//!       + streak_bonus           (0-∞ pts — streak bonus component, capped at 100)
+//!       + streak_bonus           (0-10 pts — streak bonus component, capped)
 //!
 //! capped at 100
 //! ```
@@ -26,7 +26,11 @@
 //! | `tip_sub`  | `total_tips_received (stroops) / 10_000_000`       | 100 |
 //! | `x_sub`    | `min(followers/50, 50) + min((posts+replies×1.5)/10, 50)` | 100 |
 //! | `age_sub`  | `age_in_days / 10`  (0 when age < 1 day)          | 100 |
-//! | `streak_bonus` | `sum of supporter streak milestones / 7`        | 100 |
+//! | `streak_bonus` | `sum of supporter streak milestones / 7`        | 10  |
+//!
+//! The streak bonus is *not* weighted; it is added after the weighted parts and
+//! bounded by [`STREAK_BONUS_CAP`] so a long streak cannot dominate the other
+//! signals. The total is clamped to [`MAX_SCORE`] regardless.
 //!
 //! ## Tier boundaries
 //! | Tier    | Range   |
@@ -87,6 +91,20 @@ pub const AGE_CAP: u32 = 100;
 
 /// Bonus score awarded for each 7-tip streak milestone.
 pub const STREAK_BONUS_SCORE: u32 = 1;
+
+/// Maximum number of points the streak bonus may contribute to the total score.
+///
+/// The streak bonus is accumulated per supporter milestone and is therefore
+/// unbounded at the source. Without this cap a creator with enough long-running
+/// supporter streaks could saturate the 0-100 score on that single signal
+/// alone, making the score one-dimensional. Capping it at 10 keeps the streak
+/// bonus meaningful (it can lift a creator a full tier boundary) while leaving
+/// tip volume, X metrics and account age as the dominant inputs.
+///
+/// Mirrors `caps.streakBonus` (env `CREDIT_SCORE_CAP_STREAK_BONUS`) in
+/// `backend/src/modules/credit/credit.config.ts` — the two implementations must
+/// agree.
+pub const STREAK_BONUS_CAP: u32 = 10;
 
 /// Tip volume (in stroops) that yields the maximum tip sub-score.
 const TIP_VOLUME_CAP: i128 = (TIP_CAP as i128) * TIP_DIVISOR;
@@ -162,13 +180,35 @@ pub fn get_credit_breakdown_for_profile(profile: &Profile, now: u64) -> CreditBr
     }
 }
 
-/// Build the weighted credit breakdown for `profile` including streak bonus.
-pub fn get_credit_breakdown_with_streak(env: &Env, profile: &Profile, now: u64) -> CreditBreakdown {
+/// Bound a raw streak-bonus accumulator to [`STREAK_BONUS_CAP`].
+///
+/// The accumulator grows by one point per supporter 7-tip milestone and is
+/// therefore unbounded at the source; this is the single place that bounds it.
+/// Kept public and pure so the cap is testable without contract storage, and so
+/// it mirrors `computeStreakBonus` in the backend formula.
+pub fn cap_streak_bonus(raw_bonus: u32) -> u32 {
+    raw_bonus.min(STREAK_BONUS_CAP)
+}
+
+/// Build the weighted credit breakdown for `profile`, adding `raw_bonus` after
+/// bounding it with [`cap_streak_bonus`]. The total is clamped to
+/// [`MAX_SCORE`], so the result always lands in 0–100.
+pub fn get_credit_breakdown_with_raw_streak(
+    profile: &Profile,
+    now: u64,
+    raw_bonus: u32,
+) -> CreditBreakdown {
     let mut breakdown = get_credit_breakdown_for_profile(profile, now);
-    let streak_score = storage::get_creator_streak_bonus(env, &profile.owner).min(MAX_SCORE);
+    let streak_score = cap_streak_bonus(raw_bonus);
     breakdown.streak_score = streak_score;
     breakdown.total = breakdown.total.saturating_add(streak_score).min(MAX_SCORE);
     breakdown
+}
+
+/// Build the weighted credit breakdown for `profile` including streak bonus.
+pub fn get_credit_breakdown_with_streak(env: &Env, profile: &Profile, now: u64) -> CreditBreakdown {
+    let raw_bonus = storage::get_creator_streak_bonus(env, &profile.owner);
+    get_credit_breakdown_with_raw_streak(profile, now, raw_bonus)
 }
 
 /// Compute the credit score (0–100) for `profile` at the given `now` timestamp

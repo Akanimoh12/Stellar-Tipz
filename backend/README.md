@@ -34,6 +34,73 @@ It covers the definition of done, module conventions, and local verification ste
 
 ---
 
+## Testing
+
+Stellar Tipz uses a **two-layer testing strategy** to balance speed and confidence:
+
+### Unit Tests (Fast, Mocked)
+
+Unit tests use heavy mocking (Prisma, external services) for fast feedback during development.  
+They verify business logic, validation, error handling, and HTTP contracts.
+
+```bash
+npm run test           # Run all unit tests
+npm run test:watch     # Watch mode for development
+npm run test:coverage  # Generate coverage report
+```
+
+**When to use:** TDD, refactoring, quick validation of business logic changes.
+
+### Integration Tests (Real Database)
+
+Integration tests run against a **real Postgres instance** to catch issues that mocks cannot detect:
+- **Constraint violations** (unique, foreign key, check constraints)
+- **Transaction bugs** (deadlocks, isolation issues)
+- **Migration drift** (schema changes that break existing code)
+- **Concurrent operations** (race conditions, P2002 handling)
+
+```bash
+# Start test database (isolated from dev DB)
+npm run test:db:up
+
+# Run integration tests
+npm run test:integration
+
+# Watch mode for integration tests
+npm run test:integration:watch
+
+# Stop test database
+npm run test:db:down
+
+# Reset test database (clean slate)
+npm run test:db:reset
+```
+
+**Test database:** Runs on port `5433` (different from dev DB on `5432`) to avoid conflicts.  
+Each test runs in **isolation** — the database is cleaned before every test.
+
+**Critical flows covered:**
+- Auth: challenge creation, user registration, token lifecycle
+- Tips: recording with P2002 handling, user relations, status transitions
+- Refunds: unique constraint enforcement, concurrent request handling (#1249)
+- Withdrawals: balance calculations, duplicate prevention, cascade deletes
+
+### CI Behavior
+
+Both test suites run in parallel on every PR:
+- **Unit tests:** Fast feedback (< 1 minute)
+- **Integration tests:** Real Postgres via GitHub service containers, migrations applied  
+  to verify schema validity before deploy
+
+See `.github/workflows/backend-integration-tests.yml` for CI configuration.
+
+### Migration Validation
+
+Integration tests apply migrations at suite start — **this is a major win by itself**.  
+If a migration is broken, CI fails before the code reaches production.
+
+---
+
 ## Tech stack
 
 | Concern        | Choice                               |
@@ -129,6 +196,43 @@ To skip the hook in an emergency: `git commit --no-verify`.
 **Port config** — set `PORT` in your `.env` (default `4000`). The value is
 validated at startup via `src/config/env.ts`; the server refuses to start if
 required vars are missing.
+
+---
+
+## Indexer backfill tooling
+
+After fixing a projection bug, you may need to reindex a range of ledgers. A
+standalone CLI reindexes an explicit ledger range idempotently **without
+disrupting live indexing** — it uses its own dedicated backfill cursor and runs
+in its own process.
+
+```bash
+cd backend
+
+# Reindex the last 1,000 ledgers up to the current chain head
+npm run indexer:backfill -- --from 3500000
+
+# Reindex an explicit range
+npm run indexer:backfill -- --from 3490000 --to 3501000
+
+# See what would change without writing anything
+npm run indexer:backfill -- --from 3490000 --to 3501000 --dry-run
+
+# Ignore the stored backfill cursor and start fresh
+npm run indexer:backfill -- --from 1000 --force --dry-run
+```
+
+Behaviour (issue #1259):
+
+- **Explicit range** — `--from`/`--to` (inclusive); defaults are stored-cursor+1
+  to the current chain head.
+- **Non-disruptive** — uses a separate `backfill_tip_events` cursor, so it never
+  touches the live indexer's progress.
+- **Resumable** — re-running continues from where the last run stopped.
+- **Progress** — logs periodic progress and prints a per-topic summary.
+- **Dry-run** — `--dry-run` reports what would change without writing a thing.
+- **Idempotent** — projections are upserts and EventLog is keyed uniquely, so
+  re-running a range never double-counts.
 
 **Convenience via Makefile**
 

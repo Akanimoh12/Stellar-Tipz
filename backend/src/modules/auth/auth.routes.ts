@@ -17,6 +17,7 @@ import { authRateLimiter } from './auth.rateLimit.js';
  * Mounted at /api/v1/auth in app.ts
  */
 export const authRouter = Router();
+authRouter.use(authRateLimiter);
 
 // POST /auth/challenge — create authentication challenge
 // Rate-limited per IP and per Stellar address to prevent brute-force attacks.

@@ -16,10 +16,12 @@ import type {
   AuthPayload,
   TokenPair,
   ChallengeResponse,
-  SessionMetadata,
-  AuthSession,
 } from "./auth.types.js";
 import { verifyEd25519Signature } from "./signature.js";
+import {
+  signAccessToken as signJwt,
+  verifyAccessToken as verifyJwt,
+} from "./jwt.js";
 
 /**
  * ASSUMPTION: a Redis client singleton exists at "../../lib/redis.js" and is
@@ -112,12 +114,10 @@ function generateChallenge(): string {
 }
 
 /**
- * Creates a JWT access token.
+ * Creates a JWT access token with kid header (rotation-aware).
  */
 function generateAccessToken(payload: AuthPayload): string {
-  return jwt.sign(payload, env.JWT_SECRET, {
-    expiresIn: env.JWT_EXPIRES_IN,
-  } as jwt.SignOptions);
+  return signJwt(payload);
 }
 
 export function getSessionMetadata(
@@ -167,20 +167,16 @@ async function generateRefreshToken(
     Date.now() + parseDuration(env.REFRESH_TOKEN_EXPIRES_IN),
   );
 
-  const record = await prisma.refreshToken.create({
+  const client = (tx as typeof prisma) ?? prisma;
+  await client.refreshToken.create({
     data: {
       userId,
-      sessionId,
-      familyId,
       hashedToken: hashToken(token),
       expiresAt,
-      device: metadata.device,
-      ipAddress: metadata.ipAddress,
-      lastUsedAt: new Date(),
     },
   });
 
-  return { token, id: record.sessionId, familyId: record.familyId };
+  return token;
 }
 
 /**
@@ -327,18 +323,36 @@ export async function createChallenge(
     Date.now() + env.AUTH_CHALLENGE_TTL_SECONDS * 1000,
   );
 
-  await prisma.authChallenge.create({
-    data: {
-      stellarAddress,
-      challenge,
-      network: boundNetwork,
-      expiresAt,
-    },
-  });
+      const challenge = generateChallenge();
+      const expiresAt = new Date(
+        Date.now() + env.AUTH_CHALLENGE_TTL_SECONDS * 1000,
+      );
 
-  logger.info(
-    { stellarAddress, network: boundNetwork },
-    "Created new auth challenge",
+      await tx.authChallenge.create({
+        data: {
+          stellarAddress,
+          challenge,
+          network: boundNetwork,
+          expiresAt,
+        },
+      });
+
+      logger.info(
+        { stellarAddress, network: boundNetwork },
+        "Created new auth challenge",
+      );
+
+      return {
+        challenge,
+        expiresAt: expiresAt.toISOString(),
+        network: boundNetwork,
+      };
+    },
+    {
+      timeout: 5000,
+      maxWait: 2000,
+      isolationLevel: "ReadCommitted",
+    },
   );
 
   return {
@@ -448,8 +462,7 @@ export async function verifyChallenge(
     scopes: user.scopes,
   };
 
-  const session = await generateRefreshToken(user.id, metadata);
-  const accessToken = generateAccessToken({ ...payload, sessionId: session.id });
+  const accessToken = generateAccessToken(payload);
 
   logger.info(
     { stellarAddress, userId: user.id },
@@ -458,16 +471,16 @@ export async function verifyChallenge(
 
   return {
     accessToken,
-    refreshToken: session.token,
+    refreshToken,
   };
 }
 
 /**
  * Refreshes an access token using a refresh token.
- * Implements rotation, reuse detection, and family revocation (issue #080):
- * - Each refresh issues a new token and invalidates the old one
- * - Reuse of an already-rotated token revokes the entire family and logs a security event
- * - Tokens are stored hashed (see hashToken), familyId tracks lineage for revocation
+ *
+ * Transactional boundary: revoke old + create new refresh token in a single
+ * transaction (isolation ReadCommitted, timeout 5000ms). Validation
+ * happens before transaction; signing happens after.
  */
 export async function refreshToken(
   refreshToken: string,
@@ -554,10 +567,7 @@ export async function refreshToken(
     scopes: tokenRecord.user.scopes,
   };
 
-  const accessToken = generateAccessToken({
-    ...payload,
-    sessionId: newSession.id,
-  });
+  const accessToken = generateAccessToken(payload);
 
   logger.info(
     { userId: tokenRecord.userId, sessionId: newSession.id, familyId: newSession.familyId },
@@ -566,67 +576,8 @@ export async function refreshToken(
 
   return {
     accessToken,
-    refreshToken: newSession.token,
+    refreshToken: newRefreshToken,
   };
-}
-
-export async function listSessions(
-  userId: string,
-  currentSessionId?: string,
-): Promise<AuthSession[]> {
-  type SessionRecord = {
-    sessionId: string;
-    device: string;
-    ipAddress: string;
-    lastUsedAt: Date;
-    createdAt: Date;
-  };
-
-  const sessions = await prisma.refreshToken.findMany({
-    where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
-    select: {
-      sessionId: true,
-      device: true,
-      ipAddress: true,
-      lastUsedAt: true,
-      createdAt: true,
-    },
-    orderBy: { lastUsedAt: "desc" },
-  });
-
-  return (sessions as SessionRecord[]).map((session) => ({
-    id: session.sessionId,
-    device: session.device,
-    ip: session.ipAddress,
-    lastUsedAt: session.lastUsedAt.toISOString(),
-    createdAt: session.createdAt.toISOString(),
-    current: session.sessionId === currentSessionId,
-  }));
-}
-
-export async function revokeSession(
-  userId: string,
-  sessionId: string,
-): Promise<void> {
-  const result = await prisma.refreshToken.updateMany({
-    where: { sessionId, userId, revokedAt: null },
-    data: { revokedAt: new Date() },
-  });
-  if (result.count === 0) throw new NotFoundError("Session not found");
-}
-
-export async function revokeOtherSessions(
-  userId: string,
-  currentSessionId?: string,
-): Promise<void> {
-  await prisma.refreshToken.updateMany({
-    where: {
-      userId,
-      revokedAt: null,
-      ...(currentSessionId ? { sessionId: { not: currentSessionId } } : {}),
-    },
-    data: { revokedAt: new Date() },
-  });
 }
 
 /**
@@ -654,14 +605,11 @@ export async function revokeRefreshToken(refreshToken: string): Promise<void> {
 }
 
 /**
- * Verifies a JWT access token and returns the payload.
+ * Verifies a JWT access token (rotation-aware) and returns the payload.
+ * Delegates to jwt.ts which handles kid validation and multi-key verification.
  */
 export function verifyAccessToken(token: string): AuthPayload {
-  try {
-    return jwt.verify(token, env.JWT_SECRET) as AuthPayload;
-  } catch {
-    throw new UnauthorizedError("Invalid or expired access token");
-  }
+  return verifyJwt(token);
 }
 
 /**
