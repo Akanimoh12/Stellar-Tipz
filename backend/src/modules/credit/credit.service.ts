@@ -23,9 +23,6 @@ const TIERS: { min: number; max: number; label: string }[] = [
 ];
 
 // Debounce map for recomputation requests per user
-/** Score every user starts from, before any tip/X/age component applies. */
-const BASE_SCORE = creditScoreConfig.weights.base;
-
 const recomputeDebounceMap = new Map<string, NodeJS.Timeout>();
 const RECOMPUTE_DEBOUNCE_MS = 5000; // 5 seconds
 

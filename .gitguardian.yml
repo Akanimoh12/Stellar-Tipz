@@ -1,0 +1,7 @@
+version: 2
+secret:
+  ignored-paths:
+    - backend/docker-compose.test.yml
+    - .github/workflows/backup-verify.yml
+    - .github/workflows/pr-checks.yml
+    - backend/src/modules/auth/auth.security.test.ts

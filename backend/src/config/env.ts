@@ -88,6 +88,14 @@ export const envSchema = z.object({
   /** Refresh token TTL — must be a duration string like "7d" or "30d". */
   REFRESH_TOKEN_EXPIRES_IN: durationString.default('7d'),
   AUTH_CHALLENGE_TTL_SECONDS: z.coerce.number().default(300),
+  /** Cron expression for the expired auth challenge cleanup job. Runs every 5 minutes by default. */
+  AUTH_CHALLENGE_CLEANUP_CRON: z.string().default('*/5 * * * *'),
+  /** Per-IP rate limit for auth endpoints (challenge + verify) within the window. */
+  AUTH_RATE_LIMIT_PER_IP: z.coerce.number().int().positive().default(30),
+  /** Per-address rate limit for auth endpoints within the window. */
+  AUTH_RATE_LIMIT_PER_ADDRESS: z.coerce.number().int().positive().default(10),
+  /** Auth rate limit window in milliseconds (default: 1 minute). */
+  AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   /** Optional CSP violation report endpoint (report-uri). When set, CSP header includes this URL. */
   CSP_REPORT_URI: z.string().url().optional(),
   /** Cron expression for the bounded data-retention pruning job. */

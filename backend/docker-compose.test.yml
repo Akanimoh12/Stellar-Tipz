@@ -11,7 +11,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: tipz_test
-      POSTGRES_PASSWORD: tipz_test
+      POSTGRES_PASSWORD: ${POSTGRES_TEST_PASSWORD}
       POSTGRES_DB: tipz_test
     ports:
       - '5433:5432'  # Different port to avoid conflict with dev DB

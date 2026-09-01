@@ -1358,23 +1358,9 @@ fn get_archived_goals(env: Env, creator: Address) -> Vec<Goal>
 
 ## Multi-Token Support
 
-Only tokens on the admin-managed allowlist can be tipped. A token contract is
-arbitrary code — it can report fake balances, run hooks inside `transfer`, or
-exhaust the caller's budget — so each one is vetted before it is accepted.
-
 ### `add_accepted_token`
 
-Add a token to the allowlist (admin only).
-
-Probes the token contract for its `decimals` and `symbol` and snapshots both on
-the `AcceptedToken` entry. The probe doubles as vetting: an address that cannot
-answer those SEP-41 calls — or the contract's own address — is rejected with
-`TokenNotAccepted` rather than admitted. Freezing the metadata at add-time means
-a later upgrade of the token contract cannot retroactively change how existing
-balances are interpreted.
-
-Re-adding a previously removed token re-enables it and refreshes the recorded
-metadata; `added_at` is set to the time of that re-admission.
+Add a token to the whitelist (admin only).
 
 ```rust
 fn add_accepted_token(env: Env, admin: Address, token: Address, oracle: Option<Address>)
@@ -1383,22 +1369,12 @@ fn add_accepted_token(env: Env, admin: Address, token: Address, oracle: Option<A
 
 **Auth**: Require from `admin`
 **Events**: `("token", "added")` → `(token, oracle)`
-**Errors**: `NotAuthorized`, `TokenNotAccepted` (failed add-time vetting)
 
 ---
 
 ### `remove_accepted_token`
 
-Remove a token from the allowlist (admin only).
-
-Disables the token for **new** tips only. The entry and every accrued creator
-balance are deliberately retained, so delisting can never strand funds:
-[`withdraw_token`](#withdraw_token) performs no allowlist check and
-[`get_token_balances`](#get_token_balances) walks the full token list. A creator
-tipped in a token that is later delisted can always still withdraw that balance.
-
-Returns `TokenNotAccepted` if the token was never added, so a mistyped address
-is reported rather than silently succeeding.
+Remove a token from the whitelist (admin only).
 
 ```rust
 fn remove_accepted_token(env: Env, admin: Address, token: Address) -> Result<(), ContractError>
@@ -1406,21 +1382,16 @@ fn remove_accepted_token(env: Env, admin: Address, token: Address) -> Result<(),
 
 **Auth**: Require from `admin`
 **Events**: `("token", "removed")` → `(token)`
-**Errors**: `NotAuthorized`, `TokenNotAccepted` (token was never added)
 
 ---
 
 ### `get_accepted_tokens`
 
-Get the list of currently enabled tokens. Delisted tokens are omitted here but
-their balances remain visible via `get_token_balances` and remain withdrawable.
+Get list of all accepted tokens.
 
 ```rust
 fn get_accepted_tokens(env: Env) -> Vec<AcceptedToken>
 ```
-
-Each entry carries `token_address`, `oracle_address`, `enabled`, `added_at`, and
-the `decimals` / `symbol` recorded when the token was admitted.
 
 **Auth**: None (read-only)
 
