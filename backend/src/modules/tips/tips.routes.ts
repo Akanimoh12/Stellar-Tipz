@@ -3,10 +3,11 @@ import * as tipsController from './tips.controller.js';
 import { requireAuth } from '../../common/middleware/requireAuth.js';
 import { env } from '../../config/env.js';
 import { mergeOpenApiPaths } from '../../docs/openapi.js';
+import { deprecatedOffsetPagination } from '../../common/middleware/deprecatedOffsetPagination.js';
 
 export const tipsRouter = Router();
 
-tipsRouter.get('/', tipsController.getTips);
+tipsRouter.get('/', deprecatedOffsetPagination, tipsController.getTips);
 tipsRouter.post('/', tipsController.record);
 tipsRouter.post('/prepare', tipsController.prepare);
 tipsRouter.get('/:id', tipsController.getById);
@@ -15,11 +16,16 @@ tipsRouter.patch('/:txHash/confirm', tipsController.confirm);
 
 /** Mounted under `${API_BASE_PATH}/profiles` — tips received by a profile. */
 export const profileTipsRouter = Router();
-profileTipsRouter.get('/:username/tips', tipsController.getReceived);
+profileTipsRouter.get('/:username/tips', deprecatedOffsetPagination, tipsController.getReceived);
 
 /** Mounted under `${API_BASE_PATH}/users` — tips sent by the authenticated user. */
 export const userTipsRouter = Router();
-userTipsRouter.get('/me/tips/sent', requireAuth, tipsController.getSent);
+userTipsRouter.get(
+  '/me/tips/sent',
+  requireAuth,
+  deprecatedOffsetPagination,
+  tipsController.getSent,
+);
 
 const base = `${env.API_BASE_PATH}/tips`;
 
@@ -36,7 +42,15 @@ const paginationParameters = [
     in: 'query',
     required: false,
     schema: { type: 'string' },
-    description: 'Id of the last item from the previous page',
+    description: 'Opaque nextCursor returned by the previous page',
+  },
+  {
+    name: 'offset',
+    in: 'query',
+    required: false,
+    deprecated: true,
+    schema: { type: 'integer', minimum: 0 },
+    description: 'Deprecated; use cursor instead. Supported until 2027-02-28.',
   },
 ];
 
@@ -100,7 +114,7 @@ mergeOpenApiPaths({
                   },
                   nextCursor: { type: 'string', nullable: true },
                 },
-                required: ['data'],
+                required: ['data', 'nextCursor'],
               },
             },
           },

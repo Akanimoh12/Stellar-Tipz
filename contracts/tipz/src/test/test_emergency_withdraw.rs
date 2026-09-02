@@ -66,7 +66,9 @@ fn setup() -> TestCtx<'static> {
 #[test]
 fn test_emergency_withdraw_fails_when_not_paused() {
     let ctx = setup();
-    let res = ctx.client.try_emergency_withdraw_tips(&ctx.creator, &1_000_000);
+    let res = ctx
+        .client
+        .try_emergency_withdraw_tips(&ctx.creator, &1_000_000);
     assert_eq!(res, Err(Ok(ContractError::ContractNotPaused)));
 }
 
@@ -80,7 +82,9 @@ fn test_emergency_withdraw_fails_before_delay_threshold() {
         .ledger()
         .set_timestamp(ctx.env.ledger().timestamp() + 3 * 86_400);
 
-    let res = ctx.client.try_emergency_withdraw_tips(&ctx.creator, &1_000_000);
+    let res = ctx
+        .client
+        .try_emergency_withdraw_tips(&ctx.creator, &1_000_000);
     assert_eq!(res, Err(Ok(ContractError::EmergencyWithdrawalNotAllowed)));
 }
 

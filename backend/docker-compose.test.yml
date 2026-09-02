@@ -1,0 +1,41 @@
+# Test infrastructure for integration tests: PostgreSQL and Redis
+# Usage: docker compose -f backend/docker-compose.test.yml up -d
+#
+# This compose file provides isolated test databases that don't conflict with
+# the development environment. Integration tests run migrations and use real
+# Postgres to catch constraint violations, transaction bugs, and migration drift.
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tipz_test
+      POSTGRES_PASSWORD: tipz_test
+      POSTGRES_DB: tipz_test
+    ports:
+      - '5433:5432'  # Different port to avoid conflict with dev DB
+    volumes:
+      - tipz_test_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U tipz_test']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-test:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - '6380:6379'  # Different port to avoid conflict with dev Redis
+    volumes:
+      - tipz_test_redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  tipz_test_pgdata:
+  tipz_test_redisdata:

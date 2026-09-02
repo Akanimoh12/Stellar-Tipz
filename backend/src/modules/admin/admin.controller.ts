@@ -1,14 +1,11 @@
-import type { Request, Response } from 'express';
-import { BadRequestError } from '../../common/errors/AppError.js';
+import type { NextFunction, Request, Response } from 'express';
+import { resolveAdminActor } from './admin.middleware.js';
 import {
+  createAuditLogSchema,
   listAuditLogsQuerySchema,
   platformStatsResponseSchema,
 } from './admin.schema.js';
-import {
-  logAuditAction,
-  listAuditLogs,
-  getPlatformStats,
-} from './admin.service.js';
+import { getPlatformStats, listAuditLogs, logAuditAction } from './admin.service.js';
 
 /**
  * GET /admin/audit-logs — list audit logs with optional filtering.
@@ -16,56 +13,58 @@ import {
 export async function listAuditLogsController(
   req: Request,
   res: Response,
+  next: NextFunction,
 ): Promise<void> {
-  const parsed = listAuditLogsQuerySchema.safeParse(req.query);
-  if (!parsed.success) {
-    throw new BadRequestError('Invalid query parameters');
+  try {
+    const { limit, offset, action, actor } = listAuditLogsQuerySchema.parse(req.query);
+    const logs = await listAuditLogs(limit, offset, action, actor);
+
+    res.status(200).json({ data: logs });
+  } catch (err) {
+    next(err);
   }
-
-  const { limit, offset, action, actor } = parsed.data;
-  const logs = await listAuditLogs(limit, offset, action, actor);
-
-  res.json({ data: logs });
 }
 
 /**
- * GET /admin/stats — get platform statistics.
+ * GET /admin/stats — platform-wide statistics for the admin dashboard.
  */
 export async function getPlatformStatsController(
   _req: Request,
   res: Response,
+  next: NextFunction,
 ): Promise<void> {
-  const stats = await getPlatformStats();
+  try {
+    const stats = await getPlatformStats();
 
-  const response = {
-    ...stats,
-    totalTipAmountStroops: stats.totalTipAmountStroops.toString(),
-  };
+    // amountStroops is a bigint in the DB and is not JSON-serialisable, so the
+    // response carries it as a decimal string.
+    const validated = platformStatsResponseSchema.parse({
+      ...stats,
+      totalTipAmountStroops: stats.totalTipAmountStroops.toString(),
+    });
 
-  const validated = platformStatsResponseSchema.parse(response);
-  res.json({ data: validated });
+    res.status(200).json({ data: validated });
+  } catch (err) {
+    next(err);
+  }
 }
 
 /**
- * POST /admin/audit-log — create an audit log entry (internal use).
+ * POST /admin/audit-log — record an admin action in the audit trail.
  */
 export async function createAuditLogController(
   req: Request,
   res: Response,
+  next: NextFunction,
 ): Promise<void> {
-  const auth = req.auth;
-  if (!auth) {
-    throw new BadRequestError('Unauthorized');
+  try {
+    const actorId = resolveAdminActor(req);
+    const { action, target, metadata } = createAuditLogSchema.parse(req.body);
+
+    const log = await logAuditAction(actorId, action, target ?? null, metadata);
+
+    res.status(201).json({ data: log });
+  } catch (err) {
+    next(err);
   }
-
-  const { action, target, metadata } = req.body;
-
-  const log = await logAuditAction(
-    auth.sub,
-    action,
-    target,
-    metadata,
-  );
-
-  res.status(201).json({ data: log });
 }

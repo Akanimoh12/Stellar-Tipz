@@ -53,10 +53,18 @@ pub enum ContractError {
     NoRefundRequest = 47,
     InvalidMessage = 48,
     SubLimitReached = 49,
-    ConfigMismatch = 50,
+    RefundReqExpired = 50,
+    /// Profile is inactive beyond the cleanup threshold
+    ProfileInactive = 51,
+    /// Storage limit exceeded for variable-size entry
+    StorageLimitExceeded = 52,
 }
 
 impl ContractError {
+    /// A token contract failed add-time vetting: it is either the contract's own
+    /// address or could not answer the SEP-41 `decimals`/`symbol` calls, so it is
+    /// not admitted to the allowlist (issue #1182).
+    pub const InvalidToken: Self = Self::TokenNotAccepted;
     pub const AlreadyInitialized: Self = Self::AlreadyInit;
     pub const AdminChangeAlreadyPending: Self = Self::AdminChangePending;
     pub const AdminChangeTimelockNotMet: Self = Self::AdminTimelockNotMet;

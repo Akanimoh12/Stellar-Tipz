@@ -27,4 +27,17 @@ describe('lifecycle registry', () => {
     await expect(closeAll()).resolves.toBeUndefined();
     expect(closed).toContain('Good');
   });
+
+  it('invokes the hard-exit fallback when draining exceeds the timeout', async () => {
+    vi.useFakeTimers();
+    const { withShutdownTimeout } = await import('../src/common/utils/lifecycle.js');
+    const onTimeout = vi.fn();
+
+    const result = withShutdownTimeout(() => new Promise<void>(() => {}), 100, onTimeout);
+    await vi.advanceTimersByTimeAsync(100);
+
+    await expect(result).resolves.toBe(false);
+    expect(onTimeout).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
 });

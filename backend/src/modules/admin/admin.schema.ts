@@ -4,14 +4,14 @@ export const createAuditLogSchema = z.object({
   action: z.string().min(1).max(255),
   target: z.string().optional().nullable(),
   metadata: z.record(z.unknown()).default({}),
-});
+}).strict();
 
 export const listAuditLogsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
   action: z.string().optional(),
   actor: z.string().optional(),
-});
+}).strict();
 
 export const platformStatsResponseSchema = z.object({
   totalUsers: z.number(),
@@ -22,4 +22,4 @@ export const platformStatsResponseSchema = z.object({
   totalSubscriptions: z.number(),
   totalRefunds: z.number(),
   averageTipAmount: z.string(),
-});
+}).strict();

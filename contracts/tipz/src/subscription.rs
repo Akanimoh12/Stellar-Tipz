@@ -14,6 +14,9 @@ pub fn create_subscription(
     amount: i128,
     interval_days: u32,
 ) -> Result<Subscription, ContractError> {
+    if storage::is_paused(env, crate::types::PauseFlag::Subscriptions) || storage::is_paused(env, crate::types::PauseFlag::All) {
+        return Err(ContractError::ContractPaused);
+    }
     subscriber.require_auth();
 
     if amount <= 0 {
@@ -73,6 +76,10 @@ pub fn cancel_subscription(
 ) -> Result<(), ContractError> {
     subscriber.require_auth();
 
+    if storage::is_paused(env, crate::types::PauseFlag::Subscriptions) || storage::is_paused(env, crate::types::PauseFlag::All) {
+        return Err(ContractError::ContractPaused);
+    }
+
     let sub_key = DataKey::Subscription(subscriber.clone(), creator.clone());
     if !env.storage().persistent().has(&sub_key) {
         return Err(ContractError::NotFound);
@@ -108,7 +115,11 @@ pub fn execute_subscriptions(env: &Env, limit: u32) -> Result<u32, ContractError
         }
 
         let sub_key = DataKey::Subscription(subscriber.clone(), creator.clone());
-        if let Some(mut sub) = env.storage().persistent().get::<DataKey, Subscription>(&sub_key) {
+        if let Some(mut sub) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, Subscription>(&sub_key)
+        {
             if sub.active && now >= sub.next_due {
                 // Attempt to execute the due subscription
                 match execute_due_subscription_internal(env, &mut sub, now) {
@@ -133,6 +144,10 @@ pub fn execute_due_subscription(
     subscriber: Address,
     creator: Address,
 ) -> Result<(), ContractError> {
+    if storage::is_paused(env, crate::types::PauseFlag::Subscriptions) || storage::is_paused(env, crate::types::PauseFlag::All) {
+        return Err(ContractError::ContractPaused);
+    }
+
     let sub_key = DataKey::Subscription(subscriber.clone(), creator.clone());
     if !env.storage().persistent().has(&sub_key) {
         return Err(ContractError::NotFound);
@@ -171,7 +186,9 @@ fn execute_due_subscription_internal(
     )?;
 
     // Advance next_due by exactly one interval, no drift
-    sub.next_due = sub.next_due.saturating_add(sub.interval_days as u64 * 86400);
+    sub.next_due = sub
+        .next_due
+        .saturating_add(sub.interval_days as u64 * 86400);
     Ok(())
 }
 

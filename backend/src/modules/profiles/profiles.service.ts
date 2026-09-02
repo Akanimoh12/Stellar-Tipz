@@ -1,4 +1,4 @@
-import { prisma } from "../../db/prisma.js";
+import { prisma, prismaIncludingDeleted } from "../../db/prisma.js";
 import { redis } from "../../db/redis.js";
 import { logger } from "../../common/utils/logger.js";
 import {
@@ -173,8 +173,8 @@ export async function updateProfile(
 
   // Check if username is already taken
   if (data.username) {
-    const existingUser = await prisma.user.findUnique({
-      where: { username: data.username },
+    const existingUser = await prisma.user.findFirst({
+      where: { username: data.username, deletedAt: null },
     });
 
     if (existingUser && existingUser.id !== userId) {
@@ -216,6 +216,10 @@ export async function updateProfile(
 
 /**
  * Lists all profiles with pagination.
+ *
+ * Uses a single batched `tip.groupBy` to hydrate tip stats for all users on
+ * the page, eliminating the O(N) per-user queries that were causing N+1
+ * regressions (issue #1243).
  */
 export async function listProfiles(
   page = 1,
@@ -250,12 +254,36 @@ export async function listProfiles(
     }),
   ]);
 
-  const profiles = await Promise.all(
-    users.map(async (user) => {
-      const stats = await getTipStats(user.id);
-      return serializeProfile(user, stats);
-    })
+  // Batch-fetch tip stats for all users on this page in a single groupBy query
+  // instead of one count + one aggregate per user (N+1 fix, issue #1243).
+  const addresses = users.map((u) => u.stellarAddress);
+  const tipStats = await prisma.tip.groupBy({
+    by: ["toAddress"],
+    where: {
+      toAddress: { in: addresses },
+      status: "CONFIRMED",
+    },
+    _count: { id: true },
+    _sum: { amountStroops: true },
+  });
+
+  const statsMap = new Map(
+    tipStats.map((s) => [
+      s.toAddress,
+      {
+        tipsCount: s._count.id,
+        totalReceived: s._sum.amountStroops?.toString() ?? "0",
+      },
+    ]),
   );
+
+  const profiles = users.map((user) => {
+    const stats = statsMap.get(user.stellarAddress) ?? {
+      tipsCount: 0,
+      totalReceived: "0",
+    };
+    return serializeProfile(user, stats);
+  });
 
   return {
     profiles,
@@ -287,13 +315,16 @@ export async function deactivateProfile(userId: string): Promise<void> {
 
 export async function checkUsernameAvailability(username: string): Promise<{ available: boolean }> {
   const user = await prisma.user.findFirst({
-    where: { username: { equals: username, mode: "insensitive" } },
+    where: {
+      username: { equals: username, mode: "insensitive" },
+      deletedAt: null,
+    },
   });
   return { available: !user };
 }
 
 export async function reactivateProfile(userId: string): Promise<ProfileResponseDto> {
-  const user = await prisma.user.findUnique({
+  const user = await prismaIncludingDeleted.user.findUnique({
     where: { id: userId },
   });
 
@@ -305,7 +336,7 @@ export async function reactivateProfile(userId: string): Promise<ProfileResponse
     throw new BadRequestError("Profile is not deactivated");
   }
 
-  const updatedUser = await prisma.user.update({
+  const updatedUser = await prismaIncludingDeleted.user.update({
     where: { id: userId },
     data: { deletedAt: null },
     select: {

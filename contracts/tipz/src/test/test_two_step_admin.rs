@@ -57,7 +57,9 @@ fn test_two_step_admin_transfer_happy_path() {
     assert!(ctx.client.get_admin_change_proposal().is_some());
 
     // Advance timelock 48 hours
-    ctx.env.ledger().set_timestamp(ctx.env.ledger().timestamp() + 172_801);
+    ctx.env
+        .ledger()
+        .set_timestamp(ctx.env.ledger().timestamp() + 172_801);
 
     ctx.client.confirm_admin_change(&new_admin);
     assert_eq!(ctx.client.get_admin_change_proposal(), None);
@@ -71,7 +73,9 @@ fn test_confirm_by_wrong_address_fails() {
 
     ctx.client.propose_admin_change(&ctx.admin, &new_admin);
 
-    ctx.env.ledger().set_timestamp(ctx.env.ledger().timestamp() + 172_801);
+    ctx.env
+        .ledger()
+        .set_timestamp(ctx.env.ledger().timestamp() + 172_801);
 
     let res = ctx.client.try_confirm_admin_change(&impostor);
     assert_eq!(res, Err(Ok(ContractError::NotAuthorized)));
@@ -85,7 +89,9 @@ fn test_admin_proposal_expiry() {
     ctx.client.propose_admin_change(&ctx.admin, &new_admin);
 
     // Advance timestamp past proposal expiry window (48h timelock + 7 days expiry + 1 sec)
-    ctx.env.ledger().set_timestamp(ctx.env.ledger().timestamp() + 172_800 + ADMIN_PROPOSAL_EXPIRY_SECS + 1);
+    ctx.env
+        .ledger()
+        .set_timestamp(ctx.env.ledger().timestamp() + 172_800 + ADMIN_PROPOSAL_EXPIRY_SECS + 1);
 
     let res = ctx.client.try_confirm_admin_change(&new_admin);
     assert_eq!(res, Err(Ok(ContractError::AdminProposalExpired)));
