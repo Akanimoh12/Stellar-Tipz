@@ -571,21 +571,10 @@ pub struct AcceptedToken {
     pub token_address: Address,
     /// Oracle address for price conversion (optional)
     pub oracle_address: Option<Address>,
-    /// Whether the token is currently enabled for *new* tips.
-    ///
-    /// Set to `false` by `remove_accepted_token`. The entry is deliberately
-    /// retained rather than deleted so creators can still withdraw balances
-    /// they accumulated while the token was allowed (issue #1182).
+    /// Whether the token is currently enabled
     pub enabled: bool,
     /// Timestamp when token was added
     pub added_at: u64,
-    /// Token decimals, read from the token contract at add-time and frozen here.
-    ///
-    /// Snapshotted so a later malicious upgrade of the token contract cannot
-    /// retroactively change how existing balances are interpreted.
-    pub decimals: u32,
-    /// Token symbol, read from the token contract at add-time and frozen here.
-    pub symbol: String,
 }
 
 /// Token balance for a creator

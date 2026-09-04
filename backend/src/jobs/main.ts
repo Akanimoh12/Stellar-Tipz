@@ -20,6 +20,8 @@ import {
   schedulePlatformStats,
   createPayoutWorker,
   schedulePayouts,
+  createAuthChallengeCleanupWorker,
+  scheduleAuthChallengeCleanup,
   createRetentionWorker,
   scheduleRetentionPrune,
 } from './index.js';
@@ -104,6 +106,15 @@ export async function bootstrapJobs(): Promise<void> {
     },
   });
   await schedulePayouts();
+
+  const authChallengeCleanupWorker = createAuthChallengeCleanupWorker();
+  registerClosable({
+    name: 'AuthChallengeCleanupWorker',
+    close: async () => {
+      await authChallengeCleanupWorker.close();
+    },
+  });
+  await scheduleAuthChallengeCleanup();
 
   const retentionWorker = createRetentionWorker();
   registerClosable({

@@ -7,7 +7,7 @@ import { logger } from '../../common/utils/logger.js';
 import { rpcCall } from '../../common/stellar/rpcClient.js';
 import { TipStatus } from '../../types/enums.js';
 import type { RecordTipInput } from './tips.schema.js';
-import { serializeTip, serializeTipReceipt } from './tips.serializer.js';
+import { serializeTip } from './tips.serializer.js';
 import type { TipResponseDto, TipAggregateByCreatorDto } from './tips.dto.js';
 
 export type { TipResponseDto, TipAggregateByCreatorDto };

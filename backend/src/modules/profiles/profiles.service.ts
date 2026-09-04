@@ -216,10 +216,6 @@ export async function updateProfile(
 
 /**
  * Lists all profiles with pagination.
- *
- * Uses a single batched `tip.groupBy` to hydrate tip stats for all users on
- * the page, eliminating the O(N) per-user queries that were causing N+1
- * regressions (issue #1243).
  */
 export async function listProfiles(
   page = 1,
@@ -254,36 +250,12 @@ export async function listProfiles(
     }),
   ]);
 
-  // Batch-fetch tip stats for all users on this page in a single groupBy query
-  // instead of one count + one aggregate per user (N+1 fix, issue #1243).
-  const addresses = users.map((u) => u.stellarAddress);
-  const tipStats = await prisma.tip.groupBy({
-    by: ["toAddress"],
-    where: {
-      toAddress: { in: addresses },
-      status: "CONFIRMED",
-    },
-    _count: { id: true },
-    _sum: { amountStroops: true },
-  });
-
-  const statsMap = new Map(
-    tipStats.map((s) => [
-      s.toAddress,
-      {
-        tipsCount: s._count.id,
-        totalReceived: s._sum.amountStroops?.toString() ?? "0",
-      },
-    ]),
+  const profiles = await Promise.all(
+    users.map(async (user) => {
+      const stats = await getTipStats(user.id);
+      return serializeProfile(user, stats);
+    })
   );
-
-  const profiles = users.map((user) => {
-    const stats = statsMap.get(user.stellarAddress) ?? {
-      tipsCount: 0,
-      totalReceived: "0",
-    };
-    return serializeProfile(user, stats);
-  });
 
   return {
     profiles,

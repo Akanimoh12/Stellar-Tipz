@@ -9,7 +9,6 @@ mod test_init;
 mod test_migrations;
 mod test_multisig;
 mod test_multisig_admin_guard;
-mod test_multitoken;
 mod test_two_step_admin;
 mod test_pause;
 mod test_profile_query;

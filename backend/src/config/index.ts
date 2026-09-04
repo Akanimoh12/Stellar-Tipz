@@ -35,6 +35,10 @@ export const config = {
     jwtExpiresIn: env.JWT_EXPIRES_IN,
     refreshTokenExpiresIn: env.REFRESH_TOKEN_EXPIRES_IN,
     challengeTtlSeconds: env.AUTH_CHALLENGE_TTL_SECONDS,
+    challengeCleanupCron: env.AUTH_CHALLENGE_CLEANUP_CRON,
+    rateLimitPerIp: env.AUTH_RATE_LIMIT_PER_IP,
+    rateLimitPerAddress: env.AUTH_RATE_LIMIT_PER_ADDRESS,
+    rateLimitWindowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
   },
 
   retention: {

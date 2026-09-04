@@ -34,9 +34,6 @@ export function getSentryRequestHandler() {
 
 export function getSentryErrorHandler() {
   if (!env.SENTRY_DSN) {
-    // Forward the error, don't swallow it: calling next() bare would clear the
-    // error from the chain and let the request fall through to notFoundHandler,
-    // turning every 4xx/5xx into a 404 whenever Sentry is disabled.
     return (err: any, _req: any, _res: any, next: any) => next(err);
   }
   return Sentry.Handlers.errorHandler();
