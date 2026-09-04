@@ -5,3 +5,14 @@ secret:
     - .github/workflows/backup-verify.yml
     - .github/workflows/pr-checks.yml
     - backend/src/modules/auth/auth.security.test.ts
+
+
+version: 2
+secret:
+  ignored-matches:
+    - name: stellar-test-fixture-address
+      match: GBZXN7PIRZGNMHGA7MUUUF4GTDYMLY433Y5IVRA5OVZVIVX4VQE256HG
+  ignored-paths:
+    - backend/docker-compose.test.yml
+    - .github/workflows/backup-verify.yml
+    - .github/workflows/pr-checks.yml
