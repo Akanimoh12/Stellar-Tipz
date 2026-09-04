@@ -422,6 +422,21 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "MinWithdrawalAmount"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 1000000
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "NativeToken"
                             }
                           ]
@@ -474,6 +489,14 @@
                               },
                               "val": {
                                 "u32": 200
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "fee_change_delay_ledgers"
+                              },
+                              "val": {
+                                "u32": 288
                               }
                             },
                             {

@@ -181,6 +181,8 @@ fn execute_due_subscription_internal(
         &String::from_str(env, "Recurring Tip"),
         false,
         false,
+        None::<i128>,
+        None::<u32>,
     )?;
 
     // Advance next_due by exactly one interval, no drift

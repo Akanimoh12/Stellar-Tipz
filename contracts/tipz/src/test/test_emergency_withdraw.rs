@@ -52,7 +52,7 @@ fn setup() -> TestCtx<'static> {
 
     // Fund contract & creator profile balance via send_tip
     let msg = String::from_str(&env, "tip");
-    client.send_tip(&tipper, &creator, &10_000_000, &msg, &false, &false);
+    client.send_tip(&tipper, &creator, &10_000_000, &msg, &false, &false, &None, &None);
 
     TestCtx {
         env,

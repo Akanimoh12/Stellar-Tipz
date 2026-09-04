@@ -83,7 +83,7 @@ impl ContractError {
     pub const MigrationDowngradeRejected: Self = Self::MigrationDowngrade;
     pub const InvalidMigrationVersion: Self = Self::InvalidMigration;
     pub const SubscriptionLimitReached: Self = Self::SubLimitReached;
-    pub const RefundRequestExpired: Self = Self::RefundReqExpired;
+    pub const RefundRequestExpired: Self = Self::InvalidInput;
     pub const MultisigRequired: Self = Self::InvalidInput;
     pub const WdrBelowMin: Self = Self::ProposalExpired;
     pub const WithdrawalBelowMinimum: Self = Self::WdrBelowMin;

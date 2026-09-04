@@ -241,7 +241,38 @@ pub fn get_blocked_tipper_count(env: &Env, creator: &Address) -> u32 {
     storage::get_creator_blocked_tipper_count(env, creator)
 }
 
+/// Abort when the caller pinned min-tip or fee values that no longer match
+/// current config. Runs before any mutation or event so a rejected tip leaves
+/// contract state unchanged. Omitting both params is a no-op.
+fn check_pinned_config(
+    env: &Env,
+    expected_min_tip: Option<i128>,
+    expected_fee_bps: Option<u32>,
+) -> Result<(), ContractError> {
+    if expected_min_tip.is_none() && expected_fee_bps.is_none() {
+        return Ok(());
+    }
+
+    let config = storage::get_runtime_config(env).ok_or(ContractError::NotInitialized)?;
+    if let Some(expected) = expected_min_tip {
+        if expected != config.min_tip_amount {
+            return Err(ContractError::ConfigMismatch);
+        }
+    }
+    if let Some(expected) = expected_fee_bps {
+        if expected != config.fee_bps {
+            return Err(ContractError::ConfigMismatch);
+        }
+    }
+    Ok(())
+}
+
 /// Send an XLM tip from `tipper` to a registered `creator`.
+///
+/// `expected_min_tip` and `expected_fee_bps` let the caller pin the config the
+/// UI displayed. A mismatch aborts with [`ContractError::ConfigMismatch`]
+/// before any state change. Omitting either value (passing `None`) skips that
+/// check.
 pub fn send_tip(
     env: &Env,
     tipper: &Address,
@@ -250,7 +281,10 @@ pub fn send_tip(
     message: &String,
     is_anonymous: bool,
     is_encrypted: bool,
+    expected_min_tip: Option<i128>,
+    expected_fee_bps: Option<u32>,
 ) -> Result<(), ContractError> {
+    check_pinned_config(env, expected_min_tip, expected_fee_bps)?;
     storage::extend_instance_ttl(env);
     let config = storage::get_runtime_config(env).ok_or(ContractError::NotInitialized)?;
     if storage::is_paused(env, crate::types::PauseFlag::Tips) || storage::is_paused(env, crate::types::PauseFlag::All) {
