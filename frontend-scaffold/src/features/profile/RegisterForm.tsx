@@ -4,6 +4,8 @@ import Input from "@/components/ui/Input";
 import Textarea from "@/components/ui/Textarea";
 import Button from "@/components/ui/Button";
 import TransactionStatus from "@/components/shared/TransactionStatus";
+import DraftRestoreBanner from "@/components/shared/DraftRestoreBanner";
+import TransactionRestoredNotice from "@/components/shared/TransactionRestoredNotice";
 import {
   MAX_BIO_LENGTH,
   validateBio,
@@ -92,8 +94,12 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
   const navigate = useNavigate();
 
   // Transaction guard to prevent duplicate submissions
-  const { isPending: isTransactionPending, startTransaction } =
-    useTransactionGuard();
+  const {
+    isPending: isTransactionPending,
+    startTransaction,
+    restored: txRestored,
+    reset: resetTransactionGuard,
+  } = useTransactionGuard();
 
   // Username availability check
   const {
@@ -102,7 +108,13 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
     error: availabilityError,
   } = useUsernameCheck(form.username);
 
-  const { clearSaved: clearRegisterDraft } = useFormAutosave({
+  const {
+    hasDraft,
+    draftSavedAt,
+    restoreDraft,
+    discardDraft: discardRegisterDraft,
+    clearSaved: clearRegisterDraft,
+  } = useFormAutosave({
     storageKey: "tipz_register_form",
     data: {
       username: form.username,
@@ -122,9 +134,6 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
           typeof saved.xHandle === "string" ? saved.xHandle : prev.xHandle,
       }));
     },
-    intervalMs: 5000,
-    ttlMs: 24 * 60 * 60 * 1000,
-    restorePrompt: "Restore saved registration?",
   });
 
   React.useEffect(() => {
@@ -251,6 +260,18 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
       noValidate
       className="space-y-6 max-w-lg mx-auto"
     >
+      <TransactionRestoredNotice
+        restored={txRestored}
+        onDismiss={resetTransactionGuard}
+      />
+      {hasDraft && (
+        <DraftRestoreBanner
+          savedAt={draftSavedAt}
+          onRestore={restoreDraft}
+          onDiscard={discardRegisterDraft}
+        />
+      )}
+
       {/* Username */}
       <div>
         <div className="relative">
