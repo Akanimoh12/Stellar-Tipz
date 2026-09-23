@@ -12,12 +12,17 @@ import PageTransition from "@/components/shared/PageTransition";
 import PageAnnouncement from "@/components/shared/PageAnnouncement";
 import { RpcHealthBanner } from "@/components/shared/RpcHealthBanner";
 import TransactionNavigationBlock from "@/components/shared/TransactionNavigationBlock";
+import ReauthPrompt from "@/components/shared/ReauthPrompt";
 import { routes } from "@/routes";
 import { useI18n } from "@/i18n";
 import { useOfflineStatus } from "@/hooks/useOfflineStatus";
 import { useOnboarding } from "@/hooks/useOnboarding";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useAnalytics } from "@/hooks/useAnalytics";
+import { useSessionTimeout } from "@/hooks/useSessionTimeout";
+import { useToastStore } from "@/store/toastStore";
+import { useWalletStore } from "@/store/walletStore";
+import { forceLogout } from "@/services/auth/tokenManager";
 import OnboardingTour from "@/features/onboarding/OnboardingTour";
 
 import { onUpdateAvailable, skipWaiting } from "@/services/serviceWorker";
@@ -48,6 +53,26 @@ const AppLayout: React.FC = () => {
   const reduceMotion = useReducedMotion();
   useAnalytics();
   const [updateReady, setUpdateReady] = React.useState(false);
+
+  const walletConnected = useWalletStore((s) => s.connected);
+  const addToast = useToastStore((s) => s.addToast);
+
+  // Issue #1307 — idle session timeout with a 5-minute warning, then a
+  // graceful re-auth prompt (form drafts are preserved).
+  useSessionTimeout({
+    isActive: walletConnected,
+    onWarn: () =>
+      addToast({
+        message:
+          "You will be signed out in 5 minutes due to inactivity. Move the mouse or press a key to stay signed in.",
+        type: "warning",
+        priority: "high",
+        duration: 60_000,
+      }),
+    onExpire: () => {
+      void forceLogout("idle-timeout");
+    },
+  });
 
   React.useEffect(() => {
     const unsub = onUpdateAvailable(() => setUpdateReady(true));
@@ -108,6 +133,7 @@ const AppLayout: React.FC = () => {
         </div>
       </ErrorBoundary>
       <ToastContainer />
+      <ReauthPrompt />
       <OnboardingTour
         open={isTourOpen}
         onComplete={completeTour}
