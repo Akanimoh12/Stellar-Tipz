@@ -11,6 +11,7 @@ interface TipMessageInputProps {
 const TipMessageInput: React.FC<TipMessageInputProps> = ({
   message,
   onChange,
+  // Keep this default aligned with contracts/tipz/src/types.rs::MAX_MESSAGE_LENGTH.
   maxLength = 280,
   disabled = false,
 }) => {

@@ -1,348 +1,271 @@
+import crypto from "node:crypto";
+import sharp from "sharp";
 import { config } from "../../config/index.js";
 import { logger } from "../../common/utils/logger.js";
-import { prisma } from "../../db/prisma.js";
-import { redis } from "../../db/redis.js";
 import {
   BadRequestError,
+  BadGatewayError,
+  ServiceUnavailableError,
 } from "../../common/errors/AppError.js";
-import type {
-  UploadMetadata,
-  PinResult,
-  VerifyPinResult,
-  GatewayConfig,
-} from "./ipfs.types.js";
-import { UploadStatus } from "./ipfs.types.js";
+import { buildGatewayUrl } from "./ipfs.utils.js";
+import { fetchWithTimeout } from "../../common/utils/fetchWithTimeout.js";
+import type { IpfsUploadResponse } from "./ipfs.types.js";
 
-const IPFS_QUEUE_KEY = "ipfs:retry-queue";
-const IPFS_VERIFICATION_QUEUE_KEY = "ipfs:verification-queue";
+/** Default max file size limit for image uploads (5 MB) */
+export const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 
-const GATEWAYS: GatewayConfig[] = [
-  { url: config.ipfs.gatewayUrl, priority: 1, timeout: 5000 },
-  { url: "https://gateway.pinata.cloud/ipfs/", priority: 2, timeout: 5000 },
-  { url: "https://cloudflare-ipfs.com/ipfs/", priority: 3, timeout: 5000 },
-];
+/** Maximum allowed pixel width/height for an uploaded image (issue #1232) */
+export const MAX_IMAGE_DIMENSION_PX = 4096;
 
 /**
- * Pins content to IPFS via configured API and verifies the pin.
- * On failure, queues for retry rather than failing immediately.
+ * Raster formats accepted for uploads, matched against the format sharp
+ * actually decodes from the file's magic bytes — never the client-supplied
+ * MIME type or filename extension. SVG is deliberately excluded: it is a
+ * markup format capable of carrying scripts, so it cannot be "verified" the
+ * same way a raster image can (issue #1232).
  */
-export async function pinToIpfs(
-  cid: string,
-  metadata: UploadMetadata,
-): Promise<PinResult> {
-  if (!cid || !cid.match(/^Qm[a-zA-Z0-9]{44}$|^baf.+$/)) {
-    throw new BadRequestError("Invalid IPFS CID format");
+const ALLOWED_IMAGE_FORMATS = ["jpeg", "png", "gif", "webp"] as const;
+type AllowedImageFormat = (typeof ALLOWED_IMAGE_FORMATS)[number];
+
+const FORMAT_TO_MIME_TYPE: Record<AllowedImageFormat, string> = {
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+};
+
+/** Legacy export kept for callers that need a human-readable allowlist. */
+export const ALLOWED_IMAGE_MIME_TYPES = Object.values(FORMAT_TO_MIME_TYPE);
+
+export interface SanitizedImage {
+  /** Re-encoded image bytes with all metadata (EXIF/GPS) stripped. */
+  buffer: Buffer;
+  mimeType: string;
+  format: AllowedImageFormat;
+  width: number;
+  height: number;
+}
+
+/**
+ * Verifies an uploaded image by its actual decoded content and returns a
+ * sanitized, re-encoded copy safe to pin (issue #1232).
+ *
+ * - File type is verified by magic bytes (via sharp/libvips format
+ *   detection), never by the client-supplied MIME type or file extension.
+ * - Only a fixed allowlist of raster formats is accepted; SVG is rejected
+ *   outright since it cannot be decoded into pixels the same way.
+ * - Dimensions are bounded to guard against decompression-bomb style images.
+ * - The output is a fresh re-encode of the decoded pixels, which drops all
+ *   EXIF/IPTC/XMP metadata (including GPS) and any bytes that do not belong
+ *   to the actual image data — the standard defense against polyglot files
+ *   that smuggle a payload past a format's end-of-data marker.
+ *
+ * @throws BadRequestError if the file is missing, unreadable, not an
+ *   allowed format, or exceeds the size/dimension limits.
+ */
+export async function verifyAndSanitizeImage(file?: {
+  size: number;
+  buffer: Buffer;
+}): Promise<SanitizedImage> {
+  if (!file || !file.buffer || file.buffer.length === 0) {
+    throw new BadRequestError("No image file provided");
   }
 
-  logger.info({ cid, userId: metadata.userId }, "Pinning to IPFS");
-
-  if (!config.ipfs.apiUrl) {
-    logger.warn(
-      { cid },
-      "IPFS_API_URL not configured, skipping pin operation",
+  if (file.size > MAX_IMAGE_SIZE_BYTES) {
+    throw new BadRequestError(
+      `File size exceeds maximum limit of ${MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB`
     );
-    return { success: true, cid, message: "Pinning skipped (not configured)" };
+  }
+
+  let metadata: sharp.Metadata;
+  try {
+    metadata = await sharp(file.buffer).metadata();
+  } catch {
+    throw new BadRequestError(
+      "File content could not be verified as a valid image. It may be corrupt, an unsupported format, or not an image at all."
+    );
+  }
+
+  const format = metadata.format;
+  if (!format || !(ALLOWED_IMAGE_FORMATS as readonly string[]).includes(format)) {
+    throw new BadRequestError(
+      `Unsupported or unverifiable image format '${format ?? "unknown"}'. Allowed types: ${ALLOWED_IMAGE_FORMATS.join(", ")}`
+    );
+  }
+  const verifiedFormat = format as AllowedImageFormat;
+
+  if (!metadata.width || !metadata.height) {
+    throw new BadRequestError("Unable to determine image dimensions");
+  }
+  if (metadata.width > MAX_IMAGE_DIMENSION_PX || metadata.height > MAX_IMAGE_DIMENSION_PX) {
+    throw new BadRequestError(
+      `Image dimensions (${metadata.width}x${metadata.height}) exceed the maximum of ${MAX_IMAGE_DIMENSION_PX}x${MAX_IMAGE_DIMENSION_PX}px`
+    );
   }
 
   try {
-    const response = await fetch(`${config.ipfs.apiUrl}/pinning/pinByHash`, {
+    const sanitizedBuffer = await sharp(file.buffer, { animated: verifiedFormat === "gif" })
+      .rotate() // bake in EXIF orientation before metadata is dropped
+      .toFormat(verifiedFormat)
+      .toBuffer();
+
+    return {
+      buffer: sanitizedBuffer,
+      mimeType: FORMAT_TO_MIME_TYPE[verifiedFormat],
+      format: verifiedFormat,
+      width: metadata.width,
+      height: metadata.height,
+    };
+  } catch {
+    throw new BadRequestError("Failed to process image file");
+  }
+}
+
+/**
+ * Generates a fallback mock CID (CIDv0 format starting with Qm) for development
+ * or test environments when IPFS API node is unconfigured or unreachable.
+ *
+ * @param buffer File content buffer.
+ * @returns Valid base58-like string formatted as CIDv0.
+ */
+export function generateFallbackCid(buffer: Buffer): string {
+  const hash = crypto.createHash("sha256").update(buffer).digest("hex");
+  // Map hex hash to a 44-character base58-compatible string starting with Qm
+  const base58Chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  let mockBody = "";
+  for (let i = 0; i < 44; i++) {
+    const charIndex = parseInt(hash.substring((i % 16) * 2, (i % 16) * 2 + 2), 16) % base58Chars.length;
+    mockBody += base58Chars[charIndex];
+  }
+  return `Qm${mockBody}`;
+}
+
+/**
+ * Uploads and pins an image file to IPFS.
+ * Handles HTTP pinning requests to IPFS API endpoints and gracefully handles failures.
+ *
+ * @param file Uploaded image file object containing buffer, mimetype, and size.
+ * @returns Object containing CID and resolvable gateway URL.
+ * @throws BadRequestError, BadGatewayError, or ServiceUnavailableError.
+ */
+export async function pinImageToIpfs(
+  file: {
+    mimetype: string;
+    size: number;
+    buffer: Buffer;
+    originalname?: string;
+  },
+  opts: { signal?: AbortSignal } = {},
+): Promise<IpfsUploadResponse> {
+  // 1. Verify the file is actually an allowed image type (by magic bytes, not
+  //    the client-supplied MIME type) and get back a re-encoded, metadata-stripped
+  //    copy of it — this is what gets pinned, never the original upload (issue #1232).
+  const sanitized = await verifyAndSanitizeImage(file);
+
+  const ipfsApiUrl = config.ipfs.apiUrl;
+
+  // 2. If IPFS_API_URL is unconfigured, handle fallback cleanly
+  if (!ipfsApiUrl || !ipfsApiUrl.trim()) {
+    logger.warn("IPFS_API_URL not configured. Using fallback CID generation mode.");
+    const fallbackCid = generateFallbackCid(sanitized.buffer);
+    const gatewayUrl = buildGatewayUrl(fallbackCid);
+    return {
+      cid: fallbackCid,
+      url: gatewayUrl,
+      size: sanitized.buffer.length,
+      mimeType: sanitized.mimeType,
+    };
+  }
+
+  // 3. Pin image via IPFS HTTP API endpoint (explicit timeout + client disconnect — issue #090)
+  try {
+    const formData = new globalThis.FormData();
+    const blob = new globalThis.Blob([sanitized.buffer], { type: sanitized.mimeType });
+    formData.append("file", blob, file.originalname || `image.${sanitized.format}`);
+
+    const endpoint = `${ipfsApiUrl.replace(/\/+$/, "")}/api/v0/add?pin=true`;
+    const response = await fetchWithTimeout(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hashToPin: cid }),
-      signal: AbortSignal.timeout(10000),
+      body: formData,
+      timeoutMs: (config as unknown as { timeouts?: { ipfsMs: number } })?.timeouts?.ipfsMs ?? 15_000,
+      parentSignal: opts.signal,
     });
 
     if (!response.ok) {
-      const retryable = response.status >= 500 || response.status === 429;
-      logger.warn(
-        { cid, status: response.status, retryable },
-        "Pin request failed",
+      const errorText = await response.text().catch(() => "Unknown IPFS error");
+      logger.error(
+        { status: response.status, errorText, endpoint },
+        "IPFS pinning HTTP request failed"
       );
 
-      if (retryable) {
-        await queueRetryPin(cid, metadata);
+      // Fallback strategy (#984): if in dev/test, fallback gracefully; in prod throw BadGatewayError
+      if ((config as unknown as { server?: { nodeEnv: string } })?.server?.nodeEnv !== "production") {
+        logger.warn("Non-production environment: falling back after IPFS pinning HTTP error.");
+        const fallbackCid = generateFallbackCid(sanitized.buffer);
+        return {
+          cid: fallbackCid,
+          url: buildGatewayUrl(fallbackCid),
+          size: sanitized.buffer.length,
+          mimeType: sanitized.mimeType,
+        };
       }
 
+      throw new BadGatewayError(`IPFS pinning service failed: ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as { Hash?: string; cid?: string; Name?: string };
+    const cid = data.Hash || data.cid;
+
+    if (!cid) {
+      logger.error({ data }, "IPFS response missing CID/Hash field");
+      throw new BadGatewayError("IPFS response missing CID identifier");
+    }
+
+    const url = buildGatewayUrl(cid);
+    logger.info({ cid, url }, "Image successfully pinned to IPFS");
+
+    return {
+      cid,
+      url,
+      size: sanitized.buffer.length,
+      mimeType: sanitized.mimeType,
+    };
+  } catch (error) {
+    if (error instanceof BadRequestError || error instanceof BadGatewayError) {
+      throw error;
+    }
+
+    // Timeout vs cancellation mapping (issue #090)
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      logger.warn({ endpoint: `${ipfsApiUrl}/api/v0/add`, timeoutMs: (config as unknown as { timeouts?: { ipfsMs: number } })?.timeouts?.ipfsMs ?? 15_000 }, "IPFS pinning timed out");
+      if ((config as unknown as { server?: { nodeEnv: string } })?.server?.nodeEnv !== "production") {
+        const fallbackCid = generateFallbackCid(sanitized.buffer);
+        return { cid: fallbackCid, url: buildGatewayUrl(fallbackCid), size: sanitized.buffer.length, mimeType: sanitized.mimeType };
+      }
+      throw new ServiceUnavailableError(`IPFS pinning timed out after ${(config as unknown as { timeouts?: { ipfsMs: number } })?.timeouts?.ipfsMs ?? 15_000}ms`);
+    }
+    if (error instanceof DOMException && error.name === "AbortError") {
+      logger.debug("IPFS pinning aborted (client disconnect)");
+      throw new ServiceUnavailableError("IPFS pinning cancelled");
+    }
+
+    logger.error({ error }, "Error communicating with IPFS pinning service");
+
+    // Fallback handling (#984): network exception / timeout fallback for non-prod
+    if ((config as unknown as { server?: { nodeEnv: string } })?.server?.nodeEnv !== "production") {
+      logger.warn("Non-production environment: fallback CID generated after IPFS failure.");
+      const fallbackCid = generateFallbackCid(sanitized.buffer);
       return {
-        success: false,
-        cid,
-        message: `Pin failed: ${response.statusText}`,
-        retryable,
+        cid: fallbackCid,
+        url: buildGatewayUrl(fallbackCid),
+        size: sanitized.buffer.length,
+        mimeType: sanitized.mimeType,
       };
     }
 
-    await verifyPin(cid);
-
-    logger.info({ cid }, "Content pinned successfully");
-    return { success: true, cid };
-  } catch (error) {
-    logger.error({ cid, error }, "Pin operation error");
-    await queueRetryPin(cid, metadata);
-    return {
-      success: false,
-      cid,
-      message: error instanceof Error ? error.message : "Unknown error",
-      retryable: true,
-    };
-  }
-}
-
-/**
- * Unpins content from IPFS.
- */
-export async function unpinFromIpfs(cid: string): Promise<void> {
-  if (!config.ipfs.apiUrl) {
-    logger.warn({ cid }, "IPFS_API_URL not configured, skipping unpin");
-    return;
-  }
-
-  try {
-    const response = await fetch(
-      `${config.ipfs.apiUrl}/pinning/unpin?arg=${cid}`,
-      {
-        method: "POST",
-        signal: AbortSignal.timeout(10000),
-      },
+    throw new ServiceUnavailableError(
+      "Unable to connect to IPFS pinning service",
+      error instanceof Error ? error.message : undefined
     );
-
-    if (!response.ok) {
-      logger.error(
-        { cid, status: response.status },
-        "Unpin request failed",
-      );
-      throw new Error(`Unpin failed: ${response.statusText}`);
-    }
-
-    logger.info({ cid }, "Content unpinned successfully");
-  } catch (error) {
-    logger.error({ cid, error }, "Unpin operation error");
-    throw error;
   }
-}
-
-/**
- * Verifies that a pin exists on IPFS by attempting to fetch the content.
- */
-export async function verifyPin(cid: string): Promise<VerifyPinResult> {
-  const gateways = GATEWAYS.sort((a, b) => a.priority - b.priority);
-
-  for (const gateway of gateways) {
-    try {
-      const url = `${gateway.url}${cid}`;
-      const response = await fetch(url, {
-        method: "HEAD",
-        signal: AbortSignal.timeout(gateway.timeout),
-      });
-
-      if (response.ok || response.status === 301) {
-        logger.info({ cid, gateway: gateway.url }, "Pin verified");
-        return { exists: true, cid, gateway: gateway.url };
-      }
-    } catch (error) {
-      logger.debug(
-        { cid, gateway: gateway.url, error },
-        "Gateway verification failed, trying next",
-      );
-      continue;
-    }
-  }
-
-  logger.warn(
-    { cid },
-    "Pin verification failed on all gateways",
-  );
-  return { exists: false, cid };
-}
-
-/**
- * Gets a gateway URL for reading content, with fallback.
- */
-export function getIpfsGateway(cid: string, preferredIndex = 0): string {
-  const gateway =
-    GATEWAYS[Math.min(preferredIndex, GATEWAYS.length - 1)];
-  return `${gateway.url}${cid}`;
-}
-
-/**
- * Queues a failed pin attempt for retry.
- */
-async function queueRetryPin(
-  cid: string,
-  metadata: UploadMetadata,
-): Promise<void> {
-  try {
-    await redis.lpush(IPFS_QUEUE_KEY, JSON.stringify({ cid, metadata }));
-    logger.info({ cid }, "Queued pin for retry");
-  } catch (error) {
-    logger.error({ cid, error }, "Failed to queue pin retry");
-  }
-}
-
-/**
- * Processes retries for failed pins from the queue.
- */
-export async function processRetryQueue(): Promise<void> {
-  let count = 0;
-  while (true) {
-    const item = await redis.rpop(IPFS_QUEUE_KEY);
-    if (!item) break;
-
-    try {
-      const { cid, metadata } = JSON.parse(item);
-      logger.info({ cid }, "Retrying pin from queue");
-      await pinToIpfs(cid, metadata);
-      count++;
-    } catch (error) {
-      logger.error({ error }, "Retry pin failed, discarding");
-    }
-  }
-  if (count > 0) {
-    logger.info({ count }, "Processed retried pins");
-  }
-}
-
-/**
- * Finds all orphaned uploads (no referencing entity) beyond grace period.
- */
-export async function findOrphanedUploads(
-  gracePeriodDays: number,
-): Promise<Array<{ id: string; cid: string; createdAt: Date }>> {
-  const cutoffDate = new Date(
-    Date.now() - gracePeriodDays * 24 * 60 * 60 * 1000,
-  );
-
-  const orphans = await prisma.upload.findMany({
-    where: {
-      entityId: null,
-      status: UploadStatus.PINNED,
-      createdAt: { lt: cutoffDate },
-      deletedAt: null,
-    },
-    select: {
-      id: true,
-      cid: true,
-      createdAt: true,
-    },
-  });
-
-  return orphans;
-}
-
-/**
- * Performs a dry-run of cleanup (reports what would be unpinned).
- */
-export async function dryRunCleanup(
-  gracePeriodDays: number,
-): Promise<
-  Array<{ cid: string; age: number; referenced: boolean }>
-> {
-  const orphans = await findOrphanedUploads(gracePeriodDays);
-  const dryRunResults = [];
-
-  for (const orphan of orphans) {
-    const ageMs = Date.now() - orphan.createdAt.getTime();
-    const ageDays = ageMs / (24 * 60 * 60 * 1000);
-
-    const hasReferences = await prisma.upload.findFirst({
-      where: {
-        cid: orphan.cid,
-        entityId: { not: null },
-      },
-    });
-
-    dryRunResults.push({
-      cid: orphan.cid,
-      age: ageDays,
-      referenced: !!hasReferences,
-    });
-  }
-
-  return dryRunResults;
-}
-
-/**
- * Executes cleanup: unpins orphaned uploads after verifying no references.
- */
-export async function executeCleanup(
-  gracePeriodDays: number,
-): Promise<{ unpinned: number; skipped: number }> {
-  const orphans = await findOrphanedUploads(gracePeriodDays);
-  let unpinned = 0;
-  let skipped = 0;
-
-  for (const orphan of orphans) {
-    const hasReferences = await prisma.upload.findFirst({
-      where: {
-        cid: orphan.cid,
-        entityId: { not: null },
-        deletedAt: null,
-      },
-    });
-
-    if (hasReferences) {
-      logger.warn(
-        { cid: orphan.cid },
-        "Skipping cleanup: content is referenced",
-      );
-      skipped++;
-      continue;
-    }
-
-    try {
-      await unpinFromIpfs(orphan.cid);
-      await prisma.upload.update({
-        where: { id: orphan.id },
-        data: { status: UploadStatus.UNPINNED, deletedAt: new Date() },
-      });
-      logger.info({ cid: orphan.cid }, "Cleaned up orphaned upload");
-      unpinned++;
-    } catch (error) {
-      logger.error({ cid: orphan.cid, error }, "Cleanup failed");
-    }
-  }
-
-  return { unpinned, skipped };
-}
-
-/**
- * Periodic verification job: checks all pinned content still exists.
- */
-export async function verifyAllPins(): Promise<{
-  verified: number;
-  failed: number;
-}> {
-  const pinnedUploads = await prisma.upload.findMany({
-    where: {
-      status: UploadStatus.PINNED,
-      deletedAt: null,
-    },
-    select: {
-      id: true,
-      cid: true,
-    },
-  });
-
-  let verified = 0;
-  let failed = 0;
-
-  for (const upload of pinnedUploads) {
-    const result = await verifyPin(upload.cid);
-
-    if (result.exists) {
-      verified++;
-    } else {
-      failed++;
-      logger.warn(
-        { cid: upload.cid },
-        "Pin verification failed, queuing for retry",
-      );
-      await redis.lpush(
-        IPFS_VERIFICATION_QUEUE_KEY,
-        JSON.stringify({ cid: upload.cid }),
-      );
-    }
-  }
-
-  logger.info({ verified, failed }, "Pin verification job completed");
-  return { verified, failed };
 }

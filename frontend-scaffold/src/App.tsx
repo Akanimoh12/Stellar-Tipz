@@ -1,5 +1,5 @@
 import React, { Suspense } from "react";
-import { BrowserRouter, useRoutes } from "react-router-dom";
+import { Outlet, RouterProvider, createBrowserRouter } from "react-router-dom";
 import { MotionConfig } from "framer-motion";
 
 import Header from "@/components/layout/Header";
@@ -11,19 +11,23 @@ import KeyboardShortcutsProvider from "@/components/shared/KeyboardShortcutsProv
 import PageTransition from "@/components/shared/PageTransition";
 import PageAnnouncement from "@/components/shared/PageAnnouncement";
 import { RpcHealthBanner } from "@/components/shared/RpcHealthBanner";
+import TransactionNavigationBlock from "@/components/shared/TransactionNavigationBlock";
+import ReauthPrompt from "@/components/shared/ReauthPrompt";
 import { routes } from "@/routes";
 import { useI18n } from "@/i18n";
 import { useOfflineStatus } from "@/hooks/useOfflineStatus";
 import { useOnboarding } from "@/hooks/useOnboarding";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useAnalytics } from "@/hooks/useAnalytics";
+import { useSessionTimeout } from "@/hooks/useSessionTimeout";
+import { useToastStore } from "@/store/toastStore";
+import { useWalletStore } from "@/store/walletStore";
+import { forceLogout } from "@/services/auth/tokenManager";
 import OnboardingTour from "@/features/onboarding/OnboardingTour";
 
 import { onUpdateAvailable, skipWaiting } from "@/services/serviceWorker";
 
-const PageFallback: React.FC = () => (
-  <PageFallbackContent />
-);
+const PageFallback: React.FC = () => <PageFallbackContent />;
 
 const PageFallbackContent: React.FC = () => {
   const { t } = useI18n();
@@ -43,13 +47,32 @@ const PageFallbackContent: React.FC = () => {
   );
 };
 
-const AppRoutes: React.FC = () => {
-  const routeElements = useRoutes(routes);
+const AppLayout: React.FC = () => {
   const { t } = useI18n();
   const { isOffline } = useOfflineStatus();
   const reduceMotion = useReducedMotion();
   useAnalytics();
   const [updateReady, setUpdateReady] = React.useState(false);
+
+  const walletConnected = useWalletStore((s) => s.connected);
+  const addToast = useToastStore((s) => s.addToast);
+
+  // Issue #1307 — idle session timeout with a 5-minute warning, then a
+  // graceful re-auth prompt (form drafts are preserved).
+  useSessionTimeout({
+    isActive: walletConnected,
+    onWarn: () =>
+      addToast({
+        message:
+          "You will be signed out in 5 minutes due to inactivity. Move the mouse or press a key to stay signed in.",
+        type: "warning",
+        priority: "high",
+        duration: 60_000,
+      }),
+    onExpire: () => {
+      void forceLogout("idle-timeout");
+    },
+  });
 
   React.useEffect(() => {
     const unsub = onUpdateAvailable(() => setUpdateReady(true));
@@ -63,6 +86,7 @@ const AppRoutes: React.FC = () => {
       <ScrollToTop />
       <PageAnnouncement />
       <KeyboardShortcutsProvider />
+      <TransactionNavigationBlock />
       <ErrorBoundary>
         <RpcHealthBanner />
         {isOffline && (
@@ -100,24 +124,34 @@ const AppRoutes: React.FC = () => {
           <Header />
           <div className="flex-1">
             <PageTransition animationType="fade">
-              <Suspense fallback={<PageFallback />}>{routeElements}</Suspense>
+              <Suspense fallback={<PageFallback />}>
+                <Outlet />
+              </Suspense>
             </PageTransition>
           </div>
           <Footer />
         </div>
       </ErrorBoundary>
       <ToastContainer />
-      <OnboardingTour open={isTourOpen} onComplete={completeTour} onSkip={skipTour} />
+      <ReauthPrompt />
+      <OnboardingTour
+        open={isTourOpen}
+        onComplete={completeTour}
+        onSkip={skipTour}
+      />
     </MotionConfig>
   );
 };
 
+const router = createBrowserRouter([
+  {
+    element: <AppLayout />,
+    children: routes,
+  },
+]);
+
 const App: React.FC = () => {
-  return (
-    <BrowserRouter>
-      <AppRoutes />
-    </BrowserRouter>
-  );
+  return <RouterProvider router={router} />;
 };
 
 export default App;

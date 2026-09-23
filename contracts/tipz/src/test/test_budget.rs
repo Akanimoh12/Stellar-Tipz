@@ -176,7 +176,7 @@ fn fill_leaderboard(env: &Env, contract_id: &Address) -> soroban_sdk::Vec<Addres
                 domain_verified_at: None,
         custom_min_tip: None,
             };
-            crate::leaderboard::update_leaderboard(env, &profile);
+            crate::leaderboard::update_leaderboard(env, &profile, crate::types::LeaderboardPeriod::AllTime, profile.total_tips_received);
             i += 1;
         }
     });
@@ -328,7 +328,7 @@ fn test_send_tip_budget_full_leaderboard_rebalance() {
     fill_leaderboard(&env, &contract_id);
 
     assert_eq!(
-        client.get_leaderboard_size(),
+        client.get_leaderboard_size(&crate::types::LeaderboardPeriod::AllTime),
         MAX_LEADERBOARD_SIZE,
         "leaderboard must be full before measuring rebalance cost"
     );
@@ -417,14 +417,14 @@ fn test_get_leaderboard_budget_full() {
     fill_leaderboard(&env, &contract_id);
 
     assert_eq!(
-        client.get_leaderboard_size(),
+        client.get_leaderboard_size(&crate::types::LeaderboardPeriod::AllTime),
         MAX_LEADERBOARD_SIZE,
         "leaderboard must be full before measuring read cost"
     );
 
     env.budget().reset_unlimited();
 
-    let board = client.get_leaderboard(&50);
+    let board = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &50);
 
     let cpu = env.budget().cpu_instruction_cost();
     let mem = env.budget().memory_bytes_cost();

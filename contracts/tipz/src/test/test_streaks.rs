@@ -144,3 +144,141 @@ fn test_streak_bonus_updates_credit_score() {
 
     assert_eq!(score, pure_score + 1);
 }
+
+#[test]
+fn test_milestone_7_days() {
+    let (env, client, contract_id, tipper, creator, _sac) = setup_env();
+
+    // Send tip for 7 consecutive days
+    for day in 0..7 {
+        send_daily_tip(&env, &client, &tipper, &creator, day);
+    }
+
+    let streak = client.get_streak(&tipper, &creator);
+    assert_eq!(streak.current, 7);
+
+    // Check event was emitted
+    env.as_contract(&contract_id, || {
+        let events = env.events().all();
+        let milestone_events: Vec<_> = events
+            .iter()
+            .filter(|e| {
+                e.0.topics.len() >= 2
+                    && soroban_sdk::symbol_short!("streak").to_val().shallow_eq(&e.0.topics[0])
+                    && soroban_sdk::symbol_short!("milestone").to_val().shallow_eq(&e.0.topics[1])
+            })
+            .collect();
+        assert!(!milestone_events.is_empty(), "milestone event should be emitted");
+    });
+}
+
+#[test]
+fn test_milestone_30_days() {
+    let (env, client, contract_id, tipper, creator, _sac) = setup_env();
+
+    // Send tip for 30 consecutive days (every day at day % 7 == 0 or + 1)
+    for day in 0..30 {
+        send_daily_tip(&env, &client, &tipper, &creator, day);
+    }
+
+    let streak = client.get_streak(&tipper, &creator);
+    assert_eq!(streak.current, 30);
+
+    // Check event was emitted
+    env.as_contract(&contract_id, || {
+        let events = env.events().all();
+        let milestone_events: Vec<_> = events
+            .iter()
+            .filter(|e| {
+                e.0.topics.len() >= 2
+                    && soroban_sdk::symbol_short!("streak").to_val().shallow_eq(&e.0.topics[0])
+                    && soroban_sdk::symbol_short!("milestone").to_val().shallow_eq(&e.0.topics[1])
+            })
+            .collect();
+        assert!(milestone_events.len() >= 2, "should have 7-day and 30-day milestones");
+    });
+}
+
+#[test]
+fn test_milestone_100_days() {
+    let (env, client, contract_id, tipper, creator, _sac) = setup_env();
+
+    // Send tip for 100 consecutive days
+    for day in 0..100 {
+        send_daily_tip(&env, &client, &tipper, &creator, day);
+    }
+
+    let streak = client.get_streak(&tipper, &creator);
+    assert_eq!(streak.current, 100);
+
+    // Check event was emitted
+    env.as_contract(&contract_id, || {
+        let events = env.events().all();
+        let milestone_events: Vec<_> = events
+            .iter()
+            .filter(|e| {
+                e.0.topics.len() >= 2
+                    && soroban_sdk::symbol_short!("streak").to_val().shallow_eq(&e.0.topics[0])
+                    && soroban_sdk::symbol_short!("milestone").to_val().shallow_eq(&e.0.topics[1])
+            })
+            .collect();
+        assert!(milestone_events.len() >= 3, "should have 7, 30, and 100-day milestones");
+    });
+}
+
+#[test]
+fn test_streak_breaks_after_gap() {
+    let (env, client, _contract_id, tipper, creator, _sac) = setup_env();
+
+    // Send tips for 7 days
+    for day in 0..7 {
+        send_daily_tip(&env, &client, &tipper, &creator, day);
+    }
+
+    let streak_at_7 = client.get_streak(&tipper, &creator);
+    assert_eq!(streak_at_7.current, 7);
+
+    // Break streak (skip 2 days)
+    send_daily_tip(&env, &client, &tipper, &creator, 9);
+
+    let streak_after_break = client.get_streak(&tipper, &creator);
+    assert_eq!(streak_after_break.current, 1);
+    assert_eq!(streak_after_break.longest, 7);
+
+    // Resume for another 7 days
+    for day in 10..17 {
+        send_daily_tip(&env, &client, &tipper, &creator, day);
+    }
+
+    let streak_after_resume = client.get_streak(&tipper, &creator);
+    assert_eq!(streak_after_resume.current, 7);
+    assert_eq!(streak_after_resume.longest, 7); // Longest doesn't change
+}
+
+#[test]
+fn test_milestone_365_days() {
+    let (env, client, contract_id, tipper, creator, _sac) = setup_env();
+
+    // Send tips for 365 consecutive days
+    for day in 0..365 {
+        send_daily_tip(&env, &client, &tipper, &creator, day);
+    }
+
+    let streak = client.get_streak(&tipper, &creator);
+    assert_eq!(streak.current, 365);
+
+    // Check that all milestone events were emitted
+    env.as_contract(&contract_id, || {
+        let events = env.events().all();
+        let milestone_events: Vec<_> = events
+            .iter()
+            .filter(|e| {
+                e.0.topics.len() >= 2
+                    && soroban_sdk::symbol_short!("streak").to_val().shallow_eq(&e.0.topics[0])
+                    && soroban_sdk::symbol_short!("milestone").to_val().shallow_eq(&e.0.topics[1])
+            })
+            .collect();
+        // Should have milestones for 7, 30, 100, 365
+        assert!(milestone_events.len() >= 4, "should have at least 4 milestones (7, 30, 100, 365)");
+    });
+}

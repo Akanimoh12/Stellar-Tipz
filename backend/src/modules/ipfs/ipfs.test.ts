@@ -1,373 +1,367 @@
-/**
- * Tests for IPFS service (issues #1295, #1296).
- * Mocks Prisma and Redis, tests core pinning, unpinning, and cleanup logic.
- */
-
-import { describe, it, expect, vi, beforeEach } from "vitest";
-
-vi.mock("@/config/index.js", () => ({
-  config: {
-    ipfs: {
-      apiUrl: "http://localhost:5001",
-      gatewayUrl: "https://ipfs.io/ipfs/",
-    },
-  },
-}));
-
-vi.mock("@/db/prisma.js", () => ({
-  prisma: {
-    upload: {
-      findMany: vi.fn(),
-      findFirst: vi.fn(),
-      update: vi.fn(),
-      create: vi.fn(),
-    },
-  },
-}));
-
-vi.mock("@/db/redis.js", () => ({
-  redis: {
-    lpush: vi.fn(),
-    rpop: vi.fn(),
-  },
-}));
-
-vi.mock("@/common/utils/logger.js", () => ({
-  logger: {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  },
-}));
-
+import { describe, it, expect, vi, afterEach } from "vitest";
+import request from "supertest";
+import sharp from "sharp";
+import { createApp } from "../../app.js";
+import { config } from "../../config/index.js";
+import { BadRequestError, BadGatewayError, ServiceUnavailableError } from "../../common/errors/AppError.js";
+import { buildGatewayUrl, isValidCid } from "./ipfs.utils.js";
 import {
-  pinToIpfs,
-  unpinFromIpfs,
-  verifyPin,
-  getIpfsGateway,
-  findOrphanedUploads,
-  dryRunCleanup,
-  executeCleanup,
-  verifyAllPins,
+  verifyAndSanitizeImage,
+  pinImageToIpfs,
+  MAX_IMAGE_SIZE_BYTES,
+  MAX_IMAGE_DIMENSION_PX,
 } from "./ipfs.service.js";
-import { prisma } from "@/db/prisma.js";
-import { redis } from "@/db/redis.js";
-import { UploadStatus } from "./ipfs.types.js";
 
-const TEST_CID = "QmRyZpQhcajZCfQMTL1pLfqL9Z7sYDqiGZFyD3xGhjXHN";
+const VALID_CID_V0 = "QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco";
+const VALID_CID_V1 = "bafybeicn72vedxjQkDDP1mXWo6uco72vedxjQkDDP1mXWo6uco72vedxj";
 
-describe("IPFS Service", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    global.fetch = vi.fn();
-  });
+const SVG_PAYLOAD = `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`;
 
-  describe("pinToIpfs", () => {
-    it("pins valid content and returns success", async () => {
-      global.fetch = vi.fn().mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-      });
+async function makePng(width = 8, height = 8): Promise<Buffer> {
+  return sharp({
+    create: { width, height, channels: 3, background: { r: 10, g: 120, b: 200 } },
+  })
+    .png()
+    .toBuffer();
+}
 
-      const result = await pinToIpfs(TEST_CID, {
-        userId: "user_01",
-        entityType: "profile_avatar",
-      });
+async function makeJpegWithExif(): Promise<Buffer> {
+  return sharp({
+    create: { width: 8, height: 8, channels: 3, background: { r: 200, g: 50, b: 50 } },
+  })
+    .withMetadata({
+      exif: {
+        IFD0: { Copyright: "Jane Doe" },
+        IFD3: { GPSLatitude: "40/1,26/1,4614/100", GPSLongitude: "79/1,58/1,5541/100" },
+      },
+    })
+    .jpeg()
+    .toBuffer();
+}
 
-      expect(result.success).toBe(true);
-      expect(result.cid).toBe(TEST_CID);
-      expect(global.fetch).toHaveBeenCalled();
+describe("IPFS Module", () => {
+  const app = createApp();
+
+  describe("Gateway URL Builder Util (#983)", () => {
+    it("should validate correct CIDv0 and CIDv1 formats", () => {
+      expect(isValidCid(VALID_CID_V0)).toBe(true);
+      expect(isValidCid(VALID_CID_V1)).toBe(true);
+      expect(isValidCid("invalid-cid")).toBe(false);
+      expect(isValidCid("")).toBe(false);
     });
 
-    it("rejects invalid CID format", async () => {
+    it("should build resolvable gateway URL from valid CID", () => {
+      const url = buildGatewayUrl(VALID_CID_V0);
+      expect(url).toBe(`https://ipfs.io/ipfs/${VALID_CID_V0}`);
+    });
+
+    it("should strip leading slashes and ipfs/ prefix from CID", () => {
+      const url1 = buildGatewayUrl(`/${VALID_CID_V0}`);
+      const url2 = buildGatewayUrl(`ipfs/${VALID_CID_V0}`);
+      expect(url1).toBe(`https://ipfs.io/ipfs/${VALID_CID_V0}`);
+      expect(url2).toBe(`https://ipfs.io/ipfs/${VALID_CID_V0}`);
+    });
+
+    it("should support custom gateway base URLs", () => {
+      const customGateway = "https://gateway.pinata.cloud/ipfs/";
+      const url = buildGatewayUrl(VALID_CID_V0, customGateway);
+      expect(url).toBe(`https://gateway.pinata.cloud/ipfs/${VALID_CID_V0}`);
+    });
+
+    it("should normalize gateway base URLs missing trailing slash", () => {
+      const customGateway = "https://gateway.pinata.cloud/ipfs";
+      const url = buildGatewayUrl(VALID_CID_V0, customGateway);
+      expect(url).toBe(`https://gateway.pinata.cloud/ipfs/${VALID_CID_V0}`);
+    });
+
+    it("should throw BadRequestError for invalid CID format", () => {
+      expect(() => buildGatewayUrl("not-a-cid")).toThrow(BadRequestError);
+      expect(() => buildGatewayUrl("")).toThrow(BadRequestError);
+    });
+  });
+
+  describe("Image Upload Validation & Sanitization (#1232)", () => {
+    it("should accept a valid image verified by its actual magic bytes", async () => {
+      const buffer = await makePng();
+      const result = await verifyAndSanitizeImage({ size: buffer.length, buffer });
+      expect(result.format).toBe("png");
+      expect(result.mimeType).toBe("image/png");
+      expect(result.width).toBe(8);
+      expect(result.height).toBe(8);
+    });
+
+    it("should throw BadRequestError for missing or empty file", async () => {
+      await expect(verifyAndSanitizeImage(undefined)).rejects.toThrow(BadRequestError);
       await expect(
-        pinToIpfs("invalid-cid", { userId: "user_01" }),
-      ).rejects.toThrow();
+        verifyAndSanitizeImage({ size: 0, buffer: Buffer.alloc(0) })
+      ).rejects.toThrow(BadRequestError);
     });
 
-    it("queues retry on server error (5xx)", async () => {
-      global.fetch = vi.fn().mockResolvedValueOnce({
-        ok: false,
-        status: 503,
-        statusText: "Service Unavailable",
-      });
-
-      const result = await pinToIpfs(TEST_CID, { userId: "user_01" });
-
-      expect(result.success).toBe(false);
-      expect(result.retryable).toBe(true);
-      expect(redis.lpush).toHaveBeenCalled();
+    it("should reject a file whose content-type/extension is spoofed (magic bytes don't match)", async () => {
+      // A plain text/PDF-like buffer masquerading as a PNG via its declared
+      // mimetype and filename — the client's claim is never trusted.
+      const buffer = Buffer.from("%PDF-1.4 not actually an image");
+      await expect(
+        verifyAndSanitizeImage({ size: buffer.length, buffer })
+      ).rejects.toThrow(BadRequestError);
     });
 
-    it("queues retry on rate limit (429)", async () => {
-      global.fetch = vi.fn().mockResolvedValueOnce({
-        ok: false,
-        status: 429,
-        statusText: "Too Many Requests",
-      });
-
-      const result = await pinToIpfs(TEST_CID, { userId: "user_01" });
-
-      expect(result.retryable).toBe(true);
-      expect(redis.lpush).toHaveBeenCalled();
+    it("should reject SVG files outright, even with a valid image mimetype claim", async () => {
+      const buffer = Buffer.from(SVG_PAYLOAD);
+      await expect(
+        verifyAndSanitizeImage({ size: buffer.length, buffer })
+      ).rejects.toThrow(BadRequestError);
     });
 
-    it("does not retry on client error (4xx)", async () => {
-      global.fetch = vi.fn().mockResolvedValueOnce({
-        ok: false,
-        status: 400,
-        statusText: "Bad Request",
-      });
+    it("should throw BadRequestError for files exceeding the maximum byte-size limit", async () => {
+      const buffer = await makePng();
+      await expect(
+        verifyAndSanitizeImage({ size: MAX_IMAGE_SIZE_BYTES + 1, buffer })
+      ).rejects.toThrow(BadRequestError);
+    });
 
-      const result = await pinToIpfs(TEST_CID, { userId: "user_01" });
+    it("should throw BadRequestError for images exceeding the maximum pixel dimensions", async () => {
+      const buffer = await makePng(MAX_IMAGE_DIMENSION_PX + 1, 4);
+      await expect(
+        verifyAndSanitizeImage({ size: buffer.length, buffer })
+      ).rejects.toThrow(BadRequestError);
+    });
 
-      expect(result.retryable).toBe(false);
+    it("should strip EXIF metadata, including GPS, from the sanitized output", async () => {
+      const original = await makeJpegWithExif();
+      const originalMeta = await sharp(original).metadata();
+      expect(originalMeta.exif).toBeDefined();
+
+      const result = await verifyAndSanitizeImage({ size: original.length, buffer: original });
+      const sanitizedMeta = await sharp(result.buffer).metadata();
+      expect(sanitizedMeta.exif).toBeUndefined();
     });
   });
 
-  describe("unpinFromIpfs", () => {
-    it("unpins content successfully", async () => {
-      global.fetch = vi.fn().mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-      });
+  describe("IPFS Pinning Service & Error Handling Fallback (#981, #984)", () => {
+    const originalFetch = globalThis.fetch;
 
-      await expect(unpinFromIpfs(TEST_CID)).resolves.not.toThrow();
-      expect(global.fetch).toHaveBeenCalled();
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+      vi.restoreAllMocks();
     });
 
-    it("throws on unpin failure", async () => {
-      global.fetch = vi.fn().mockResolvedValueOnce({
+    it("should successfully pin image when IPFS API returns valid hash", async () => {
+      const mockCid = VALID_CID_V0;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ Hash: mockCid }),
+      } as unknown as globalThis.Response);
+
+      const originalApiUrl = config.ipfs.apiUrl;
+      (config.ipfs as { apiUrl?: string }).apiUrl = "http://localhost:5001";
+
+      try {
+        const buffer = await makePng();
+        const file = {
+          mimetype: "image/png",
+          size: buffer.length,
+          buffer,
+          originalname: "test.png",
+        };
+
+        const result = await pinImageToIpfs(file);
+        expect(result.cid).toBe(mockCid);
+        expect(result.url).toBe(`https://ipfs.io/ipfs/${mockCid}`);
+      } finally {
+        (config.ipfs as { apiUrl?: string }).apiUrl = originalApiUrl;
+      }
+    });
+
+    it("should generate deterministic fallback CID when IPFS_API_URL is unconfigured", async () => {
+      const originalApiUrl = config.ipfs.apiUrl;
+      (config.ipfs as { apiUrl?: string }).apiUrl = "";
+
+      try {
+        const buffer = await makePng();
+        const file = {
+          mimetype: "image/png",
+          size: buffer.length,
+          buffer,
+        };
+
+        const result = await pinImageToIpfs(file);
+        expect(result.cid).toMatch(/^Qm/);
+        expect(isValidCid(result.cid)).toBe(true);
+        expect(result.url).toContain(result.cid);
+      } finally {
+        (config.ipfs as { apiUrl?: string }).apiUrl = originalApiUrl;
+      }
+    });
+
+    it("should fall back gracefully in development/test when IPFS HTTP request returns error status", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 500,
-      });
+        statusText: "Internal Server Error",
+        text: async () => "IPFS daemon error",
+      } as unknown as globalThis.Response);
 
-      await expect(unpinFromIpfs(TEST_CID)).rejects.toThrow();
+      const originalApiUrl = config.ipfs.apiUrl;
+      (config.ipfs as { apiUrl?: string }).apiUrl = "http://localhost:5001";
+
+      try {
+        const buffer = await makePng();
+        const file = {
+          mimetype: "image/png",
+          size: buffer.length,
+          buffer,
+        };
+
+        const result = await pinImageToIpfs(file);
+        expect(result.cid).toMatch(/^Qm/);
+        expect(result.url).toContain(result.cid);
+      } finally {
+        (config.ipfs as { apiUrl?: string }).apiUrl = originalApiUrl;
+      }
+    });
+
+    it("should throw BadGatewayError in production environment when IPFS pinning HTTP request fails", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        statusText: "Bad Gateway",
+        text: async () => "IPFS gateway error",
+      } as unknown as globalThis.Response);
+
+      const originalApiUrl = config.ipfs.apiUrl;
+      const originalEnv = config.server.nodeEnv;
+
+      (config.ipfs as { apiUrl?: string }).apiUrl = "http://localhost:5001";
+      (config.server as { nodeEnv: string }).nodeEnv = "production";
+
+      try {
+        const buffer = await makePng();
+        const file = {
+          mimetype: "image/png",
+          size: buffer.length,
+          buffer,
+        };
+
+        await expect(pinImageToIpfs(file)).rejects.toThrow(BadGatewayError);
+      } finally {
+        (config.ipfs as { apiUrl?: string }).apiUrl = originalApiUrl;
+        (config.server as { nodeEnv: string }).nodeEnv = originalEnv;
+      }
+    });
+
+    it("should throw ServiceUnavailableError in production environment when network fetch fails completely", async () => {
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error("Network connection refused"));
+
+      const originalApiUrl = config.ipfs.apiUrl;
+      const originalEnv = config.server.nodeEnv;
+
+      (config.ipfs as { apiUrl?: string }).apiUrl = "http://localhost:5001";
+      (config.server as { nodeEnv: string }).nodeEnv = "production";
+
+      try {
+        const buffer = await makePng();
+        const file = {
+          mimetype: "image/png",
+          size: buffer.length,
+          buffer,
+        };
+
+        await expect(pinImageToIpfs(file)).rejects.toThrow(ServiceUnavailableError);
+      } finally {
+        (config.ipfs as { apiUrl?: string }).apiUrl = originalApiUrl;
+        (config.server as { nodeEnv: string }).nodeEnv = originalEnv;
+      }
     });
   });
 
-  describe("verifyPin", () => {
-    it("verifies pin exists via primary gateway", async () => {
-      global.fetch = vi.fn().mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-      });
-
-      const result = await verifyPin(TEST_CID);
-
-      expect(result.exists).toBe(true);
-      expect(result.cid).toBe(TEST_CID);
-    });
-
-    it("falls back to secondary gateway on timeout", async () => {
-      global.fetch = vi
-        .fn()
-        .mockRejectedValueOnce(new Error("Timeout"))
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
+  describe("HTTP Routes Integration (#981, #983, #985, #1232)", () => {
+    it("POST /api/v1/ipfs/upload should successfully process valid image file", async () => {
+      const buffer = await makePng();
+      const response = await request(app)
+        .post("/api/v1/ipfs/upload")
+        .attach("file", buffer, {
+          filename: "avatar.png",
+          contentType: "image/png",
         });
 
-      const result = await verifyPin(TEST_CID);
-
-      expect(result.exists).toBe(true);
+      expect(response.status).toBe(201);
+      expect(response.body.status).toBe("success");
+      expect(response.body.data.cid).toBeDefined();
+      expect(response.body.data.url).toContain(response.body.data.cid);
     });
 
-    it("returns false when all gateways fail", async () => {
-      global.fetch = vi
-        .fn()
-        .mockRejectedValue(new Error("Timeout"));
+    it("POST /api/v1/ipfs/upload should accept 'image' field name", async () => {
+      const buffer = await makePng();
+      const response = await request(app)
+        .post("/api/v1/ipfs/upload")
+        .attach("image", buffer, {
+          filename: "profile.png",
+          contentType: "image/png",
+        });
 
-      const result = await verifyPin(TEST_CID);
-
-      expect(result.exists).toBe(false);
-    });
-  });
-
-  describe("getIpfsGateway", () => {
-    it("returns primary gateway URL", () => {
-      const url = getIpfsGateway(TEST_CID, 0);
-      expect(url).toContain(TEST_CID);
-      expect(url).toContain("ipfs.io");
+      expect(response.status).toBe(201);
+      expect(response.body.status).toBe("success");
+      expect(response.body.data.cid).toBeDefined();
     });
 
-    it("fallbacks to valid gateway on invalid index", () => {
-      const url = getIpfsGateway(TEST_CID, 999);
-      expect(url).toContain(TEST_CID);
-    });
-  });
+    it("POST /api/v1/ipfs/upload should return 400 Bad Request when no file attached", async () => {
+      const response = await request(app).post("/api/v1/ipfs/upload");
 
-  describe("findOrphanedUploads", () => {
-    it("finds uploads without entity reference beyond grace period", async () => {
-      const cutoffDate = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
-
-      vi.mocked(prisma.upload.findMany).mockResolvedValueOnce([
-        {
-          id: "upload_01",
-          cid: TEST_CID,
-          createdAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
-        },
-      ]);
-
-      const orphans = await findOrphanedUploads(30);
-
-      expect(orphans).toHaveLength(1);
-      expect(orphans[0].cid).toBe(TEST_CID);
-      expect(prisma.upload.findMany).toHaveBeenCalledWith({
-        where: {
-          entityId: null,
-          status: UploadStatus.PINNED,
-          createdAt: { lt: cutoffDate },
-          deletedAt: null,
-        },
-        select: {
-          id: true,
-          cid: true,
-          createdAt: true,
-        },
-      });
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBeDefined();
     });
 
-    it("returns empty array when no orphans exist", async () => {
-      vi.mocked(prisma.upload.findMany).mockResolvedValueOnce([]);
+    it("POST /api/v1/ipfs/upload should return 400 Bad Request for unsupported file MIME type", async () => {
+      const response = await request(app)
+        .post("/api/v1/ipfs/upload")
+        .attach("file", Buffer.from("document content"), {
+          filename: "document.pdf",
+          contentType: "application/pdf",
+        });
 
-      const orphans = await findOrphanedUploads(30);
-
-      expect(orphans).toHaveLength(0);
-    });
-  });
-
-  describe("dryRunCleanup", () => {
-    it("reports what would be unpinned without deleting", async () => {
-      const oldDate = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
-
-      vi.mocked(prisma.upload.findMany).mockResolvedValueOnce([
-        {
-          id: "upload_01",
-          cid: TEST_CID,
-          createdAt: oldDate,
-        },
-      ]);
-
-      vi.mocked(prisma.upload.findFirst).mockResolvedValueOnce(null);
-
-      const dryRun = await dryRunCleanup(30);
-
-      expect(dryRun).toHaveLength(1);
-      expect(dryRun[0].cid).toBe(TEST_CID);
-      expect(dryRun[0].referenced).toBe(false);
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBeDefined();
     });
 
-    it("marks referenced content as safe", async () => {
-      const oldDate = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+    it("POST /api/v1/ipfs/upload should return 400 Bad Request for a spoofed content-type (fake bytes claiming image/png)", async () => {
+      const response = await request(app)
+        .post("/api/v1/ipfs/upload")
+        .attach("file", Buffer.from("this is not real image data"), {
+          filename: "avatar.png",
+          contentType: "image/png",
+        });
 
-      vi.mocked(prisma.upload.findMany).mockResolvedValueOnce([
-        {
-          id: "upload_01",
-          cid: TEST_CID,
-          createdAt: oldDate,
-        },
-      ]);
-
-      vi.mocked(prisma.upload.findFirst).mockResolvedValueOnce({
-        id: "upload_02",
-        cid: TEST_CID,
-        status: UploadStatus.PINNED,
-      });
-
-      const dryRun = await dryRunCleanup(30);
-
-      expect(dryRun[0].referenced).toBe(true);
-    });
-  });
-
-  describe("executeCleanup", () => {
-    it("unpins orphaned content", async () => {
-      const oldDate = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
-
-      vi.mocked(prisma.upload.findMany).mockResolvedValueOnce([
-        {
-          id: "upload_01",
-          cid: TEST_CID,
-          createdAt: oldDate,
-        },
-      ]);
-
-      vi.mocked(prisma.upload.findFirst).mockResolvedValueOnce(null);
-      global.fetch = vi.fn().mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-      });
-      vi.mocked(prisma.upload.update).mockResolvedValueOnce({} as any);
-
-      const result = await executeCleanup(30);
-
-      expect(result.unpinned).toBe(1);
-      expect(result.skipped).toBe(0);
-      expect(prisma.upload.update).toHaveBeenCalled();
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBeDefined();
     });
 
-    it("skips cleanup if content is still referenced", async () => {
-      const oldDate = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+    it("POST /api/v1/ipfs/upload should return 400 Bad Request for SVG uploads", async () => {
+      const response = await request(app)
+        .post("/api/v1/ipfs/upload")
+        .attach("file", Buffer.from(SVG_PAYLOAD), {
+          filename: "logo.svg",
+          contentType: "image/svg+xml",
+        });
 
-      vi.mocked(prisma.upload.findMany).mockResolvedValueOnce([
-        {
-          id: "upload_01",
-          cid: TEST_CID,
-          createdAt: oldDate,
-        },
-      ]);
-
-      vi.mocked(prisma.upload.findFirst).mockResolvedValueOnce({
-        id: "upload_02",
-        cid: TEST_CID,
-        status: UploadStatus.PINNED,
-      });
-
-      const result = await executeCleanup(30);
-
-      expect(result.unpinned).toBe(0);
-      expect(result.skipped).toBe(1);
-      expect(global.fetch).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("verifyAllPins", () => {
-    it("verifies all pinned uploads", async () => {
-      vi.mocked(prisma.upload.findMany).mockResolvedValueOnce([
-        {
-          id: "upload_01",
-          cid: TEST_CID,
-        },
-      ]);
-
-      global.fetch = vi.fn().mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-      });
-
-      const result = await verifyAllPins();
-
-      expect(result.verified).toBe(1);
-      expect(result.failed).toBe(0);
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBeDefined();
     });
 
-    it("queues failed verifications for retry", async () => {
-      vi.mocked(prisma.upload.findMany).mockResolvedValueOnce([
-        {
-          id: "upload_01",
-          cid: TEST_CID,
-        },
-      ]);
+    it("GET /api/v1/ipfs/gateway/:cid should return resolvable gateway URL for valid CID", async () => {
+      const response = await request(app).get(`/api/v1/ipfs/gateway/${VALID_CID_V0}`);
 
-      global.fetch = vi.fn().mockRejectedValue(new Error("Timeout"));
+      expect(response.status).toBe(200);
+      expect(response.body.status).toBe("success");
+      expect(response.body.data.cid).toBe(VALID_CID_V0);
+      expect(response.body.data.url).toBe(`https://ipfs.io/ipfs/${VALID_CID_V0}`);
+    });
 
-      const result = await verifyAllPins();
+    it("GET /api/v1/ipfs/gateway/:cid should return 400 Bad Request for invalid CID", async () => {
+      const response = await request(app).get("/api/v1/ipfs/gateway/invalid-cid-format");
 
-      expect(result.verified).toBe(0);
-      expect(result.failed).toBe(1);
-      expect(redis.lpush).toHaveBeenCalled();
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBeDefined();
     });
   });
 });

@@ -30,8 +30,6 @@ model User {
   apiKeys        ApiKey[]
   refreshTokens  RefreshToken[]
   goals          Goal[]
-  uploads        Upload[]
-  xLink          XLink?
 
   tipperSubscriptions  Subscription[] @relation("SubscriptionTipper")
   creatorSubscriptions Subscription[] @relation("SubscriptionCreator")
@@ -264,72 +262,57 @@ model WebhookDelivery {
   @@index([status, nextAttemptAt])
 }
 
-/// IPFS upload metadata for tracking content and detecting orphans (issue #1296, #1295).
-/// Tracks files uploaded to IPFS with their associated entities and pin status.
-model Upload {
-  id          String    @id @default(cuid())
-  cid         String    @unique
-  uploader    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId      String
-  /// Entity type that references this upload: "profile_avatar", "post_attachment", etc.
-  entityType  String?
-  /// Entity ID if this upload is attached (null = orphaned upload).
-  entityId    String?
-  /// Pin status: "pending", "pinned", "failed", "unpinned".
-  status      String    @default("pending")
-  /// Number of pin attempts (for retry logic).
-  retries     Int       @default(0)
-  /// Timestamp when content was successfully pinned.
-  pinnedAt    DateTime?
-  createdAt   DateTime  @default(now())
-  /// Soft delete timestamp (for cleanup dry-run auditing).
-  deletedAt   DateTime?
+/// Audit log for tracking sensitive actions and job execution (issues #1289, #1288, #1287).
+/// Records money-moving and state-mutating operations with full context for compliance.
+model AuditLog {
+  id        String   @id @default(cuid())
+  /// Type of action: "api_call", "job_execution", "subscription_charge", etc.
+  action    String
+  /// Actor type: "user" or "system".
+  actorType String
+  /// Actor ID: user ID or job name.
+  actorId   String
+  /// Trigger type: "manual" (API), "scheduled" (cron), or "triggered" (external).
+  trigger   String   @default("manual")
+  /// Stringified input parameters.
+  input     Json
+  /// Outcome: "success" or "failure".
+  outcome   String
+  /// Error message if outcome is "failure".
+  error     String?
+  /// Execution duration in milliseconds.
+  durationMs Int?
+  /// Associated resource ID if applicable (e.g., subscription ID, tip ID).
+  resourceId String?
+  /// Resource type being acted upon.
+  resourceType String?
+  createdAt  DateTime @default(now())
 
-  @@index([userId, status])
-  @@index([entityType, entityId])
-  @@index([deletedAt])
+  @@index([actorType, actorId])
+  @@index([action])
+  @@index([outcome])
+  @@index([createdAt])
+  @@index([resourceId])
 }
 
-/// X (Twitter) account linking with proof of ownership (issue #1294).
-/// Links a Stellar Tipz user to their X account with verification proof.
-model XLink {
-  id        String    @id @default(cuid())
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
-  /// X handle (e.g., "elonmusk").
-  xHandle   String
-  /// X's internal user ID (fetched from API).
-  xId       String?
-  /// Proof type: "oauth", "post_nonce", etc.
-  proofType String
-  /// Encrypted nonce or OAuth authorization code (proof of ownership).
-  proofData String
-  /// Timestamp when link was established.
-  linkedAt  DateTime  @default(now())
-  /// Timestamp when link was removed (null if still active).
-  unlinkedAt DateTime?
-  createdAt DateTime  @default(now())
+/// Queue metrics snapshot for monitoring and autoscaling (issue #1287).
+/// Periodic snapshots of queue depth to enable autoscaling and performance monitoring.
+model QueueMetric {
+  id          String   @id @default(cuid())
+  /// Queue name (e.g., "subscription-charge", "ipfs-pin").
+  queueName   String
+  /// Number of jobs waiting to be processed.
+  waitingCount Int
+  /// Number of jobs currently being processed.
+  activeCount Int
+  /// Number of delayed jobs.
+  delayedCount Int
+  /// Number of failed jobs.
+  failedCount Int
+  /// Age of oldest waiting job in seconds (null if no waiting jobs).
+  oldestWaitingAge Int?
+  createdAt   DateTime @default(now())
 
-  @@unique([userId])
-  @@unique([xHandle, unlinkedAt])
-  @@index([userId])
-}
-
-/// X API quota and metrics tracking (issue #1293).
-/// Tracks quota usage and stale data age for graceful degradation.
-model XQuotaMetric {
-  id            String   @id @default(cuid())
-  /// Date of this metric snapshot.
-  date          DateTime @default(now())
-  /// Requests used in current quota window.
-  requestsUsed  Int      @default(0)
-  /// Total requests allowed in window.
-  requestsLimit Int      @default(450)
-  /// When the quota resets.
-  resetAt       DateTime
-  /// Age of stale X data in seconds (null if data is fresh).
-  staleDataAge  Int?
-  createdAt     DateTime @default(now())
-
-  @@index([resetAt])
+  @@index([queueName, createdAt])
+  @@index([createdAt])
 }

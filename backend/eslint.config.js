@@ -1,31 +1,38 @@
-import typescriptEslint from '@typescript-eslint/eslint-plugin';
-import typescriptParser from '@typescript-eslint/parser';
-import eslint from '@eslint/js';
+import tseslint from '@typescript-eslint/eslint-plugin';
+import tsparser from '@typescript-eslint/parser';
 
 export default [
-  eslint.configs.recommended,
   {
-    files: ['**/*.ts'],
+    files: ['src/**/*.ts'],
     languageOptions: {
-      parser: typescriptParser,
+      parser: tsparser,
       parserOptions: {
         ecmaVersion: 2022,
         sourceType: 'module',
       },
       globals: {
         process: 'readonly',
+        console: 'readonly',
         Buffer: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
         __dirname: 'readonly',
         __filename: 'readonly',
+        exports: 'readonly',
+        module: 'readonly',
+        require: 'readonly',
       },
     },
     plugins: {
-      '@typescript-eslint': typescriptEslint,
+      '@typescript-eslint': tseslint,
     },
     rules: {
-      ...typescriptEslint.configs.recommended.rules,
-      '@typescript-eslint/no-explicit-any': 'warn',
+      semi: 'error',
+      'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-explicit-any': 'warn',
     },
   },
   {

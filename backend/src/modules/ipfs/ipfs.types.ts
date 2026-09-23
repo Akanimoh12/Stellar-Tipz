@@ -1,35 +1,33 @@
 /**
- * Type definitions for IPFS service (issues #1295, #1296).
+ * Response payload returned when an image is successfully uploaded and pinned to IPFS.
  */
-
-export enum UploadStatus {
-  PENDING = "pending",
-  PINNED = "pinned",
-  FAILED = "failed",
-  UNPINNED = "unpinned",
-}
-
-export interface UploadMetadata {
-  userId: string;
-  entityType?: string;
-  entityId?: string;
-}
-
-export interface PinResult {
-  success: boolean;
+export interface IpfsUploadResponse {
   cid: string;
-  message?: string;
-  retryable?: boolean;
-}
-
-export interface VerifyPinResult {
-  exists: boolean;
-  cid: string;
-  gateway?: string;
-}
-
-export interface GatewayConfig {
   url: string;
-  priority: number;
-  timeout: number;
+  size?: number;
+  mimeType?: string;
+}
+
+/**
+ * Result of pinning content to IPFS.
+ */
+export interface IpfsPinResult {
+  cid: string;
+  url: string;
+}
+
+/**
+ * Response payload for gateway URL resolution requests.
+ */
+export interface IpfsGatewayResponse {
+  cid: string;
+  url: string;
+}
+
+/**
+ * Validation configuration options for IPFS image uploads.
+ */
+export interface IpfsValidationOptions {
+  maxSizeBytes?: number;
+  allowedMimeTypes?: string[];
 }

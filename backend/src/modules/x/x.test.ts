@@ -1,425 +1,397 @@
-/**
- * Tests for X integration service (issues #1294, #1293).
- * Tests proof verification, quota tracking, and graceful degradation.
- */
-
-import { describe, it, expect, vi, beforeEach } from "vitest";
-
-vi.mock("@/config/index.js", () => ({
-  config: {
-    twitter: {
-      bearerToken: "test-token",
-      baseUrl: "https://api.twitter.com/2",
-    },
-  },
-}));
-
-vi.mock("@/db/prisma.js", () => ({
-  prisma: {
-    xLink: {
-      findFirst: vi.fn(),
-      create: vi.fn(),
-      update: vi.fn(),
-    },
-    user: {
-      findUnique: vi.fn(),
-    },
-    xAccount: {
-      findUnique: vi.fn(),
-    },
-    xQuotaMetric: {
-      findFirst: vi.fn(),
-      create: vi.fn(),
-    },
-  },
-}));
-
-vi.mock("@/common/utils/logger.js", () => ({
-  logger: {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  },
-}));
-
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
+import { prisma } from "../../db/prisma.js";
 import {
-  linkXAccount,
-  unlinkXAccount,
-  verifyOwnership,
-  getXMetrics,
-  getFallbackXData,
-  trackQuotaUsage,
-  isQuotaExhausted,
+  fetchXMetrics,
+  getCachedXMetrics,
+  clearCachedXMetrics,
 } from "./x.service.js";
-import { prisma } from "@/db/prisma.js";
+import {
+  ServiceUnavailableError,
+  NotFoundError,
+} from "../../common/errors/AppError.js";
+import { xCircuitBreaker } from "./x.circuit-breaker.js";
+
+// Mock fixtures
+const mockXApiResponse = {
+  data: {
+    id: "123456789",
+    name: "John Doe",
+    username: "johndoe",
+    public_metrics: {
+      followers_count: 10000,
+      following_count: 500,
+      tweet_count: 5000,
+      listed_count: 100,
+    },
+  },
+};
+
+const mockXApiResponseLowActivity = {
+  data: {
+    id: "987654321",
+    name: "Jane Smith",
+    username: "janesmith",
+    public_metrics: {
+      followers_count: 1000,
+      following_count: 200,
+      tweet_count: 100,
+      listed_count: 10,
+    },
+  },
+};
+
+// Mock global fetch
+const mockFetch = vi.fn();
+(globalThis as unknown as { fetch: typeof mockFetch }).fetch = mockFetch;
+
+function mockErrorResponses(
+  status: number,
+  statusText: string,
+  count = 4,
+): void {
+  for (let i = 0; i < count; i++) {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status,
+      statusText,
+    });
+  }
+}
 
 describe("X Integration Service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    global.fetch = vi.fn();
+    xCircuitBreaker.reset();
+    // Reset env for testing
+    process.env.X_API_BEARER_TOKEN = "mock-bearer-token";
+    process.env.X_API_BASE_URL = "https://api.twitter.com/2";
   });
 
-  describe("linkXAccount", () => {
-    it("links X account with valid proof", async () => {
-      vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
-        id: "user_01",
-        stellarAddress: "GABC123",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      } as any);
+  afterEach(async () => {
+    // Clean up test data
+    await prisma.xAccount.deleteMany({});
+  });
 
-      global.fetch = vi
-        .fn()
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ data: { id: "twitter_123" } }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({
-            data: [{ text: "nonce_abc123xyz" }],
-          }),
-        });
-
-      vi.mocked(prisma.xLink.findFirst)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null);
-
-      vi.mocked(prisma.xLink.create).mockResolvedValueOnce({} as any);
-
-      const result = await linkXAccount("user_01", {
-        xHandle: "testuser",
-        proofType: "post_nonce",
-        proofData: "nonce_abc123xyz",
+  describe("fetchXMetrics", () => {
+    it("should fetch and cache fresh metrics from X API", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockXApiResponse,
       });
 
-      expect(result.linkedAt).toBeDefined();
-      expect(prisma.xLink.create).toHaveBeenCalled();
-    });
+      const metrics = await fetchXMetrics("johndoe");
 
-    it("rejects if X handle already linked to different user", async () => {
-      vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
-        id: "user_01",
-        stellarAddress: "GABC123",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      } as any);
-
-      global.fetch = vi
-        .fn()
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ data: { id: "twitter_123" } }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({
-            data: [{ text: "nonce_xyz" }],
-          }),
-        });
-
-      vi.mocked(prisma.xLink.findFirst).mockResolvedValueOnce({
-        id: "link_99",
-        userId: "user_02",
-        xHandle: "testuser",
-      } as any);
-
-      await expect(
-        linkXAccount("user_01", {
-          xHandle: "testuser",
-          proofType: "post_nonce",
-          proofData: "nonce_xyz",
-        }),
-      ).rejects.toThrow("already linked to another");
-    });
-
-    it("rejects if user already has different X link", async () => {
-      vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
-        id: "user_01",
-        stellarAddress: "GABC123",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      } as any);
-
-      global.fetch = vi
-        .fn()
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ data: { id: "twitter_123" } }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({
-            data: [{ text: "nonce_xyz" }],
-          }),
-        });
-
-      vi.mocked(prisma.xLink.findFirst)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          id: "link_01",
-          userId: "user_01",
-          xHandle: "olduser",
-        } as any);
-
-      await expect(
-        linkXAccount("user_01", {
-          xHandle: "testuser",
-          proofType: "post_nonce",
-          proofData: "nonce_xyz",
-        }),
-      ).rejects.toThrow("already have an X account linked");
-    });
-
-    it("rejects proof verification failure", async () => {
-      vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
-        id: "user_01",
-        stellarAddress: "GABC123",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      } as any);
-
-      global.fetch = vi
-        .fn()
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ data: { id: "twitter_123" } }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({
-            data: [{ text: "wrong nonce" }],
-          }),
-        });
-
-      vi.mocked(prisma.xLink.findFirst).mockResolvedValueOnce(null);
-
-      await expect(
-        linkXAccount("user_01", {
-          xHandle: "testuser",
-          proofType: "post_nonce",
-          proofData: "nonce_xyz",
-        }),
-      ).rejects.toThrow("verify X account ownership");
-    });
-  });
-
-  describe("unlinkXAccount", () => {
-    it("unlinks X account and logs event", async () => {
-      vi.mocked(prisma.xLink.findFirst).mockResolvedValueOnce({
-        id: "link_01",
-        userId: "user_01",
-        xHandle: "testuser",
-        unlinkedAt: null,
-      } as any);
-
-      vi.mocked(prisma.xLink.update).mockResolvedValueOnce({} as any);
-
-      await unlinkXAccount("user_01");
-
-      expect(prisma.xLink.update).toHaveBeenCalledWith({
-        where: { id: "link_01" },
-        data: { unlinkedAt: expect.any(Date) },
+      expect(metrics).toMatchObject({
+        handle: "johndoe",
+        followers: 10000,
       });
+      expect(metrics.engagement).toBeCloseTo(0.5, 2); // 5000 tweets / 10000 followers
+      expect(metrics.fetchedAt).toBeInstanceOf(Date);
+
+      // Verify it was cached
+      const cached = await prisma.xAccount.findUnique({
+        where: { handle: "johndoe" },
+      });
+      expect(cached).toBeTruthy();
+      expect(cached?.followers).toBe(10000);
     });
 
-    it("throws if no X account linked", async () => {
-      vi.mocked(prisma.xLink.findFirst).mockResolvedValueOnce(null);
+    it("should calculate engagement correctly for low activity accounts", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockXApiResponseLowActivity,
+      });
 
-      await expect(unlinkXAccount("user_01")).rejects.toThrow("not found");
-    });
-  });
+      const metrics = await fetchXMetrics("janesmith");
 
-  describe("verifyOwnership", () => {
-    it("verifies OAuth proof", async () => {
-      global.fetch = vi
-        .fn()
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ data: { id: "twitter_123" } }),
-        });
-
-      const result = await verifyOwnership("testuser", "oauth_code", "oauth");
-
-      expect(result).toBe(true);
+      expect(metrics.engagement).toBeCloseTo(0.1, 2); // 100 tweets / 1000 followers
     });
 
-    it("verifies nonce proof", async () => {
-      global.fetch = vi
-        .fn()
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ data: { id: "twitter_123" } }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({
-            data: [{ text: "Check out nonce_xyz123" }],
-          }),
-        });
-
-      const result = await verifyOwnership(
-        "testuser",
-        "nonce_xyz123",
-        "post_nonce",
-      );
-
-      expect(result).toBe(true);
-    });
-
-    it("rejects invalid proof type", async () => {
-      const result = await verifyOwnership(
-        "testuser",
-        "data",
-        "invalid_type",
-      );
-
-      expect(result).toBe(false);
-    });
-  });
-
-  describe("getXMetrics", () => {
-    it("fetches metrics from API", async () => {
-      global.fetch = vi
-        .fn()
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ data: { id: "twitter_123" } }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({
-            data: {
-              public_metrics: {
-                followers_count: 10000,
-                like_count: 5000,
-                retweet_count: 1000,
-                reply_count: 500,
-                tweet_count: 500,
-              },
+    it("should handle account with zero followers", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: {
+            id: "111",
+            name: "New Account",
+            username: "newaccount",
+            public_metrics: {
+              followers_count: 0,
+              following_count: 10,
+              tweet_count: 5,
+              listed_count: 0,
             },
-          }),
-        });
+          },
+        }),
+      });
 
-      vi.mocked(prisma.xQuotaMetric.create).mockResolvedValueOnce({} as any);
+      const metrics = await fetchXMetrics("newaccount");
 
-      const metrics = await getXMetrics("testuser");
-
-      expect(metrics.followers).toBe(10000);
-      expect(metrics.isQuotaExhausted).toBe(false);
+      expect(metrics.followers).toBe(0);
+      expect(metrics.engagement).toBe(0);
     });
 
-    it("falls back to cached data on API failure", async () => {
-      global.fetch = vi
-        .fn()
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ data: { id: "twitter_123" } }),
-        })
+    it("should throw NotFoundError for non-existent user", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: "Not Found",
+      });
+
+      await expect(fetchXMetrics("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+
+    it("should throw ServiceUnavailableError when rate limited", async () => {
+      mockErrorResponses(429, "Too Many Requests");
+
+      await expect(fetchXMetrics("johndoe")).rejects.toThrow(
+        ServiceUnavailableError,
+      );
+    });
+
+    it("should throw ServiceUnavailableError when API is down", async () => {
+      mockErrorResponses(503, "Service Unavailable");
+
+      await expect(fetchXMetrics("johndoe")).rejects.toThrow(
+        ServiceUnavailableError,
+      );
+    });
+
+    it("should throw ServiceUnavailableError when bearer token is missing", async () => {
+      delete process.env.X_API_BEARER_TOKEN;
+
+      await expect(fetchXMetrics("johndoe")).rejects.toThrow(
+        ServiceUnavailableError,
+      );
+    });
+
+    it("should fallback to cached data when API is unavailable", async () => {
+      // First, create cached data
+      await prisma.xAccount.create({
+        data: {
+          handle: "johndoe",
+          followers: 9500,
+          engagement: 0.48,
+          fetchedAt: new Date(),
+        },
+      });
+
+      // Mock API failure - need enough for retries
+      mockErrorResponses(503, "Service Unavailable");
+
+      const metrics = await fetchXMetrics("johndoe", { useFallback: true });
+
+      expect(metrics.handle).toBe("johndoe");
+      expect(metrics.followers).toBe(9500);
+      expect(metrics.engagement).toBeCloseTo(0.48, 2);
+    });
+
+    it("should not fallback when useFallback is false", async () => {
+      // Create cached data
+      await prisma.xAccount.create({
+        data: {
+          handle: "johndoe",
+          followers: 9500,
+          engagement: 0.48,
+          fetchedAt: new Date(),
+        },
+      });
+
+      // Mock API failure - need enough for retries
+      mockErrorResponses(503, "Service Unavailable");
+
+      await expect(
+        fetchXMetrics("johndoe", { useFallback: false }),
+      ).rejects.toThrow(ServiceUnavailableError);
+    });
+
+    it("should reject stale cached data when maxCacheAge is exceeded", async () => {
+      // Create old cached data (2 days ago)
+      const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+      await prisma.xAccount.create({
+        data: {
+          handle: "johndoe",
+          followers: 9500,
+          engagement: 0.48,
+          fetchedAt: twoDaysAgo,
+        },
+      });
+
+      // Mock API failure - need enough for retries
+      mockErrorResponses(503, "Service Unavailable");
+
+      // Set maxCacheAge to 1 day
+      await expect(
+        fetchXMetrics("johndoe", {
+          useFallback: true,
+          maxCacheAge: 24 * 60 * 60 * 1000,
+        }),
+      ).rejects.toThrow(ServiceUnavailableError);
+    });
+
+    it("should accept cached data within maxCacheAge", async () => {
+      // Create recent cached data (1 hour ago)
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      await prisma.xAccount.create({
+        data: {
+          handle: "johndoe",
+          followers: 9500,
+          engagement: 0.48,
+          fetchedAt: oneHourAgo,
+        },
+      });
+
+      // Mock API failure - need enough for retries
+      mockErrorResponses(503, "Service Unavailable");
+
+      const metrics = await fetchXMetrics("johndoe", {
+        useFallback: true,
+        maxCacheAge: 24 * 60 * 60 * 1000,
+      });
+
+      expect(metrics.followers).toBe(9500);
+    });
+
+    it("should update existing cached data with fresh metrics", async () => {
+      // Create initial cached data
+      await prisma.xAccount.create({
+        data: {
+          handle: "johndoe",
+          followers: 9000,
+          engagement: 0.45,
+          fetchedAt: new Date(Date.now() - 60 * 60 * 1000),
+        },
+      });
+
+      // Mock fresh API response
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockXApiResponse,
+      });
+
+      await fetchXMetrics("johndoe");
+
+      // Verify cache was updated
+      const updated = await prisma.xAccount.findUnique({
+        where: { handle: "johndoe" },
+      });
+      expect(updated?.followers).toBe(10000);
+      expect(updated?.engagement).toBeCloseTo(0.5, 2);
+    });
+
+    it("should retry on rate limit and succeed on retry", async () => {
+      const successResponse = {
+        ok: true,
+        status: 200,
+        json: async () => mockXApiResponse,
+      };
+
+      mockFetch
         .mockResolvedValueOnce({
           ok: false,
           status: 429,
-        });
+          statusText: "Too Many Requests",
+        })
+        .mockResolvedValueOnce(successResponse);
 
-      vi.mocked(prisma.xAccount.findUnique).mockResolvedValueOnce({
-        handle: "testuser",
-        followers: 5000,
-        fetchedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
-      } as any);
+      const metrics = await fetchXMetrics("johndoe");
 
-      const metrics = await getXMetrics("testuser");
+      expect(metrics.handle).toBe("johndoe");
+      expect(metrics.followers).toBe(10000);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
 
-      expect(metrics.followers).toBe(5000);
-      expect(metrics.isStale).toBe(true);
-      expect(metrics.isQuotaExhausted).toBe(true);
+    it("should respect retry-after header for backoff timing", async () => {
+      const successResponse = {
+        ok: true,
+        status: 200,
+        json: async () => mockXApiResponse,
+      };
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 429,
+          statusText: "Too Many Requests",
+          headers: new Headers({ "retry-after": "0" }),
+        })
+        .mockResolvedValueOnce(successResponse);
+
+      const metrics = await fetchXMetrics("johndoe");
+
+      expect(metrics.handle).toBe("johndoe");
+      expect(metrics.followers).toBe(10000);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
   });
 
-  describe("getFallbackXData", () => {
-    it("returns cached data with age", async () => {
-      const cachedDate = new Date(Date.now() - 2 * 60 * 60 * 1000);
-
-      vi.mocked(prisma.xAccount.findUnique).mockResolvedValueOnce({
-        handle: "testuser",
-        followers: 5000,
-        fetchedAt: cachedDate,
-      } as any);
-
-      const data = await getFallbackXData("testuser");
-
-      expect(data.followers).toBe(5000);
-      expect(data.isStale).toBe(true);
-      expect(data.staleAge).toBeGreaterThan(0);
-    });
-
-    it("returns zeros if no cached data", async () => {
-      vi.mocked(prisma.xAccount.findUnique).mockResolvedValueOnce(null);
-
-      const data = await getFallbackXData("unknown");
-
-      expect(data.followers).toBe(0);
-      expect(data.fetchedAt).toBeDefined();
-    });
-  });
-
-  describe("trackQuotaUsage", () => {
-    it("creates quota metric record", async () => {
-      vi.mocked(prisma.xQuotaMetric.create).mockResolvedValueOnce({} as any);
-
-      const resetAt = new Date(Date.now() + 15 * 60 * 1000);
-      await trackQuotaUsage(100, 350, resetAt);
-
-      expect(prisma.xQuotaMetric.create).toHaveBeenCalledWith({
+  describe("getCachedXMetrics", () => {
+    it("should return cached metrics if available", async () => {
+      await prisma.xAccount.create({
         data: {
-          requestsUsed: 100,
-          requestsLimit: 450,
-          resetAt,
+          handle: "johndoe",
+          followers: 10000,
+          engagement: 0.5,
+          fetchedAt: new Date(),
         },
       });
+
+      const metrics = await getCachedXMetrics("johndoe");
+
+      expect(metrics).toMatchObject({
+        handle: "johndoe",
+        followers: 10000,
+        engagement: 0.5,
+      });
+    });
+
+    it("should return null if no cached data exists", async () => {
+      const metrics = await getCachedXMetrics("nonexistent");
+      expect(metrics).toBeNull();
+    });
+
+    it("should handle cached data without engagement", async () => {
+      await prisma.xAccount.create({
+        data: {
+          handle: "johndoe",
+          followers: 10000,
+          engagement: null,
+          fetchedAt: new Date(),
+        },
+      });
+
+      const metrics = await getCachedXMetrics("johndoe");
+
+      expect(metrics?.handle).toBe("johndoe");
+      expect(metrics?.engagement).toBeUndefined();
     });
   });
 
-  describe("isQuotaExhausted", () => {
-    it("returns true when quota > 95%", async () => {
-      const resetAt = new Date(Date.now() + 5 * 60 * 1000);
+  describe("clearCachedXMetrics", () => {
+    it("should clear cached metrics for a handle", async () => {
+      await prisma.xAccount.create({
+        data: {
+          handle: "johndoe",
+          followers: 10000,
+          engagement: 0.5,
+          fetchedAt: new Date(),
+        },
+      });
 
-      vi.mocked(prisma.xQuotaMetric.findFirst).mockResolvedValueOnce({
-        requestsUsed: 450,
-        requestsLimit: 450,
-        resetAt,
-      } as any);
+      await clearCachedXMetrics("johndoe");
 
-      const result = await isQuotaExhausted();
-
-      expect(result).toBe(true);
+      const cached = await prisma.xAccount.findUnique({
+        where: { handle: "johndoe" },
+      });
+      expect(cached).toBeNull();
     });
 
-    it("returns false when quota < 95%", async () => {
-      const resetAt = new Date(Date.now() + 5 * 60 * 1000);
-
-      vi.mocked(prisma.xQuotaMetric.findFirst).mockResolvedValueOnce({
-        requestsUsed: 400,
-        requestsLimit: 450,
-        resetAt,
-      } as any);
-
-      const result = await isQuotaExhausted();
-
-      expect(result).toBe(false);
-    });
-
-    it("returns false if quota has reset", async () => {
-      const resetAt = new Date(Date.now() - 5 * 60 * 1000);
-
-      vi.mocked(prisma.xQuotaMetric.findFirst).mockResolvedValueOnce({
-        requestsUsed: 450,
-        requestsLimit: 450,
-        resetAt,
-      } as any);
-
-      const result = await isQuotaExhausted();
-
-      expect(result).toBe(false);
+    it("should not error when clearing non-existent cache", async () => {
+      await expect(clearCachedXMetrics("nonexistent")).resolves.not.toThrow();
     });
   });
 });

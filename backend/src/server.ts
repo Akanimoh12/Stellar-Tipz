@@ -5,6 +5,8 @@ import { logger } from './common/utils/logger.js';
 import { prisma } from './db/prisma.js';
 import { redis } from './db/redis.js';
 import { registerClosable, closeAll } from './common/utils/lifecycle.js';
+import { initializeQueues, closeAllQueues } from './modules/jobs/queue.factory.js';
+import { initRealtime, closeRealtime } from './modules/realtime/realtime.js';
 
 /** Process entry point: starts the HTTP server (and, later, the WebSocket + indexer). */
 async function bootstrap(): Promise<void> {
@@ -23,8 +25,19 @@ async function bootstrap(): Promise<void> {
     },
   });
 
-  // The realtime gateway (Socket.IO) attaches to this httpServer — see the realtime issues.
-  // initRealtime(httpServer);
+  // Initialize job queues (issue #1288, #1289, #1287)
+  await initializeQueues();
+  registerClosable({
+    name: 'Job Queues',
+    close: closeAllQueues,
+  });
+
+  // Initialize realtime gateway (issue #1286)
+  initRealtime(httpServer);
+  registerClosable({
+    name: 'Realtime Gateway',
+    close: closeRealtime,
+  });
 
   httpServer.listen(env.PORT, () => {
     logger.info(`🚀 Stellar Tipz backend listening on http://localhost:${env.PORT}`);

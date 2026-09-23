@@ -46,6 +46,8 @@ import TransactionTracker, {
   TransactionTrackerStatus,
 } from "./TransactionTracker";
 import { useFormAutosave } from "@/hooks/useFormAutosave";
+import DraftRestoreBanner from "@/components/shared/DraftRestoreBanner";
+import TransactionRestoredNotice from "@/components/shared/TransactionRestoredNotice";
 import { logger } from "../../services/logger";
 
 const TipPage: React.FC = () => {
@@ -60,7 +62,9 @@ const TipPage: React.FC = () => {
   const [creator, setCreator] = useState<Profile | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const goals = useGoalStore((s) => s.goals);
-  const creatorGoal = creator ? goals.find((g) => g.creator === creator.owner && g.active) : undefined;
+  const creatorGoal = creator
+    ? goals.find((g) => g.creator === creator.owner && g.active)
+    : undefined;
 
   const fetchCreator = useCallback(async () => {
     if (!username) return;
@@ -91,10 +95,12 @@ const TipPage: React.FC = () => {
     title: loading
       ? "Loading..."
       : creator
-        ? `Tip @${creator.username}`
-        : "Creator Not Found",
+      ? `Tip @${creator.username}`
+      : "Creator Not Found",
     description: creator
-      ? `Send a tip to ${creator.displayName || creator.username} on Stellar Tipz - decentralized, instant, and fair tipping on Stellar Blockchain`
+      ? `Send a tip to ${
+          creator.displayName || creator.username
+        } on Stellar Tipz - decentralized, instant, and fair tipping on Stellar Blockchain`
       : undefined,
     ogUrl: creator
       ? `${window.location.origin}/@${creator.username}`
@@ -112,19 +118,26 @@ const TipPage: React.FC = () => {
   } = useTipFlow(creator?.owner || "");
 
   // Transaction guard to prevent duplicate submissions
-  const { isPending: isTransactionPending, startTransaction } =
-    useTransactionGuard();
+  const {
+    isPending: isTransactionPending,
+    startTransaction,
+    restored: txRestored,
+    reset: resetTransactionGuard,
+  } = useTransactionGuard();
 
-  const { clearSaved: clearTipDraft } = useFormAutosave({
+  const {
+    hasDraft,
+    draftSavedAt,
+    restoreDraft,
+    discardDraft: discardTipDraft,
+    clearSaved: clearTipDraft,
+  } = useFormAutosave({
     storageKey: "tipz_tip_form",
     data: { amount, message },
     onRestore: (saved) => {
       if (typeof saved.amount === "string") setAmount(saved.amount);
       if (typeof saved.message === "string") setMessage(saved.message);
     },
-    intervalMs: 5000,
-    ttlMs: 24 * 60 * 60 * 1000,
-    restorePrompt: "Restore saved tip?",
   });
 
   useEffect(() => {
@@ -199,6 +212,10 @@ const TipPage: React.FC = () => {
         className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]"
       >
         <Card className="space-y-6" padding="lg">
+          <TransactionRestoredNotice
+            restored={txRestored}
+            onDismiss={resetTransactionGuard}
+          />
           <div className="flex flex-col gap-5 border-b-2 border-dashed border-black pb-6 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-4">
               <Avatar
@@ -287,7 +304,13 @@ const TipPage: React.FC = () => {
             </div>
           </div>
 
-          {creatorGoal && <GoalProgress goal={creatorGoal} creatorAddress={creator.owner} showShare />}
+          {creatorGoal && (
+            <GoalProgress
+              goal={creatorGoal}
+              creatorAddress={creator.owner}
+              showShare
+            />
+          )}
         </Card>
 
         <Card className="space-y-5" padding="lg">
@@ -345,6 +368,13 @@ const TipPage: React.FC = () => {
             />
           ) : (
             <form className="space-y-4" onSubmit={handleSubmit}>
+              {hasDraft && (
+                <DraftRestoreBanner
+                  savedAt={draftSavedAt}
+                  onRestore={restoreDraft}
+                  onDiscard={discardTipDraft}
+                />
+              )}
               <TipAmountPresets
                 value={amount}
                 onChange={(nextAmount) => setAmount(String(nextAmount))}
@@ -383,11 +413,7 @@ const TipPage: React.FC = () => {
                     : "border-gray-300 bg-white text-gray-500 hover:border-gray-400"
                 }`}
               >
-                {isEncrypted ? (
-                  <Lock size={14} />
-                ) : (
-                  <LockOpen size={14} />
-                )}
+                {isEncrypted ? <Lock size={14} /> : <LockOpen size={14} />}
                 {isEncrypted ? "Encrypted message" : "Encrypt message"}
               </button>
 

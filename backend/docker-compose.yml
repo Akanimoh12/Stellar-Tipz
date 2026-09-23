@@ -1,5 +1,8 @@
-# Local infrastructure for backend development: PostgreSQL + Redis.
-# Usage:  docker compose -f backend/docker-compose.yml up -d
+# Local infrastructure for backend development: PostgreSQL, Redis, and the backend app.
+# Usage:  docker compose -f backend/docker-compose.yml up
+#
+# One-command startup — brings up Postgres, Redis, and the backend together.
+# The app container waits for both services to be healthy before starting.
 services:
   postgres:
     image: postgres:16-alpine
@@ -25,6 +28,32 @@ services:
       - '6379:6379'
     volumes:
       - tipz_redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - '${PORT:-3000}:3000'
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://tipz:tipz@postgres:5432/tipz
+      REDIS_URL: redis://redis:6379
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   tipz_pgdata:
