@@ -184,9 +184,12 @@ export const envSchema = z.object({
 
   X_API_BEARER_TOKEN: z.string().optional(),
   X_API_BASE_URL: z.string().default('https://api.twitter.com/2'),
+  X_REFRESH_INTERVAL_MINUTES: z.coerce.number().default(30),
+  X_QUOTA_FALLBACK_ENABLED: z.enum(['true', 'false']).default('true'),
 
   IPFS_API_URL: z.string().optional(),
   IPFS_GATEWAY_URL: z.string().default('https://ipfs.io/ipfs/'),
+  IPFS_CLEANUP_GRACE_PERIOD_DAYS: z.coerce.number().default(30),
 
   /** Creator discovery — trending formula tuning. */
   DISCOVERY_TRENDING_WINDOW_DAYS: z.coerce.number().int().positive().default(14),
