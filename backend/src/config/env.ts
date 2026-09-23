@@ -253,6 +253,17 @@ export const envSchema = z.object({
   MULTER_FILES_LIMIT: z.coerce.number().int().positive().default(1),
   MULTER_FIELDS_LIMIT: z.coerce.number().int().positive().default(10),
 
+  // Worker concurrency configuration (issue #1288)
+  WORKER_CONCURRENCY_SUBSCRIPTION_CHARGE: z.coerce.number().default(2),
+  WORKER_CONCURRENCY_IPFS_PIN: z.coerce.number().default(3),
+  WORKER_CONCURRENCY_IPFS_CLEANUP: z.coerce.number().default(2),
+  WORKER_CONCURRENCY_X_REFRESH: z.coerce.number().default(1),
+
+  // Realtime configuration (issue #1286)
+  SOCKET_IO_MAX_BUFFER_SIZE: z.coerce.number().default(1048576), // 1MB
+  SOCKET_IO_CONNECTION_TIMEOUT_MS: z.coerce.number().default(30000),
+  SOCKET_IO_HEARTBEAT_INTERVAL_MS: z.coerce.number().default(25000),
+
   LOG_LEVEL: z.string().default('info'),
   SENTRY_DSN: z.string().optional(),
 })
