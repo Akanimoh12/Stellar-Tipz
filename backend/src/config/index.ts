@@ -47,11 +47,14 @@ export const config = {
   twitter: {
     bearerToken: env.X_API_BEARER_TOKEN,
     baseUrl: env.X_API_BASE_URL,
+    refreshIntervalMinutes: env.X_REFRESH_INTERVAL_MINUTES,
+    quotaFallbackEnabled: env.X_QUOTA_FALLBACK_ENABLED === 'true',
   },
 
   ipfs: {
     apiUrl: env.IPFS_API_URL,
     gatewayUrl: env.IPFS_GATEWAY_URL,
+    cleanupGracePeriodDays: env.IPFS_CLEANUP_GRACE_PERIOD_DAYS,
   },
 
   logging: {

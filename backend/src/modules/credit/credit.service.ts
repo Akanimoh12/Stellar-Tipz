@@ -195,8 +195,44 @@ export async function getCreditScore(userId: string): Promise<CreditScore> {
   const signals = await buildSignalsForUser(userId);
   const score = computeCreditScore(userId, signals);
 
+  const staleData = await checkXDataStaleness(userId);
+  if (staleData) {
+    score.xDataStale = staleData.isStale;
+    score.xDataStaleAge = staleData.ageSecs;
+  }
+
   logger.info({ userId, score: score.score }, "Credit score computed");
   return score;
+}
+
+/**
+ * Checks if X data for a user is stale (issue #1293).
+ * Returns stale flag and age in seconds if X account exists.
+ */
+async function checkXDataStaleness(
+  userId: string,
+): Promise<{ isStale: boolean; ageSecs: number } | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { xHandle: true },
+  });
+
+  if (!user?.xHandle) return null;
+
+  const xAccount = await prisma.xAccount.findUnique({
+    where: { handle: user.xHandle },
+  });
+
+  if (!xAccount) return null;
+
+  const ageMs = Date.now() - xAccount.fetchedAt.getTime();
+  const ageSecs = Math.floor(ageMs / 1000);
+  const staleThresholdSecs = 60 * 60;
+
+  return {
+    isStale: ageSecs > staleThresholdSecs,
+    ageSecs,
+  };
 }
 
 /**
@@ -207,6 +243,13 @@ export async function recomputeCreditScore(userId: string): Promise<CreditScore>
   logger.info({ userId }, "Recomputing credit score after metrics refresh");
   const signals = await buildSignalsForUser(userId);
   const score = computeCreditScore(userId, signals);
+
+  const staleData = await checkXDataStaleness(userId);
+  if (staleData) {
+    score.xDataStale = staleData.isStale;
+    score.xDataStaleAge = staleData.ageSecs;
+  }
+
   logger.info({ userId, score: score.score }, "Credit score recomputed");
   return score;
 }

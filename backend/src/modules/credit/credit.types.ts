@@ -40,6 +40,10 @@ export interface CreditScore {
   };
   /** ISO-8601 timestamp of when the score was last computed. */
   computedAt: string;
+  /** Stale X data flag (issue #1293): indicates X metrics are outdated. */
+  xDataStale?: boolean;
+  /** Age of stale X data in seconds (issue #1293). */
+  xDataStaleAge?: number;
 }
 
 /** Stored credit score row returned from the DB (future CreditScore model). */

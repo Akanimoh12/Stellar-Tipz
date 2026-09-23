@@ -30,6 +30,8 @@ model User {
   apiKeys        ApiKey[]
   refreshTokens  RefreshToken[]
   goals          Goal[]
+  uploads        Upload[]
+  xLink          XLink?
 
   tipperSubscriptions  Subscription[] @relation("SubscriptionTipper")
   creatorSubscriptions Subscription[] @relation("SubscriptionCreator")
@@ -260,4 +262,74 @@ model WebhookDelivery {
 
   @@index([subscriptionId])
   @@index([status, nextAttemptAt])
+}
+
+/// IPFS upload metadata for tracking content and detecting orphans (issue #1296, #1295).
+/// Tracks files uploaded to IPFS with their associated entities and pin status.
+model Upload {
+  id          String    @id @default(cuid())
+  cid         String    @unique
+  uploader    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  /// Entity type that references this upload: "profile_avatar", "post_attachment", etc.
+  entityType  String?
+  /// Entity ID if this upload is attached (null = orphaned upload).
+  entityId    String?
+  /// Pin status: "pending", "pinned", "failed", "unpinned".
+  status      String    @default("pending")
+  /// Number of pin attempts (for retry logic).
+  retries     Int       @default(0)
+  /// Timestamp when content was successfully pinned.
+  pinnedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  /// Soft delete timestamp (for cleanup dry-run auditing).
+  deletedAt   DateTime?
+
+  @@index([userId, status])
+  @@index([entityType, entityId])
+  @@index([deletedAt])
+}
+
+/// X (Twitter) account linking with proof of ownership (issue #1294).
+/// Links a Stellar Tipz user to their X account with verification proof.
+model XLink {
+  id        String    @id @default(cuid())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  /// X handle (e.g., "elonmusk").
+  xHandle   String
+  /// X's internal user ID (fetched from API).
+  xId       String?
+  /// Proof type: "oauth", "post_nonce", etc.
+  proofType String
+  /// Encrypted nonce or OAuth authorization code (proof of ownership).
+  proofData String
+  /// Timestamp when link was established.
+  linkedAt  DateTime  @default(now())
+  /// Timestamp when link was removed (null if still active).
+  unlinkedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([userId])
+  @@unique([xHandle, unlinkedAt])
+  @@index([userId])
+}
+
+/// X API quota and metrics tracking (issue #1293).
+/// Tracks quota usage and stale data age for graceful degradation.
+model XQuotaMetric {
+  id            String   @id @default(cuid())
+  /// Date of this metric snapshot.
+  date          DateTime @default(now())
+  /// Requests used in current quota window.
+  requestsUsed  Int      @default(0)
+  /// Total requests allowed in window.
+  requestsLimit Int      @default(450)
+  /// When the quota resets.
+  resetAt       DateTime
+  /// Age of stale X data in seconds (null if data is fresh).
+  staleDataAge  Int?
+  createdAt     DateTime @default(now())
+
+  @@index([resetAt])
 }
