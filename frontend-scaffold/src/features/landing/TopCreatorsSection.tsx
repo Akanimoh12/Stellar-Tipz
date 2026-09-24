@@ -28,9 +28,20 @@ export default function TopCreatorsSection() {
     setLoading(true);
     setError(null);
 
-    // Use mock data when flag is set or contract is not configured
-    if (env.useMockData || !env.contractId) {
-      setCreators(env.useMockData ? mockLeaderboard.slice(0, 5) : []);
+    if (env.useMockData) {
+      if (import.meta.env.PROD) {
+        logger.error(
+          'features/landing/TopCreatorsSection',
+          'VITE_USE_MOCK_DATA enabled in production build — real leaderboard will not be displayed',
+        );
+      }
+      setCreators(mockLeaderboard.slice(0, 5));
+      setLoading(false);
+      return;
+    }
+
+    if (!env.contractId) {
+      setCreators([]);
       setLoading(false);
       return;
     }
@@ -39,7 +50,12 @@ export default function TopCreatorsSection() {
       const data = await getLeaderboard(5);
       setCreators(data);
     } catch (err) {
-      logger.error('features/landing/TopCreatorsSection', 'Failed to fetch leaderboard', undefined, err instanceof Error ? err : new Error(String(err)));
+      logger.error(
+        'features/landing/TopCreatorsSection',
+        'Failed to fetch leaderboard',
+        undefined,
+        err instanceof Error ? err : new Error(String(err)),
+      );
       setError(String(err));
     } finally {
       setLoading(false);
