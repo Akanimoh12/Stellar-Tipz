@@ -15,6 +15,7 @@ datasource db {
 /// A creator/user identified by their Stellar wallet address.
 /// Extended by credit, tips and other modules in later issues.
 model User {
+  deletedAt DateTime?
   id             String   @id @default(cuid())
   stellarAddress String   @unique
   username       String?  @unique
@@ -27,6 +28,15 @@ model User {
   scopes         String[] @default([])
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  sentTips Tip[] @relation("SentTips")
+  receivedTips Tip[] @relation("ReceivedTips")
+  notifications Notification[]
+  notificationPreference NotificationPreference?
+  notificationBatches NotificationBatch[]
+  notificationDeliveries NotificationDelivery[]
+  notificationChannels NotificationChannelState[]
+  leaderboardSnapshots LeaderboardSnapshot[]
+  streak Streak?
   apiKeys        ApiKey[]
   refreshTokens  RefreshToken[]
   goals          Goal[]
@@ -37,6 +47,7 @@ model User {
 
 /// API key for service/admin access and webhook integrations.
 model ApiKey {
+  deletedAt DateTime?
   id          String   @id @default(cuid())
   hashedKey   String   @unique
   scopes      String[]
@@ -93,6 +104,8 @@ model Refund {
 
 /// In-app notification for a user.
 model Notification {
+  deletedAt DateTime?
+  deliveries NotificationDelivery[]
   id        String    @id @default(cuid())
   userId    String
   user      User      @relation(fields: [userId], references: [id])
@@ -188,6 +201,8 @@ enum GoalStatus {
 
 /// Creator-defined funding goal tracked against incoming tips.
 model Goal {
+  version Int @default(0)
+  deletedAt DateTime?
   id            String     @id @default(cuid())
   userId        String
   user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -219,6 +234,10 @@ enum SubscriptionStatus {
 
 /// Recurring tip agreement between a tipper and a creator.
 model Subscription {
+  pendingAmountStroops BigInt?
+  pendingInterval SubscriptionInterval?
+  changeEffectiveAt DateTime?
+  deletedAt DateTime?
   id            String               @id @default(cuid())
   tipperId      String
   tipper        User                 @relation("SubscriptionTipper", fields: [tipperId], references: [id], onDelete: Cascade)
@@ -315,4 +334,88 @@ model QueueMetric {
 
   @@index([queueName, createdAt])
   @@index([createdAt])
+}
+
+// Existing enum and preference table restored from the checked-in migrations.
+enum TipStatus {
+  CONFIRMED
+  PENDING
+  REFUNDED
+}
+
+model NotificationPreference {
+  id String @id @default(cuid())
+  userId String @unique
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tipReceived Boolean @default(true)
+  goalReached Boolean @default(true)
+  subscriptionCharged Boolean @default(true)
+  payoutFailed Boolean @default(true)
+  batchingEnabled Boolean @default(false)
+  batchingWindowSeconds Int @default(300)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model NotificationBatch {
+  id String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type String
+  tokenCode String
+  count Int @default(0)
+  totalStroops BigInt @default(0)
+  dueAt DateTime
+  @@index([dueAt])
+}
+
+enum NotificationChannel {
+  in_app
+  email
+  push
+}
+
+enum NotificationDeliveryStatus {
+  queued
+  sent
+  delivered
+  failed
+  bounced
+}
+
+model NotificationDelivery {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notificationId String?
+  notification Notification? @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  channel NotificationChannel
+  status NotificationDeliveryStatus @default(queued)
+  reason String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([channel, status])
+  @@index([notificationId])
+}
+
+model NotificationChannelState {
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel NotificationChannel
+  consecutiveFailures Int @default(0)
+  disabledAt DateTime?
+  @@id([userId, channel])
+}
+
+/// Existing event-log table restored from migrations for subscription projections.
+model EventLog {
+  id String @id @default(cuid())
+  topic String
+  ledger Int
+  txHash String
+  data Json
+  createdAt DateTime @default(now())
+  @@index([topic])
+  @@index([ledger])
+  @@index([txHash])
 }

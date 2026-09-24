@@ -67,6 +67,10 @@ export const envSchema = z.object({
   REDIS_URL: z.string().url(),
   /** Attaches the Socket.IO Redis adapter so realtime rooms are shared across horizontally scaled instances. */
   REALTIME_REDIS_ADAPTER_ENABLED: booleanString,
+  EMAIL_WEBHOOK_URL: z.string().url().optional(),
+  NOTIFICATION_RECEIPT_SECRET: z.string().min(32).optional(),
+  REALTIME_CATCHUP_LIMIT: z.coerce.number().int().min(1).max(1000).default(100),
+  REALTIME_CATCHUP_TTL_SECONDS: z.coerce.number().int().min(1).max(86400).default(3600),
 
   JWT_SECRET: z.string().min(8),
   /**

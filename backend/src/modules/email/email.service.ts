@@ -1,3 +1,5 @@
+import { env } from '../../config/env.js';
+import { queueDelivery, transitionDelivery, acknowledgeDeliverySent } from '../notifications/delivery.js';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { BadGatewayError, BadRequestError } from '../../common/errors/AppError.js';
@@ -17,9 +19,10 @@ export type EmailDeliveryResult = {
   status: 'sent' | 'queued';
   provider: 'webhook' | 'audit-log';
   auditId: string;
+  deliveryId: string;
 };
 
-const EMAIL_WEBHOOK_URL = process.env.EMAIL_WEBHOOK_URL;
+const EMAIL_WEBHOOK_URL = env.EMAIL_WEBHOOK_URL;
 
 function assertValidRecipient(to: string): void {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
@@ -60,8 +63,15 @@ export async function sendEmailNotification(
   const provider = EMAIL_WEBHOOK_URL ? 'webhook' : 'audit-log';
   const status = EMAIL_WEBHOOK_URL ? 'sent' : 'queued';
 
+  const delivery = await queueDelivery(input.userId, 'email');
   if (EMAIL_WEBHOOK_URL) {
-    await postToEmailWebhook(input);
+    try {
+      await postToEmailWebhook({ ...input, metadata: { ...input.metadata, deliveryId: delivery.id } });
+      await acknowledgeDeliverySent(delivery.id);
+    } catch (err) {
+      await transitionDelivery(delivery.id, 'failed', err instanceof Error ? err.message : 'Provider request failed');
+      throw err;
+    }
   } else {
     logger.info(
       { userId: input.userId, type: input.type, to: input.to },
@@ -71,10 +81,13 @@ export async function sendEmailNotification(
 
   const audit = await prisma.auditLog.create({
     data: {
-      actor: input.userId,
+      actorId: input.userId,
+      actorType: 'user',
+      outcome: 'success',
       action: 'email.notification.delivery',
-      target: input.to,
-      metadata: {
+      resourceId: delivery.id,
+      resourceType: 'notification_delivery',
+      input: {
         provider,
         status,
         type: input.type ?? 'notification',
@@ -84,5 +97,5 @@ export async function sendEmailNotification(
     },
   });
 
-  return { status, provider, auditId: audit.id };
+  return { status, provider, auditId: audit.id, deliveryId: delivery.id };
 }

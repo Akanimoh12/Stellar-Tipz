@@ -480,6 +480,7 @@ pub fn emit_subscription_created(
     creator: &Address,
     amount: i128,
     interval_days: u32,
+    next_due: u64,
 ) {
     env.events().publish(
         (symbol_short!("sub"), symbol_short!("created")),
@@ -489,6 +490,7 @@ pub fn emit_subscription_created(
             creator.clone(),
             amount,
             interval_days,
+            next_due,
         ),
     );
 }
@@ -507,10 +509,12 @@ pub fn emit_subscription_executed(
     subscriber: &Address,
     creator: &Address,
     amount: i128,
+    interval_days: u32,
+    next_due: u64,
 ) {
     env.events().publish(
         (symbol_short!("sub"), symbol_short!("exec")),
-        (1u32, subscriber.clone(), creator.clone(), amount),
+        (1u32, subscriber.clone(), creator.clone(), amount, interval_days, next_due),
     );
 }
 
@@ -886,5 +890,13 @@ pub fn emit_proposal_cancelled(env: &Env, proposal_id: u32, proposer: &Address) 
     env.events().publish(
         (Symbol::new(env, "proposal"), symbol_short!("canc")),
         (1u32, proposal_id, proposer.clone()),
+    );
+}
+
+/// A change takes effect at the current period boundary; last scheduled change wins.
+pub fn emit_subscription_change(env: &Env, subscriber: &Address, creator: &Address, amount: i128, interval_days: u32, effective_at: u64) {
+    env.events().publish(
+        (symbol_short!("sub"), symbol_short!("change")),
+        (1u32, subscriber.clone(), creator.clone(), amount, interval_days, effective_at),
     );
 }

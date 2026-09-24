@@ -117,6 +117,8 @@ pub enum DataKey {
     VerificationRequest(Address),
     /// Subscription by (subscriber, creator)
     Subscription(Address, Address),
+    /// Pending amount and interval, applied at the existing next_due boundary.
+    SubscriptionChange(Address, Address),
     /// Number of subscriptions for a subscriber
     SubscriberSubCount(Address),
     /// Index: (subscriber, index) -> creator

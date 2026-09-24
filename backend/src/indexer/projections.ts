@@ -1,3 +1,4 @@
+import { emitNotificationCreated } from '../realtime/index.js';
 import type { Prisma } from '@prisma/client';
 import type { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { prisma } from '../db/prisma.js';
@@ -26,6 +27,7 @@ const PROJECTIONS: Record<string, (event: DecodedEvent, isNewEvent: boolean) => 
   goal_completed: projectGoalCompleted,
   goal_cancel: projectGoalCancelled,
   sub_created: projectSubscriptionCreated,
+  sub_change: projectSubscriptionChange,
   sub_exec: projectSubscriptionCharged,
   sub_cancel: projectSubscriptionCancelled,
   credit_updated: projectCreditScoreUpdated,
@@ -121,18 +123,23 @@ async function projectTip(event: DecodedEvent): Promise<void> {
     return;
   }
 
-  await prisma.tip.upsert({
-    where: { txHash: event.txHash },
-    create: {
-      txHash: event.txHash,
-      ledger: event.ledger,
-      fromAddress: tip.from,
-      toAddress: tip.to,
-      amountStroops: tip.amount,
-      message: tip.message ?? null,
-    },
-    update: {},
+  const notification = await prisma.$transaction(async (tx) => {
+    const existing = await tx.tip.findUnique({ where: { txHash: event.txHash } });
+    if (existing) return null;
+    await tx.tip.create({ data: {
+      txHash: event.txHash, ledger: event.ledger, fromAddress: tip.from,
+      toAddress: tip.to, amountStroops: tip.amount, message: tip.message ?? null, status: 'CONFIRMED',
+    } });
+    const receiver = await tx.user.findUnique({ where: { stellarAddress: tip.to }, select: { id: true } });
+    return receiver ? notificationsService.persistNotification(tx, receiver.id, 'tip_received', {
+      txHash: event.txHash, amountStroops: tip.amount.toString(), fromAddress: tip.from,
+    }) : null;
+  }).catch((err: unknown) => {
+    if (err && typeof err === 'object' && 'code' in err && err.code === 'P2002') return null;
+    throw err;
   });
+  if (notification) emitNotificationCreated({ ...notification, createdAt: notification.createdAt.toISOString() });
+
 }
 
 interface ParsedTip {
@@ -209,7 +216,7 @@ function parseTip(value: unknown): ParsedTip | null {
   let message: unknown;
 
   if (Array.isArray(value)) {
-    [from, to, amount, message] = value;
+    [from, to, amount, message] = value[0] === 1 || value[0] === '1' ? value.slice(1) : value;
   } else if (value && typeof value === 'object') {
     const obj = value as Record<string, unknown>;
     ({ from, to, amount, message } = obj);
@@ -395,7 +402,7 @@ async function projectGoalReached(event: DecodedEvent): Promise<void> {
  * completed. The upsert is idempotent on replay.
  */
 async function projectGoalCompleted(event: DecodedEvent): Promise<void> {
-  const [creator, goalIdRaw, target, finalAmount, ledger] = tupleArgs(event.value);
+  const [creator, , target, finalAmount] = tupleArgs(event.value);
   const targetStroops = toBigInt(target);
   const raisedStroops = toBigInt(finalAmount);
   if (typeof creator !== 'string' || targetStroops === null || raisedStroops === null) {
@@ -417,14 +424,7 @@ async function projectGoalCompleted(event: DecodedEvent): Promise<void> {
     update: { targetStroops, raisedStroops, status: 'COMPLETED' },
   });
 
-  // Publish to realtime subscribers
-  await publishProjection('goal_completed', {
-    userId,
-    goalId: goalIdRaw,
-    targetStroops: targetStroops.toString(),
-    raisedStroops: raisedStroops.toString(),
-    ledger,
-  });
+
 }
 
 /** Project a `("goal", "cancel")` event — data `(creator,)`. */
@@ -445,8 +445,9 @@ async function projectGoalCancelled(event: DecodedEvent): Promise<void> {
  * interval_days)`. One subscription per (tipper, creator) pair, keyed
  * deterministically (`sub_<tipperId>_<creatorId>`) so replays upsert one row.
  */
-async function projectSubscriptionCreated(event: DecodedEvent): Promise<void> {
-  const [subscriber, creator, amount, intervalDays] = tupleArgs(event.value);
+async function projectSubscriptionCreated(event: DecodedEvent, isNewEvent: boolean): Promise<void> {
+  if (!isNewEvent) return;
+  const [subscriber, creator, amount, intervalDays, nextDue] = subscriptionArgs(event.value);
   const amountStroops = toBigInt(amount);
   if (typeof subscriber !== 'string' || typeof creator !== 'string' || amountStroops === null) {
     return warnUnparseable(event, 'sub_created');
@@ -455,6 +456,7 @@ async function projectSubscriptionCreated(event: DecodedEvent): Promise<void> {
   const tipperId = await ensureUserId(subscriber);
   const creatorId = await ensureUserId(creator);
   const days = toIntervalDays(intervalDays);
+  const nextChargeAt = toTimestamp(nextDue) ?? addDays(new Date(), days);
 
   await prisma.subscription.upsert({
     where: { id: subscriptionId(tipperId, creatorId) },
@@ -464,10 +466,29 @@ async function projectSubscriptionCreated(event: DecodedEvent): Promise<void> {
       creatorId,
       amountStroops,
       interval: intervalFromDays(days),
-      nextChargeAt: addDays(new Date(), days),
+      nextChargeAt,
       status: 'ACTIVE',
     },
-    update: { amountStroops, interval: intervalFromDays(days), status: 'ACTIVE' },
+    update: { amountStroops, interval: intervalFromDays(days), status: 'ACTIVE', nextChargeAt,
+      pendingAmountStroops: null, pendingInterval: null, changeEffectiveAt: null },
+  });
+}
+
+/** Persist contract-authorized changes without overwriting current-period terms. */
+async function projectSubscriptionChange(event: DecodedEvent, isNewEvent: boolean): Promise<void> {
+  if (!isNewEvent) return;
+  const [subscriber, creator, amount, interval, effective] = subscriptionArgs(event.value);
+  const amountStroops = toBigInt(amount);
+  const effectiveSeconds = toBigInt(effective);
+  if (typeof subscriber !== 'string' || typeof creator !== 'string' || amountStroops === null || effectiveSeconds === null) {
+    return warnUnparseable(event, 'sub_change');
+  }
+  const tipperId = await ensureUserId(subscriber);
+  const creatorId = await ensureUserId(creator);
+  await prisma.subscription.updateMany({
+    where: { id: subscriptionId(tipperId, creatorId), status: 'ACTIVE' },
+    data: { pendingAmountStroops: amountStroops, pendingInterval: intervalFromDays(toIntervalDays(interval)),
+      changeEffectiveAt: new Date(Number(effectiveSeconds) * 1000) },
   });
 }
 
@@ -481,7 +502,7 @@ async function projectSubscriptionCreated(event: DecodedEvent): Promise<void> {
  * idempotent and would otherwise re-notify on every replay of the same ledgers.
  */
 async function projectSubscriptionCharged(event: DecodedEvent, isNewEvent: boolean): Promise<void> {
-  const [subscriber, creator, amount] = tupleArgs(event.value);
+  const [subscriber, creator, amount, chargedInterval, nextDue] = subscriptionArgs(event.value);
   const amountStroops = toBigInt(amount);
   if (typeof subscriber !== 'string' || typeof creator !== 'string' || amountStroops === null) {
     return warnUnparseable(event, 'sub_exec');
@@ -490,6 +511,11 @@ async function projectSubscriptionCharged(event: DecodedEvent, isNewEvent: boole
   const tipperId = await ensureUserId(subscriber);
   const creatorId = await ensureUserId(creator);
 
+  if (!isNewEvent) return;
+  const previous = await prisma.subscription.findUnique({ where: { id: subscriptionId(tipperId, creatorId) } });
+  const nextInterval = chargedInterval !== undefined ? intervalFromDays(toIntervalDays(chargedInterval)) : previous?.pendingInterval ?? previous?.interval ?? 'MONTHLY';
+  const confirmedNextDue = toTimestamp(nextDue);
+  const intervalDays = nextInterval === 'DAILY' ? 1 : nextInterval === 'WEEKLY' ? 7 : 30;
   await prisma.subscription.upsert({
     where: { id: subscriptionId(tipperId, creatorId) },
     create: {
@@ -497,11 +523,13 @@ async function projectSubscriptionCharged(event: DecodedEvent, isNewEvent: boole
       tipperId,
       creatorId,
       amountStroops,
-      interval: 'MONTHLY',
-      nextChargeAt: addDays(new Date(), 30),
+      interval: nextInterval,
+      nextChargeAt: confirmedNextDue ?? addDays(new Date(), 30),
       status: 'ACTIVE',
     },
-    update: { amountStroops, status: 'ACTIVE' },
+    update: { amountStroops, status: 'ACTIVE', interval: nextInterval,
+      nextChargeAt: confirmedNextDue ?? addDays(previous?.nextChargeAt ?? new Date(), intervalDays),
+      pendingAmountStroops: null, pendingInterval: null, changeEffectiveAt: null },
   });
 
   if (isNewEvent) {
@@ -517,8 +545,9 @@ async function projectSubscriptionCharged(event: DecodedEvent, isNewEvent: boole
 }
 
 /** Project a `("sub", "cancel")` event — data `(subscriber, creator)`. */
-async function projectSubscriptionCancelled(event: DecodedEvent): Promise<void> {
-  const [subscriber, creator] = tupleArgs(event.value);
+async function projectSubscriptionCancelled(event: DecodedEvent, isNewEvent: boolean): Promise<void> {
+  if (!isNewEvent) return;
+  const [subscriber, creator] = subscriptionArgs(event.value);
   if (typeof subscriber !== 'string' || typeof creator !== 'string') {
     return warnUnparseable(event, 'sub_cancel');
   }
@@ -526,7 +555,7 @@ async function projectSubscriptionCancelled(event: DecodedEvent): Promise<void> 
   const creatorId = await ensureUserId(creator);
   await prisma.subscription.updateMany({
     where: { id: subscriptionId(tipperId, creatorId) },
-    data: { status: 'CANCELLED' },
+    data: { status: 'CANCELLED', pendingAmountStroops: null, pendingInterval: null, changeEffectiveAt: null },
   });
 }
 
@@ -659,4 +688,9 @@ function addDays(from: Date, days: number): Date {
 function warnUnparseable(event: DecodedEvent, topic: string): void {
   logger.warn({ txHash: event.txHash, topic }, 'Skipping event with unparseable payload');
   recordUnknownEvent();
+}
+/** Subscription events use a leading schema version; accept legacy tuples too. */
+function subscriptionArgs(value: unknown): unknown[] {
+  const args = tupleArgs(value);
+  return args[0] === 1 || args[0] === '1' ? args.slice(1) : args;
 }

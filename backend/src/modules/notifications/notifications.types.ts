@@ -16,13 +16,17 @@ export type NotificationType =
   | 'tip_received'
   | 'goal_reached'
   | 'subscription_charged'
-  | 'payout_failed';
+  | 'payout_failed'
+  | 'withdrawal_completed'
+  | 'security_event';
 
 export interface UnreadCountResponse {
   count: number;
 }
 
 export interface NotificationPreferenceResponse {
+  batchingEnabled: boolean;
+  batchingWindowSeconds: number;
   tipReceived: boolean;
   goalReached: boolean;
   subscriptionCharged: boolean;

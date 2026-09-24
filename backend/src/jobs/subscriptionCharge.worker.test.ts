@@ -1,108 +1,53 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// Mock prisma and redis before importing the worker
+const mocks = vi.hoisted(() => ({
+  findMany: vi.fn(),
+  charge: vi.fn(),
+  createTip: vi.fn(),
+  update: vi.fn(),
+}));
 vi.mock('../db/prisma.js', () => ({
   prisma: {
-    subscription: {
-      findMany: vi.fn(),
-    },
-    tip: {
-      create: vi.fn(),
-    },
-    $transaction: vi.fn(),
+    subscription: { findMany: mocks.findMany, update: mocks.update },
+    tip: { create: mocks.createTip },
   },
 }));
-
-vi.mock('../db/redis.js', () => ({
-  redis: {},
+vi.mock('../db/redis.js', () => ({ redis: {} }));
+vi.mock('../modules/subscriptions/subscriptions.service.js', () => ({
+  chargeSubscriptionOnChain: mocks.charge,
 }));
-
-vi.mock('../common/utils/logger.js', () => ({
-  logger: {
-    info: vi.fn(),
-    error: vi.fn(),
-  },
-}));
-
 import { processDueSubscriptions } from './subscriptionCharge.worker.js';
-import { prisma } from '../db/prisma.js';
-
-describe('processDueSubscriptions', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('returns { processed: 0, failed: 0 } when no subscriptions are due', async () => {
-    vi.mocked(prisma.subscription.findMany).mockResolvedValue([]);
-
-    const result = await processDueSubscriptions();
-
-    expect(result).toEqual({ processed: 0, failed: 0 });
-    expect(prisma.subscription.findMany).toHaveBeenCalledWith({
+const sub = {
+  id: 's1',
+  tipper: { stellarAddress: 'GTIPPER' },
+  creator: { stellarAddress: 'GCREATOR' },
+};
+beforeEach(() => vi.resetAllMocks());
+describe('subscription keeper', () => {
+  it('only selects active due subscriptions', async () => {
+    mocks.findMany.mockResolvedValue([]);
+    expect(await processDueSubscriptions()).toEqual({ processed: 0, failed: 0 });
+    expect(mocks.findMany).toHaveBeenCalledWith({
       where: {
         status: 'ACTIVE',
         nextChargeAt: { lte: expect.any(Date) },
         deletedAt: null,
       },
+      include: { tipper: true, creator: true },
     });
   });
-
-  it('charges a due subscription and advances nextChargeAt', async () => {
-    const sub = {
-      id: 'sub_01',
-      tipperId: 'user_tipper',
-      creatorId: 'user_creator',
-      amountStroops: BigInt(1_000_000),
-      interval: 'WEEKLY',
-      nextChargeAt: new Date('2026-07-20'),
-    };
-
-    vi.mocked(prisma.subscription.findMany).mockResolvedValue([sub]);
-    vi.mocked(prisma.$transaction).mockImplementation(async (fn) => {
-      const tx = {
-        tip: { create: vi.fn() },
-        subscription: { update: vi.fn() },
-      };
-      await fn(tx);
-      return undefined;
-    });
-
-    const result = await processDueSubscriptions();
-
-    expect(result).toEqual({ processed: 1, failed: 0 });
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  it('submits on-chain without manufacturing a payment or advancing an unconfirmed period', async () => {
+    mocks.findMany.mockResolvedValue([sub]);
+    expect(await processDueSubscriptions()).toEqual({ processed: 1, failed: 0 });
+    expect(mocks.charge).toHaveBeenCalledWith('GTIPPER', 'GCREATOR');
+    expect(mocks.createTip).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
   });
-
-  it('increments failed count when a subscription charge throws', async () => {
-    const sub = {
-      id: 'sub_fail',
-      tipperId: 'user_tipper',
-      creatorId: 'user_creator',
-      amountStroops: BigInt(500_000),
-      interval: 'DAILY',
-      nextChargeAt: new Date('2026-07-20'),
-    };
-
-    vi.mocked(prisma.subscription.findMany).mockResolvedValue([sub]);
-    vi.mocked(prisma.$transaction).mockRejectedValue(new Error('db error'));
-
-    const result = await processDueSubscriptions();
-
-    expect(result).toEqual({ processed: 0, failed: 1 });
-  });
-
-  it('processes multiple subscriptions independently', async () => {
-    const subs = [
-      { id: 'sub_a', tipperId: 't1', creatorId: 'c1', amountStroops: BigInt(100), interval: 'DAILY', nextChargeAt: new Date() },
-      { id: 'sub_b', tipperId: 't2', creatorId: 'c2', amountStroops: BigInt(200), interval: 'WEEKLY', nextChargeAt: new Date() },
-    ];
-
-    vi.mocked(prisma.subscription.findMany).mockResolvedValue(subs);
-    vi.mocked(prisma.$transaction).mockResolvedValue(undefined);
-
-    const result = await processDueSubscriptions();
-
-    expect(result).toEqual({ processed: 2, failed: 0 });
-    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+  it('continues after an individual failed charge', async () => {
+    mocks.findMany.mockResolvedValue([sub, { ...sub, id: 's2' }]);
+    mocks.charge
+      .mockRejectedValueOnce(new Error('RPC unavailable'))
+      .mockResolvedValueOnce(undefined);
+    expect(await processDueSubscriptions()).toEqual({ processed: 1, failed: 1 });
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 });

@@ -1,3 +1,4 @@
+import type { RoomEvent } from './catchup.js';
 import type { TipResponseDto } from '../modules/tips/tips.dto.js';
 import type { AuthPayload } from '../modules/auth/auth.types.js';
 import type { TimeWindow } from '../modules/leaderboard/leaderboard.schema.js';
@@ -9,6 +10,7 @@ import type { TimeWindow } from '../modules/leaderboard/leaderboard.schema.js';
 
 /** Events the server may emit to a connected client. */
 export interface ServerToClientEvents {
+  'realtime.event': (event: RoomEvent) => void;
   /** Emitted once, right after a successful auth handshake. */
   connected: (payload: { userId: string }) => void;
   /** Emitted for handshake failures, forbidden actions, and rate limiting. */
@@ -21,6 +23,7 @@ export interface ServerToClientEvents {
 
 /** Events a client may emit to the server. */
 export interface ClientToServerEvents {
+  'realtime:catchup': (request: { room: string; lastSeenId: string }, reply: (result: { events: RoomEvent[]; refreshRequired: boolean; error?: string }) => void) => void;
   'subscribe:creator': (creatorAddress: string) => void;
   'subscribe:notifications': (userId: string) => void;
   'subscribe:leaderboard': () => void;

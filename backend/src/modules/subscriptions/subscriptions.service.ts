@@ -1,4 +1,11 @@
-import { Contract, TransactionBuilder, SorobanRpc, nativeToScVal, Networks, Keypair } from '@stellar/stellar-sdk';
+import {
+  Contract,
+  TransactionBuilder,
+  SorobanRpc,
+  nativeToScVal,
+  Networks,
+  Keypair,
+} from '@stellar/stellar-sdk';
 import { config } from '../../config/index.js';
 import { prisma } from '../../db/prisma.js';
 import type { Prisma } from '@prisma/client';
@@ -40,16 +47,19 @@ function subscriptionId(tipperId: string, creatorId: string): string {
 }
 
 function serializeSubscription(sub: {
-  id: string;
-  tipperId: string;
-  creatorId: string;
-  amountStroops: bigint;
-  interval: string;
-  nextChargeAt: Date;
-  status: string;
-  createdAt: Date;
-  tipper: { stellarAddress: string };
-  creator: { stellarAddress: string };
+  id: string
+  tipperId: string
+  creatorId: string
+  amountStroops: bigint
+  interval: string
+  nextChargeAt: Date
+  status: string
+  createdAt: Date
+  pendingAmountStroops?: bigint | null
+  pendingInterval?: string | null
+  changeEffectiveAt?: Date | null
+  tipper: { stellarAddress: string }
+  creator: { stellarAddress: string }
 }): SubscriptionResponse {
   return {
     id: sub.id,
@@ -62,6 +72,16 @@ function serializeSubscription(sub: {
     nextChargeAt: sub.nextChargeAt.toISOString(),
     status: sub.status as SubscriptionResponse['status'],
     createdAt: sub.createdAt.toISOString(),
+    pendingChange:
+      sub.pendingAmountStroops != null && sub.pendingInterval && sub.changeEffectiveAt
+        ? {
+            amountStroops: sub.pendingAmountStroops.toString(),
+            interval: sub.pendingInterval as SubscriptionIntervalName,
+            effectiveAt: sub.changeEffectiveAt.toISOString(),
+          }
+        : null,
+    changePolicy: 'next_period',
+    cancellationPolicy: 'stop_future_charges_no_automatic_refund',
   };
 }
 
@@ -105,14 +125,10 @@ async function loadCreatorByAddress(creatorStellarAddress: string) {
   return creator;
 }
 
-function getServer(): SorobanRpc.Server {
-  return new SorobanRpc.Server(config.stellar.rpcUrl, {
-    allowHttp: config.stellar.rpcUrl.startsWith('http://'),
-  });
-}
-
 function getNetworkPassphrase(): string {
-  return Networks[config.stellar.network as keyof typeof Networks] ?? config.stellar.networkPassphrase;
+  return (
+    Networks[config.stellar.network as keyof typeof Networks] ?? config.stellar.networkPassphrase
+  );
 }
 
 /**
@@ -210,7 +226,7 @@ export async function submitCreateSubscription(
     throw new BadRequestError('Failed to submit subscription transaction');
   });
 
-  if (sendResponse.status === 'ERROR') {
+  if (sendResponse.status !== 'PENDING' && sendResponse.status !== 'DUPLICATE') {
     logger.error(
       { hash: sendResponse.hash },
       'Subscription creation transaction rejected by the network',
@@ -219,6 +235,16 @@ export async function submitCreateSubscription(
   }
 
   const id = subscriptionId(tipperId, creator.id);
+  const existing = await prisma.subscription.findUnique({ where: { id } });
+  const changing = existing?.status === 'ACTIVE' && !existing.deletedAt;
+  // A submitted transaction is not confirmation. The ordered sub_change event
+  // records pending terms; never overwrite them from unverified request fields.
+  if (changing)
+    return {
+      id: existing.id,
+      status: existing.status,
+      nextChargeAt: existing.nextChargeAt.toISOString(),
+    };
   const nextChargeAt = addDays(new Date(), INTERVAL_DAYS[interval]);
 
   const subscription = await prisma.subscription.upsert({
@@ -235,6 +261,10 @@ export async function submitCreateSubscription(
     update: {
       amountStroops: parsedAmount,
       interval,
+      nextChargeAt,
+      pendingAmountStroops: null,
+      pendingInterval: null,
+      changeEffectiveAt: null,
       status: 'ACTIVE',
       deletedAt: null,
     },
@@ -337,7 +367,7 @@ export async function submitCancelSubscription(
     throw new BadRequestError('Failed to submit cancellation transaction');
   });
 
-  if (sendResponse.status === 'ERROR') {
+  if (sendResponse.status !== 'PENDING' && sendResponse.status !== 'DUPLICATE') {
     logger.error(
       { hash: sendResponse.hash },
       'Subscription cancellation transaction rejected by the network',
@@ -347,7 +377,12 @@ export async function submitCancelSubscription(
 
   const updated = await prisma.subscription.update({
     where: { id: subscription.id },
-    data: { status: 'CANCELLED' },
+    data: {
+      status: 'CANCELLED',
+      pendingAmountStroops: null,
+      pendingInterval: null,
+      changeEffectiveAt: null,
+    },
   });
 
   return { id: updated.id, status: updated.status };
@@ -403,7 +438,7 @@ export async function chargeSubscriptionOnChain(
   const sendResponse = await rpcCall((server) => server.sendTransaction(prepared), {
     operationName: 'sendTransaction',
   });
-  if (sendResponse.status === 'ERROR') {
+  if (sendResponse.status !== 'PENDING' && sendResponse.status !== 'DUPLICATE') {
     throw new Error('Subscription charge transaction rejected by the network');
   }
 }
