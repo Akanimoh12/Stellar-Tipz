@@ -25,11 +25,18 @@ const socket = io(API_URL, {
 });
 
 socket.on('connected', ({ userId }) => { /* handshake accepted */ });
+socket.on('auth.expired', ({ code, message }) => { /* refresh, then reconnect */ });
 socket.on('error', ({ code, message }) => { /* FORBIDDEN, RATE_LIMITED, ... */ });
 ```
 
 A connection with a missing or invalid token is rejected before `connection`
 fires — the client only sees `connect_error`.
+
+The server retains the verified JWT expiry for each accepted socket. When the
+token expires, it emits `auth.expired` with the machine-readable code
+`AUTH_TOKEN_EXPIRED`, then disconnects the socket. Socket.IO reports the
+subsequent transport reason as `io server disconnect`; use the preceding
+`auth.expired` event to distinguish auth expiry from ordinary disconnects.
 
 ## Event contract
 
@@ -39,16 +46,16 @@ The full typed contract lives in `types.ts` (`ServerToClientEvents`,
 - **Client → server:** `subscribe:creator`, `subscribe:notifications`,
   `subscribe:leaderboard`, `unsubscribe:creator`, `unsubscribe:notifications`,
   `unsubscribe:leaderboard`
-- **Server → client:** `connected`, `error`, `tip.created`,
-  `notification.created`, `balance.updated`, `leaderboard.updated`
+- **Server → client:** `connected`, `auth.expired`, `error`, `tip.created`,
+  `notification.created`, `balance.updated`,
+  `leaderboard.updated`
 
-Subscribing to another user's `notifications` room is rejected with an
-`error` event (`code: 'FORBIDDEN'`) — a socket may only subscribe to its own
-`user:<userId>` room.
+Subscribing to another user's `notifications` room or another creator's
+private room is rejected with an `error` event (`code: 'FORBIDDEN'`). A socket
+may only subscribe to its own `user:<userId>` room and to the `creator:*` room
+matching its authenticated Stellar address.
 
-`subscribe:creator` and `subscribe:leaderboard` have no such restriction —
-tip feeds and the leaderboard are public data, so any authenticated socket
-may join those rooms.
+`subscribe:leaderboard` is explicitly public to authenticated sockets.
 
 ### leaderboard.updated
 
@@ -89,9 +96,24 @@ capped, with jitter). Important behavior to build clients against:
   the `auth` option passed to `io(...)`, not cached per-connection). If the
   token expires while offline, refresh it before the client comes back
   online so reconnection doesn't loop into `connect_error`.
+- **Auth-expiry disconnects require an explicit reconnect.** Socket.IO does
+  not automatically reconnect after the server calls `disconnect()`. On
+  `auth.expired`, refresh the access token, update `socket.auth`, and call
+  `socket.connect()` after randomized client-side delay. Use full jitter (for
+  example, a random delay from 1–5 seconds) so simultaneous token expiry does
+  not create a reconnect storm. Never reconnect with the expired token.
 - Recommended client wiring:
 
 ```ts
+socket.on('auth.expired', async ({ code }) => {
+  if (code !== 'AUTH_TOKEN_EXPIRED') return;
+
+  const accessToken = await refreshAccessToken();
+  socket.auth = { token: accessToken };
+  const jitterMs = 1_000 + Math.random() * 4_000;
+  setTimeout(() => socket.connect(), jitterMs);
+});
+
 socket.on('reconnect', () => {
   socket.emit('subscribe:notifications', currentUserId);
   socket.emit('subscribe:creator', watchedCreatorAddress);

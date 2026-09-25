@@ -1,51 +1,67 @@
-import type { Socket } from 'socket.io'
-import { logger } from '../common/utils/logger.js'
-import type { AuthUser } from '../modules/auth/auth.types.js'
-import { verifyAccessToken } from '../modules/auth/jwt.js'
-import type { AuthPayload } from '../modules/auth/auth.types.js'
+import type { Socket } from 'socket.io';
+import { logger } from '../common/utils/logger.js';
+import type { AuthPayload, AuthUser } from '../modules/auth/auth.types.js';
+import { verifyAccessToken } from '../modules/auth/jwt.js';
+import type {
+  ClientToServerEvents,
+  InterServerEvents,
+  RealtimeAuthPayload,
+  ServerToClientEvents,
+  SocketData,
+} from './types.js';
 
 interface JwtPayload {
-  sub: string
-  stellarAddress: string
-  userId?: string
+  exp?: number;
+  sub?: string;
+  userId?: string;
 }
 
-export interface AuthenticatedSocket extends Socket {
-  authUser?: AuthUser
+export interface AuthenticatedSocket extends Socket<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+> {
+  authUser?: AuthUser;
 }
 
 declare module 'socket.io' {
   interface Socket {
-    authUser?: AuthUser
+    authUser?: AuthUser;
   }
 }
 
 export function socketAuth(socket: AuthenticatedSocket, next: (err?: Error) => void): void {
-  const token = socket.handshake.auth?.token as string | undefined
+  const token: unknown = socket.handshake.auth?.token;
 
-  if (!token) {
-    logger.warn({ socketId: socket.id }, 'Socket connection rejected: no token')
-    next(new Error('Authentication token is required'))
-    return
+  if (typeof token !== 'string' || token.length === 0) {
+    logger.warn({ socketId: socket.id }, 'Socket connection rejected: no token');
+    next(new Error('Authentication token is required'));
+    return;
   }
 
   try {
     const payload = verifyAccessToken(token) as AuthPayload & JwtPayload;
-    const uid = (payload as unknown as JwtPayload).sub ?? payload.userId;
-    if (!uid) throw new Error('Token has no user identity');
+    const uid = payload.sub ?? payload.userId;
+    if (!uid || typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) {
+      throw new Error('Access token is missing required claims');
+    }
+
+    const auth: RealtimeAuthPayload = {
+      ...payload,
+      userId: uid,
+      exp: payload.exp,
+    };
+    socket.data.auth = auth;
     socket.authUser = {
       id: uid,
       stellarAddress: payload.stellarAddress,
       username: null,
-    }
-    socket.data.auth = {
-      ...payload,
-      userId: uid,
-    }
-    logger.debug({ socketId: socket.id, userId: uid }, 'Socket authenticated')
-    next()
+    };
+    logger.debug({ socketId: socket.id, userId: uid }, 'Socket authenticated');
+    next();
   } catch (err) {
-    logger.warn({ socketId: socket.id, err }, 'Socket connection rejected: invalid token')
-    next(new Error('Invalid or expired token'))
+    logger.warn({ socketId: socket.id, err }, 'Socket connection rejected: invalid token');
+    next(new Error('Invalid or expired token'));
   }
 }

@@ -1,6 +1,6 @@
 import { configureBackpressure } from '../modules/realtime/backpressure.js';
 import type { Server as HttpServer } from 'node:http';
-import { Server as SocketIOServer } from 'socket.io';
+import { Server as SocketIOServer, type Socket } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { env } from '../config/env.js';
 import { config } from '../config/index.js';
@@ -17,6 +17,7 @@ import type {
   NotificationPayload,
   BalanceUpdatedPayload,
   LeaderboardUpdatedPayload,
+  AuthExpiredPayload,
 } from './types.js';
 import {
   catchUp,
@@ -46,6 +47,39 @@ let io: RealtimeServer | null = null
  */
 const HEARTBEAT_PING_INTERVAL_MS = env.SOCKET_IO_HEARTBEAT_INTERVAL_MS;
 const HEARTBEAT_PING_TIMEOUT_MS = env.SOCKET_IO_CONNECTION_TIMEOUT_MS;
+
+const AUTH_EXPIRED_PAYLOAD: AuthExpiredPayload = {
+  code: 'AUTH_TOKEN_EXPIRED',
+  message: 'Access token expired',
+};
+
+type RealtimeSocket = Socket<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+
+/** Enforces the verified JWT expiry for the lifetime of one connected socket. */
+export function scheduleTokenExpiry(socket: RealtimeSocket): void {
+  const expiresInMs = Math.max(0, socket.data.auth.exp * 1_000 - Date.now());
+
+  const expiryTimer = setTimeout(() => {
+    logger.info(
+      { socketId: socket.id, userId: socket.data.auth.userId },
+      'Disconnecting client because access token expired',
+    );
+
+    socket.emit('auth.expired', AUTH_EXPIRED_PAYLOAD);
+    socket.disconnect(true);
+  }, expiresInMs);
+
+  expiryTimer.unref();
+
+  socket.once('disconnect', () => {
+    clearTimeout(expiryTimer);
+  });
+}
 
 export function initRealtime(httpServer: HttpServer): RealtimeServer {
   io = new SocketIOServer<
@@ -105,6 +139,7 @@ export function initRealtime(httpServer: HttpServer): RealtimeServer {
 
   io.on('connection', (socket) => {
     const { userId } = socket.data.auth
+    scheduleTokenExpiry(socket)
     logger.info({ socketId: socket.id, userId }, 'Client connected')
     socket.emit('connected', { userId })
 
