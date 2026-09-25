@@ -26,6 +26,8 @@ describe('getQueue', () => {
       defaultJobOptions: {
         removeOnComplete: { age: 3600 },
         removeOnFail: { age: 86400 },
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2000 },
       },
     });
     expect(queue).toEqual({ name: 'test-queue' });

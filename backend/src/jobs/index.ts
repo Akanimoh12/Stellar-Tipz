@@ -1,5 +1,6 @@
 export { getQueue } from './queueFactory.js';
 export { scheduleRepeatable } from './scheduler.js';
+export { reportJobProgress, jobIdempotencyKey } from './progress.js';
 
 export {
   CREDIT_RECOMPUTE_QUEUE,
