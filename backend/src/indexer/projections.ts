@@ -470,7 +470,9 @@ async function projectSubscriptionCreated(event: DecodedEvent, isNewEvent: boole
       status: 'ACTIVE',
     },
     update: { amountStroops, interval: intervalFromDays(days), status: 'ACTIVE', nextChargeAt,
-      pendingAmountStroops: null, pendingInterval: null, changeEffectiveAt: null },
+      pendingAmountStroops: null, pendingInterval: null, changeEffectiveAt: null,
+      chargeFailureCount: 0, dunningStartedAt: null, nextChargeRetryAt: null,
+      lastChargeFailureReason: null, chargeAttemptStartedAt: null },
   });
 }
 
@@ -529,7 +531,9 @@ async function projectSubscriptionCharged(event: DecodedEvent, isNewEvent: boole
     },
     update: { amountStroops, status: 'ACTIVE', interval: nextInterval,
       nextChargeAt: confirmedNextDue ?? addDays(previous?.nextChargeAt ?? new Date(), intervalDays),
-      pendingAmountStroops: null, pendingInterval: null, changeEffectiveAt: null },
+      pendingAmountStroops: null, pendingInterval: null, changeEffectiveAt: null,
+      chargeFailureCount: 0, dunningStartedAt: null, nextChargeRetryAt: null,
+      lastChargeFailureReason: null, chargeAttemptStartedAt: null },
   });
 
   if (isNewEvent) {
@@ -555,7 +559,8 @@ async function projectSubscriptionCancelled(event: DecodedEvent, isNewEvent: boo
   const creatorId = await ensureUserId(creator);
   await prisma.subscription.updateMany({
     where: { id: subscriptionId(tipperId, creatorId) },
-    data: { status: 'CANCELLED', pendingAmountStroops: null, pendingInterval: null, changeEffectiveAt: null },
+    data: { status: 'CANCELLED', pendingAmountStroops: null, pendingInterval: null, changeEffectiveAt: null,
+      nextChargeRetryAt: null, chargeAttemptStartedAt: null },
   });
 }
 

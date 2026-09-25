@@ -9,6 +9,7 @@ import type {
   NotificationPreferenceResponse,
   NotificationResponse,
   NotificationType,
+  SystemNotificationType,
   UnreadCountResponse,
 } from './notifications.types.js';
 import {
@@ -26,6 +27,27 @@ const PREFERENCE_FIELD_BY_TYPE: Partial<
   subscription_charged: 'subscriptionCharged',
   payout_failed: 'payoutFailed',
 };
+
+export async function createSystemNotification(
+  userId: string,
+  type: SystemNotificationType,
+  payload: Record<string, unknown>,
+): Promise<NotificationResponse> {
+  const notification = await prisma.notification.create({
+    data: { userId, type, payload: payload as Prisma.InputJsonValue,
+      deliveries: { create: { userId, channel: 'in_app', status: 'delivered' } } },
+  });
+
+  const formatted = formatNotification(notification);
+  emitNotificationCreated({
+    id: formatted.id,
+    userId,
+    type: formatted.type,
+    payload: formatted.payload,
+    createdAt: formatted.createdAt,
+  });
+  return formatted;
+}
 
 function formatNotification(n: {
   id: string
@@ -194,7 +216,7 @@ export async function updatePreferences(
  */
 export async function createNotification(
   userId: string,
-  type: NotificationType,
+  type: Exclude<NotificationType, SystemNotificationType>,
   payload: Record<string, unknown>,
 ): Promise<NotificationResponse | null> {
   const notification = await persistNotification(prisma, userId, type, payload);

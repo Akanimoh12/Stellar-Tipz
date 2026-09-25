@@ -64,6 +64,8 @@ describe('subscription period policy', () => {
     await submitCancelSubscription('tipper', 'GCREATOR', 'signed');
     expect(mocks.update.mock.calls[0][0].data).toEqual({
       status: 'CANCELLED',
+      nextChargeRetryAt: null,
+      chargeAttemptStartedAt: null,
       pendingAmountStroops: null,
       pendingInterval: null,
       changeEffectiveAt: null,

@@ -60,10 +60,15 @@ describe('subscription period projections', () => {
       amountStroops: 20000000n,
       status: 'ACTIVE',
       interval: 'MONTHLY',
+      chargeFailureCount: 0,
+      dunningStartedAt: null,
+      lastChargeFailureReason: null,
       nextChargeAt: new Date('2026-10-31T00:00:00Z'),
       pendingAmountStroops: null,
       pendingInterval: null,
       changeEffectiveAt: null,
+      nextChargeRetryAt: null,
+      chargeAttemptStartedAt: null,
     });
   });
   it('does not apply a repeated execution twice', async () => {
@@ -79,6 +84,8 @@ describe('subscription period projections', () => {
       pendingAmountStroops: null,
       pendingInterval: null,
       changeEffectiveAt: null,
+      nextChargeRetryAt: null,
+      chargeAttemptStartedAt: null,
     });
   });
 });

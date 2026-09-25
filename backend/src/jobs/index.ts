@@ -27,9 +27,14 @@ export {
 } from './subscriptionCharge.queue.js';
 export {
   processDueSubscriptions,
+  getNextDunningRetryAt,
   createSubscriptionChargeWorker,
   scheduleSubscriptionCharge,
 } from './subscriptionCharge.worker.js';
+export {
+  classifySubscriptionChargeFailure,
+  extractContractErrorCode,
+} from './subscriptionCharge.failure.js';
 
 export {
   LEADERBOARD_SNAPSHOT_QUEUE,

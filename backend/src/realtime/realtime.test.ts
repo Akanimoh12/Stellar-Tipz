@@ -131,7 +131,7 @@ describe('initRealtime', () => {
   });
 
   it('joins a creator room on subscribe:creator', async () => {
-    const token = makeToken({ userId: 'user-sub' });
+    const token = makeToken({ userId: 'user-sub', stellarAddress: 'GCREATOR' });
     clientSocket = ioClient(`http://localhost:${port}`, {
       auth: { token },
       transports: ['websocket'],
@@ -169,7 +169,7 @@ describe('initRealtime', () => {
 
   it('delivers leaderboard.updated only to sockets subscribed to the leaderboard room (#952, #949)', async () => {
     const subscribed = ioClient(`http://localhost:${port}`, {
-      auth: { token: makeToken({ userId: 'user-sub' }) },
+      auth: { token: makeToken({ userId: 'user-sub', stellarAddress: 'GCREATOR' }) },
       transports: ['websocket'],
     });
     const unsubscribed = ioClient(`http://localhost:${port}`, {

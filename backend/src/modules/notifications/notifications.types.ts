@@ -18,7 +18,12 @@ export type NotificationType =
   | 'subscription_charged'
   | 'payout_failed'
   | 'withdrawal_completed'
-  | 'security_event';
+  | 'security_event'
+  | 'subscription_charge_failed'
+  | 'subscription_failed';
+
+/** Operational notifications that cannot be disabled by preference settings. */
+export type SystemNotificationType = 'subscription_charge_failed' | 'subscription_failed';
 
 export interface UnreadCountResponse {
   count: number;

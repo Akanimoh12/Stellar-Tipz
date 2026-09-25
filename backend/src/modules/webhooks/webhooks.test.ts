@@ -1,10 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock("../../common/utils/logger.js", () => ({
+vi.mock('../../common/utils/logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
-}));
+}))
 
-vi.mock("../../db/prisma.js", () => ({
+vi.mock('./webhooks.url-safety.js', () => ({
+  assertSafeWebhookUrl: vi.fn(async (raw: string) => new URL(raw)),
+}))
+
+vi.mock('../../db/prisma.js', () => ({
   prisma: {
     webhookDelivery: { findMany: vi.fn(), count: vi.fn(), findUnique: vi.fn() },
     webhookSubscription: {
@@ -15,281 +19,302 @@ vi.mock("../../db/prisma.js", () => ({
       update: vi.fn(),
     },
   },
-}));
+}))
 
 import {
   listDeliveries,
   getDelivery,
   createSubscription,
   listSubscriptions,
+  rotateSubscriptionSecret,
   deleteSubscription,
-} from "./webhooks.service.js";
-import { prisma } from "../../db/prisma.js";
+} from './webhooks.service.js'
+import { prisma } from '../../db/prisma.js'
 
 const fakeDeliveries = [
   {
-    id: "del_01",
-    subscriptionId: "sub_01",
-    status: "SUCCESS",
+    id: 'del_01',
+    subscriptionId: 'sub_01',
+    status: 'SUCCESS',
     responseCode: 200,
     attempts: 1,
     nextAttemptAt: null,
-    createdAt: new Date("2026-07-01T00:00:00Z"),
-    updatedAt: new Date("2026-07-01T00:00:00Z"),
-    subscription: { ownerId: "user_01", deletedAt: null },
+    createdAt: new Date('2026-07-01T00:00:00Z'),
+    updatedAt: new Date('2026-07-01T00:00:00Z'),
+    subscription: { ownerId: 'user_01', deletedAt: null },
   },
   {
-    id: "del_02",
-    subscriptionId: "sub_01",
-    status: "FAILED",
+    id: 'del_02',
+    subscriptionId: 'sub_01',
+    status: 'FAILED',
     responseCode: 500,
     attempts: 3,
-    nextAttemptAt: new Date("2026-07-02T00:00:00Z"),
-    createdAt: new Date("2026-07-01T01:00:00Z"),
-    updatedAt: new Date("2026-07-01T02:00:00Z"),
-    subscription: { ownerId: "user_01", deletedAt: null },
+    nextAttemptAt: new Date('2026-07-02T00:00:00Z'),
+    createdAt: new Date('2026-07-01T01:00:00Z'),
+    updatedAt: new Date('2026-07-01T02:00:00Z'),
+    subscription: { ownerId: 'user_01', deletedAt: null },
   },
-];
+]
 
-describe("listDeliveries (issue #1001)", () => {
-  beforeEach(() => vi.clearAllMocks());
+describe('listDeliveries (issue #1001)', () => {
+  beforeEach(() => vi.clearAllMocks())
 
-  it("returns paginated deliveries ordered by createdAt desc", async () => {
-    vi.mocked(prisma.webhookDelivery.findMany).mockResolvedValueOnce(
-      fakeDeliveries as never,
-    );
-    vi.mocked(prisma.webhookDelivery.count).mockResolvedValueOnce(2 as never);
+  it('returns paginated deliveries ordered by createdAt desc', async () => {
+    vi.mocked(prisma.webhookDelivery.findMany).mockResolvedValueOnce(fakeDeliveries as never)
+    vi.mocked(prisma.webhookDelivery.count).mockResolvedValueOnce(2 as never)
 
-    const result = await listDeliveries("user_01", 1, 20);
+    const result = await listDeliveries('user_01', 1, 20)
 
-    expect(result.entries).toHaveLength(2);
-    expect(result.total).toBe(2);
-    expect(result.page).toBe(1);
-    expect(result.limit).toBe(20);
-    expect(result.entries[0].id).toBe("del_01");
-    expect(result.entries[0].status).toBe("SUCCESS");
-  });
+    expect(result.entries).toHaveLength(2)
+    expect(result.total).toBe(2)
+    expect(result.page).toBe(1)
+    expect(result.limit).toBe(20)
+    expect(result.entries[0].id).toBe('del_01')
+    expect(result.entries[0].status).toBe('SUCCESS')
+  })
 
-  it("filters by subscriptionId when provided", async () => {
-    vi.mocked(prisma.webhookDelivery.findMany).mockResolvedValueOnce(
-      [fakeDeliveries[0]] as never,
-    );
-    vi.mocked(prisma.webhookDelivery.count).mockResolvedValueOnce(1 as never);
+  it('filters by subscriptionId when provided', async () => {
+    vi.mocked(prisma.webhookDelivery.findMany).mockResolvedValueOnce([fakeDeliveries[0]] as never)
+    vi.mocked(prisma.webhookDelivery.count).mockResolvedValueOnce(1 as never)
 
-    await listDeliveries("user_01", 1, 20, "sub_01");
+    await listDeliveries('user_01', 1, 20, 'sub_01')
 
     expect(prisma.webhookDelivery.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ subscriptionId: "sub_01" }),
+        where: expect.objectContaining({ subscriptionId: 'sub_01' }),
       }),
-    );
-  });
+    )
+  })
 
-  it("filters by status when provided", async () => {
-    vi.mocked(prisma.webhookDelivery.findMany).mockResolvedValueOnce(
-      [fakeDeliveries[0]] as never,
-    );
-    vi.mocked(prisma.webhookDelivery.count).mockResolvedValueOnce(1 as never);
+  it('filters by status when provided', async () => {
+    vi.mocked(prisma.webhookDelivery.findMany).mockResolvedValueOnce([fakeDeliveries[0]] as never)
+    vi.mocked(prisma.webhookDelivery.count).mockResolvedValueOnce(1 as never)
 
-    await listDeliveries("user_01", 1, 20, undefined, "SUCCESS");
+    await listDeliveries('user_01', 1, 20, undefined, 'SUCCESS')
 
     expect(prisma.webhookDelivery.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ status: "SUCCESS" }),
+        where: expect.objectContaining({ status: 'SUCCESS' }),
       }),
-    );
-  });
+    )
+  })
 
-  it("returns empty list when no deliveries match", async () => {
-    vi.mocked(prisma.webhookDelivery.findMany).mockResolvedValueOnce([] as never);
-    vi.mocked(prisma.webhookDelivery.count).mockResolvedValueOnce(0 as never);
+  it('returns empty list when no deliveries match', async () => {
+    vi.mocked(prisma.webhookDelivery.findMany).mockResolvedValueOnce([] as never)
+    vi.mocked(prisma.webhookDelivery.count).mockResolvedValueOnce(0 as never)
 
-    const result = await listDeliveries("user_01", 1, 20);
+    const result = await listDeliveries('user_01', 1, 20)
 
-    expect(result.entries).toHaveLength(0);
-    expect(result.total).toBe(0);
-  });
+    expect(result.entries).toHaveLength(0)
+    expect(result.total).toBe(0)
+  })
 
-  it("serializes dates to ISO strings", async () => {
-    vi.mocked(prisma.webhookDelivery.findMany).mockResolvedValueOnce(
-      fakeDeliveries as never,
-    );
-    vi.mocked(prisma.webhookDelivery.count).mockResolvedValueOnce(2 as never);
+  it('serializes dates to ISO strings', async () => {
+    vi.mocked(prisma.webhookDelivery.findMany).mockResolvedValueOnce(fakeDeliveries as never)
+    vi.mocked(prisma.webhookDelivery.count).mockResolvedValueOnce(2 as never)
 
-    const result = await listDeliveries("user_01", 1, 20);
+    const result = await listDeliveries('user_01', 1, 20)
 
     for (const entry of result.entries) {
-      expect(() => new Date(entry.createdAt).toISOString()).not.toThrow();
-      expect(() => new Date(entry.updatedAt).toISOString()).not.toThrow();
+      expect(() => new Date(entry.createdAt).toISOString()).not.toThrow()
+      expect(() => new Date(entry.updatedAt).toISOString()).not.toThrow()
     }
-  });
-});
+  })
+})
 
-describe("getDelivery (issue #1001)", () => {
-  beforeEach(() => vi.clearAllMocks());
+describe('getDelivery (issue #1001)', () => {
+  beforeEach(() => vi.clearAllMocks())
 
-  it("returns a delivery by id", async () => {
-    vi.mocked(prisma.webhookDelivery.findUnique).mockResolvedValueOnce(
-      fakeDeliveries[0] as never,
-    );
+  it('returns a delivery by id', async () => {
+    vi.mocked(prisma.webhookDelivery.findUnique).mockResolvedValueOnce(fakeDeliveries[0] as never)
 
-    const result = await getDelivery("user_01", "del_01");
+    const result = await getDelivery('user_01', 'del_01')
 
-    expect(result.id).toBe("del_01");
-    expect(result.status).toBe("SUCCESS");
-    expect(result.responseCode).toBe(200);
-    expect(result.attempts).toBe(1);
-  });
+    expect(result.id).toBe('del_01')
+    expect(result.status).toBe('SUCCESS')
+    expect(result.responseCode).toBe(200)
+    expect(result.attempts).toBe(1)
+  })
 
-  it("throws NotFoundError when delivery does not exist", async () => {
-    vi.mocked(prisma.webhookDelivery.findUnique).mockResolvedValueOnce(null);
+  it('throws NotFoundError when delivery does not exist', async () => {
+    vi.mocked(prisma.webhookDelivery.findUnique).mockResolvedValueOnce(null)
 
-    await expect(getDelivery("user_01", "ghost")).rejects.toMatchObject({
+    await expect(getDelivery('user_01', 'ghost')).rejects.toMatchObject({
       statusCode: 404,
-    });
-  });
-});
+    })
+  })
+})
 
 const fakeSubscription = {
-  id: "wh_sub_01",
-  ownerId: "user_01",
-  url: "https://example.com/webhook",
-  secret: "abc123",
-  events: ["tip.received"],
-  status: "ACTIVE",
-  createdAt: new Date("2026-07-01T00:00:00Z"),
-  updatedAt: new Date("2026-07-01T00:00:00Z"),
+  id: 'wh_sub_01',
+  ownerId: 'user_01',
+  url: 'https://example.com/webhook',
+  secret: 'abc123',
+  events: ['tip.received'],
+  status: 'ACTIVE',
+  createdAt: new Date('2026-07-01T00:00:00Z'),
+  updatedAt: new Date('2026-07-01T00:00:00Z'),
   deletedAt: null,
-};
+}
 
-describe("createSubscription (issue #997)", () => {
-  beforeEach(() => vi.clearAllMocks());
+describe('createSubscription (issue #997)', () => {
+  beforeEach(() => vi.clearAllMocks())
 
-  it("creates a subscription and returns the generated secret once", async () => {
-    vi.mocked(prisma.webhookSubscription.create).mockImplementation(
-      (async ({ data }: { data: { secret: string } }) => ({
-        ...fakeSubscription,
-        ...data,
-      })) as never,
-    );
+  it('creates a subscription and returns the generated secret once', async () => {
+    vi.mocked(prisma.webhookSubscription.create).mockImplementation((async ({
+      data,
+    }: {
+      data: { secret: string }
+    }) => ({
+      ...fakeSubscription,
+      ...data,
+    })) as never)
 
-    const result = await createSubscription("user_01", {
-      url: "https://example.com/webhook",
-      events: ["tip.received"],
-    });
+    const result = await createSubscription('user_01', {
+      url: 'https://example.com/webhook',
+      events: ['tip.received'],
+    })
 
     expect(prisma.webhookSubscription.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        ownerId: "user_01",
-        url: "https://example.com/webhook",
-        events: ["tip.received"],
+        ownerId: 'user_01',
+        url: 'https://example.com/webhook',
+        events: ['tip.received'],
         secret: expect.any(String),
       }),
-    });
-    expect(result.secret).toMatch(/^[0-9a-f]{64}$/);
-    expect(result.id).toBe("wh_sub_01");
-    expect(result.status).toBe("ACTIVE");
-  });
+    })
+    expect(result.secret).toMatch(/^[0-9a-f]{64}$/)
+    expect(result.id).toBe('wh_sub_01')
+    expect(result.status).toBe('ACTIVE')
+  })
 
-  it("generates a fresh random secret per subscription", async () => {
-    vi.mocked(prisma.webhookSubscription.create).mockImplementation(
-      (async ({ data }: { data: { secret: string } }) => ({
-        ...fakeSubscription,
-        secret: data.secret,
-      })) as never,
-    );
+  it('generates a fresh random secret per subscription', async () => {
+    vi.mocked(prisma.webhookSubscription.create).mockImplementation((async ({
+      data,
+    }: {
+      data: { secret: string }
+    }) => ({
+      ...fakeSubscription,
+      secret: data.secret,
+    })) as never)
 
-    const a = await createSubscription("user_01", {
-      url: "https://example.com/a",
-      events: ["tip.received"],
-    });
-    const b = await createSubscription("user_01", {
-      url: "https://example.com/b",
-      events: ["tip.received"],
-    });
+    const a = await createSubscription('user_01', {
+      url: 'https://example.com/a',
+      events: ['tip.received'],
+    })
+    const b = await createSubscription('user_01', {
+      url: 'https://example.com/b',
+      events: ['tip.received'],
+    })
 
-    expect(a.secret).not.toBe(b.secret);
-  });
-});
+    expect(a.secret).not.toBe(b.secret)
+  })
+})
 
-describe("listSubscriptions (issue #997)", () => {
-  beforeEach(() => vi.clearAllMocks());
+describe('rotateSubscriptionSecret (issue #1279)', () => {
+  beforeEach(() => vi.clearAllMocks())
 
-  it("returns paginated subscriptions scoped to the owner, without secrets", async () => {
+  it('rotates the secret while retaining the old secret for the overlap window', async () => {
+    vi.mocked(prisma.webhookSubscription.findUnique).mockResolvedValueOnce(
+      fakeSubscription as never,
+    )
+    vi.mocked(prisma.webhookSubscription.update).mockResolvedValueOnce(fakeSubscription as never)
+
+    const result = await rotateSubscriptionSecret('user_01', 'wh_sub_01', 600)
+
+    expect(result.secret).toMatch(/^[0-9a-f]{64}$/)
+    expect(result.secret).not.toBe(fakeSubscription.secret)
+    expect(prisma.webhookSubscription.update).toHaveBeenCalledWith({
+      where: { id: 'wh_sub_01' },
+      data: expect.objectContaining({
+        secret: result.secret,
+        previousSecret: fakeSubscription.secret,
+        previousSecretExpiresAt: expect.any(Date),
+      }),
+    })
+  })
+})
+
+describe('listSubscriptions (issue #997)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('returns paginated subscriptions scoped to the owner, without secrets', async () => {
     vi.mocked(prisma.webhookSubscription.findMany).mockResolvedValueOnce([
       fakeSubscription,
-    ] as never);
-    vi.mocked(prisma.webhookSubscription.count).mockResolvedValueOnce(1 as never);
+    ] as never)
+    vi.mocked(prisma.webhookSubscription.count).mockResolvedValueOnce(1 as never)
 
-    const result = await listSubscriptions("user_01", 1, 20);
+    const result = await listSubscriptions('user_01', 1, 20)
 
     expect(prisma.webhookSubscription.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { ownerId: "user_01", deletedAt: null },
+        where: { ownerId: 'user_01', deletedAt: null },
       }),
-    );
-    expect(result.total).toBe(1);
-    expect(result.entries[0].id).toBe("wh_sub_01");
-    expect(result.entries[0]).not.toHaveProperty("secret");
-  });
-});
+    )
+    expect(result.total).toBe(1)
+    expect(result.entries[0].id).toBe('wh_sub_01')
+    expect(result.entries[0]).not.toHaveProperty('secret')
+  })
+})
 
-describe("deleteSubscription (issue #997)", () => {
-  beforeEach(() => vi.clearAllMocks());
+describe('deleteSubscription (issue #997)', () => {
+  beforeEach(() => vi.clearAllMocks())
 
-  it("soft-deletes a subscription owned by the caller", async () => {
+  it('soft-deletes a subscription owned by the caller', async () => {
     vi.mocked(prisma.webhookSubscription.findUnique).mockResolvedValueOnce(
       fakeSubscription as never,
-    );
-    vi.mocked(prisma.webhookSubscription.update).mockResolvedValueOnce(
-      { ...fakeSubscription, deletedAt: new Date(), status: "DISABLED" } as never,
-    );
+    )
+    vi.mocked(prisma.webhookSubscription.update).mockResolvedValueOnce({
+      ...fakeSubscription,
+      deletedAt: new Date(),
+      status: 'DISABLED',
+    } as never)
 
-    await deleteSubscription("user_01", "wh_sub_01");
+    await deleteSubscription('user_01', 'wh_sub_01')
 
     expect(prisma.webhookSubscription.update).toHaveBeenCalledWith({
-      where: { id: "wh_sub_01" },
-      data: { deletedAt: expect.any(Date), status: "DISABLED" },
-    });
-  });
+      where: { id: 'wh_sub_01' },
+      data: { deletedAt: expect.any(Date), status: 'DISABLED' },
+    })
+  })
 
-  it("throws NotFoundError when the subscription does not exist", async () => {
-    vi.mocked(prisma.webhookSubscription.findUnique).mockResolvedValueOnce(null);
+  it('throws NotFoundError when the subscription does not exist', async () => {
+    vi.mocked(prisma.webhookSubscription.findUnique).mockResolvedValueOnce(null)
 
-    await expect(deleteSubscription("user_01", "ghost")).rejects.toMatchObject({
+    await expect(deleteSubscription('user_01', 'ghost')).rejects.toMatchObject({
       statusCode: 404,
-    });
-  });
+    })
+  })
 
-  it("throws NotFoundError when the subscription was already deleted", async () => {
+  it('throws NotFoundError when the subscription was already deleted', async () => {
     vi.mocked(prisma.webhookSubscription.findUnique).mockResolvedValueOnce({
       ...fakeSubscription,
       deletedAt: new Date(),
-    } as never);
+    } as never)
 
-    await expect(deleteSubscription("user_01", "wh_sub_01")).rejects.toMatchObject({
+    await expect(deleteSubscription('user_01', 'wh_sub_01')).rejects.toMatchObject({
       statusCode: 404,
-    });
-  });
+    })
+  })
 
-  it("throws ForbiddenError when the caller does not own the subscription", async () => {
+  it('throws ForbiddenError when the caller does not own the subscription', async () => {
     vi.mocked(prisma.webhookSubscription.findUnique).mockResolvedValueOnce(
       fakeSubscription as never,
-    );
+    )
 
-    await expect(deleteSubscription("someone_else", "wh_sub_01")).rejects.toMatchObject({
+    await expect(deleteSubscription('someone_else', 'wh_sub_01')).rejects.toMatchObject({
       statusCode: 403,
-    });
-  });
+    })
+  })
 
-  it("rejects delivery access through a subscription owned by another user", async () => {
+  it('rejects delivery access through a subscription owned by another user', async () => {
     vi.mocked(prisma.webhookDelivery.findUnique).mockResolvedValueOnce({
       ...fakeDeliveries[0],
-      subscription: { ownerId: "user_01", deletedAt: null },
-    } as never);
+      subscription: { ownerId: 'user_01', deletedAt: null },
+    } as never)
 
-    await expect(getDelivery("user_02", "del_01")).rejects.toMatchObject({
+    await expect(getDelivery('user_02', 'del_01')).rejects.toMatchObject({
       statusCode: 403,
-    });
-  });
-});
+    })
+  })
+})

@@ -28,7 +28,8 @@ import {
 import type { TipResponseDto } from '../modules/tips/tips.dto.js';
 
 /** Room joined by every socket that wants public leaderboard updates. */
-const LEADERBOARD_ROOM = 'leaderboard';
+const LEADERBOARD_ROOM = 'leaderboard'
+const PUBLIC_ROOMS = new Set([LEADERBOARD_ROOM])
 
 export type RealtimeServer = SocketIOServer<
   ClientToServerEvents,
@@ -37,7 +38,7 @@ export type RealtimeServer = SocketIOServer<
   SocketData
 >
 
-let io: RealtimeServer | null = null;
+let io: RealtimeServer | null = null
 
 /**
  * Heartbeat tuning (see docs/REALTIME.md): how often the server pings each
@@ -68,18 +69,18 @@ export function initRealtime(httpServer: HttpServer): RealtimeServer {
   io.use(socketAuth);
 
   if (config.realtime.redisAdapterEnabled) {
-    const pubClient = redis.duplicate();
-    const subClient = redis.duplicate();
-    io.adapter(createAdapter(pubClient, subClient));
+    const pubClient = redis.duplicate()
+    const subClient = redis.duplicate()
+    io.adapter(createAdapter(pubClient, subClient))
 
     registerClosable({
       name: 'Socket.IO Redis adapter',
       close: async () => {
-        await Promise.all([pubClient.quit(), subClient.quit()]);
+        await Promise.all([pubClient.quit(), subClient.quit()])
       },
-    });
+    })
 
-    logger.info('Socket.IO Redis adapter attached');
+    logger.info('Socket.IO Redis adapter attached')
   }
 
   const subscriber = redis.duplicate();
@@ -103,9 +104,9 @@ export function initRealtime(httpServer: HttpServer): RealtimeServer {
   });
 
   io.on('connection', (socket) => {
-    const { userId } = socket.data.auth;
-    logger.info({ socketId: socket.id, userId }, 'Client connected');
-    socket.emit('connected', { userId });
+    const { userId } = socket.data.auth
+    logger.info({ socketId: socket.id, userId }, 'Client connected')
+    socket.emit('connected', { userId })
 
     socket.on('realtime:catchup', async (request, reply) => {
       if (!guardEventRate(socket) || typeof reply !== 'function') return;
@@ -128,62 +129,78 @@ export function initRealtime(httpServer: HttpServer): RealtimeServer {
     });
 
     socket.on('subscribe:creator', (creatorAddress: string) => {
-      if (!guardEventRate(socket)) return;
-      const room = `creator:${creatorAddress}`;
-      void socket.join(room);
-      logger.debug({ socketId: socket.id, room }, 'Subscribed to creator room');
-    });
+      if (!guardEventRate(socket)) return
+      const room = `creator:${creatorAddress}`
+      if (socket.data.auth.stellarAddress !== creatorAddress) {
+        logger.warn(
+          { socketId: socket.id, userId, room, requestedCreator: creatorAddress },
+          'Security event: unauthorized realtime room join',
+        )
+        socket.emit('error', { code: 'FORBIDDEN', message: 'Cannot subscribe to another creator' })
+        return
+      }
+      void socket.join(room)
+      logger.debug({ socketId: socket.id, room }, 'Subscribed to creator room')
+    })
 
     socket.on('subscribe:notifications', (userId: string) => {
-      if (!guardEventRate(socket)) return;
+      if (!guardEventRate(socket)) return
       if (socket.data.auth.userId !== userId) {
-        socket.emit('error', { code: 'FORBIDDEN', message: 'Cannot subscribe to another user' });
-        return;
+        logger.warn(
+          { socketId: socket.id, userId: socket.data.auth.userId, room: `user:${userId}` },
+          'Security event: unauthorized realtime room join',
+        )
+        socket.emit('error', { code: 'FORBIDDEN', message: 'Cannot subscribe to another user' })
+        return
       }
-      const room = `user:${userId}`;
-      void socket.join(room);
-      logger.debug({ socketId: socket.id, room }, 'Subscribed to notifications room');
-    });
+      const room = `user:${userId}`
+      void socket.join(room)
+      logger.debug({ socketId: socket.id, room }, 'Subscribed to notifications room')
+    })
 
     socket.on('unsubscribe:creator', (creatorAddress: string) => {
-      if (!guardEventRate(socket)) return;
-      const room = `creator:${creatorAddress}`;
-      void socket.leave(room);
-      logger.debug({ socketId: socket.id, room }, 'Unsubscribed from creator room');
-    });
+      if (!guardEventRate(socket)) return
+      const room = `creator:${creatorAddress}`
+      void socket.leave(room)
+      logger.debug({ socketId: socket.id, room }, 'Unsubscribed from creator room')
+    })
 
     socket.on('unsubscribe:notifications', (userId: string) => {
-      if (!guardEventRate(socket)) return;
-      const room = `user:${userId}`;
-      void socket.leave(room);
-      logger.debug({ socketId: socket.id, room }, 'Unsubscribed from notifications room');
-    });
+      if (!guardEventRate(socket)) return
+      const room = `user:${userId}`
+      void socket.leave(room)
+      logger.debug({ socketId: socket.id, room }, 'Unsubscribed from notifications room')
+    })
 
     socket.on('subscribe:leaderboard', () => {
-      if (!guardEventRate(socket)) return;
-      void socket.join(LEADERBOARD_ROOM);
+      if (!guardEventRate(socket)) return
+      if (!PUBLIC_ROOMS.has(LEADERBOARD_ROOM)) {
+        socket.emit('error', { code: 'FORBIDDEN', message: 'Room is not public' })
+        return
+      }
+      void socket.join(LEADERBOARD_ROOM)
       logger.debug(
         { socketId: socket.id, room: LEADERBOARD_ROOM },
-        'Subscribed to leaderboard room',
-      );
-    });
+        'Subscribed to public leaderboard room',
+      )
+    })
 
     socket.on('unsubscribe:leaderboard', () => {
-      if (!guardEventRate(socket)) return;
-      void socket.leave(LEADERBOARD_ROOM);
+      if (!guardEventRate(socket)) return
+      void socket.leave(LEADERBOARD_ROOM)
       logger.debug(
         { socketId: socket.id, room: LEADERBOARD_ROOM },
         'Unsubscribed from leaderboard room',
-      );
-    });
+      )
+    })
 
     socket.on('disconnect', (reason) => {
-      logger.info({ socketId: socket.id, reason }, 'Client disconnected');
-    });
-  });
+      logger.info({ socketId: socket.id, reason }, 'Client disconnected')
+    })
+  })
 
-  const sweepInterval = setInterval(() => eventLimiter.sweep(), 60_000);
-  sweepInterval.unref();
+  const sweepInterval = setInterval(() => eventLimiter.sweep(), 60_000)
+  sweepInterval.unref()
 
   registerClosable({
     name: 'Socket.IO',
@@ -192,10 +209,10 @@ export function initRealtime(httpServer: HttpServer): RealtimeServer {
       await new Promise<void>((resolve) => gateway.close(() => resolve()));
       if (io === gateway) io = null;
     },
-  });
+  })
 
-  logger.info('Realtime gateway initialized');
-  return io;
+  logger.info('Realtime gateway initialized')
+  return io
 }
 
 export function emitTipCreated(tip: TipResponseDto): void {
@@ -212,7 +229,7 @@ export function emitNotificationCreated(notification: NotificationPayload): void
   logger.debug(
     { notificationId: notification.id, room: `user:${notification.userId}` },
     'Emitted notification.created',
-  );
+  )
 }
 
 /** Notifies a user's authenticated sockets (the `user:<id>` room) that their balance changed. */
@@ -223,7 +240,7 @@ export function emitBalanceUpdated(balance: BalanceUpdatedPayload): void {
   logger.debug(
     { userId: balance.userId, room: `user:${balance.userId}` },
     'Emitted balance.updated',
-  );
+  )
 }
 
 /** Broadcasts a leaderboard rank change to every socket subscribed to the public `leaderboard` room. */
@@ -234,11 +251,11 @@ export function emitLeaderboardUpdated(update: LeaderboardUpdatedPayload): void 
   logger.debug(
     { userId: update.entry.userId, window: update.window, room: LEADERBOARD_ROOM },
     'Emitted leaderboard.updated',
-  );
+  )
 }
 
 export function getIO(): SocketIOServer<ClientToServerEvents, ServerToClientEvents> | null {
-  return io;
+  return io
 }
 
 function bufferEvent(room: string, event: string, payload: unknown): void {

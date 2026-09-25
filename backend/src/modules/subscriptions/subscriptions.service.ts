@@ -266,6 +266,11 @@ export async function submitCreateSubscription(
       pendingInterval: null,
       changeEffectiveAt: null,
       status: 'ACTIVE',
+      chargeFailureCount: 0,
+      dunningStartedAt: null,
+      nextChargeRetryAt: null,
+      lastChargeFailureReason: null,
+      chargeAttemptStartedAt: null,
       deletedAt: null,
     },
   });
@@ -382,6 +387,8 @@ export async function submitCancelSubscription(
       pendingAmountStroops: null,
       pendingInterval: null,
       changeEffectiveAt: null,
+      nextChargeRetryAt: null,
+      chargeAttemptStartedAt: null,
     },
   });
 
@@ -399,6 +406,7 @@ export async function submitCancelSubscription(
 export async function chargeSubscriptionOnChain(
   subscriberAddress: string,
   creatorAddress: string,
+  confirmation: SubscriptionChargeConfirmationOptions = {},
 ): Promise<void> {
   const contractId = config.stellar.contractId;
   if (!contractId) throw new Error('Contract ID is not configured');
@@ -438,7 +446,65 @@ export async function chargeSubscriptionOnChain(
   const sendResponse = await rpcCall((server) => server.sendTransaction(prepared), {
     operationName: 'sendTransaction',
   });
+  if (sendResponse.status === 'TRY_AGAIN_LATER') {
+    throw new Error('Subscription charge transaction submission is temporarily unavailable');
+  }
+
   if (sendResponse.status !== 'PENDING' && sendResponse.status !== 'DUPLICATE') {
     throw new Error('Subscription charge transaction rejected by the network');
+  }
+
+  // DUPLICATE means this exact transaction was already submitted. It is not
+  // proof of execution, but its hash can be confirmed in the same way as a
+  // newly accepted PENDING transaction.
+  await confirmSubscriptionCharge(sendResponse.hash, confirmation);
+}
+
+const DEFAULT_CONFIRMATION_TIMEOUT_MS = 60_000;
+const DEFAULT_CONFIRMATION_POLL_INTERVAL_MS = 1_000;
+
+interface SubscriptionChargeConfirmationOptions {
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  now?: () => number;
+  sleep?: (milliseconds: number) => Promise<void>;
+}
+
+async function confirmSubscriptionCharge(
+  transactionHash: string,
+  options: SubscriptionChargeConfirmationOptions,
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_CONFIRMATION_TIMEOUT_MS;
+  const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_CONFIRMATION_POLL_INTERVAL_MS;
+  const now = options.now ?? Date.now;
+  const sleep = options.sleep ??
+    ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  const deadline = now() + timeoutMs;
+
+  while (true) {
+    const remainingBeforeCallMs = deadline - now();
+    if (remainingBeforeCallMs <= 0) {
+      throw new Error('Subscription charge confirmation timed out');
+    }
+
+    const response = await rpcCall((server) => server.getTransaction(transactionHash), {
+      operationName: 'getTransaction',
+      timeoutMs: remainingBeforeCallMs,
+    });
+
+    if (response.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
+      return;
+    }
+
+    if (response.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
+      throw new Error('Subscription charge transaction failed on-chain');
+    }
+
+    const remainingAfterCallMs = deadline - now();
+    if (remainingAfterCallMs <= 0) {
+      throw new Error('Subscription charge confirmation timed out');
+    }
+
+    await sleep(Math.min(pollIntervalMs, remainingAfterCallMs));
   }
 }
