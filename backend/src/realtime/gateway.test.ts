@@ -2,7 +2,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import jwt from 'jsonwebtoken'
 import { io as ioClient, type Socket as ClientSocket } from 'socket.io-client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../config/index.js'
 import {
   initRealtime,
@@ -10,6 +10,7 @@ import {
   emitTipCreated,
   emitNotificationCreated,
   emitLeaderboardUpdated,
+  scheduleTokenExpiry,
 } from './gateway.js'
 import type { TipResponseDto } from '../modules/tips/tips.dto.js'
 
@@ -18,6 +19,125 @@ function makeToken(payload: { userId: string; stellarAddress: string }): string 
     expiresIn: '15m',
   })
 }
+
+describe('realtime authentication hardening (issue #1282)', () => {
+  let httpServer: ReturnType<typeof createServer>;
+  let port: number;
+  let clientSocket: ClientSocket;
+
+  beforeEach(async () => {
+    httpServer = createServer();
+    initRealtime(httpServer);
+    await new Promise<void>((resolve) => httpServer.listen(0, resolve));
+    port = (httpServer.address() as AddressInfo).port;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    clientSocket?.close();
+    httpServer.close();
+  });
+
+  it('authenticates a handshake token from the auth payload', async () => {
+    clientSocket = ioClient(`http://localhost:${port}`, {
+      auth: { token: makeToken({ userId: 'auth-user', stellarAddress: 'GAUTH' }) },
+      transports: ['websocket'],
+    });
+
+    const connected = await new Promise<{ userId: string }>((resolve, reject) => {
+      clientSocket.on('connected', resolve);
+      clientSocket.on('connect_error', reject);
+    });
+
+    expect(connected).toEqual({ userId: 'auth-user' });
+  });
+
+  it('does not accept a token from the query string', async () => {
+    clientSocket = ioClient(`http://localhost:${port}`, {
+      query: { token: makeToken({ userId: 'query-user', stellarAddress: 'GQUERY' }) },
+      transports: ['websocket'],
+    });
+
+    const error = await new Promise<Error>((resolve) => {
+      clientSocket.on('connect_error', resolve);
+    });
+
+    expect(error.message).toBe('Authentication token is required');
+  });
+
+  it('rejects an invalid auth-payload token', async () => {
+    clientSocket = ioClient(`http://localhost:${port}`, {
+      auth: { token: 'invalid-token' },
+      transports: ['websocket'],
+    });
+
+    const error = await new Promise<Error>((resolve) => {
+      clientSocket.on('connect_error', resolve);
+    });
+
+    expect(error.message).toBe('Invalid or expired token');
+  });
+
+  it('emits a distinguishable reason and disconnects when a live token expires', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+    const socket = {
+      id: 'expiring-socket',
+      data: {
+        auth: {
+          userId: 'expiring-user',
+          exp: Date.now() / 1_000 + 1,
+        },
+      },
+      emit: vi.fn(),
+      disconnect: vi.fn(),
+      once: vi.fn(),
+    };
+
+    scheduleTokenExpiry(socket as never);
+    vi.advanceTimersByTime(999);
+
+    expect(socket.emit).not.toHaveBeenCalled();
+    expect(socket.disconnect).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+
+    expect(socket.emit).toHaveBeenCalledWith('auth.expired', {
+      code: 'AUTH_TOKEN_EXPIRED',
+      message: 'Access token expired',
+    });
+    expect(socket.disconnect).toHaveBeenCalledWith(true);
+  });
+
+  it('cancels the token-expiry timer when the socket disconnects first', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    let onDisconnect: (() => void) | undefined;
+
+    const socket = {
+      id: 'closed-socket',
+      data: {
+        auth: {
+          userId: 'closed-user',
+          exp: Date.now() / 1_000 + 1,
+        },
+      },
+      emit: vi.fn(),
+      disconnect: vi.fn(),
+      once: vi.fn((event: string, handler: () => void) => {
+        if (event === 'disconnect') onDisconnect = handler;
+      }),
+    };
+
+    scheduleTokenExpiry(socket as never);
+    onDisconnect?.();
+    vi.advanceTimersByTime(1_000);
+
+    expect(socket.emit).not.toHaveBeenCalled();
+    expect(socket.disconnect).not.toHaveBeenCalled();
+  });
+});
 
 describe('balance.updated (issue #951)', () => {
   let httpServer: ReturnType<typeof createServer>

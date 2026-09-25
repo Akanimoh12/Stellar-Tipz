@@ -13,6 +13,8 @@ export interface ServerToClientEvents {
   'realtime.event': (event: RoomEvent) => void;
   /** Emitted once, right after a successful auth handshake. */
   connected: (payload: { userId: string }) => void;
+  /** Emitted immediately before a socket is disconnected because its access token expired. */
+  'auth.expired': (payload: AuthExpiredPayload) => void;
   /** Emitted for handshake failures, forbidden actions, and rate limiting. */
   error: (payload: { code: string; message: string }) => void;
   'tip.created': (tip: TipResponseDto) => void;
@@ -37,7 +39,17 @@ export type InterServerEvents = Record<string, never>;
 
 /** Per-connection data attached during the auth handshake. */
 export interface SocketData {
-  auth: AuthPayload;
+  auth: RealtimeAuthPayload;
+}
+
+/** A verified access-token payload. JWT expiry is required for live socket enforcement. */
+export interface RealtimeAuthPayload extends AuthPayload {
+  exp: number;
+}
+
+export interface AuthExpiredPayload {
+  code: 'AUTH_TOKEN_EXPIRED';
+  message: string;
 }
 
 export interface NotificationPayload {
