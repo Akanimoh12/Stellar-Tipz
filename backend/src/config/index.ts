@@ -162,6 +162,13 @@ export const config = {
     level: env.LOG_LEVEL,
     sentryDsn: env.SENTRY_DSN,
   },
+
+  tracing: {
+    enabled: env.OTEL_ENABLED,
+    serviceName: env.OTEL_SERVICE_NAME,
+    otlpEndpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT,
+    sampleRate: env.OTEL_SAMPLE_RATE,
+  },
 } as const;
 
 export type Config = typeof config;

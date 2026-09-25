@@ -8,7 +8,7 @@ import {
   ServiceUnavailableError,
 } from "../../common/errors/AppError.js";
 import { buildGatewayUrl } from "./ipfs.utils.js";
-import { fetchWithTimeout } from "../../common/utils/fetchWithTimeout.js";
+import { tracedFetchWithTimeout } from "../../common/utils/tracedFetchWithTimeout.js";
 import type { IpfsUploadResponse } from "./ipfs.types.js";
 
 /** Default max file size limit for image uploads (5 MB) */
@@ -178,17 +178,20 @@ export async function pinImageToIpfs(
   }
 
   // 3. Pin image via IPFS HTTP API endpoint (explicit timeout + client disconnect — issue #090)
+  //    Now with OpenTelemetry tracing (issue #1349)
   try {
     const formData = new globalThis.FormData();
     const blob = new globalThis.Blob([sanitized.buffer], { type: sanitized.mimeType });
     formData.append("file", blob, file.originalname || `image.${sanitized.format}`);
 
     const endpoint = `${ipfsApiUrl.replace(/\/+$/, "")}/api/v0/add?pin=true`;
-    const response = await fetchWithTimeout(endpoint, {
+    const response = await tracedFetchWithTimeout(endpoint, {
       method: "POST",
       body: formData,
       timeoutMs: (config as unknown as { timeouts?: { ipfsMs: number } })?.timeouts?.ipfsMs ?? 15_000,
       parentSignal: opts.signal,
+      operationName: "ipfs.pin",
+      serviceName: "ipfs",
     });
 
     if (!response.ok) {

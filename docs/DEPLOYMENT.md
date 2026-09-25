@@ -176,7 +176,149 @@ docker run -p 8080:80 stellar-tipz-frontend
 
 ---
 
-## 3. Mainnet Deployment (Future)
+## 3. Frontend Error and Performance Monitoring
+
+Production observability for the frontend uses **Sentry** to capture, deduplicate, and correlate errors with backend activity. This section covers setup, configuration, and operation.
+
+### 3a. Sentry Setup
+
+1. **Create a Sentry project** at https://sentry.io
+   - Project name: `stellar-tipz-frontend`
+   - Platform: `React`
+   - Alert threshold: 10 errors per minute (adjustable)
+
+2. **Capture your DSN** (Data Source Name) — looks like `https://<key>@<org>.ingest.sentry.io/<project-id>`
+
+3. **Add to deployment environment**:
+   ```env
+   # frontend-scaffold/.env or Vercel environment variables
+   VITE_SENTRY_DSN=https://<key>@<org>.ingest.sentry.io/<project-id>
+   ```
+
+   If `VITE_SENTRY_DSN` is not set, Sentry is disabled and errors are only logged locally.
+
+### 3b. Source Maps & Release Tracking
+
+**Why this matters:** Stack traces in production are minified and unreadable without source maps. The integration automatically uploads them on build.
+
+1. **Build configuration**
+   - `frontend-scaffold/vite.config.ts` already sets `sourcemap: true` in the production build
+   - Git commit SHA is injected via `VITE_GIT_COMMIT` (set by CI/CD or build environment)
+   - Release version is derived from `package.json` + git commit, e.g., `stellar-tipz@0.1.0+abc1234`
+
+2. **Upload source maps to Sentry** (recommended for Mainnet)
+   ```bash
+   # Install Sentry CLI
+   npm install -g @sentry/cli
+
+   # After building (npm run build)
+   sentry-cli releases files upload-sourcemaps \
+     --org <org> \
+     --project stellar-tipz-frontend \
+     ./build/assets
+   ```
+
+   For CI/CD (GitHub Actions, etc.), automate this step after a production build.
+
+3. **Vercel integration** (easiest path for Vercel deployments)
+   - Connect your Sentry project to Vercel in Vercel dashboard
+   - Sentry automatically uploads source maps on every deploy
+
+### 3c. Frontend-to-Backend Request Correlation
+
+**This is the highest-value part:** Errors are tagged with a `request_id` that matches the backend request, enabling a complete trace from user action → frontend error → backend logs.
+
+**How it works:**
+
+1. **Backend** generates a unique `x-request-id` header for every request (set by `requestId` middleware in `backend/src/common/middleware/requestId.ts`)
+2. **Frontend API client** (`frontend-scaffold/src/services/api/client.ts`) extracts the `x-request-id` response header
+3. **Sentry context** is updated with `setRequestId(requestId)`, attaching the ID to all subsequent errors
+4. **Error events** in Sentry include the `request_id` tag, linking frontend and backend traces
+
+**Example trace:**
+```
+User clicks "Tip" button
+  → Frontend error: TypeError in tipping service
+    → Error event includes request_id: "a1b2c3d4-e5f6-7890..."
+    → Backend logs for x-request-id: a1b2c3d4-e5f6-7890...
+      → Full stack: database query, contract interaction, response
+```
+
+### 3d. PII Scrubbing
+
+Sentry automatically scrubs **Personally Identifiable Information** before transmission:
+
+- **Stellar addresses** (56-char G/C/S keys) → `[REDACTED]`
+- **Private keys** (64+ hex chars) → `[REDACTED]`
+- **Email addresses** → `[REDACTED]`
+- **Phone numbers** → `[REDACTED]`
+- **Sensitive keys** (password, token, secret, apiKey, privateKey) → `[REDACTED]`
+
+All error messages, stack traces, breadcrumbs, and tags are automatically scrubbed via the `beforeSend` hook in `frontend-scaffold/src/services/sentry.ts`.
+
+**Verify scrubbing:**
+- Look at a captured error in Sentry dashboard
+- Breadcrumbs, tags, and exception messages should not contain full addresses or keys
+
+### 3e. Sampling & Cost Control
+
+The frontend uses **distributed sampling** to balance observability with cost:
+
+- **Traces:** 10% of page loads generate a full performance trace (detects slow interactions, API latency)
+- **Profiles:** 10% of transactions include profiling data (optional, provides CPU/memory details)
+- **Error events:** 100% captured and deduplicated (duplicates → 1 fingerprint in Sentry)
+
+**Adjust sampling** in `frontend-scaffold/src/services/sentry.ts` if cost or quota is an issue:
+
+```typescript
+tracesSampleRate: 0.05,  // 5% instead of 10%
+profilesSampleRate: 0.05,
+```
+
+### 3f. Route & Navigation Tracking
+
+Every route change is captured as a breadcrumb with the route path and query parameters:
+
+- Enables filtering errors by page (e.g., "Errors on `/profiles/:username`")
+- Helps reproduce issues with exact user navigation flow
+- Automatically integrated via `useSentryRouteTracking()` hook in `App.tsx`
+
+### 3g. Monitoring Checklist
+
+Before production rollout:
+
+- [ ] `VITE_SENTRY_DSN` configured in all deployment environments
+- [ ] Source maps uploaded to Sentry (test with a minified error on staging)
+- [ ] Backend `x-request-id` header present in all API responses (verify via browser DevTools)
+- [ ] One test error event captured and visible in Sentry dashboard
+- [ ] Scrubbing verified: test event contains no full addresses, keys, or PII
+- [ ] Sampling configured appropriately for your error volume
+- [ ] Team has access to Sentry project and knows how to filter/search errors
+
+### 3h. Troubleshooting
+
+**Errors not appearing in Sentry:**
+- Check `VITE_SENTRY_DSN` is set and valid
+- Check browser console for Sentry initialization errors
+- In DevTools Network tab, look for `https://<org>.ingest.sentry.io/...` requests
+
+**Source maps not working (stack traces still minified):**
+- Confirm `sourcemap: true` in `vite.config.ts` build config
+- Upload source maps via `sentry-cli` or Vercel integration
+- Verify map files are in `build/assets/` and have corresponding `.map` extensions
+
+**PII not being scrubbed:**
+- Update PII patterns in `beforeSend` hook if new formats are discovered
+- Test in staging by intentionally logging sensitive data and checking Sentry
+
+**High error volume or quota exceeded:**
+- Adjust `tracesSampleRate` lower (e.g., 0.05 for 5%)
+- Enable server-side filtering in Sentry project settings to ignore non-critical errors
+- Use `ignoreErrors` configuration to skip known harmless errors
+
+---
+
+## 4. Mainnet Deployment (Future)
 
 > ⚠️ Mainnet deployment requires a security audit first.
 
@@ -193,7 +335,7 @@ docker run -p 8080:80 stellar-tipz-frontend
 
 ---
 
-## 4. Database migration rollback runbook
+## 5. Database migration rollback runbook
 
 Database migrations are forward-only in Prisma, so rollback is an incident
 procedure rather than `prisma migrate down`.
@@ -230,7 +372,7 @@ The pull-request CI rehearses the newest migration against a seeded PostgreSQL
 16 database: it applies the complete history, runs the Prisma seed, executes
 the newest `down.sql`, and verifies that the database schema changed.
 
-## 4a. Chain finality & indexer reorg handling (issue #1257)
+## 5a. Chain finality & indexer reorg handling (issue #1257)
 
 **Finality policy.** Stellar reaches agreement through SCP: a ledger is either
 *externalized* (final) or it is not — there is no probabilistic confirmation
@@ -278,7 +420,7 @@ buffer.
 Tests: `backend/src/indexer/reorg.test.ts` drives fixtures simulating reorgs
 at depths 1, 5, and 15 (below, at, and beyond the finality depth).
 
-## 5. Helper Scripts
+## 7. Helper Scripts
 
 Located in `scripts/`:
 
@@ -330,7 +472,7 @@ Generate TypeScript bindings from the deployed contract:
 
 ---
 
-## 5. Post-Deployment Checklist
+## 6. Post-Deployment Checklist
 
 - [ ] Contract deployed and initialized
 - [ ] `get_stats()` returns expected initial values
@@ -345,7 +487,14 @@ Generate TypeScript bindings from the deployed contract:
 
 ---
 
-## 6. Emergency Procedures and Rollback
+## 7. Emergency Procedures and Rollback
+
+> **For anything that is actually happening right now, use [`docs/INCIDENT_RESPONSE.md`](INCIDENT_RESPONSE.md).**
+> It supersedes this section: it has severity definitions, escalation paths, exact
+> pause commands, rollback procedures, key-compromise handling, user-facing
+> communication templates, and the postmortem template. The summary below is
+> orientation only — in particular, the pause commands in §5a of the runbook
+> carry a required `flag` argument that the lines below omit.
 
 ### Contract pause (first response)
 
@@ -353,11 +502,14 @@ The contract supports an admin **pause** that blocks state-changing entry
 points (tips, withdrawals) while reads stay available. On a suspected exploit or
 critical bug:
 
-1. As admin, call the contract's `pause` (see `admin.rs`) to halt mutations.
-2. Communicate status to users (status page / social) — the frontend should
-   surface a maintenance banner.
+1. As admin, call the contract's `pause(caller, flag)` to halt the affected
+   operations — `flag` is required and selects which operations stop
+   (see `admin.rs` and the runbook §5a).
+2. Communicate status to users (social / Discussions) — there is no maintenance
+   banner in the frontend yet (runbook §8).
 3. Investigate with on-chain events and logs before resuming.
-4. Call `unpause` only once the issue is understood and mitigated.
+4. Call `unpause(caller, flag)` only once the issue is understood and mitigated.
+   A global pause is only lifted by `unpause(caller, 4294967295)`.
 
 ### Frontend rollback
 
@@ -385,9 +537,12 @@ and redeploy rather than rolling back code.
 
 ### Key compromise
 
-If the admin key is compromised: pause immediately, transfer admin to a new
-secure key (hardware wallet / multisig) via the admin-transfer path, rotate any
-related operational secrets, and post-mortem before unpausing.
+If the admin key is compromised, there is **no admin revocation path**:
+`set_admin` always returns `NotAuthorized`, and rotating the admin requires
+`propose_admin_change` (48 h timelock) plus confirmation by the *new* admin —
+neither of which the current admin's key can be forced through after it is
+lost. Assume the contract is attacker-controlled, rotate every off-chain secret
+first, and work the redeploy path. See runbook §5c.
 
 ### Post-incident
 

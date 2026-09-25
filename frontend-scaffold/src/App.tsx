@@ -20,6 +20,7 @@ import { useOnboarding } from "@/hooks/useOnboarding";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { useSessionTimeout } from "@/hooks/useSessionTimeout";
+import { useSentryRouteTracking } from "@/hooks/useSentryRouteTracking";
 import { useToastStore } from "@/store/toastStore";
 import { useWalletStore } from "@/store/walletStore";
 import { forceLogout } from "@/services/auth/tokenManager";
@@ -52,6 +53,7 @@ const AppLayout: React.FC = () => {
   const { isOffline } = useOfflineStatus();
   const reduceMotion = useReducedMotion();
   useAnalytics();
+  useSentryRouteTracking();
   const [updateReady, setUpdateReady] = React.useState(false);
 
   const walletConnected = useWalletStore((s) => s.connected);
