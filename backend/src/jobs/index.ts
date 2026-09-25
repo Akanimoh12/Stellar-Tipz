@@ -28,7 +28,6 @@ export {
 export {
   processDueSubscriptions,
   getNextDunningRetryAt,
-  computeNextChargeAt,
   createSubscriptionChargeWorker,
   scheduleSubscriptionCharge,
 } from './subscriptionCharge.worker.js';

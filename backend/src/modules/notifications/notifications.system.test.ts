@@ -40,6 +40,7 @@ describe('createSystemNotification', () => {
         userId: 'tipper-id',
         type: 'subscription_charge_failed',
         payload: { reason: 'Insufficient balance' },
+        deliveries: { create: { userId: 'tipper-id', channel: 'in_app', status: 'delivered' } },
       },
     });
     expect(mockEmit).toHaveBeenCalledWith(

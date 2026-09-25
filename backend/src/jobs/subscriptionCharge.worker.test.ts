@@ -28,7 +28,6 @@ vi.mock('../modules/notifications/notifications.service.js', () => ({
 }));
 
 import {
-  computeNextChargeAt,
   getNextDunningRetryAt,
   processDueSubscriptions,
 } from './subscriptionCharge.worker.js';
@@ -67,13 +66,7 @@ describe('subscription dunning schedule', () => {
     expect(getNextDunningRetryAt(start, 4)).toBeNull();
   });
 
-  it('advances the regular billing anchor by one interval', () => {
-    expect(computeNextChargeAt(DUE, 'DAILY').toISOString()).toBe('2026-09-21T12:00:00.000Z');
-    expect(computeNextChargeAt(DUE, 'WEEKLY').toISOString()).toBe('2026-09-27T12:00:00.000Z');
-    expect(computeNextChargeAt(new Date('2026-01-31T12:00:00.000Z'), 'MONTHLY').toISOString()).toBe(
-      '2026-03-02T12:00:00.000Z',
-    );
-  });
+
 });
 
 describe('processDueSubscriptions', () => {
@@ -117,7 +110,7 @@ describe('processDueSubscriptions', () => {
     expect(mockCharge).not.toHaveBeenCalled();
   });
 
-  it('uses the production charge helper with Stellar addresses and clears dunning on success', async () => {
+  it('confirms on-chain without advancing periods before the indexer', async () => {
     mockFindMany.mockResolvedValue([subscription()]);
 
     await expect(processDueSubscriptions({ now: NOW })).resolves.toEqual({
@@ -126,15 +119,8 @@ describe('processDueSubscriptions', () => {
     });
 
     expect(mockCharge).toHaveBeenCalledWith('GSUBSCRIBER', 'GCREATOR');
-    expect(persistedData()).toEqual({
-      status: 'ACTIVE',
-      nextChargeAt: new Date('2026-09-27T12:00:00.000Z'),
-      chargeFailureCount: 0,
-      dunningStartedAt: null,
-      nextChargeRetryAt: null,
-      lastChargeFailureReason: null,
-      chargeAttemptStartedAt: null,
-    });
+    expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+    expect(persistedData()).toEqual({ chargeAttemptStartedAt: NOW });
     expect(mockSystemNotification).not.toHaveBeenCalled();
   });
 
@@ -249,7 +235,7 @@ describe('processDueSubscriptions', () => {
   it.each([
     { priorFailures: 1, label: 'day-1' },
     { priorFailures: 2, label: 'later' },
-  ])('recovers cleanly on a $label retry', async ({ priorFailures }) => {
+  ])('retains the claim until the indexer projects a successful $label retry', async ({ priorFailures }) => {
     mockFindMany.mockResolvedValue([
       subscription({
         status: 'PAST_DUE',
@@ -261,13 +247,8 @@ describe('processDueSubscriptions', () => {
 
     await processDueSubscriptions({ now: NOW });
 
-    expect(persistedData()).toMatchObject({
-      status: 'ACTIVE',
-      chargeFailureCount: 0,
-      dunningStartedAt: null,
-      nextChargeRetryAt: null,
-      lastChargeFailureReason: null,
-    });
+    expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+    expect(persistedData()).toEqual({ chargeAttemptStartedAt: NOW });
     expect(mockSystemNotification).not.toHaveBeenCalled();
   });
 
@@ -310,7 +291,6 @@ describe('processDueSubscriptions', () => {
     const sub = subscription();
     mockFindMany.mockResolvedValue([sub, sub]);
     mockUpdateMany
-      .mockResolvedValueOnce({ count: 1 })
       .mockResolvedValueOnce({ count: 1 })
       .mockResolvedValueOnce({ count: 0 });
 

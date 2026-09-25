@@ -16,6 +16,8 @@ vi.mock('../common/utils/logger.js', () => ({
 import { publishProjection, REALTIME_PROJECTION_CHANNEL } from './realtime-publisher.js';
 import type { DecodedEvent } from './sorobanClient.js';
 
+vi.mock('../realtime/catchup.js', () => ({ publishRoomEvent: vi.fn().mockResolvedValue(undefined) }));
+
 const tipEvent: DecodedEvent = {
   ledger: 100,
   txHash: 'fixture-tip-tx-001',

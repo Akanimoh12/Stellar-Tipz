@@ -1,13 +1,14 @@
-import type { Server as HttpServer } from 'node:http'
-import { Server as SocketIOServer } from 'socket.io'
-import { createAdapter } from '@socket.io/redis-adapter'
-import { env } from '../config/env.js'
-import { config } from '../config/index.js'
-import { logger } from '../common/utils/logger.js'
-import { registerClosable } from '../common/utils/lifecycle.js'
-import { redis } from '../db/redis.js'
-import { socketAuth } from './auth.js'
-import { connectionRateLimit, eventLimiter, guardEventRate } from './rateLimit.js'
+import { configureBackpressure } from '../modules/realtime/backpressure.js';
+import type { Server as HttpServer } from 'node:http';
+import { Server as SocketIOServer } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { env } from '../config/env.js';
+import { config } from '../config/index.js';
+import { logger } from '../common/utils/logger.js';
+import { registerClosable } from '../common/utils/lifecycle.js';
+import { redis } from '../db/redis.js';
+import { socketAuth } from './auth.js';
+import { connectionRateLimit, eventLimiter, guardEventRate } from './rateLimit.js';
 import type {
   ServerToClientEvents,
   ClientToServerEvents,
@@ -16,8 +17,15 @@ import type {
   NotificationPayload,
   BalanceUpdatedPayload,
   LeaderboardUpdatedPayload,
-} from './types.js'
-import type { TipResponseDto } from '../modules/tips/tips.dto.js'
+} from './types.js';
+import {
+  catchUp,
+  catchupRequestSchema,
+  publishRoomEvent,
+  ROOM_EVENT_CHANNEL,
+  type RoomEvent,
+} from './catchup.js';
+import type { TipResponseDto } from '../modules/tips/tips.dto.js';
 
 /** Room joined by every socket that wants public leaderboard updates. */
 const LEADERBOARD_ROOM = 'leaderboard'
@@ -36,8 +44,8 @@ let io: RealtimeServer | null = null
  * Heartbeat tuning (see docs/REALTIME.md): how often the server pings each
  * client, and how long it waits for a pong before considering it disconnected.
  */
-const HEARTBEAT_PING_INTERVAL_MS = 25_000
-const HEARTBEAT_PING_TIMEOUT_MS = 20_000
+const HEARTBEAT_PING_INTERVAL_MS = env.SOCKET_IO_HEARTBEAT_INTERVAL_MS;
+const HEARTBEAT_PING_TIMEOUT_MS = env.SOCKET_IO_CONNECTION_TIMEOUT_MS;
 
 export function initRealtime(httpServer: HttpServer): RealtimeServer {
   io = new SocketIOServer<
@@ -53,10 +61,12 @@ export function initRealtime(httpServer: HttpServer): RealtimeServer {
     },
     pingInterval: HEARTBEAT_PING_INTERVAL_MS,
     pingTimeout: HEARTBEAT_PING_TIMEOUT_MS,
-  })
+  });
 
-  io.use(connectionRateLimit)
-  io.use(socketAuth)
+  const gateway = io;
+  configureBackpressure(io as unknown as SocketIOServer);
+  io.use(connectionRateLimit);
+  io.use(socketAuth);
 
   if (config.realtime.redisAdapterEnabled) {
     const pubClient = redis.duplicate()
@@ -73,10 +83,50 @@ export function initRealtime(httpServer: HttpServer): RealtimeServer {
     logger.info('Socket.IO Redis adapter attached')
   }
 
+  const subscriber = redis.duplicate();
+  subscriber.on('message', (channel, raw) => {
+    if (channel !== ROOM_EVENT_CHANNEL) return;
+    try {
+      const message = JSON.parse(raw) as RoomEvent;
+      gateway.local.to(message.room).emit('realtime.event', message);
+    } catch (err) {
+      logger.error({ err }, 'Invalid realtime room event');
+    }
+  });
+  void subscriber
+    .subscribe(ROOM_EVENT_CHANNEL)
+    .catch((err: unknown) => logger.error({ err }, 'Realtime subscription failed'));
+  registerClosable({
+    name: 'Realtime catch-up subscriber',
+    close: async () => {
+      await subscriber.quit();
+    },
+  });
+
   io.on('connection', (socket) => {
     const { userId } = socket.data.auth
     logger.info({ socketId: socket.id, userId }, 'Client connected')
     socket.emit('connected', { userId })
+
+    socket.on('realtime:catchup', async (request, reply) => {
+      if (!guardEventRate(socket) || typeof reply !== 'function') return;
+      const parsed = catchupRequestSchema.safeParse(request);
+      if (!parsed.success) {
+        reply({ events: [], refreshRequired: true, error: 'INVALID_REQUEST' });
+        return;
+      }
+      const { room, lastSeenId } = parsed.data;
+      if (!socket.rooms.has(room) || (room.startsWith('user:') && room !== `user:${userId}`)) {
+        reply({ events: [], refreshRequired: true, error: 'FORBIDDEN' });
+        return;
+      }
+      try {
+        reply(await catchUp(room, lastSeenId));
+      } catch (err) {
+        logger.error({ err, room }, 'Realtime catch-up unavailable');
+        reply({ events: [], refreshRequired: true, error: 'UNAVAILABLE' });
+      }
+    });
 
     socket.on('subscribe:creator', (creatorAddress: string) => {
       if (!guardEventRate(socket)) return
@@ -155,8 +205,9 @@ export function initRealtime(httpServer: HttpServer): RealtimeServer {
   registerClosable({
     name: 'Socket.IO',
     close: async () => {
-      clearInterval(sweepInterval)
-      await new Promise<void>((resolve) => io?.close(() => resolve()))
+      clearInterval(sweepInterval);
+      await new Promise<void>((resolve) => gateway.close(() => resolve()));
+      if (io === gateway) io = null;
     },
   })
 
@@ -165,14 +216,16 @@ export function initRealtime(httpServer: HttpServer): RealtimeServer {
 }
 
 export function emitTipCreated(tip: TipResponseDto): void {
-  if (!io) return
-  io.to(`creator:${tip.toAddress}`).emit('tip.created', tip)
-  logger.debug({ txHash: tip.txHash, room: `creator:${tip.toAddress}` }, 'Emitted tip.created')
+  bufferEvent(`creator:${tip.toAddress}`, 'tip.created', tip);
+  if (!io) return;
+  io.to(`creator:${tip.toAddress}`).emit('tip.created', tip);
+  logger.debug({ txHash: tip.txHash, room: `creator:${tip.toAddress}` }, 'Emitted tip.created');
 }
 
 export function emitNotificationCreated(notification: NotificationPayload): void {
-  if (!io) return
-  io.to(`user:${notification.userId}`).emit('notification.created', notification)
+  bufferEvent(`user:${notification.userId}`, 'notification.created', notification);
+  if (!io) return;
+  io.to(`user:${notification.userId}`).emit('notification.created', notification);
   logger.debug(
     { notificationId: notification.id, room: `user:${notification.userId}` },
     'Emitted notification.created',
@@ -181,8 +234,9 @@ export function emitNotificationCreated(notification: NotificationPayload): void
 
 /** Notifies a user's authenticated sockets (the `user:<id>` room) that their balance changed. */
 export function emitBalanceUpdated(balance: BalanceUpdatedPayload): void {
-  if (!io) return
-  io.to(`user:${balance.userId}`).emit('balance.updated', balance)
+  bufferEvent(`user:${balance.userId}`, 'balance.updated', balance);
+  if (!io) return;
+  io.to(`user:${balance.userId}`).emit('balance.updated', balance);
   logger.debug(
     { userId: balance.userId, room: `user:${balance.userId}` },
     'Emitted balance.updated',
@@ -191,8 +245,9 @@ export function emitBalanceUpdated(balance: BalanceUpdatedPayload): void {
 
 /** Broadcasts a leaderboard rank change to every socket subscribed to the public `leaderboard` room. */
 export function emitLeaderboardUpdated(update: LeaderboardUpdatedPayload): void {
-  if (!io) return
-  io.to(LEADERBOARD_ROOM).emit('leaderboard.updated', update)
+  bufferEvent(LEADERBOARD_ROOM, 'leaderboard.updated', update);
+  if (!io) return;
+  io.to(LEADERBOARD_ROOM).emit('leaderboard.updated', update);
   logger.debug(
     { userId: update.entry.userId, window: update.window, room: LEADERBOARD_ROOM },
     'Emitted leaderboard.updated',
@@ -201,4 +256,10 @@ export function emitLeaderboardUpdated(update: LeaderboardUpdatedPayload): void 
 
 export function getIO(): SocketIOServer<ClientToServerEvents, ServerToClientEvents> | null {
   return io
+}
+
+function bufferEvent(room: string, event: string, payload: unknown): void {
+  void publishRoomEvent(room, event, payload).catch((err: unknown) =>
+    logger.error({ err, room }, 'Realtime buffer unavailable; durable REST data remains available'),
+  );
 }

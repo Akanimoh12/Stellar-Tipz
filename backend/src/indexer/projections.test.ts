@@ -9,7 +9,7 @@ const {
   mockGoalFindUnique,
   mockSubUpsert,
   mockSubUpdateMany,
-  mockTipUpsert,
+  mockTipCreate,
   mockTipFindUnique,
   mockTipUpdate,
   mockRefundUpsert,
@@ -26,7 +26,7 @@ const {
   mockGoalFindUnique: vi.fn(),
   mockSubUpsert: vi.fn(),
   mockSubUpdateMany: vi.fn(),
-  mockTipUpsert: vi.fn(),
+  mockTipCreate: vi.fn(),
   mockTipFindUnique: vi.fn(),
   mockTipUpdate: vi.fn(),
   mockRefundUpsert: vi.fn(),
@@ -43,27 +43,30 @@ vi.mock('../db/prisma.js', () => ({
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => {
       // Provide a tx object that mirrors the mocked methods
       const tx = {
-        user: { upsert: mockUserUpsert },
+        user: { upsert: mockUserUpsert, findUnique: vi.fn().mockResolvedValue(null) },
         goal: { upsert: mockGoalUpsert, updateMany: mockGoalUpdateMany },
-        subscription: { upsert: mockSubUpsert, updateMany: mockSubUpdateMany },
-        tip: { upsert: mockTipUpsert, findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+        subscription: { upsert: mockSubUpsert, updateMany: mockSubUpdateMany, findUnique: vi.fn().mockResolvedValue(null) },
+        tip: { create: mockTipCreate, findUnique: mockTipFindUnique, update: mockTipUpdate },
         eventLog: { findFirst: mockEventLogFindFirst, create: mockEventLogCreate, findUnique: vi.fn() },
         creditScore: { upsert: mockCreditScoreUpsert },
         creditScoreHistory: { upsert: mockCreditScoreHistoryUpsert },
-        refund: { upsert: vi.fn(), findUnique: vi.fn() },
+        refund: { upsert: mockRefundUpsert, findUnique: vi.fn() },
       };
       return fn(tx as never);
     }),
-    user: { upsert: mockUserUpsert },
+    user: { upsert: mockUserUpsert, findUnique: vi.fn().mockResolvedValue(null) },
     goal: { upsert: mockGoalUpsert, updateMany: mockGoalUpdateMany, findUnique: mockGoalFindUnique },
-    subscription: { upsert: mockSubUpsert, updateMany: mockSubUpdateMany },
-    tip: { upsert: mockTipUpsert, findUnique: mockTipFindUnique, update: mockTipUpdate },
+    subscription: { upsert: mockSubUpsert, updateMany: mockSubUpdateMany, findUnique: vi.fn().mockResolvedValue(null) },
+    tip: { create: mockTipCreate, findUnique: mockTipFindUnique, update: mockTipUpdate },
     refund: { upsert: mockRefundUpsert },
     eventLog: { findFirst: mockEventLogFindFirst, create: mockEventLogCreate },
     creditScore: { upsert: mockCreditScoreUpsert },
     creditScoreHistory: { upsert: mockCreditScoreHistoryUpsert },
   },
 }));
+
+vi.mock('../realtime/index.js', () => ({ emitNotificationCreated: vi.fn() }));
+vi.mock('../common/observability/metrics.js', () => ({ recordUnknownEvent: vi.fn(), recordIndexerLedgerProcessed: vi.fn() }));
 
 vi.mock('./realtime-publisher.js', () => ({
   publishProjection: mockPublishProjection,
@@ -109,6 +112,7 @@ const nonTipEvent: DecodedEvent = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockTipFindUnique.mockResolvedValue(null);
   mockUserUpsert.mockImplementation(async (args: { where: { stellarAddress: string } }) => ({
     id: 'u_' + args.where.stellarAddress,
   }));
@@ -175,7 +179,7 @@ describe('projectEvent — realtime publish', () => {
 
   it('still projects and publishes the tip event even on the early-return tip branch', async () => {
     await projectEvent(tipEvent);
-    expect(mockTipUpsert).toHaveBeenCalledOnce();
+    expect(mockTipCreate).toHaveBeenCalledOnce();
     expect(mockPublishProjection).toHaveBeenCalledWith(tipEvent);
   });
 });
@@ -307,14 +311,8 @@ describe('projectEvent — goals (#899)', () => {
 
   it('publishes a realtime projection for goal_completed', async () => {
     await projectEvent(event('goal_completed', [ADDR_A, '1735000000', '5000', '5000', '105']));
-    expect(mockPublishProjection).toHaveBeenCalledWith(
-      'goal_completed',
-      expect.objectContaining({
-        userId: 'u_' + ADDR_A,
-        targetStroops: '5000',
-        raisedStroops: '5000',
-      }),
-    );
+    expect(mockPublishProjection).toHaveBeenCalledOnce();
+    expect(mockPublishProjection).toHaveBeenCalledWith(expect.objectContaining({ topic: 'goal_completed' }));
   });
 
   it('goal_completed is idempotent on replay', async () => {
@@ -361,6 +359,9 @@ describe('projectEvent — subscriptions (#900)', () => {
           nextChargeRetryAt: null,
           lastChargeFailureReason: null,
           chargeAttemptStartedAt: null,
+          pendingAmountStroops: null,
+          pendingInterval: null,
+          changeEffectiveAt: null,
         },
       }),
     );
@@ -371,12 +372,7 @@ describe('projectEvent — subscriptions (#900)', () => {
 
     await projectEvent(event('sub_created', [ADDR_A, ADDR_B, '500', 7]));
 
-    expect(mockSubUpsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        create: expect.objectContaining({ nextChargeAt: expect.any(Date), status: 'ACTIVE' }),
-        update: {},
-      }),
-    );
+    expect(mockSubUpsert).not.toHaveBeenCalled();
   });
 
   it('records a charge by keeping the subscription active', async () => {
@@ -384,37 +380,23 @@ describe('projectEvent — subscriptions (#900)', () => {
     expect(mockSubUpsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: `sub_u_${ADDR_A}_u_${ADDR_B}` },
-        update: {
-          amountStroops: 500n,
-          status: 'ACTIVE',
-          chargeFailureCount: 0,
-          dunningStartedAt: null,
-          nextChargeRetryAt: null,
-          lastChargeFailureReason: null,
-          chargeAttemptStartedAt: null,
-        },
+        update: expect.objectContaining({ amountStroops: 500n, status: 'ACTIVE', chargeFailureCount: 0, dunningStartedAt: null, nextChargeRetryAt: null, lastChargeFailureReason: null, chargeAttemptStartedAt: null }),
       }),
     );
   });
 
-  it('does not reactivate or clear dunning state when sub_exec is replayed', async () => {
-    mockEventLogFindFirst.mockResolvedValue({ id: 'existing' });
-
+  it('charge is idempotent — replay does not advance the period twice', async () => {
+    mockEventLogFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'existing' });
     await projectEvent(event('sub_exec', [ADDR_A, ADDR_B, '500']));
-
-    expect(mockSubUpsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        create: expect.objectContaining({ status: 'ACTIVE' }),
-        update: {},
-      }),
-    );
+    await projectEvent(event('sub_exec', [ADDR_A, ADDR_B, '500']));
+    expect(mockSubUpsert).toHaveBeenCalledOnce();
   });
 
   it('cancels a subscription via updateMany', async () => {
     await projectEvent(event('sub_cancel', [ADDR_A, ADDR_B]));
     expect(mockSubUpdateMany).toHaveBeenCalledWith({
       where: { id: `sub_u_${ADDR_A}_u_${ADDR_B}` },
-      data: { status: 'CANCELLED', nextChargeRetryAt: null, chargeAttemptStartedAt: null },
+      data: { status: 'CANCELLED', pendingAmountStroops: null, pendingInterval: null, changeEffectiveAt: null, nextChargeRetryAt: null, chargeAttemptStartedAt: null },
     });
   });
 
@@ -449,42 +431,41 @@ describe('projectEvent — tip idempotency (#892)', () => {
   it('persists a new tip event and upserts the Tip row', async () => {
     mockEventLogFindFirst.mockResolvedValue(null);
     mockEventLogCreate.mockResolvedValue({});
-    mockTipUpsert.mockResolvedValue({});
+    mockTipCreate.mockResolvedValue({});
 
     await projectEvent(tipEvent);
 
     expect(mockEventLogCreate).toHaveBeenCalledOnce();
-    expect(mockTipUpsert).toHaveBeenCalledOnce();
-    expect(mockTipUpsert).toHaveBeenCalledWith(
+    expect(mockTipCreate).toHaveBeenCalledOnce();
+    expect(mockTipCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { txHash: tipEvent.txHash },
-        update: {},
+        data: expect.objectContaining({ txHash: tipEvent.txHash, status: 'CONFIRMED' }),
       }),
     );
   });
 
   it('skips duplicate event log on re-run over the same ledger', async () => {
     mockEventLogFindFirst.mockResolvedValue({ id: 'existing' });
-    mockTipUpsert.mockResolvedValue({});
+    mockTipCreate.mockResolvedValue({});
 
     await projectEvent(tipEvent);
 
     expect(mockEventLogCreate).not.toHaveBeenCalled();
-    expect(mockTipUpsert).toHaveBeenCalledOnce();
+    expect(mockTipCreate).toHaveBeenCalledOnce();
   });
 
   it('produces no duplicate Tip rows when replayed over the same events', async () => {
     mockEventLogFindFirst.mockResolvedValueOnce(null);
     mockEventLogCreate.mockResolvedValueOnce({});
-    mockTipUpsert.mockResolvedValueOnce({});
+    mockTipCreate.mockResolvedValueOnce({});
     await projectEvent(tipEvent);
 
     mockEventLogFindFirst.mockResolvedValueOnce({ id: 'existing' });
-    mockTipUpsert.mockResolvedValueOnce({});
+    mockTipFindUnique.mockResolvedValueOnce({ id: 'tip-existing' });
     await projectEvent(tipEvent);
 
     expect(mockEventLogCreate).toHaveBeenCalledTimes(1);
-    expect(mockTipUpsert).toHaveBeenCalledTimes(2);
+    expect(mockTipCreate).toHaveBeenCalledTimes(1);
   });
 
   it('does not upsert a Tip for non-tip topics', async () => {
@@ -494,7 +475,7 @@ describe('projectEvent — tip idempotency (#892)', () => {
     await projectEvent(nonTipEvent);
 
     expect(mockEventLogCreate).toHaveBeenCalledOnce();
-    expect(mockTipUpsert).not.toHaveBeenCalled();
+    expect(mockTipCreate).not.toHaveBeenCalled();
   });
 
   it('logs a warning and skips Tip upsert when value is unparseable', async () => {
@@ -503,18 +484,18 @@ describe('projectEvent — tip idempotency (#892)', () => {
 
     const badEvent: DecodedEvent = { ...tipEvent, value: null };
     await expect(projectEvent(badEvent)).resolves.not.toThrow();
-    expect(mockTipUpsert).not.toHaveBeenCalled();
+    expect(mockTipCreate).not.toHaveBeenCalled();
   });
 
   it('handles tip topic alias "tip" the same as "tip_sent"', async () => {
     mockEventLogFindFirst.mockResolvedValue(null);
     mockEventLogCreate.mockResolvedValue({});
-    mockTipUpsert.mockResolvedValue({});
+    mockTipCreate.mockResolvedValue({});
 
     const aliasEvent: DecodedEvent = { ...tipEvent, topic: 'tip' };
     await projectEvent(aliasEvent);
 
-    expect(mockTipUpsert).toHaveBeenCalledOnce();
+    expect(mockTipCreate).toHaveBeenCalledOnce();
   });
 });
 

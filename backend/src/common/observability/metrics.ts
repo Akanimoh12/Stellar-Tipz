@@ -50,8 +50,7 @@ export interface MetricsData {
     errors_total: number;
     /** Events whose topic/version is not yet understood by the indexer. */
     unknown_events_total: number;
-    /** Last ledger successfully processed by the indexer (for lag = chainHead - this). */
-    last_processed_ledger: number | null;
+
   };
   circuitBreaker?: Record<string, { state: string; failures: number; opens: number }>;
   timeouts?: {
@@ -139,6 +138,7 @@ export async function getMetrics(): Promise<MetricsData> {
       last_tick_processed: report.lastTickProcessed,
       events_processed_total: report.eventsProcessedTotal,
       errors_total: report.errorsTotal,
+      unknown_events_total: unknownEventCount,
     };
   } catch {
     const { getIndexerSnapshot } = await import('../../indexer/monitor.js');
@@ -150,6 +150,7 @@ export async function getMetrics(): Promise<MetricsData> {
       last_tick_processed: snap.lastTickProcessed,
       events_processed_total: snap.eventsProcessedTotal,
       errors_total: snap.errorsTotal,
+      unknown_events_total: unknownEventCount,
     };
   }
 
@@ -197,11 +198,7 @@ export async function getMetrics(): Promise<MetricsData> {
     retention: {
       rows_pruned_total: { ...retentionPrunedCounts },
     },
-    indexer,
-    indexer: {
-      unknown_events_total: unknownEventCount,
-      last_processed_ledger: lastProcessedLedger,
-    },
+    indexer: { ...indexer, last_processed_ledger: indexer?.last_processed_ledger ?? lastProcessedLedger },
     circuitBreaker,
     timeouts: {
       request_timeout_ms: env.REQUEST_TIMEOUT_MS,
@@ -213,18 +210,19 @@ export async function getMetrics(): Promise<MetricsData> {
   };
 }
 
-export async function metricsController(req: Request, res: Response) {
+export async function metricsController(_req: Request, res: Response) {
   try {
     const metrics = await getMetrics();
     res.set('Content-Type', 'application/json');
-    res.json(metrics);
+    const { getDeliveryMetrics } = await import('../../modules/notifications/delivery.js');
+    res.json({ ...metrics, notificationDelivery: await getDeliveryMetrics() });
   } catch (error) {
     logger.error({ error }, 'Failed to collect metrics');
     res.status(500).json({ error: 'Failed to collect metrics' });
   }
 }
 
-export function metricsMiddleware(req: Request, res: Response, next: () => void) {
+export function metricsMiddleware(_req: Request, res: Response, next: () => void) {
   const start = Date.now();
 
   res.on('finish', () => {

@@ -481,6 +481,9 @@ describe('POST /api/v1/subscriptions/submit-cancel', () => {
       where: { id: 'sub_tipper-1_creator-1' },
       data: {
         status: 'CANCELLED',
+        pendingAmountStroops: null,
+        pendingInterval: null,
+        changeEffectiveAt: null,
         nextChargeRetryAt: null,
         chargeAttemptStartedAt: null,
       },

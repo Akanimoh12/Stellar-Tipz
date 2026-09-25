@@ -174,6 +174,10 @@ const SubscribePage: React.FC = () => {
           {t("subs.newHeading")}
         </h2>
 
+        <p className="mt-4 text-sm text-gray-500">
+          Changes to an active subscription take effect on its next billing date.
+          Cancelling stops future tips; completed tips are not automatically refunded.
+        </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1">
             <label

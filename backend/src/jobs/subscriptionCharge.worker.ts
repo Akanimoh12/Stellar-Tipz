@@ -49,16 +49,6 @@ export function getNextDunningRetryAt(startedAt: Date, failureCount: number): Da
   return retryDay === undefined ? null : new Date(startedAt.getTime() + retryDay * DAY_MS);
 }
 
-/** Advances the regular billing anchor by exactly one contract interval. */
-export function computeNextChargeAt(current: Date, interval: SubscriptionIntervalName): Date {
-  const intervalDays: Record<SubscriptionIntervalName, number> = {
-    DAILY: 1,
-    WEEKLY: 7,
-    MONTHLY: 30,
-  };
-  return new Date(current.getTime() + intervalDays[interval] * DAY_MS);
-}
-
 async function notifyFailure(
   sub: DueSubscription,
   failure: SubscriptionChargeFailure,
@@ -110,26 +100,6 @@ async function claimSubscription(sub: DueSubscription, now: Date): Promise<boole
       ...duePredicate,
     },
     data: { chargeAttemptStartedAt: now },
-  });
-  return result.count === 1;
-}
-
-async function persistSuccess(sub: DueSubscription, now: Date): Promise<boolean> {
-  const result = await prisma.subscription.updateMany({
-    where: {
-      id: sub.id,
-      status: sub.status,
-      chargeAttemptStartedAt: now,
-    },
-    data: {
-      status: 'ACTIVE',
-      nextChargeAt: computeNextChargeAt(sub.nextChargeAt, sub.interval),
-      chargeFailureCount: 0,
-      dunningStartedAt: null,
-      nextChargeRetryAt: null,
-      lastChargeFailureReason: null,
-      chargeAttemptStartedAt: null,
-    },
   });
   return result.count === 1;
 }
@@ -243,15 +213,11 @@ export async function processDueSubscriptions(
         continue;
       }
 
-      if (await persistSuccess(sub, now)) {
-        processed += 1;
-        logger.info({ subscriptionId: sub.id }, 'Subscription charge submitted');
-      } else {
-        logger.warn(
-          { subscriptionId: sub.id },
-          'Subscription changed while its charge was in progress',
-        );
-      }
+      // The indexer owns confirmed billing periods and clears dunning state.
+      // Retain the claim until projection (or claim expiry) to prevent duplicate
+      // attempts while the confirmed event is still being indexed.
+      processed += 1;
+      logger.info({ subscriptionId: sub.id }, 'Subscription charge confirmed; awaiting projection');
     } catch (err) {
       failed += 1;
       logger.error({ err, subscriptionId: sub.id }, 'Failed to persist subscription charge state');

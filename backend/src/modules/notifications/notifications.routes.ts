@@ -1,3 +1,4 @@
+import { deliveryRouter } from './delivery.routes.js';
 import { Router } from 'express';
 import * as notificationsController from './notifications.controller.js';
 import { requireAuth } from '../auth/auth.middleware.js';
@@ -7,6 +8,7 @@ import { deprecatedOffsetPagination } from '../../common/middleware/deprecatedOf
 
 export const notificationsRouter = Router();
 
+notificationsRouter.use('/delivery', deliveryRouter);
 notificationsRouter.use(requireAuth);
 
 notificationsRouter.get('/', deprecatedOffsetPagination, notificationsController.list);
@@ -35,6 +37,8 @@ const notificationSchema = {
 const notificationPreferenceSchema = {
   type: 'object',
   properties: {
+    batchingEnabled: { type: 'boolean', default: false },
+    batchingWindowSeconds: { type: 'integer', minimum: 10, maximum: 86400, default: 300 },
     tipReceived: { type: 'boolean', example: true },
     goalReached: { type: 'boolean', example: true },
     subscriptionCharged: { type: 'boolean', example: true },

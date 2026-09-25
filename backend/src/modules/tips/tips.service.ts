@@ -1,3 +1,5 @@
+import { persistNotification } from '../notifications/notifications.service.js';
+import { emitNotificationCreated } from '../../realtime/index.js';
 import { Contract, TransactionBuilder, SorobanRpc, nativeToScVal, Networks } from '@stellar/stellar-sdk';
 import { Prisma } from '@prisma/client';
 import { config } from '../../config/index.js';
@@ -228,10 +230,10 @@ export async function recordTip(input: RecordTipInput): Promise<TipResponseDto> 
   if (existing) return serializeTip(existing);
 
   try {
-    const { tip, created } = await prisma.$transaction(
+    const { tip, created, notification } = await prisma.$transaction(
       async (tx) => {
         const dup = await tx.tip.findUnique({ where: { txHash: input.txHash } });
-        if (dup) return { tip: dup, created: false };
+        if (dup) return { tip: dup, created: false, notification: null };
 
         const tip = await tx.tip.create({
           data: {
@@ -249,19 +251,9 @@ export async function recordTip(input: RecordTipInput): Promise<TipResponseDto> 
           where: { stellarAddress: input.toAddress },
           select: { id: true },
         });
-        if (receiver) {
-          await tx.notification.create({
-            data: {
-              userId: receiver.id,
-              type: "tip_received",
-              payload: {
-                txHash: input.txHash,
-                amountStroops: input.amountStroops,
-                fromAddress: input.fromAddress,
-              } as unknown as Prisma.InputJsonValue,
-            },
-          });
-        }
+        const notification = receiver ? await persistNotification(tx, receiver.id, 'tip_received', {
+          txHash: input.txHash, amountStroops: input.amountStroops, fromAddress: input.fromAddress,
+        }) : null;
 
         // Daily analytics — atomic counters (never read-then-write)
         const today = new Date();
@@ -281,7 +273,7 @@ export async function recordTip(input: RecordTipInput): Promise<TipResponseDto> 
           },
         });
 
-        return { tip, created: true };
+        return { tip, created: true, notification };
       },
       {
         timeout: 8000,
@@ -292,6 +284,7 @@ export async function recordTip(input: RecordTipInput): Promise<TipResponseDto> 
 
     // Enqueue side-effects AFTER commit — never inside transaction (connection pool safety)
     if (created) {
+      if (notification) emitNotificationCreated({ ...notification, createdAt: notification.createdAt.toISOString() });
       // Goal and Streak are derived counters; use atomic/version helpers after commit
       // Fire-and-forget with error logging, but await for correctness in tests
       try {

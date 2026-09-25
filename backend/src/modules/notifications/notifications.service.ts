@@ -1,4 +1,5 @@
-import type { Prisma } from '@prisma/client';
+import { BATCHABLE, NEVER_BATCH, enqueueTipBatch } from './batching.js';
+import type { Prisma, Notification } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { NotFoundError } from '../../common/errors/AppError.js';
 import { emitNotificationCreated } from '../../realtime/index.js';
@@ -18,9 +19,8 @@ import {
 } from '../../common/pagination/cursor.js';
 
 /** Maps a notification type to the preference field gating its delivery. */
-const PREFERENCE_FIELD_BY_TYPE: Record<
-  Exclude<NotificationType, SystemNotificationType>,
-  'tipReceived' | 'goalReached' | 'subscriptionCharged' | 'payoutFailed'
+const PREFERENCE_FIELD_BY_TYPE: Partial<
+  Record<NotificationType, 'tipReceived' | 'goalReached' | 'subscriptionCharged' | 'payoutFailed'>
 > = {
   tip_received: 'tipReceived',
   goal_reached: 'goalReached',
@@ -28,13 +28,14 @@ const PREFERENCE_FIELD_BY_TYPE: Record<
   payout_failed: 'payoutFailed',
 };
 
-async function persistNotification(
+export async function createSystemNotification(
   userId: string,
-  type: NotificationType,
+  type: SystemNotificationType,
   payload: Record<string, unknown>,
 ): Promise<NotificationResponse> {
   const notification = await prisma.notification.create({
-    data: { userId, type, payload: payload as Prisma.InputJsonValue },
+    data: { userId, type, payload: payload as Prisma.InputJsonValue,
+      deliveries: { create: { userId, channel: 'in_app', status: 'delivered' } } },
   });
 
   const formatted = formatNotification(notification);
@@ -49,11 +50,11 @@ async function persistNotification(
 }
 
 function formatNotification(n: {
-  id: string;
-  type: string;
-  payload: unknown;
-  readAt: Date | null;
-  createdAt: Date;
+  id: string
+  type: string
+  payload: unknown
+  readAt: Date | null
+  createdAt: Date
 }): NotificationResponse {
   return {
     id: n.id,
@@ -149,15 +150,19 @@ export async function getUnreadCount(userId: string): Promise<UnreadCountRespons
 }
 
 function formatPreferences(pref: {
-  tipReceived: boolean;
-  goalReached: boolean;
-  subscriptionCharged: boolean;
-  updatedAt: Date;
+  tipReceived: boolean
+  goalReached: boolean
+  subscriptionCharged: boolean
+  batchingEnabled: boolean
+  batchingWindowSeconds: number
+  updatedAt: Date
 }): NotificationPreferenceResponse {
   return {
     tipReceived: pref.tipReceived,
     goalReached: pref.goalReached,
     subscriptionCharged: pref.subscriptionCharged,
+    batchingEnabled: pref.batchingEnabled,
+    batchingWindowSeconds: pref.batchingWindowSeconds,
     updatedAt: pref.updatedAt.toISOString(),
   };
 }
@@ -170,6 +175,8 @@ export async function getPreferences(userId: string): Promise<NotificationPrefer
       tipReceived: true,
       goalReached: true,
       subscriptionCharged: true,
+      batchingEnabled: false,
+      batchingWindowSeconds: 300,
       updatedAt: new Date(0).toISOString(),
     };
   }
@@ -188,11 +195,15 @@ export async function updatePreferences(
       tipReceived: patch.tipReceived,
       goalReached: patch.goalReached,
       subscriptionCharged: patch.subscriptionCharged,
+      batchingEnabled: patch.batchingEnabled,
+      batchingWindowSeconds: patch.batchingWindowSeconds,
     },
     update: {
       tipReceived: patch.tipReceived,
       goalReached: patch.goalReached,
       subscriptionCharged: patch.subscriptionCharged,
+      batchingEnabled: patch.batchingEnabled,
+      batchingWindowSeconds: patch.batchingWindowSeconds,
     },
   });
   return formatPreferences(pref);
@@ -208,20 +219,48 @@ export async function createNotification(
   type: Exclude<NotificationType, SystemNotificationType>,
   payload: Record<string, unknown>,
 ): Promise<NotificationResponse | null> {
+  const notification = await persistNotification(prisma, userId, type, payload);
+  if (!notification) return null;
+
+  const formatted = formatNotification(notification);
+  emitNotificationCreated({
+    id: formatted.id,
+    userId,
+    type: formatted.type,
+    payload: formatted.payload,
+    createdAt: formatted.createdAt,
+  });
+
+  return formatted;
+}
+
+/** Persist notification or digest in the caller's transaction; publish only after commit. */
+export async function persistNotification(
+  tx: Pick<
+    Prisma.TransactionClient,
+    'notificationPreference' | 'notificationBatch' | 'notification'
+  >,
+  userId: string,
+  type: NotificationType,
+  payload: Record<string, unknown>,
+): Promise<Notification | null> {
   const preferenceField = PREFERENCE_FIELD_BY_TYPE[type];
-  const pref = await prisma.notificationPreference.findUnique({ where: { userId } });
-  if (pref && !pref[preferenceField]) {
+  const pref = await tx.notificationPreference.findUnique({ where: { userId } });
+  if (!NEVER_BATCH.has(type) && pref && preferenceField && !pref[preferenceField]) {
     return null;
   }
 
-  return persistNotification(userId, type, payload);
-}
+  if (!NEVER_BATCH.has(type) && BATCHABLE.has(type) && pref?.batchingEnabled) {
+    await enqueueTipBatch(userId, payload, pref.batchingWindowSeconds, new Date(), tx);
+    return null;
+  }
 
-/** Creates a mandatory operational notification without preference gating. */
-export async function createSystemNotification(
-  userId: string,
-  type: SystemNotificationType,
-  payload: Record<string, unknown>,
-): Promise<NotificationResponse> {
-  return persistNotification(userId, type, payload);
+  return tx.notification.create({
+    data: {
+      userId,
+      type,
+      payload: payload as Prisma.InputJsonValue,
+      deliveries: { create: { userId, channel: 'in_app', status: 'delivered' } },
+    },
+  });
 }

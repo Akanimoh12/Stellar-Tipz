@@ -16,9 +16,11 @@ export type NotificationType =
   | 'tip_received'
   | 'goal_reached'
   | 'subscription_charged'
+  | 'payout_failed'
+  | 'withdrawal_completed'
+  | 'security_event'
   | 'subscription_charge_failed'
-  | 'subscription_failed'
-  | 'payout_failed';
+  | 'subscription_failed';
 
 /** Operational notifications that cannot be disabled by preference settings. */
 export type SystemNotificationType = 'subscription_charge_failed' | 'subscription_failed';
@@ -28,6 +30,8 @@ export interface UnreadCountResponse {
 }
 
 export interface NotificationPreferenceResponse {
+  batchingEnabled: boolean;
+  batchingWindowSeconds: number;
   tipReceived: boolean;
   goalReached: boolean;
   subscriptionCharged: boolean;

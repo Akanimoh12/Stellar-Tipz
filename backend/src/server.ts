@@ -6,7 +6,7 @@ import { prisma } from './db/prisma.js';
 import { redis } from './db/redis.js';
 import { registerClosable, closeAll } from './common/utils/lifecycle.js';
 import { initializeQueues, closeAllQueues } from './modules/jobs/queue.factory.js';
-import { initRealtime, closeRealtime } from './modules/realtime/realtime.js';
+import { initRealtime } from './realtime/gateway.js';
 
 /** Process entry point: starts the HTTP server (and, later, the WebSocket + indexer). */
 async function bootstrap(): Promise<void> {
@@ -34,10 +34,6 @@ async function bootstrap(): Promise<void> {
 
   // Initialize realtime gateway (issue #1286)
   initRealtime(httpServer);
-  registerClosable({
-    name: 'Realtime Gateway',
-    close: closeRealtime,
-  });
 
   httpServer.listen(env.PORT, () => {
     logger.info(`🚀 Stellar Tipz backend listening on http://localhost:${env.PORT}`);

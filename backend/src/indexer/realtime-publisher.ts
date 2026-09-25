@@ -1,3 +1,4 @@
+import { publishRoomEvent } from '../realtime/catchup.js';
 import { redis } from '../db/redis.js';
 import { logger } from '../common/utils/logger.js';
 import type { DecodedEvent } from './sorobanClient.js';
@@ -41,7 +42,18 @@ export async function publishProjection(event: DecodedEvent): Promise<void> {
   };
 
   try {
-    await redis.publish(REALTIME_PROJECTION_CHANNEL, JSON.stringify(message));
+    const encoded = JSON.stringify(message, (_key, value: unknown) =>
+      typeof value === 'bigint' ? value.toString() : value);
+    await redis.publish(REALTIME_PROJECTION_CHANNEL, encoded);
+    // Creator topics are public; never route arbitrary payload user IDs into private rooms.
+    const rawValue = event.value;
+    const value = Array.isArray(rawValue) && (rawValue[0] === 1 || rawValue[0] === '1') ? rawValue.slice(1) : rawValue;
+    const creator = Array.isArray(value) ? value[1] :
+      value && typeof value === 'object' ? (value as Record<string, unknown>).to : undefined;
+    if (['tip', 'tip_sent', 'sub_created', 'sub_exec', 'sub_cancel', 'sub_change'].includes(event.topic) &&
+        typeof creator === 'string' && /^[A-Z0-9]+$/.test(creator)) {
+      await publishRoomEvent(`creator:${creator}`, 'projection.created', JSON.parse(encoded));
+    }
   } catch (err) {
     logger.error(
       { err, txHash: event.txHash, topic: event.topic },

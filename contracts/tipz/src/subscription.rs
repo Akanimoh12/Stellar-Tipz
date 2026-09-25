@@ -14,7 +14,9 @@ pub fn create_subscription(
     amount: i128,
     interval_days: u32,
 ) -> Result<Subscription, ContractError> {
-    if storage::is_paused(env, crate::types::PauseFlag::Subscriptions) || storage::is_paused(env, crate::types::PauseFlag::All) {
+    if storage::is_paused(env, crate::types::PauseFlag::Subscriptions)
+        || storage::is_paused(env, crate::types::PauseFlag::All)
+    {
         return Err(ContractError::ContractPaused);
     }
     subscriber.require_auth();
@@ -35,6 +37,34 @@ pub fn create_subscription(
         return Err(ContractError::CannotTipSelf);
     }
 
+    if ![1, 7, 30].contains(&interval_days) {
+        return Err(ContractError::InvalidInput);
+    }
+    let sub_key = DataKey::Subscription(subscriber.clone(), creator.clone());
+    let existing: Option<Subscription> = env.storage().persistent().get(&sub_key);
+    if let Some(ref current) = existing {
+        if current.active {
+            // Never reset the current period or increase its charge mid-period.
+            // Overdue charges must be settled before scheduling different terms.
+            if env.ledger().timestamp() >= current.next_due {
+                return Err(ContractError::InvalidInput);
+            }
+            env.storage().persistent().set(
+                &DataKey::SubscriptionChange(subscriber.clone(), creator.clone()),
+                &(amount, interval_days),
+            );
+            events::emit_subscription_change(
+                env,
+                &subscriber,
+                &creator,
+                amount,
+                interval_days,
+                current.next_due,
+            );
+            return Ok(current.clone());
+        }
+    }
+
     // Check subscription limit
     let sub_count = get_active_subscription_count(env, &subscriber);
     let limit = storage::get_subscription_limit(env);
@@ -53,17 +83,18 @@ pub fn create_subscription(
         active: true,
     };
 
-    let sub_key = DataKey::Subscription(subscriber.clone(), creator.clone());
     env.storage().persistent().set(&sub_key, &sub);
 
     // Update indices
-    add_subscriber_to_creator(env, &creator, &subscriber);
-    add_creator_to_subscriber(env, &subscriber, &creator);
+    if existing.is_none() {
+        add_subscriber_to_creator(env, &creator, &subscriber);
+        add_creator_to_subscriber(env, &subscriber, &creator);
+    }
 
     // Add to active subscriptions list
     storage::add_active_subscription(env, &subscriber, &creator);
 
-    events::emit_subscription_created(env, &subscriber, &creator, amount, interval_days);
+    events::emit_subscription_created(env, &subscriber, &creator, amount, interval_days, next_due);
 
     Ok(sub)
 }
@@ -76,7 +107,9 @@ pub fn cancel_subscription(
 ) -> Result<(), ContractError> {
     subscriber.require_auth();
 
-    if storage::is_paused(env, crate::types::PauseFlag::Subscriptions) || storage::is_paused(env, crate::types::PauseFlag::All) {
+    if storage::is_paused(env, crate::types::PauseFlag::Subscriptions)
+        || storage::is_paused(env, crate::types::PauseFlag::All)
+    {
         return Err(ContractError::ContractPaused);
     }
 
@@ -90,6 +123,14 @@ pub fn cancel_subscription(
         return Err(ContractError::NotFound);
     }
 
+    // Recurring tips are donations: cancellation stops future charges, with no
+    // automatic refund of completed tips. Pending changes are discarded.
+    env.storage()
+        .persistent()
+        .remove(&DataKey::SubscriptionChange(
+            subscriber.clone(),
+            creator.clone(),
+        ));
     sub.active = false;
     env.storage().persistent().set(&sub_key, &sub);
 
@@ -126,6 +167,14 @@ pub fn execute_subscriptions(env: &Env, limit: u32) -> Result<u32, ContractError
                     Ok(_) => {
                         charged_count += 1;
                         env.storage().persistent().set(&sub_key, &sub);
+                        events::emit_subscription_executed(
+                            env,
+                            &subscriber,
+                            &creator,
+                            sub.amount,
+                            sub.interval_days,
+                            sub.next_due,
+                        );
                     }
                     Err(_) => {
                         // Subscription charge failed - skip and emit event
@@ -144,7 +193,9 @@ pub fn execute_due_subscription(
     subscriber: Address,
     creator: Address,
 ) -> Result<(), ContractError> {
-    if storage::is_paused(env, crate::types::PauseFlag::Subscriptions) || storage::is_paused(env, crate::types::PauseFlag::All) {
+    if storage::is_paused(env, crate::types::PauseFlag::Subscriptions)
+        || storage::is_paused(env, crate::types::PauseFlag::All)
+    {
         return Err(ContractError::ContractPaused);
     }
 
@@ -162,7 +213,14 @@ pub fn execute_due_subscription(
     if now >= sub.next_due {
         execute_due_subscription_internal(env, &mut sub, now)?;
         env.storage().persistent().set(&sub_key, &sub);
-        events::emit_subscription_executed(env, &subscriber, &creator, sub.amount);
+        events::emit_subscription_executed(
+            env,
+            &subscriber,
+            &creator,
+            sub.amount,
+            sub.interval_days,
+            sub.next_due,
+        );
     }
 
     Ok(())
@@ -171,8 +229,17 @@ pub fn execute_due_subscription(
 fn execute_due_subscription_internal(
     env: &Env,
     sub: &mut Subscription,
-    now: u64,
+    _now: u64,
 ) -> Result<(), ContractError> {
+    let change_key = DataKey::SubscriptionChange(sub.subscriber.clone(), sub.creator.clone());
+    if let Some((amount, interval)) = env
+        .storage()
+        .persistent()
+        .get::<DataKey, (i128, u32)>(&change_key)
+    {
+        sub.amount = amount;
+        sub.interval_days = interval;
+    }
     tips::send_tip(
         env,
         &sub.subscriber,
@@ -185,6 +252,7 @@ fn execute_due_subscription_internal(
         None::<u32>,
     )?;
 
+    env.storage().persistent().remove(&change_key);
     // Advance next_due by exactly one interval, no drift
     sub.next_due = sub
         .next_due
@@ -243,10 +311,10 @@ pub fn get_subscribers(env: &Env, creator: Address) -> Vec<Subscription> {
 }
 
 fn get_active_subscription_count(env: &Env, subscriber: &Address) -> u32 {
-    env.storage()
-        .persistent()
-        .get(&DataKey::SubscriberSubCount(subscriber.clone()))
-        .unwrap_or(0)
+    get_subscriptions(env, subscriber.clone())
+        .iter()
+        .filter(|sub| sub.active)
+        .count() as u32
 }
 
 // Internal helpers for indexing

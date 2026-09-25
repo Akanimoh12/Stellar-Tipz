@@ -18,6 +18,8 @@ export const notificationIdParamSchema = z.object({
 
 export const updateNotificationPreferencesSchema = z
   .object({
+    batchingEnabled: z.boolean().optional(),
+    batchingWindowSeconds: z.number().int().min(10).max(86400).optional(),
     tipReceived: z.boolean().optional(),
     goalReached: z.boolean().optional(),
     subscriptionCharged: z.boolean().optional(),

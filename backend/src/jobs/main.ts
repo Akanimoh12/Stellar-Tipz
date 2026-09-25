@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url';
+import { startNotificationDigests } from './notificationDigest.worker.js';
 import { logger } from '../common/utils/logger.js';
-import { registerClosable, closeAll } from '../common/utils/lifecycle.js';
+import { registerClosable, closeAllWithTimeout } from '../common/utils/lifecycle.js';
 import { prisma, prismaIncludingDeleted } from '../db/prisma.js';
 import { redis } from '../db/redis.js';
 import {
@@ -34,6 +35,8 @@ export async function bootstrapJobs(): Promise<void> {
   registerClosable({ name: 'Prisma', close: () => prisma.$disconnect() });
   registerClosable({ name: 'PrismaIncludingDeleted', close: () => prismaIncludingDeleted.$disconnect() });
   registerClosable({ name: 'Redis', close: async () => { await redis.quit(); } });
+
+  await startNotificationDigests();
 
   const creditWorker = createCreditRecomputeWorker();
   registerClosable({

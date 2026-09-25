@@ -30,8 +30,9 @@ export function socketAuth(socket: AuthenticatedSocket, next: (err?: Error) => v
   }
 
   try {
-    const payload = verifyAccessToken(token) as AuthPayload & JwtPayload
-    const uid = (payload as unknown as JwtPayload).sub ?? payload.userId
+    const payload = verifyAccessToken(token) as AuthPayload & JwtPayload;
+    const uid = (payload as unknown as JwtPayload).sub ?? payload.userId;
+    if (!uid) throw new Error('Token has no user identity');
     socket.authUser = {
       id: uid,
       stellarAddress: payload.stellarAddress,
