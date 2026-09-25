@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { env } from '../config/env.js';
 import { createSlowQueryMiddleware } from '../common/observability/slowQuery.js';
+import { createPrismaTracingMiddleware, registerPrismaTracing } from '../common/observability/prismaTracing.js';
 import { softDeleteMiddleware } from './softDelete.js';
 
 const databaseUrl = new URL(env.DATABASE_URL);
@@ -27,6 +28,7 @@ export const prismaIncludingDeleted = new PrismaClient({
 });
 
 prisma.$use(softDeleteMiddleware);
+prismaIncludingDeleted.$use(softDeleteMiddleware);
 
 // Instrument slow queries. Queries slower than the configured threshold are
 // logged (with model/operation/duration/request id, never parameters) and
@@ -37,3 +39,13 @@ prisma.$use(
     enabled: env.NODE_ENV !== 'test',
   }),
 );
+prismaIncludingDeleted.$use(
+  createSlowQueryMiddleware({
+    thresholdMs: env.SLOW_QUERY_THRESHOLD_MS,
+    enabled: env.NODE_ENV !== 'test',
+  }),
+);
+
+// Instrument database queries with OpenTelemetry spans (issue #1349)
+registerPrismaTracing(prisma);
+registerPrismaTracing(prismaIncludingDeleted);

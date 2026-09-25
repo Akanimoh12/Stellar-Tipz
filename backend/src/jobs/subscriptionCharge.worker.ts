@@ -16,6 +16,7 @@ import {
   classifySubscriptionChargeFailure,
   type SubscriptionChargeFailure,
 } from './subscriptionCharge.failure.js';
+import { withTracing } from '../common/observability/bullmqTracing.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DUNNING_RETRY_DAYS = [1, 3, 7] as const;
@@ -231,10 +232,10 @@ export async function processDueSubscriptions(
 export function createSubscriptionChargeWorker(): Worker {
   const worker = new Worker(
     SUBSCRIPTION_CHARGE_QUEUE,
-    async (_job) => {
+    withTracing(SUBSCRIPTION_CHARGE_QUEUE, async (_job) => {
       const result = await processDueSubscriptions();
       logger.info(result, 'Subscription charge job complete');
-    },
+    }),
     { connection: redis as never },
   );
 

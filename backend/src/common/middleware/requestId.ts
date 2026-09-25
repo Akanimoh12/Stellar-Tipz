@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { runWithRequestContext } from './requestContext.js';
+import { getTraceId } from '../../observability/tracing.js';
 
 /** Header used to carry the correlation id in and out of the service. */
 export const REQUEST_ID_HEADER = 'x-request-id';
@@ -13,6 +14,9 @@ export const REQUEST_ID_HEADER = 'x-request-id';
  * on `req.id` — which pino-http picks up so application logs carry the same id —
  * and echoed back on the response `x-request-id` header. Register this BEFORE
  * `pino-http` so the logger reuses the id instead of generating its own.
+ *
+ * Also attaches the OpenTelemetry trace ID to `req.traceId` when tracing is active,
+ * so logs can correlate with distributed traces.
  */
 export function requestId(req: Request, res: Response, next: NextFunction): void {
   const inbound = req.headers[REQUEST_ID_HEADER];
@@ -21,6 +25,13 @@ export function requestId(req: Request, res: Response, next: NextFunction): void
 
   req.id = id;
   res.setHeader(REQUEST_ID_HEADER, id);
+
+  // Attach trace ID for log correlation with distributed traces
+  const traceId = getTraceId();
+  if (traceId) {
+    (req as Request & { traceId?: string }).traceId = traceId;
+  }
+
   // Run the rest of the request inside the ALS context so asynchronous work
   // (notably Prisma queries) can recover the request id for correlation.
   runWithRequestContext(id, () => next());
