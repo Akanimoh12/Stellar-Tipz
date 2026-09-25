@@ -16,7 +16,7 @@ const subscriptionSchema = {
     nextChargeAt: { type: 'string', format: 'date-time' },
     status: {
       type: 'string',
-      enum: ['ACTIVE', 'PAUSED', 'CANCELLED', 'EXPIRED'],
+      enum: ['ACTIVE', 'PAST_DUE', 'FAILED', 'PAUSED', 'CANCELLED', 'EXPIRED'],
       example: 'ACTIVE',
     },
     createdAt: { type: 'string', format: 'date-time' },
@@ -51,7 +51,7 @@ const submittedCreateSchema = {
     id: { type: 'string', example: 'sub_clxxtipper_clxxcreator' },
     status: {
       type: 'string',
-      enum: ['ACTIVE', 'PAUSED', 'CANCELLED', 'EXPIRED'],
+      enum: ['ACTIVE', 'PAST_DUE', 'FAILED', 'PAUSED', 'CANCELLED', 'EXPIRED'],
       example: 'ACTIVE',
     },
     nextChargeAt: { type: 'string', format: 'date-time' },
@@ -88,7 +88,10 @@ export function registerSubscriptionsDocs(): void {
             name: 'status',
             in: 'query',
             required: false,
-            schema: { type: 'string', enum: ['ACTIVE', 'PAUSED', 'CANCELLED', 'EXPIRED'] },
+            schema: {
+              type: 'string',
+              enum: ['ACTIVE', 'PAST_DUE', 'FAILED', 'PAUSED', 'CANCELLED', 'EXPIRED'],
+            },
           },
           {
             name: 'limit',

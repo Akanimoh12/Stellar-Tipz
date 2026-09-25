@@ -346,28 +346,75 @@ describe('projectEvent — subscriptions (#900)', () => {
     );
   });
 
+  it('resets dunning state for a genuinely new subscription creation', async () => {
+    await projectEvent(event('sub_created', [ADDR_A, ADDR_B, '500', 7]));
+
+    expect(mockSubUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: {
+          amountStroops: 500n,
+          interval: 'WEEKLY',
+          nextChargeAt: expect.any(Date),
+          status: 'ACTIVE',
+          chargeFailureCount: 0,
+          dunningStartedAt: null,
+          nextChargeRetryAt: null,
+          lastChargeFailureReason: null,
+          chargeAttemptStartedAt: null,
+        },
+      }),
+    );
+  });
+
+  it('does not recompute billing or clear dunning state when sub_created is replayed', async () => {
+    mockEventLogFindFirst.mockResolvedValue({ id: 'existing' });
+
+    await projectEvent(event('sub_created', [ADDR_A, ADDR_B, '500', 7]));
+
+    expect(mockSubUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ nextChargeAt: expect.any(Date), status: 'ACTIVE' }),
+        update: {},
+      }),
+    );
+  });
+
   it('records a charge by keeping the subscription active', async () => {
     await projectEvent(event('sub_exec', [ADDR_A, ADDR_B, '500']));
     expect(mockSubUpsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: `sub_u_${ADDR_A}_u_${ADDR_B}` },
-        update: { amountStroops: 500n, status: 'ACTIVE' },
+        update: {
+          amountStroops: 500n,
+          status: 'ACTIVE',
+          chargeFailureCount: 0,
+          dunningStartedAt: null,
+          nextChargeRetryAt: null,
+          lastChargeFailureReason: null,
+          chargeAttemptStartedAt: null,
+        },
       }),
     );
   });
 
-  it('charge is idempotent — replay keys the same subscription', async () => {
+  it('does not reactivate or clear dunning state when sub_exec is replayed', async () => {
+    mockEventLogFindFirst.mockResolvedValue({ id: 'existing' });
+
     await projectEvent(event('sub_exec', [ADDR_A, ADDR_B, '500']));
-    await projectEvent(event('sub_exec', [ADDR_A, ADDR_B, '500']));
-    expect(mockSubUpsert.mock.calls[0][0].where).toEqual(mockSubUpsert.mock.calls[1][0].where);
-    expect(mockSubUpsert.mock.calls[0][0].update).toEqual(mockSubUpsert.mock.calls[1][0].update);
+
+    expect(mockSubUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ status: 'ACTIVE' }),
+        update: {},
+      }),
+    );
   });
 
   it('cancels a subscription via updateMany', async () => {
     await projectEvent(event('sub_cancel', [ADDR_A, ADDR_B]));
     expect(mockSubUpdateMany).toHaveBeenCalledWith({
       where: { id: `sub_u_${ADDR_A}_u_${ADDR_B}` },
-      data: { status: 'CANCELLED' },
+      data: { status: 'CANCELLED', nextChargeRetryAt: null, chargeAttemptStartedAt: null },
     });
   });
 
