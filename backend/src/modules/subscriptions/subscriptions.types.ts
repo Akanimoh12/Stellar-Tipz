@@ -1,5 +1,11 @@
 export type SubscriptionIntervalName = 'DAILY' | 'WEEKLY' | 'MONTHLY';
-export type SubscriptionStatusName = 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED';
+export type SubscriptionStatusName =
+  | 'ACTIVE'
+  | 'PAST_DUE'
+  | 'FAILED'
+  | 'PAUSED'
+  | 'CANCELLED'
+  | 'EXPIRED';
 
 export interface SubscriptionResponse {
   id: string;

@@ -8,6 +8,7 @@ import type {
   NotificationPreferenceResponse,
   NotificationResponse,
   NotificationType,
+  SystemNotificationType,
   UnreadCountResponse,
 } from './notifications.types.js';
 import {
@@ -18,7 +19,7 @@ import {
 
 /** Maps a notification type to the preference field gating its delivery. */
 const PREFERENCE_FIELD_BY_TYPE: Record<
-  NotificationType,
+  Exclude<NotificationType, SystemNotificationType>,
   'tipReceived' | 'goalReached' | 'subscriptionCharged' | 'payoutFailed'
 > = {
   tip_received: 'tipReceived',
@@ -26,6 +27,26 @@ const PREFERENCE_FIELD_BY_TYPE: Record<
   subscription_charged: 'subscriptionCharged',
   payout_failed: 'payoutFailed',
 };
+
+async function persistNotification(
+  userId: string,
+  type: NotificationType,
+  payload: Record<string, unknown>,
+): Promise<NotificationResponse> {
+  const notification = await prisma.notification.create({
+    data: { userId, type, payload: payload as Prisma.InputJsonValue },
+  });
+
+  const formatted = formatNotification(notification);
+  emitNotificationCreated({
+    id: formatted.id,
+    userId,
+    type: formatted.type,
+    payload: formatted.payload,
+    createdAt: formatted.createdAt,
+  });
+  return formatted;
+}
 
 function formatNotification(n: {
   id: string;
@@ -184,7 +205,7 @@ export async function updatePreferences(
  */
 export async function createNotification(
   userId: string,
-  type: NotificationType,
+  type: Exclude<NotificationType, SystemNotificationType>,
   payload: Record<string, unknown>,
 ): Promise<NotificationResponse | null> {
   const preferenceField = PREFERENCE_FIELD_BY_TYPE[type];
@@ -193,18 +214,14 @@ export async function createNotification(
     return null;
   }
 
-  const notification = await prisma.notification.create({
-    data: { userId, type, payload: payload as Prisma.InputJsonValue },
-  });
+  return persistNotification(userId, type, payload);
+}
 
-  const formatted = formatNotification(notification);
-  emitNotificationCreated({
-    id: formatted.id,
-    userId,
-    type: formatted.type,
-    payload: formatted.payload,
-    createdAt: formatted.createdAt,
-  });
-
-  return formatted;
+/** Creates a mandatory operational notification without preference gating. */
+export async function createSystemNotification(
+  userId: string,
+  type: SystemNotificationType,
+  payload: Record<string, unknown>,
+): Promise<NotificationResponse> {
+  return persistNotification(userId, type, payload);
 }

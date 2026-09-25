@@ -227,6 +227,8 @@ enum SubscriptionStatus {
   PAUSED
   CANCELLED
   EXPIRED
+  PAST_DUE
+  FAILED
 }
 
 /// Recurring tip agreement between a tipper and a creator.
@@ -240,12 +242,19 @@ model Subscription {
   interval      SubscriptionInterval
   nextChargeAt  DateTime
   status        SubscriptionStatus   @default(ACTIVE)
+  chargeFailureCount       Int       @default(0)
+  dunningStartedAt         DateTime?
+  nextChargeRetryAt        DateTime?
+  lastChargeFailureReason  String?
+  chargeAttemptStartedAt   DateTime?
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
 
   @@index([tipperId])
   @@index([creatorId])
   @@index([nextChargeAt])
+  @@index([status, nextChargeAt])
+  @@index([status, nextChargeRetryAt])
 }
 
 enum WebhookSubscriptionStatus {

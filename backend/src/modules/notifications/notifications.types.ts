@@ -16,7 +16,12 @@ export type NotificationType =
   | 'tip_received'
   | 'goal_reached'
   | 'subscription_charged'
+  | 'subscription_charge_failed'
+  | 'subscription_failed'
   | 'payout_failed';
+
+/** Operational notifications that cannot be disabled by preference settings. */
+export type SystemNotificationType = 'subscription_charge_failed' | 'subscription_failed';
 
 export interface UnreadCountResponse {
   count: number;

@@ -6,7 +6,7 @@ const stellarAddress = z
 
 export const listSubscriptionsQuerySchema = z.object({
   role: z.enum(['tipper', 'creator']).default('tipper'),
-  status: z.enum(['ACTIVE', 'PAUSED', 'CANCELLED', 'EXPIRED']).optional(),
+  status: z.enum(['ACTIVE', 'PAST_DUE', 'FAILED', 'PAUSED', 'CANCELLED', 'EXPIRED']).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().min(1, 'Invalid cursor').optional(),
   offset: z.coerce.number().int().min(0).optional(),

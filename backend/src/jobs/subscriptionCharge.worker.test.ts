@@ -1,108 +1,333 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock prisma and redis before importing the worker
+const { mockFindMany, mockUpdateMany, mockCharge, mockSystemNotification } = vi.hoisted(() => ({
+  mockFindMany: vi.fn(),
+  mockUpdateMany: vi.fn(),
+  mockCharge: vi.fn(),
+  mockSystemNotification: vi.fn(),
+}));
+
 vi.mock('../db/prisma.js', () => ({
   prisma: {
     subscription: {
-      findMany: vi.fn(),
+      findMany: mockFindMany,
+      updateMany: mockUpdateMany,
     },
-    tip: {
-      create: vi.fn(),
-    },
-    $transaction: vi.fn(),
   },
 }));
 
-vi.mock('../db/redis.js', () => ({
-  redis: {},
-}));
-
+vi.mock('../db/redis.js', () => ({ redis: {} }));
 vi.mock('../common/utils/logger.js', () => ({
-  logger: {
-    info: vi.fn(),
-    error: vi.fn(),
-  },
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+vi.mock('../modules/subscriptions/subscriptions.service.js', () => ({
+  chargeSubscriptionOnChain: mockCharge,
+}));
+vi.mock('../modules/notifications/notifications.service.js', () => ({
+  createSystemNotification: mockSystemNotification,
 }));
 
-import { processDueSubscriptions } from './subscriptionCharge.worker.js';
-import { prisma } from '../db/prisma.js';
+import {
+  computeNextChargeAt,
+  getNextDunningRetryAt,
+  processDueSubscriptions,
+} from './subscriptionCharge.worker.js';
+
+const NOW = new Date('2026-09-25T12:00:00.000Z');
+const DUE = new Date('2026-09-20T12:00:00.000Z');
+
+function subscription(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'sub_01',
+    tipperId: 'tipper-id',
+    creatorId: 'creator-id',
+    interval: 'WEEKLY',
+    nextChargeAt: DUE,
+    status: 'ACTIVE',
+    chargeFailureCount: 0,
+    dunningStartedAt: null,
+    nextChargeRetryAt: null,
+    chargeAttemptStartedAt: null,
+    tipper: { stellarAddress: 'GSUBSCRIBER' },
+    creator: { stellarAddress: 'GCREATOR' },
+    ...overrides,
+  };
+}
+
+function persistedData() {
+  return mockUpdateMany.mock.calls.at(-1)?.[0].data;
+}
+
+describe('subscription dunning schedule', () => {
+  it('uses exact day 1, day 3, and day 7 retry dates from dunning start', () => {
+    const start = new Date('2026-09-01T08:30:00.000Z');
+    expect(getNextDunningRetryAt(start, 1)?.toISOString()).toBe('2026-09-02T08:30:00.000Z');
+    expect(getNextDunningRetryAt(start, 2)?.toISOString()).toBe('2026-09-04T08:30:00.000Z');
+    expect(getNextDunningRetryAt(start, 3)?.toISOString()).toBe('2026-09-08T08:30:00.000Z');
+    expect(getNextDunningRetryAt(start, 4)).toBeNull();
+  });
+
+  it('advances the regular billing anchor by one interval', () => {
+    expect(computeNextChargeAt(DUE, 'DAILY').toISOString()).toBe('2026-09-21T12:00:00.000Z');
+    expect(computeNextChargeAt(DUE, 'WEEKLY').toISOString()).toBe('2026-09-27T12:00:00.000Z');
+    expect(computeNextChargeAt(new Date('2026-01-31T12:00:00.000Z'), 'MONTHLY').toISOString()).toBe(
+      '2026-03-02T12:00:00.000Z',
+    );
+  });
+});
 
 describe('processDueSubscriptions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFindMany.mockResolvedValue([]);
+    mockUpdateMany.mockResolvedValue({ count: 1 });
+    mockCharge.mockResolvedValue(undefined);
+    mockSystemNotification.mockResolvedValue({});
   });
 
-  it('returns { processed: 0, failed: 0 } when no subscriptions are due', async () => {
-    vi.mocked(prisma.subscription.findMany).mockResolvedValue([]);
+  it('returns zero when no subscriptions are due and queries only actionable states', async () => {
+    await expect(processDueSubscriptions({ now: NOW })).resolves.toEqual({
+      processed: 0,
+      failed: 0,
+    });
 
-    const result = await processDueSubscriptions();
-
-    expect(result).toEqual({ processed: 0, failed: 0 });
-    expect(prisma.subscription.findMany).toHaveBeenCalledWith({
+    expect(mockFindMany).toHaveBeenCalledWith({
       where: {
-        status: 'ACTIVE',
-        nextChargeAt: { lte: expect.any(Date) },
         deletedAt: null,
+        AND: [
+          {
+            OR: [
+              { status: 'ACTIVE', nextChargeAt: { lte: NOW } },
+              { status: 'PAST_DUE', nextChargeRetryAt: { lte: NOW } },
+            ],
+          },
+          {
+            OR: [
+              { chargeAttemptStartedAt: null },
+              { chargeAttemptStartedAt: { lte: new Date('2026-09-25T11:45:00.000Z') } },
+            ],
+          },
+        ],
+      },
+      include: {
+        tipper: { select: { stellarAddress: true } },
+        creator: { select: { stellarAddress: true } },
       },
     });
+    expect(mockCharge).not.toHaveBeenCalled();
   });
 
-  it('charges a due subscription and advances nextChargeAt', async () => {
-    const sub = {
-      id: 'sub_01',
-      tipperId: 'user_tipper',
-      creatorId: 'user_creator',
-      amountStroops: BigInt(1_000_000),
-      interval: 'WEEKLY',
-      nextChargeAt: new Date('2026-07-20'),
-    };
+  it('uses the production charge helper with Stellar addresses and clears dunning on success', async () => {
+    mockFindMany.mockResolvedValue([subscription()]);
 
-    vi.mocked(prisma.subscription.findMany).mockResolvedValue([sub]);
-    vi.mocked(prisma.$transaction).mockImplementation(async (fn) => {
-      const tx = {
-        tip: { create: vi.fn() },
-        subscription: { update: vi.fn() },
-      };
-      await fn(tx);
-      return undefined;
+    await expect(processDueSubscriptions({ now: NOW })).resolves.toEqual({
+      processed: 1,
+      failed: 0,
     });
 
-    const result = await processDueSubscriptions();
-
-    expect(result).toEqual({ processed: 1, failed: 0 });
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(mockCharge).toHaveBeenCalledWith('GSUBSCRIBER', 'GCREATOR');
+    expect(persistedData()).toEqual({
+      status: 'ACTIVE',
+      nextChargeAt: new Date('2026-09-27T12:00:00.000Z'),
+      chargeFailureCount: 0,
+      dunningStartedAt: null,
+      nextChargeRetryAt: null,
+      lastChargeFailureReason: null,
+      chargeAttemptStartedAt: null,
+    });
+    expect(mockSystemNotification).not.toHaveBeenCalled();
   });
 
-  it('increments failed count when a subscription charge throws', async () => {
-    const sub = {
-      id: 'sub_fail',
-      tipperId: 'user_tipper',
-      creatorId: 'user_creator',
-      amountStroops: BigInt(500_000),
-      interval: 'DAILY',
-      nextChargeAt: new Date('2026-07-20'),
-    };
+  it.each([
+    {
+      priorFailures: 0,
+      dunningStartedAt: null,
+      expectedRetry: '2026-09-26T12:00:00.000Z',
+      label: 'first',
+    },
+    {
+      priorFailures: 1,
+      dunningStartedAt: new Date('2026-09-20T12:00:00.000Z'),
+      expectedRetry: '2026-09-23T12:00:00.000Z',
+      label: 'second',
+    },
+    {
+      priorFailures: 2,
+      dunningStartedAt: new Date('2026-09-20T12:00:00.000Z'),
+      expectedRetry: '2026-09-27T12:00:00.000Z',
+      label: 'third',
+    },
+  ])(
+    'persists and notifies the $label retryable failure',
+    async ({ priorFailures, dunningStartedAt, expectedRetry }) => {
+      mockFindMany.mockResolvedValue([
+        subscription({
+          status: priorFailures === 0 ? 'ACTIVE' : 'PAST_DUE',
+          chargeFailureCount: priorFailures,
+          dunningStartedAt,
+          nextChargeRetryAt: priorFailures === 0 ? null : NOW,
+        }),
+      ]);
+      mockCharge.mockRejectedValue(new Error('Error(Contract, #14)'));
 
-    vi.mocked(prisma.subscription.findMany).mockResolvedValue([sub]);
-    vi.mocked(prisma.$transaction).mockRejectedValue(new Error('db error'));
+      await processDueSubscriptions({ now: NOW });
 
-    const result = await processDueSubscriptions();
+      expect(persistedData()).toEqual({
+        status: 'PAST_DUE',
+        chargeFailureCount: priorFailures + 1,
+        dunningStartedAt: dunningStartedAt ?? NOW,
+        nextChargeRetryAt: new Date(expectedRetry),
+        lastChargeFailureReason: 'There is not enough balance for this subscription charge.',
+        chargeAttemptStartedAt: null,
+      });
+      expect(mockSystemNotification).toHaveBeenCalledTimes(1);
+      expect(mockSystemNotification).toHaveBeenCalledWith(
+        'tipper-id',
+        'subscription_charge_failed',
+        expect.objectContaining({
+          reason: 'There is not enough balance for this subscription charge.',
+          failureCount: priorFailures + 1,
+          nextRetryAt: expectedRetry,
+          terminal: false,
+        }),
+      );
+    },
+  );
 
-    expect(result).toEqual({ processed: 0, failed: 1 });
+  it('transitions to FAILED and notifies both parties after the day-7 retry fails', async () => {
+    const start = new Date('2026-09-18T12:00:00.000Z');
+    mockFindMany.mockResolvedValue([
+      subscription({
+        status: 'PAST_DUE',
+        chargeFailureCount: 3,
+        dunningStartedAt: start,
+        nextChargeRetryAt: NOW,
+      }),
+    ]);
+    mockCharge.mockRejectedValue(new Error('Error(Contract, #14)'));
+
+    await expect(processDueSubscriptions({ now: NOW })).resolves.toEqual({
+      processed: 0,
+      failed: 1,
+    });
+
+    expect(persistedData()).toMatchObject({
+      status: 'FAILED',
+      chargeFailureCount: 4,
+      dunningStartedAt: start,
+      nextChargeRetryAt: null,
+    });
+    expect(mockSystemNotification).toHaveBeenNthCalledWith(
+      1,
+      'tipper-id',
+      'subscription_charge_failed',
+      expect.objectContaining({ failureCount: 4, terminal: true, nextRetryAt: null }),
+    );
+    expect(mockSystemNotification).toHaveBeenNthCalledWith(
+      2,
+      'creator-id',
+      'subscription_failed',
+      expect.objectContaining({ failureCount: 4, terminal: true, nextRetryAt: null }),
+    );
   });
 
-  it('processes multiple subscriptions independently', async () => {
-    const subs = [
-      { id: 'sub_a', tipperId: 't1', creatorId: 'c1', amountStroops: BigInt(100), interval: 'DAILY', nextChargeAt: new Date() },
-      { id: 'sub_b', tipperId: 't2', creatorId: 'c2', amountStroops: BigInt(200), interval: 'WEEKLY', nextChargeAt: new Date() },
-    ];
+  it('makes a permanent not-found failure terminal immediately without a retry', async () => {
+    mockFindMany.mockResolvedValue([subscription()]);
+    mockCharge.mockRejectedValue(new Error('HostError: Error(Contract, #17)'));
 
-    vi.mocked(prisma.subscription.findMany).mockResolvedValue(subs);
-    vi.mocked(prisma.$transaction).mockResolvedValue(undefined);
+    await processDueSubscriptions({ now: NOW });
 
-    const result = await processDueSubscriptions();
+    expect(persistedData()).toMatchObject({
+      status: 'FAILED',
+      chargeFailureCount: 1,
+      nextChargeRetryAt: null,
+      lastChargeFailureReason: 'The subscription authorization no longer exists.',
+    });
+    expect(mockSystemNotification).toHaveBeenCalledTimes(2);
+  });
 
-    expect(result).toEqual({ processed: 2, failed: 0 });
-    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+  it.each([
+    { priorFailures: 1, label: 'day-1' },
+    { priorFailures: 2, label: 'later' },
+  ])('recovers cleanly on a $label retry', async ({ priorFailures }) => {
+    mockFindMany.mockResolvedValue([
+      subscription({
+        status: 'PAST_DUE',
+        chargeFailureCount: priorFailures,
+        dunningStartedAt: new Date('2026-09-24T12:00:00.000Z'),
+        nextChargeRetryAt: NOW,
+      }),
+    ]);
+
+    await processDueSubscriptions({ now: NOW });
+
+    expect(persistedData()).toMatchObject({
+      status: 'ACTIVE',
+      chargeFailureCount: 0,
+      dunningStartedAt: null,
+      nextChargeRetryAt: null,
+      lastChargeFailureReason: null,
+    });
+    expect(mockSystemNotification).not.toHaveBeenCalled();
+  });
+
+  it('does not select FAILED, CANCELLED, PAUSED, or EXPIRED subscriptions', async () => {
+    mockFindMany.mockResolvedValue([]);
+    await processDueSubscriptions({ now: NOW });
+    const query = mockFindMany.mock.calls[0][0];
+    expect(JSON.stringify(query.where)).not.toContain('FAILED');
+    expect(JSON.stringify(query.where)).not.toContain('CANCELLED');
+    expect(JSON.stringify(query.where)).not.toContain('PAUSED');
+    expect(JSON.stringify(query.where)).not.toContain('EXPIRED');
+  });
+
+  it('keeps notification payloads safe when raw failures contain secrets or XDR', async () => {
+    mockFindMany.mockResolvedValue([subscription()]);
+    mockCharge.mockRejectedValue(new Error('keeper=SSECRET rawXdr=AAAA rpc exploded'));
+
+    await processDueSubscriptions({ now: NOW });
+
+    const payload = mockSystemNotification.mock.calls[0][2];
+    expect(payload.reason).toBe('A temporary network error prevented the subscription charge.');
+    expect(JSON.stringify(payload)).not.toMatch(/SSECRET|AAAA|keeper|rawXdr/i);
+  });
+
+  it('continues processing after another subscription fails', async () => {
+    mockFindMany.mockResolvedValue([
+      subscription({ id: 'sub_fail' }),
+      subscription({ id: 'sub_ok', tipper: { stellarAddress: 'GSECOND' } }),
+    ]);
+    mockCharge.mockRejectedValueOnce(new Error('timeout')).mockResolvedValueOnce(undefined);
+
+    await expect(processDueSubscriptions({ now: NOW })).resolves.toEqual({
+      processed: 1,
+      failed: 1,
+    });
+    expect(mockCharge).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses the persisted claim to avoid duplicate charges in one sweep', async () => {
+    const sub = subscription();
+    mockFindMany.mockResolvedValue([sub, sub]);
+    mockUpdateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    await processDueSubscriptions({ now: NOW });
+
+    expect(mockCharge).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists financial state even when notification delivery fails', async () => {
+    mockFindMany.mockResolvedValue([subscription()]);
+    mockCharge.mockRejectedValue(new Error('Error(Contract, #14)'));
+    mockSystemNotification.mockRejectedValue(new Error('notification store unavailable'));
+
+    await expect(processDueSubscriptions({ now: NOW })).resolves.toEqual({
+      processed: 0,
+      failed: 1,
+    });
+    expect(persistedData()).toMatchObject({ status: 'PAST_DUE', chargeFailureCount: 1 });
   });
 });

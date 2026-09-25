@@ -398,13 +398,18 @@ describe('fixture: sub_created', () => {
     );
   });
 
-  it('is idempotent — replay uses the same (tipper, creator) key', async () => {
+  it('is idempotent — replay uses the same key without mutating live billing state', async () => {
     await projectEvent(subCreatedEvent);
+    mockEventLogFindFirst.mockResolvedValue({ id: 'existing' });
     await projectEvent(subCreatedEvent);
 
     expect(mockSubUpsert.mock.calls[0][0].where).toEqual(
       mockSubUpsert.mock.calls[1][0].where,
     );
+    expect(mockSubUpsert.mock.calls[0][0].update).toEqual(
+      expect.objectContaining({ status: 'ACTIVE', nextChargeAt: expect.any(Date) }),
+    );
+    expect(mockSubUpsert.mock.calls[1][0].update).toEqual({});
   });
 });
 
@@ -417,18 +422,28 @@ describe('fixture: sub_exec', () => {
     expect(mockSubUpsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: `sub_u_${ADDR_A}_u_${ADDR_B}` },
-        update: { amountStroops: 500000n, status: 'ACTIVE' },
+        update: {
+          amountStroops: 500000n,
+          status: 'ACTIVE',
+          chargeFailureCount: 0,
+          dunningStartedAt: null,
+          nextChargeRetryAt: null,
+          lastChargeFailureReason: null,
+          chargeAttemptStartedAt: null,
+        },
       }),
     );
   });
 
-  it('is idempotent — replay produces the same update fields', async () => {
+  it('is idempotent — replay does not mutate current subscription state', async () => {
     await projectEvent(subExecEvent);
+    mockEventLogFindFirst.mockResolvedValue({ id: 'existing' });
     await projectEvent(subExecEvent);
 
     expect(mockSubUpsert.mock.calls[0][0].update).toEqual(
-      mockSubUpsert.mock.calls[1][0].update,
+      expect.objectContaining({ status: 'ACTIVE', chargeFailureCount: 0 }),
     );
+    expect(mockSubUpsert.mock.calls[1][0].update).toEqual({});
   });
 });
 
@@ -440,7 +455,7 @@ describe('fixture: sub_cancel', () => {
 
     expect(mockSubUpdateMany).toHaveBeenCalledWith({
       where: { id: `sub_u_${ADDR_A}_u_${ADDR_B}` },
-      data: { status: 'CANCELLED' },
+      data: { status: 'CANCELLED', nextChargeRetryAt: null, chargeAttemptStartedAt: null },
     });
   });
 });

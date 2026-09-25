@@ -191,6 +191,21 @@ describe('GET /api/v1/subscriptions/me', () => {
       take: 6,
     });
   });
+
+  it.each(['PAST_DUE', 'FAILED'])('accepts the %s status filter', async (status) => {
+    mockAuth();
+    mockFindMany.mockResolvedValue([]);
+
+    const app = createApp();
+    const res = await request(app)
+      .get(`/api/v1/subscriptions/me?status=${status}`)
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(200);
+    expect(mockFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tipperId: 'tipper-1', deletedAt: null, status } }),
+    );
+  });
 });
 
 describe('POST /api/v1/subscriptions/prepare', () => {
@@ -464,7 +479,11 @@ describe('POST /api/v1/subscriptions/submit-cancel', () => {
     expect(res.body.data).toMatchObject({ id: 'sub_tipper-1_creator-1', status: 'CANCELLED' });
     expect(mockUpdate).toHaveBeenCalledWith({
       where: { id: 'sub_tipper-1_creator-1' },
-      data: { status: 'CANCELLED' },
+      data: {
+        status: 'CANCELLED',
+        nextChargeRetryAt: null,
+        chargeAttemptStartedAt: null,
+      },
     });
   });
 

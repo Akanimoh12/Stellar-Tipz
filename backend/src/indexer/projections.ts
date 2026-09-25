@@ -445,7 +445,7 @@ async function projectGoalCancelled(event: DecodedEvent): Promise<void> {
  * interval_days)`. One subscription per (tipper, creator) pair, keyed
  * deterministically (`sub_<tipperId>_<creatorId>`) so replays upsert one row.
  */
-async function projectSubscriptionCreated(event: DecodedEvent): Promise<void> {
+async function projectSubscriptionCreated(event: DecodedEvent, isNewEvent: boolean): Promise<void> {
   const [subscriber, creator, amount, intervalDays] = tupleArgs(event.value);
   const amountStroops = toBigInt(amount);
   if (typeof subscriber !== 'string' || typeof creator !== 'string' || amountStroops === null) {
@@ -455,6 +455,7 @@ async function projectSubscriptionCreated(event: DecodedEvent): Promise<void> {
   const tipperId = await ensureUserId(subscriber);
   const creatorId = await ensureUserId(creator);
   const days = toIntervalDays(intervalDays);
+  const nextChargeAt = addDays(new Date(), days);
 
   await prisma.subscription.upsert({
     where: { id: subscriptionId(tipperId, creatorId) },
@@ -464,10 +465,22 @@ async function projectSubscriptionCreated(event: DecodedEvent): Promise<void> {
       creatorId,
       amountStroops,
       interval: intervalFromDays(days),
-      nextChargeAt: addDays(new Date(), days),
+      nextChargeAt,
       status: 'ACTIVE',
     },
-    update: { amountStroops, interval: intervalFromDays(days), status: 'ACTIVE' },
+    update: isNewEvent
+      ? {
+          amountStroops,
+          interval: intervalFromDays(days),
+          nextChargeAt,
+          status: 'ACTIVE',
+          chargeFailureCount: 0,
+          dunningStartedAt: null,
+          nextChargeRetryAt: null,
+          lastChargeFailureReason: null,
+          chargeAttemptStartedAt: null,
+        }
+      : {},
   });
 }
 
@@ -501,7 +514,17 @@ async function projectSubscriptionCharged(event: DecodedEvent, isNewEvent: boole
       nextChargeAt: addDays(new Date(), 30),
       status: 'ACTIVE',
     },
-    update: { amountStroops, status: 'ACTIVE' },
+    update: isNewEvent
+      ? {
+          amountStroops,
+          status: 'ACTIVE',
+          chargeFailureCount: 0,
+          dunningStartedAt: null,
+          nextChargeRetryAt: null,
+          lastChargeFailureReason: null,
+          chargeAttemptStartedAt: null,
+        }
+      : {},
   });
 
   if (isNewEvent) {
@@ -526,7 +549,7 @@ async function projectSubscriptionCancelled(event: DecodedEvent): Promise<void> 
   const creatorId = await ensureUserId(creator);
   await prisma.subscription.updateMany({
     where: { id: subscriptionId(tipperId, creatorId) },
-    data: { status: 'CANCELLED' },
+    data: { status: 'CANCELLED', nextChargeRetryAt: null, chargeAttemptStartedAt: null },
   });
 }
 
