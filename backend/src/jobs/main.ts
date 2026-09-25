@@ -27,12 +27,19 @@ import {
   createRetentionWorker,
   scheduleRetentionPrune,
 } from './index.js';
+import { initTracing, shutdownTracing } from '../common/observability/tracing.js';
 
 /**
  * Standalone jobs process bootstrap. Starts all BullMQ workers and registers
  * graceful shutdown for Prisma, Redis, and every worker.
  */
 export async function bootstrapJobs(): Promise<void> {
+  // Initialize OpenTelemetry tracing (issue #1349)
+  initTracing();
+  registerClosable({
+    name: 'OpenTelemetry',
+    close: shutdownTracing,
+  });
   await startProcessMetrics('jobs');
 
   registerClosable({ name: 'Prisma', close: () => prisma.$disconnect() });

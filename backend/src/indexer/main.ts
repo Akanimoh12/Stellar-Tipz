@@ -3,6 +3,7 @@ import { logger } from '../common/utils/logger.js';
 import { registerClosable, closeAllWithTimeout } from '../common/utils/lifecycle.js';
 import { prisma, prismaIncludingDeleted } from '../db/prisma.js';
 import { startIndexer } from './poller.js';
+import { initTracing, shutdownTracing } from '../common/observability/tracing.js';
 import { startProcessMetrics } from '../common/observability/metricsServer.js';
 
 /**
@@ -10,6 +11,12 @@ import { startProcessMetrics } from '../common/observability/metricsServer.js';
  * registers graceful shutdown for Prisma and the indexer.
  */
 export async function bootstrapIndexer(): Promise<void> {
+  // Initialize OpenTelemetry tracing (issue #1349)
+  initTracing();
+  registerClosable({
+    name: 'OpenTelemetry',
+    close: shutdownTracing,
+  });
   await startProcessMetrics('indexer');
 
   registerClosable({

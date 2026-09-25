@@ -11,6 +11,7 @@ import { globalRateLimiter, mutationRateLimiter } from './common/middleware/rate
 import { httpMetricsMiddleware } from './common/observability/httpMetrics.js';
 import { metricsController } from './common/observability/metrics.js';
 import { getSentryRequestHandler, getSentryErrorHandler } from './common/observability/sentry.js';
+import { tracingMiddleware } from './common/observability/tracingMiddleware.js';
 import { logger } from './common/utils/logger.js';
 import { truncateStellarAddress, truncateEmail, truncateMessage } from './common/utils/logRedaction.js';
 import { openApiDocument } from './docs/openapi.js';
@@ -68,6 +69,9 @@ export function createApp(): Express {
   app.use('/health', healthRouter);
 
   app.use(getSentryRequestHandler());
+
+  // OpenTelemetry tracing middleware (issue #1349) — must be early to capture full request lifecycle
+  app.use(tracingMiddleware);
 
   const isProduction = env.NODE_ENV === 'production';
   const strictCspDirectives = buildStrictCspDirectives();
