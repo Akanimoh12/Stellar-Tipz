@@ -3,12 +3,20 @@ import { logger } from '../common/utils/logger.js';
 import { registerClosable, closeAll } from '../common/utils/lifecycle.js';
 import { prisma, prismaIncludingDeleted } from '../db/prisma.js';
 import { startIndexer } from './poller.js';
+import { initTracing, shutdownTracing } from '../common/observability/tracing.js';
 
 /**
  * Standalone indexer process bootstrap. Starts the Soroban poll loop and
  * registers graceful shutdown for Prisma and the indexer.
  */
 export async function bootstrapIndexer(): Promise<void> {
+  // Initialize OpenTelemetry tracing (issue #1349)
+  initTracing();
+  registerClosable({
+    name: 'OpenTelemetry',
+    close: shutdownTracing,
+  });
+
   registerClosable({
     name: 'Prisma',
     close: () => prisma.$disconnect(),
