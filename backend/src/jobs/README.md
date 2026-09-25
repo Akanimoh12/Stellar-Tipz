@@ -33,7 +33,7 @@ npm run dev
 *(Make sure your local Redis instance is running via `docker compose -f backend/docker-compose.yml up -d`)*
 
 ### Error Handling
-Workers should **throw** an Error (`throw new Error(...)`) whenever a job fails due to an external factor (e.g., a non-2xx HTTP status from a webhook). Throwing an error natively leverages BullMQ's automatic retry logic.
+Workers should **throw** an Error whenever a job fails due to a transient external factor. Throwing an error natively leverages BullMQ's automatic retry logic. The webhook worker classifies permanent non-429 4xx responses and throws BullMQ's `UnrecoverableError` so they do not consume the remaining retry budget; 429, 5xx, network failures, and timeouts remain retryable.
 Listen for the `failed` event on your worker to log issues via the shared `logger`.
 
 ### Dead Letter Jobs

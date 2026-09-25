@@ -313,9 +313,26 @@ model WebhookDelivery {
   nextAttemptAt  DateTime?
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
+  attemptHistory WebhookDeliveryAttempt[]
 
   @@index([subscriptionId])
   @@index([status, nextAttemptAt])
+}
+
+
+/// Bounded diagnostic data for one HTTP delivery attempt.
+model WebhookDeliveryAttempt {
+  id                  String          @id @default(cuid())
+  deliveryId          String
+  delivery            WebhookDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  attemptNumber       Int
+  responseCode        Int?
+  responseBodyExcerpt String?
+  errorReason         String?
+  attemptedAt         DateTime        @default(now())
+
+  @@unique([deliveryId, attemptNumber])
+  @@index([deliveryId, attemptedAt])
 }
 
 /// Audit log for tracking sensitive actions and job execution (issues #1289, #1288, #1287).

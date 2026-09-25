@@ -59,19 +59,42 @@ Use constant-time comparison (`timingSafeEqual`) to avoid timing side-channels.
 }
 ```
 
-## Retry Policy
+## Retry and Endpoint Health Policy
 
-Failed deliveries (non-2xx response or timeout) are retried with exponential backoff:
+The first delivery attempt is immediate. A delivery has at most five total
+attempts, so four retries are available. Retry base delays are 2, 4, 8, and 16
+seconds. Each delay receives deterministic subtractive jitter in the range 50%
+(inclusive) to 100% (exclusive) of its base delay, derived from the delivery ID
+and retry number. This spreads failing endpoints across time while allowing the
+stored `nextAttemptAt` to match BullMQ's scheduled delay.
 
-| Attempt | Delay   |
-|---------|---------|
-| 1       | 2s      |
-| 2       | 4s      |
-| 3       | 8s      |
-| 4       | 16s     |
-| 5       | 32s     |
+| Retry | Base delay | Actual jittered range |
+|-------|------------|-----------------------|
+| 1     | 2s         | 1s to less than 2s    |
+| 2     | 4s         | 2s to less than 4s    |
+| 3     | 8s         | 4s to less than 8s    |
+| 4     | 16s        | 8s to less than 16s   |
 
-After 5 failed attempts, the delivery is marked as `FAILED` and stored for inspection via `GET /api/webhooks/deliveries`.
+Each HTTP attempt has a 10-second timeout, including response-body excerpt
+reading. HTTP 2xx responses succeed. HTTP 4xx responses other than 429 are
+permanent failures and are not retried. HTTP 429, HTTP 5xx, network failures,
+and timeouts are retryable. Other non-2xx statuses are treated as retryable.
+
+Every attempt is stored separately with its response code (when available), a
+response-body excerpt capped at 1 KiB, and a bounded error reason. Request
+headers, signing secrets, and authorization material are never stored.
+
+A subscription is disabled when one of its deliveries reaches terminal
+failure: immediately for a permanent non-429 4xx, or after all five attempts
+for a retryable failure. It is never disabled while retryable attempts remain.
+The owner receives one `webhook_disabled` in-app/realtime notification when the
+status changes from `ACTIVE` to `DISABLED`; an already-disabled subscription is
+not notified again. A delivery that succeeds on a later attempt is marked
+`SUCCESS`, clears `nextAttemptAt`, and leaves the subscription active.
+
+Retryable jobs that exhaust all attempts continue to enter the job dead-letter
+store. A handled permanent 4xx is represented by the failed delivery and its
+attempt history and does not enter the dead-letter store.
 
 ## Events
 
