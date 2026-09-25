@@ -2,6 +2,13 @@ import { Request, Response } from 'express';
 import { redis } from '../../db/redis.js';
 import { logger } from '../utils/logger.js';
 import { env } from '../../config/env.js';
+import {
+  createCounter,
+  createGauge,
+  evaluateMetricsAccess,
+  metricsContentType,
+  renderMetrics,
+} from './prometheus.js';
 
 export interface MetricsData {
   timestamp: string;
@@ -72,6 +79,29 @@ const retentionPrunedCounts: Record<string, number> = {};
 let unknownEventCount = 0;
 let lastProcessedLedger: number | null = null;
 
+// Prometheus counterparts of the legacy JSON counters (issue #1346).
+const slowQueriesTotal = createCounter({
+  name: 'db_slow_queries_total',
+  help: 'Database queries slower than SLOW_QUERY_THRESHOLD_MS',
+});
+const poolSaturationTotal = createCounter({
+  name: 'db_pool_saturation_total',
+  help: 'Prisma connection pool acquisition timeouts (P2024)',
+});
+const retentionRowsPrunedTotal = createCounter({
+  name: 'retention_rows_pruned_total',
+  help: 'Rows removed by retention batches, by model',
+  labelNames: ['model'] as const,
+});
+const indexerUnknownEventsTotal = createCounter({
+  name: 'indexer_unknown_events_total',
+  help: 'Indexer events whose topic or version is not understood',
+});
+const indexerLastProcessedLedger = createGauge({
+  name: 'indexer_last_processed_ledger',
+  help: 'Last ledger sequence successfully processed by the indexer',
+});
+
 export function recordRequest(duration: number) {
   requestCount++;
   latencySum += duration;
@@ -85,25 +115,30 @@ export function recordError() {
 /** Records a single slow query event for the `/metrics` endpoint. */
 export function recordSlowQuery() {
   slowQueryCount++;
+  slowQueriesTotal.inc();
 }
 
 export function recordPoolSaturation(): void {
   poolSaturationCount++;
+  poolSaturationTotal.inc();
 }
 
 /** Records rows removed by one completed retention batch. */
 export function recordRetentionPruned(model: string, count: number): void {
   retentionPrunedCounts[model] = (retentionPrunedCounts[model] ?? 0) + count;
+  retentionRowsPrunedTotal.inc({ model }, count);
 }
 
 /** Records an indexer event the indexer does not yet understand (issue #1261). */
 export function recordUnknownEvent(): void {
   unknownEventCount++;
+  indexerUnknownEventsTotal.inc();
 }
 
 /** Records the last ledger successfully processed by the indexer (issue #1258 / #1261). */
 export function recordIndexerLedgerProcessed(ledger: number): void {
   lastProcessedLedger = ledger;
+  indexerLastProcessedLedger.set(ledger);
 }
 
 export async function getMetrics(): Promise<MetricsData> {
@@ -210,7 +245,41 @@ export async function getMetrics(): Promise<MetricsData> {
   };
 }
 
-export async function metricsController(_req: Request, res: Response) {
+/**
+ * `GET /metrics`. Prometheus scrapers (and plain `curl`) receive the text
+ * exposition format; the legacy JSON report is still served when the client
+ * sends `Accept: application/json`. Access follows METRICS_BEARER_TOKEN: when
+ * set it is required, otherwise the route is hidden in production because the
+ * API port is public (issue #1346). See docs/METRICS.md.
+ */
+export async function metricsController(req: Request, res: Response) {
+  const access = evaluateMetricsAccess(req.headers?.authorization, {
+    token: env.METRICS_BEARER_TOKEN,
+    production: env.NODE_ENV === 'production',
+    loopbackBound: false,
+  });
+  if (!access.allowed) {
+    if (access.status === 401) res.set('WWW-Authenticate', 'Bearer');
+    res.status(access.status).json({
+      error:
+        access.status === 401
+          ? { code: 'UNAUTHORIZED', message: 'Unauthorized' }
+          : { code: 'NOT_FOUND', message: 'Route not found' },
+    });
+    return;
+  }
+
+  if (req.accepts?.(['text/plain', 'application/json']) !== 'application/json') {
+    try {
+      const body = await renderMetrics();
+      res.set('Content-Type', metricsContentType).set('Cache-Control', 'no-store').send(body);
+    } catch (error) {
+      logger.error({ error }, 'Failed to render Prometheus metrics');
+      res.status(500).type('text/plain').send('metrics unavailable');
+    }
+    return;
+  }
+
   try {
     const metrics = await getMetrics();
     res.set('Content-Type', 'application/json');
@@ -220,19 +289,4 @@ export async function metricsController(_req: Request, res: Response) {
     logger.error({ error }, 'Failed to collect metrics');
     res.status(500).json({ error: 'Failed to collect metrics' });
   }
-}
-
-export function metricsMiddleware(_req: Request, res: Response, next: () => void) {
-  const start = Date.now();
-
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    recordRequest(duration);
-
-    if (res.statusCode >= 400) {
-      recordError();
-    }
-  });
-
-  next();
 }

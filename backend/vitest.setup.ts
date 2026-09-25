@@ -8,3 +8,4 @@ process.env.SOROBAN_RPC_URL = 'https://soroban-testnet.stellar.org';
 process.env.HORIZON_URL = 'https://horizon-testnet.stellar.org';
 process.env.NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
 process.env.CONTRACT_ID = 'CA3D5K7XK7Q5V5Z7O4X7K7Q5V5Z7O4X7K7Q5V5Z7O4X7K7Q5V5Z7O4X7';
+process.env.METRICS_PORT = '0';

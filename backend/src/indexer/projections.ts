@@ -7,6 +7,7 @@ import type { DecodedEvent } from './sorobanClient.js';
 import { publishProjection } from './realtime-publisher.js';
 import * as notificationsService from '../modules/notifications/notifications.service.js';
 import { recordUnknownEvent, recordIndexerLedgerProcessed } from '../common/observability/metrics.js';
+import { observeRegistration, observeSubscriptionCharge, observeTip } from '../common/observability/businessMetrics.js';
 
 /** Event topics that represent an on-chain tip. */
 const TIP_TOPICS = new Set(['tip', 'tip_sent']);
@@ -120,26 +121,33 @@ async function projectTip(event: DecodedEvent): Promise<void> {
   const tip = parseTip(event.value);
   if (!tip) {
     logger.warn({ txHash: event.txHash }, 'Skipping tip event with unparseable payload');
+    observeTip('indexer', 'unparseable');
     return;
   }
 
-  const notification = await prisma.$transaction(async (tx) => {
+  const outcome = await prisma.$transaction(async (tx) => {
     const existing = await tx.tip.findUnique({ where: { txHash: event.txHash } });
-    if (existing) return null;
+    if (existing) return { created: false, notification: null };
     await tx.tip.create({ data: {
       txHash: event.txHash, ledger: event.ledger, fromAddress: tip.from,
       toAddress: tip.to, amountStroops: tip.amount, message: tip.message ?? null, status: 'CONFIRMED',
     } });
     const receiver = await tx.user.findUnique({ where: { stellarAddress: tip.to }, select: { id: true } });
-    return receiver ? notificationsService.persistNotification(tx, receiver.id, 'tip_received', {
+    const notification = receiver ? await notificationsService.persistNotification(tx, receiver.id, 'tip_received', {
       txHash: event.txHash, amountStroops: tip.amount.toString(), fromAddress: tip.from,
     }) : null;
+    return { created: true, notification };
   }).catch((err: unknown) => {
-    if (err && typeof err === 'object' && 'code' in err && err.code === 'P2002') return null;
+    if (err && typeof err === 'object' && 'code' in err && err.code === 'P2002') {
+      return { created: false, notification: null };
+    }
+    observeTip('indexer', 'system_error');
     throw err;
   });
-  if (notification) emitNotificationCreated({ ...notification, createdAt: notification.createdAt.toISOString() });
-
+  observeTip('indexer', outcome.created ? 'success' : 'duplicate', outcome.created ? tip.amount : undefined);
+  if (outcome.notification) {
+    emitNotificationCreated({ ...outcome.notification, createdAt: outcome.notification.createdAt.toISOString() });
+  }
 }
 
 interface ParsedTip {
@@ -292,9 +300,10 @@ function toNumber(value: unknown): number | null {
  * Project a `("profile", "register")` event — data `(owner, username)` — into the
  * User table. Upsert on the unique `stellarAddress`, so replays are no-ops.
  */
-async function projectProfileRegistered(event: DecodedEvent): Promise<void> {
+async function projectProfileRegistered(event: DecodedEvent, isNewEvent = true): Promise<void> {
   const [owner, username] = tupleArgs(event.value);
   if (typeof owner !== 'string') {
+    observeRegistration('indexer', 'unparseable');
     return warnUnparseable(event, 'profile_register');
   }
   const name = typeof username === 'string' && username.length > 0 ? username : null;
@@ -304,6 +313,7 @@ async function projectProfileRegistered(event: DecodedEvent): Promise<void> {
     create: { stellarAddress: owner, username: name },
     update: name === null ? {} : { username: name },
   });
+  if (isNewEvent) observeRegistration('indexer', 'success');
 }
 
 /**
@@ -507,6 +517,7 @@ async function projectSubscriptionCharged(event: DecodedEvent, isNewEvent: boole
   const [subscriber, creator, amount, chargedInterval, nextDue] = subscriptionArgs(event.value);
   const amountStroops = toBigInt(amount);
   if (typeof subscriber !== 'string' || typeof creator !== 'string' || amountStroops === null) {
+    observeSubscriptionCharge('indexer', 'unparseable');
     return warnUnparseable(event, 'sub_exec');
   }
 
@@ -514,6 +525,7 @@ async function projectSubscriptionCharged(event: DecodedEvent, isNewEvent: boole
   const creatorId = await ensureUserId(creator);
 
   if (!isNewEvent) return;
+  observeSubscriptionCharge('indexer', 'success', { amountStroops });
   const previous = await prisma.subscription.findUnique({ where: { id: subscriptionId(tipperId, creatorId) } });
   const nextInterval = chargedInterval !== undefined ? intervalFromDays(toIntervalDays(chargedInterval)) : previous?.pendingInterval ?? previous?.interval ?? 'MONTHLY';
   const confirmedNextDue = toTimestamp(nextDue);

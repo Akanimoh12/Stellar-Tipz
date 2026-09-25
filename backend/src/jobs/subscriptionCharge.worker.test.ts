@@ -31,6 +31,7 @@ import {
   getNextDunningRetryAt,
   processDueSubscriptions,
 } from './subscriptionCharge.worker.js';
+import { registry } from '../common/observability/prometheus.js';
 
 const NOW = new Date('2026-09-25T12:00:00.000Z');
 const DUE = new Date('2026-09-20T12:00:00.000Z');
@@ -309,5 +310,50 @@ describe('processDueSubscriptions', () => {
       failed: 1,
     });
     expect(persistedData()).toMatchObject({ status: 'PAST_DUE', chargeFailureCount: 1 });
+  });
+});
+
+describe('processDueSubscriptions — business metrics (#1348)', () => {
+  type Series = { labels: Record<string, string>; value: number };
+  const series = async (name: string): Promise<Series[]> =>
+    ((await registry.getMetricsAsJSON()).find((m) => m.name === name)?.values ?? []) as Series[];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    registry.resetMetrics();
+    mockUpdateMany.mockResolvedValue({ count: 1 });
+    mockSystemNotification.mockResolvedValue(undefined);
+  });
+
+  it('counts a confirmed charge as a job success', async () => {
+    mockFindMany.mockResolvedValue([subscription()]);
+    mockCharge.mockResolvedValue(undefined);
+    await processDueSubscriptions({ now: NOW });
+    expect(await series('tipz_subscription_charges_total')).toEqual([
+      { labels: { source: 'job', result: 'success', failure_code: 'none' }, value: 1 },
+    ]);
+  });
+
+  it('splits charge failures into user-caused and system-caused with the classifier code', async () => {
+    mockFindMany.mockResolvedValue([subscription({ id: 'sub_a' }), subscription({ id: 'sub_b' })]);
+    mockCharge
+      .mockRejectedValueOnce(new Error('HostError: Error(Contract, #14)'))
+      .mockRejectedValueOnce(new Error('ECONNRESET socket hang up'));
+    await processDueSubscriptions({ now: NOW });
+    expect(await series('tipz_subscription_charges_total')).toEqual(
+      expect.arrayContaining([
+        { labels: { source: 'job', result: 'user_error', failure_code: 'INSUFFICIENT_BALANCE' }, value: 1 },
+        { labels: { source: 'job', result: 'system_error', failure_code: 'NETWORK_ERROR' }, value: 1 },
+      ]),
+    );
+  });
+
+  it('counts a persistence crash as a system error', async () => {
+    mockFindMany.mockResolvedValue([subscription()]);
+    mockUpdateMany.mockRejectedValueOnce(new Error('db down'));
+    await processDueSubscriptions({ now: NOW });
+    expect(await series('tipz_subscription_charges_total')).toEqual([
+      { labels: { source: 'job', result: 'system_error', failure_code: 'PERSIST_ERROR' }, value: 1 },
+    ]);
   });
 });

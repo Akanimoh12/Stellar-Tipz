@@ -4,6 +4,7 @@ import { logger } from '../common/utils/logger.js';
 import { registerClosable, closeAllWithTimeout } from '../common/utils/lifecycle.js';
 import { prisma, prismaIncludingDeleted } from '../db/prisma.js';
 import { redis } from '../db/redis.js';
+import { startProcessMetrics } from '../common/observability/metricsServer.js';
 import {
   createCreditRecomputeWorker,
   scheduleCreditRecompute,
@@ -39,6 +40,7 @@ export async function bootstrapJobs(): Promise<void> {
     name: 'OpenTelemetry',
     close: shutdownTracing,
   });
+  await startProcessMetrics('jobs');
 
   registerClosable({ name: 'Prisma', close: () => prisma.$disconnect() });
   registerClosable({ name: 'PrismaIncludingDeleted', close: () => prismaIncludingDeleted.$disconnect() });

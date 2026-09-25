@@ -66,33 +66,6 @@ export const StatsPanel: React.FC = () => {
     return xlm.toFixed(2);
   };
 
-  const statCards = [
-    {
-      label: 'Total Creators',
-      value: stats.totalCreators.toLocaleString(),
-      icon: Users,
-      color: 'blue',
-    },
-    {
-      label: 'Total Tips Sent',
-      value: stats.totalTipsCount.toLocaleString(),
-      icon: TrendingUp,
-      color: 'green',
-    },
-    {
-      label: 'Total Tips Volume',
-      value: `${formatStroops(stats.totalTipsVolume)} XLM`,
-      icon: Zap,
-      color: 'purple',
-    },
-    {
-      label: 'Fees Collected',
-      value: `${formatStroops(stats.totalFeesCollected)} XLM`,
-      icon: DollarSign,
-      color: 'orange',
-    },
-  ];
-
   const colorClasses = {
     blue: 'bg-blue-50 text-blue-600',
     green: 'bg-green-50 text-green-600',

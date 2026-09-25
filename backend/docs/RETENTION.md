@@ -18,6 +18,6 @@ Event-log archival and deletion happen in one transaction per batch. Archive
 inserts use `skipDuplicates`, so an interrupted/retried batch is idempotent.
 Only after the archive insert succeeds are source rows deleted.
 
-The `/metrics` response exposes cumulative `retention.rows_pruned_total`
+The `/metrics` JSON response (`Accept: application/json`) exposes cumulative `retention.rows_pruned_total`
 counters by model. These counters reset when the process restarts; the archived
 event rows and job logs remain the durable operational record.

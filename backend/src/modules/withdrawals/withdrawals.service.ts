@@ -5,6 +5,11 @@ import { prisma } from '../../db/prisma.js';
 import { BadRequestError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
 import { rpcCall } from '../../common/stellar/rpcClient.js';
+import {
+  classifyFailure,
+  markFailureClass,
+  observeWithdrawal,
+} from '../../common/observability/businessMetrics.js';
 import type {
   WithdrawalResponse,
   WithdrawableBalanceResponse,
@@ -208,6 +213,22 @@ export async function submitWithdrawal(
   signedTxXdr: string,
   opts: { signal?: AbortSignal } = {},
 ): Promise<SubmitWithdrawalResult> {
+  try {
+    const outcome = await performWithdrawalSubmission(userId, amount, signedTxXdr, opts);
+    observeWithdrawal('submit', outcome.created ? 'success' : 'duplicate', outcome.created ? BigInt(amount) : undefined);
+    return outcome.result;
+  } catch (err) {
+    observeWithdrawal('submit', classifyFailure(err));
+    throw err;
+  }
+}
+
+async function performWithdrawalSubmission(
+  userId: string,
+  amount: string,
+  signedTxXdr: string,
+  opts: { signal?: AbortSignal },
+): Promise<{ result: SubmitWithdrawalResult; created: boolean }> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new BadRequestError('User not found');
 
@@ -231,7 +252,8 @@ export async function submitWithdrawal(
     operationName: 'sendTransaction',
   }).catch((err: Error) => {
     logger.error({ err }, 'Withdrawal transaction submission failed');
-    throw new BadRequestError('Failed to submit withdrawal transaction');
+    // The RPC is the platform's dependency, not the user's mistake.
+    throw markFailureClass(new BadRequestError('Failed to submit withdrawal transaction'), 'system_error');
   });
 
   if (sendResponse.status === 'ERROR') {
@@ -243,7 +265,7 @@ export async function submitWithdrawal(
 
   const existing = await prisma.withdrawal.findUnique({ where: { txHash } });
   if (existing) {
-    return serializeSubmittedWithdrawal(existing, netAmount);
+    return { result: serializeSubmittedWithdrawal(existing, netAmount), created: false };
   }
 
   try {
@@ -256,11 +278,11 @@ export async function submitWithdrawal(
         status: 'PENDING',
       },
     });
-    return serializeSubmittedWithdrawal(withdrawal, netAmount);
+    return { result: serializeSubmittedWithdrawal(withdrawal, netAmount), created: true };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       const withdrawal = await prisma.withdrawal.findUnique({ where: { txHash } });
-      if (withdrawal) return serializeSubmittedWithdrawal(withdrawal, netAmount);
+      if (withdrawal) return { result: serializeSubmittedWithdrawal(withdrawal, netAmount), created: false };
     }
     throw err;
   }

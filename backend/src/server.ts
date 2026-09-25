@@ -17,6 +17,12 @@ async function bootstrap(): Promise<void> {
     name: 'OpenTelemetry',
     close: shutdownTracing,
   });
+import { startProcessMetrics } from './common/observability/metricsServer.js';
+
+/** Process entry point: starts the HTTP server (and, later, the WebSocket + indexer). */
+async function bootstrap(): Promise<void> {
+  // Prometheus registry + internal /metrics listener (issue #1346)
+  await startProcessMetrics('api');
 
   const app = createApp();
   const httpServer = createServer(app);

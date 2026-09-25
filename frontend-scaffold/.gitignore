@@ -15,6 +15,7 @@ node_modules
 # production
 build
 build.zip
+dist-visual
 
 # misc
 .DS_Store
@@ -26,6 +27,7 @@ build.zip
 # Ignore all env variants but keep example files
 .env.*
 !.env.example
+!.env.visual
 
 npm-debug.log*
 yarn-debug.log*
