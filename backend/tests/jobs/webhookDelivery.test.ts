@@ -6,6 +6,24 @@ import {
 } from '../../src/jobs/webhookDelivery.js';
 import { redis } from '../../src/db/redis.js';
 
+const persistenceMocks = vi.hoisted(() => ({
+  attemptUpsert: vi.fn(),
+  deliveryUpdate: vi.fn(),
+  transaction: vi.fn(),
+}));
+
+vi.mock('../../src/db/prisma.js', () => ({
+  prisma: {
+    webhookDeliveryAttempt: { upsert: persistenceMocks.attemptUpsert },
+    webhookDelivery: { update: persistenceMocks.deliveryUpdate },
+    $transaction: persistenceMocks.transaction,
+  },
+}));
+
+vi.mock('../../src/modules/notifications/notifications.service.js', () => ({
+  disableWebhookSubscriptionAndNotify: vi.fn(),
+}));
+
 // Mock fetch globally
 const fetchMock = vi.fn();
 global.fetch = fetchMock;
@@ -24,6 +42,11 @@ describe('Webhook Delivery Job', () => {
 
   beforeEach(async () => {
     fetchMock.mockReset();
+    persistenceMocks.attemptUpsert.mockResolvedValue({});
+    persistenceMocks.deliveryUpdate.mockResolvedValue({});
+    persistenceMocks.transaction.mockImplementation(async (operations: Promise<unknown>[]) =>
+      Promise.all(operations),
+    );
     // Clear the queue before each test
     await webhookDeliveryQueue.drain();
   });
@@ -39,7 +62,10 @@ describe('Webhook Delivery Job', () => {
     const payload = { event: 'test_event', data: { id: 123 } };
 
     // Schedule the delivery
-    await scheduleWebhookDelivery(url, payload);
+    await scheduleWebhookDelivery(url, payload, {
+      deliveryId: 'delivery-success',
+      subscriptionId: 'subscription-success',
+    });
 
     // Wait for the job to complete
     const completedJob = await new Promise((resolve) => {
@@ -74,7 +100,15 @@ describe('Webhook Delivery Job', () => {
     const payload = { event: 'secure_event' };
     const secret = 'my-super-secret';
 
-    await scheduleWebhookDelivery(url, payload, secret);
+    await scheduleWebhookDelivery(
+      url,
+      payload,
+      {
+        deliveryId: 'delivery-signed',
+        subscriptionId: 'subscription-signed',
+      },
+      secret,
+    );
 
     await new Promise((resolve) => {
       webhookDeliveryWorker.once('completed', (job) => {
@@ -87,7 +121,7 @@ describe('Webhook Delivery Job', () => {
       url,
       expect.objectContaining({
         headers: expect.objectContaining({
-          'X-Signature': expect.stringMatching(/^sha256=[0-9a-f]{64}$/),
+          'X-Stellar-Tipz-Signature': expect.stringMatching(/^sha256=[0-9a-f]{64}$/),
         }),
       })
     );
@@ -103,7 +137,10 @@ describe('Webhook Delivery Job', () => {
     const url = 'https://example.com/webhook-fail';
     const payload = { event: 'fail_event' };
 
-    await scheduleWebhookDelivery(url, payload);
+    await scheduleWebhookDelivery(url, payload, {
+      deliveryId: 'delivery-retryable-failure',
+      subscriptionId: 'subscription-retryable-failure',
+    });
 
     // Wait for the job to fail
     const failedJob = await new Promise((resolve) => {

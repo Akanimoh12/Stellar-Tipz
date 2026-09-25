@@ -20,10 +20,14 @@ export type NotificationType =
   | 'withdrawal_completed'
   | 'security_event'
   | 'subscription_charge_failed'
-  | 'subscription_failed';
+  | 'subscription_failed'
+  | 'webhook_disabled';
 
 /** Operational notifications that cannot be disabled by preference settings. */
-export type SystemNotificationType = 'subscription_charge_failed' | 'subscription_failed';
+export type SystemNotificationType =
+  | 'subscription_charge_failed'
+  | 'subscription_failed'
+  | 'webhook_disabled';
 
 export interface UnreadCountResponse {
   count: number;

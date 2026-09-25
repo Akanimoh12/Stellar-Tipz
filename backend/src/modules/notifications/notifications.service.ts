@@ -264,3 +264,70 @@ export async function persistNotification(
     },
   });
 }
+
+/**
+ * Atomically disables an active webhook subscription and stores one mandatory
+ * owner notification. Concurrent or repeated terminal failures do not duplicate it.
+ */
+export async function disableWebhookSubscriptionAndNotify(
+  subscriptionId: string,
+  deliveryId: string,
+  reason: string,
+): Promise<boolean> {
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const subscription = await tx.webhookSubscription.findUnique({
+      where: { id: subscriptionId },
+      select: { ownerId: true, status: true },
+    });
+
+    if (!subscription || subscription.status === 'DISABLED') {
+      return null;
+    }
+
+    const disabled = await tx.webhookSubscription.updateMany({
+      where: { id: subscriptionId, status: 'ACTIVE' },
+      data: { status: 'DISABLED' },
+    });
+
+    if (disabled.count === 0) {
+      return null;
+    }
+
+    const notification = await tx.notification.create({
+      data: {
+        userId: subscription.ownerId,
+        type: 'webhook_disabled',
+        payload: {
+          subscriptionId,
+          deliveryId,
+          reason,
+        } as Prisma.InputJsonValue,
+        deliveries: {
+          create: {
+            userId: subscription.ownerId,
+            channel: 'in_app',
+            status: 'delivered',
+          },
+        },
+      },
+    });
+
+    return { ownerId: subscription.ownerId, notification };
+  });
+
+  if (!result) {
+    return false;
+  }
+
+  const formatted = formatNotification(result.notification);
+
+  emitNotificationCreated({
+    id: formatted.id,
+    userId: result.ownerId,
+    type: formatted.type,
+    payload: formatted.payload,
+    createdAt: formatted.createdAt,
+  });
+
+  return true;
+}
