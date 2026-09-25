@@ -16,8 +16,9 @@ This directory contains the background processing architecture for the Stellar T
 Queues are responsible for holding jobs until they are processed. They are initialized utilizing the shared Redis connection located in `src/db/redis.ts`.
 
 ### Best Practices for Queues:
-- **Idempotency:** Ensure that the data payload submitted to a queue is deterministic. Do not pass complex class instances; instead, pass scalar IDs and pure JSON objects.
-- **Backoff & Retries:** Configure queues with standard failure handling. E.g., exponential backoff (`delay: 2000`, `attempts: 5`).
+- **Idempotency:** Queue jobs created through `getQueue()` default to three attempts with exponential backoff. Use deterministic job IDs for externally triggered work (see `jobIdempotencyKey()` in `progress.ts`) and pass scalar IDs or pure JSON payloads.
+- **Progress:** Long-running handlers can call `reportJobProgress(job, { completed, total, message })`; BullMQ stores the latest progress on the job and the shared logger emits each update.
+- **Overlap protection:** Repeatable schedule names use stable job IDs and schedule helpers default to a single concurrent execution. Keep scheduled handlers safe to retry because a worker can still restart after performing an external side effect.
 
 ## 2. Workers
 Workers actively listen to Queues and process jobs as they arrive.
@@ -37,7 +38,7 @@ Workers should **throw** an Error whenever a job fails due to a transient extern
 Listen for the `failed` event on your worker to log issues via the shared `logger`.
 
 ### Dead Letter Jobs
-Jobs that exhaust all of their BullMQ retry attempts are automatically persisted to the `DeadLetterJob` model by `attachDeadLetterHandler()`, so they remain inspectable after BullMQ prunes them from Redis. Every worker wired in `main.ts` calls this handler, so failed jobs never disappear from the database.
+Jobs that exhaust all of their BullMQ retry attempts are automatically persisted to the `DeadLetterJob` model by `attachDeadLetterHandler()`, so they remain inspectable after BullMQ prunes them from Redis. Every worker calls this handler, including the notification digest and webhook workers.
 
 Query dead-lettered jobs:
 ```typescript

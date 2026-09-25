@@ -466,3 +466,18 @@ model EventLog {
   @@index([ledger])
   @@index([txHash])
 }
+
+/// A durable record of a background job that exhausted its retry attempts.
+model DeadLetterJob {
+  id            String   @id @default(cuid())
+  queue         String
+  jobId         String?
+  jobName       String
+  data          Json?
+  failedReason  String
+  attemptsMade  Int
+  failedAt      DateTime @default(now())
+
+  @@index([queue])
+  @@index([failedAt])
+}

@@ -8,6 +8,8 @@ export interface ScheduleOptions {
   name: string;
   /** Cron expression controlling the schedule. */
   pattern: string;
+  /** Maximum number of executions of this repeatable job at once. */
+  concurrency?: number;
 }
 
 /**
@@ -18,6 +20,7 @@ export async function scheduleRepeatable({
   queue,
   name,
   pattern,
+  concurrency = 1,
 }: ScheduleOptions): Promise<void> {
   const repeatableJobs = await queue.getRepeatableJobs();
   const alreadyScheduled = repeatableJobs.some(
@@ -25,7 +28,7 @@ export async function scheduleRepeatable({
   );
 
   if (!alreadyScheduled) {
-    await queue.add(name, {}, { repeat: { pattern } });
-    logger.info({ queue: queue.name, name, pattern }, 'Repeatable job scheduled');
+    await queue.add(name, {}, { repeat: { pattern }, jobId: `schedule-${name}` });
+    logger.info({ queue: queue.name, name, pattern, concurrency }, 'Repeatable job scheduled');
   }
 }
