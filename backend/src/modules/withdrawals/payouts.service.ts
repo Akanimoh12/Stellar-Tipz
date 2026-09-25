@@ -4,6 +4,7 @@ import { logger } from '../../common/utils/logger.js';
 import { NotFoundError } from '../../common/errors/AppError.js';
 import { createNotification } from '../../modules/notifications/notifications.service.js';
 import { submitScheduledWithdrawal } from './payoutSubmission.js';
+import { observeWithdrawal } from '../../common/observability/businessMetrics.js';
 import type { PayoutCadence } from '@prisma/client';
 
 const MANUAL_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 1 day between threshold re-checks
@@ -274,11 +275,20 @@ export async function processDuePayouts(
   for (const schedule of eligible) {
     try {
       const result = await attemptPayout(schedule, now, submit);
-      if (result.status === 'SUCCESS') succeeded += 1;
-      else if (result.status === 'FAILED') failed += 1;
-      else skipped += 1;
+      if (result.status === 'SUCCESS') {
+        succeeded += 1;
+        observeWithdrawal('scheduled_payout', 'success', result.netAmountStroops);
+      } else if (result.status === 'FAILED') {
+        failed += 1;
+        // Keeper-side failures (RPC, signing, missing keeper key) are the platform's to fix.
+        observeWithdrawal('scheduled_payout', 'system_error');
+      } else {
+        skipped += 1;
+        observeWithdrawal('scheduled_payout', 'skipped');
+      }
     } catch (err) {
       failed += 1;
+      observeWithdrawal('scheduled_payout', 'system_error');
       logger.error({ err, scheduleId: schedule.id }, 'Payout attempt crashed');
     }
   }

@@ -1,185 +1,39 @@
-import { test, expect } from "@playwright/test";
+import { DYNAMIC_SELECTOR, expect, openForScreenshot, test, type VisualOptions } from './fixtures';
 
 /**
- * Visual regression tests for Stellar Tipz.
+ * Visual regression suite (issue #1343).
  *
- * Baselines are committed to tests/visual/__snapshots__ and compared on every PR.
- * Dynamic content (timestamps, random numbers, wallet addresses) is masked before
- * taking screenshots to keep diffs stable.
- *
- * Run baseline generation:
- *   npx playwright test tests/visual --update-snapshots
- *
- * Run comparison:
- *   npx playwright test tests/visual
+ * Baselines live in tests/visual/__screenshots__ and are rendered by the CI
+ * container only (see docs/CONTRIBUTING.md, "Visual regression baselines").
+ * Every scenario goes through `openForScreenshot`, which pins time, randomness,
+ * theme, motion, language and network before the page loads.
  */
-
-const VIEWPORTS = {
-  desktop: { width: 1280, height: 800 },
-  tablet: { width: 768, height: 1024 },
-  mobile: { width: 375, height: 812 },
-} as const;
-
-/** CSS selectors for content that changes on every render and must be masked. */
-const DYNAMIC_SELECTORS = [
-  "[data-testid='timestamp']",
-  "[data-testid='random-value']",
-  "[data-testid='wallet-address']",
-  ".recharts-wrapper",
-  "time",
-];
-
-async function maskDynamic(page: import("@playwright/test").Page) {
-  for (const selector of DYNAMIC_SELECTORS) {
-    const els = page.locator(selector);
-    const count = await els.count();
-    for (let i = 0; i < count; i++) {
-      await els.nth(i).evaluate((el: HTMLElement) => {
-        el.style.visibility = "hidden";
-      });
-    }
-  }
+interface Scenario {
+  name: string;
+  path: string;
+  options?: VisualOptions;
 }
 
-// ─── Landing page ──────────────────────────────────────────────────────────
+const SCENARIOS: Scenario[] = [
+  { name: 'landing-desktop-light', path: '/' },
+  { name: 'landing-desktop-dark', path: '/', options: { theme: 'dark' } },
+  { name: 'landing-tablet', path: '/', options: { viewport: 'tablet' } },
+  { name: 'landing-mobile', path: '/', options: { viewport: 'mobile' } },
+  { name: 'leaderboard-desktop-light', path: '/leaderboard' },
+  { name: 'leaderboard-mobile', path: '/leaderboard', options: { viewport: 'mobile' } },
+  { name: 'help-desktop-light', path: '/help' },
+  { name: 'help-mobile', path: '/help', options: { viewport: 'mobile' } },
+  { name: 'register-desktop-light', path: '/register' },
+  { name: 'register-mobile', path: '/register', options: { viewport: 'mobile' } },
+  { name: '404-desktop-light', path: '/this-page-does-not-exist' },
+];
 
-test.describe("Visual regression – Landing page", () => {
-  test("desktop light theme", async ({ page }) => {
-    await page.setViewportSize(VIEWPORTS.desktop);
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
-    await maskDynamic(page);
-    await expect(page).toHaveScreenshot("landing-desktop-light.png", {
+for (const scenario of SCENARIOS) {
+  test(scenario.name, async ({ page }) => {
+    await openForScreenshot(page, scenario.path, scenario.options);
+    await expect(page).toHaveScreenshot(`${scenario.name}.png`, {
       fullPage: true,
-      maxDiffPixelRatio: 0.02,
+      mask: [page.locator(DYNAMIC_SELECTOR)],
     });
   });
-
-  test("desktop dark theme", async ({ page }) => {
-    await page.setViewportSize(VIEWPORTS.desktop);
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
-    // Toggle dark mode via the theme button
-    await page.getByRole("button", { name: /switch to dark mode/i }).click();
-    await maskDynamic(page);
-    await expect(page).toHaveScreenshot("landing-desktop-dark.png", {
-      fullPage: true,
-      maxDiffPixelRatio: 0.02,
-    });
-  });
-
-  test("tablet viewport", async ({ page }) => {
-    await page.setViewportSize(VIEWPORTS.tablet);
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
-    await maskDynamic(page);
-    await expect(page).toHaveScreenshot("landing-tablet.png", {
-      fullPage: true,
-      maxDiffPixelRatio: 0.02,
-    });
-  });
-
-  test("mobile viewport", async ({ page }) => {
-    await page.setViewportSize(VIEWPORTS.mobile);
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
-    await maskDynamic(page);
-    await expect(page).toHaveScreenshot("landing-mobile.png", {
-      fullPage: true,
-      maxDiffPixelRatio: 0.02,
-    });
-  });
-});
-
-// ─── Leaderboard page ──────────────────────────────────────────────────────
-
-test.describe("Visual regression – Leaderboard page", () => {
-  test("desktop light theme", async ({ page }) => {
-    await page.setViewportSize(VIEWPORTS.desktop);
-    await page.goto("/leaderboard");
-    await page.waitForLoadState("networkidle");
-    await maskDynamic(page);
-    await expect(page).toHaveScreenshot("leaderboard-desktop-light.png", {
-      fullPage: true,
-      maxDiffPixelRatio: 0.02,
-    });
-  });
-
-  test("mobile viewport", async ({ page }) => {
-    await page.setViewportSize(VIEWPORTS.mobile);
-    await page.goto("/leaderboard");
-    await page.waitForLoadState("networkidle");
-    await maskDynamic(page);
-    await expect(page).toHaveScreenshot("leaderboard-mobile.png", {
-      fullPage: true,
-      maxDiffPixelRatio: 0.02,
-    });
-  });
-});
-
-// ─── Help page ─────────────────────────────────────────────────────────────
-
-test.describe("Visual regression – Help page", () => {
-  test("desktop light theme", async ({ page }) => {
-    await page.setViewportSize(VIEWPORTS.desktop);
-    await page.goto("/help");
-    await page.waitForLoadState("networkidle");
-    await maskDynamic(page);
-    await expect(page).toHaveScreenshot("help-desktop-light.png", {
-      fullPage: true,
-      maxDiffPixelRatio: 0.02,
-    });
-  });
-
-  test("mobile viewport", async ({ page }) => {
-    await page.setViewportSize(VIEWPORTS.mobile);
-    await page.goto("/help");
-    await page.waitForLoadState("networkidle");
-    await maskDynamic(page);
-    await expect(page).toHaveScreenshot("help-mobile.png", {
-      fullPage: true,
-      maxDiffPixelRatio: 0.02,
-    });
-  });
-});
-
-// ─── Register page ─────────────────────────────────────────────────────────
-
-test.describe("Visual regression – Register page", () => {
-  test("desktop light theme", async ({ page }) => {
-    await page.setViewportSize(VIEWPORTS.desktop);
-    await page.goto("/register");
-    await page.waitForLoadState("networkidle");
-    await maskDynamic(page);
-    await expect(page).toHaveScreenshot("register-desktop-light.png", {
-      fullPage: true,
-      maxDiffPixelRatio: 0.02,
-    });
-  });
-
-  test("mobile viewport", async ({ page }) => {
-    await page.setViewportSize(VIEWPORTS.mobile);
-    await page.goto("/register");
-    await page.waitForLoadState("networkidle");
-    await maskDynamic(page);
-    await expect(page).toHaveScreenshot("register-mobile.png", {
-      fullPage: true,
-      maxDiffPixelRatio: 0.02,
-    });
-  });
-});
-
-// ─── 404 page ──────────────────────────────────────────────────────────────
-
-test.describe("Visual regression – 404 page", () => {
-  test("desktop light theme", async ({ page }) => {
-    await page.setViewportSize(VIEWPORTS.desktop);
-    await page.goto("/this-page-does-not-exist");
-    await page.waitForLoadState("networkidle");
-    await maskDynamic(page);
-    await expect(page).toHaveScreenshot("404-desktop-light.png", {
-      fullPage: true,
-      maxDiffPixelRatio: 0.02,
-    });
-  });
-});
+}

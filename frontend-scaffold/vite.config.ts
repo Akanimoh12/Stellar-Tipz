@@ -240,7 +240,11 @@ export default defineConfig({
             if (id.includes("node_modules/@stellar")) {
               return "stellar-sdk";
             }
-            if (id.includes("node_modules/react")) {
+            // Only the runtime itself. Matching every package whose name starts
+            // with "react" (router, i18next bindings, transition libs) pulled
+            // modules that import from the generic vendor chunk into this one,
+            // creating a circular chunk import that left React undefined at boot.
+            if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) {
               return "react-vendor";
             }
             if (id.includes("node_modules")) {

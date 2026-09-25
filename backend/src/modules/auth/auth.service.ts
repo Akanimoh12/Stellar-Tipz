@@ -4,6 +4,7 @@ import { isIP } from "net";
 import { prisma } from "../../db/prisma.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../common/utils/logger.js";
+import { observeRegistration } from "../../common/observability/businessMetrics.js";
 import {
   BadRequestError,
   UnauthorizedError,
@@ -487,7 +488,7 @@ export async function verifyChallenge(
     throw new UnauthorizedError("Invalid signature");
   }
  
-  const { user, refreshToken: newRefreshToken } = await prisma.$transaction(
+  const { user, refreshToken: newRefreshToken, registered } = await prisma.$transaction(
     async (tx) => {
       // Re-check inside the transaction to close the TOCTOU window between
       // the lookup above and this write.
@@ -502,6 +503,12 @@ export async function verifyChallenge(
         data: { usedAt: new Date() },
       });
  
+      // A first sign-in registers the wallet as a user (issue #1348 counts it).
+      const existingUser = await tx.user.findUnique({
+        where: { stellarAddress },
+        select: { id: true },
+      });
+ 
       // Upsert is atomic at the DB level, so it's safe under concurrent
       // sign-ins without needing a P2002 fallback.
       const user = await tx.user.upsert({
@@ -512,7 +519,7 @@ export async function verifyChallenge(
  
       const session = await generateRefreshToken(user.id, metadata, tx);
  
-      return { user, refreshToken: session.token };
+      return { user, refreshToken: session.token, registered: existingUser === null };
     },
     {
       timeout: 8000,
@@ -520,6 +527,8 @@ export async function verifyChallenge(
       isolationLevel: "RepeatableRead",
     },
   );
+ 
+  if (registered) observeRegistration("auth", "success");
  
   const payload: AuthPayload = {
     userId: user.id,

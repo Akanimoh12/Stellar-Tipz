@@ -1,0 +1,174 @@
+# Alerting rules for Stellar Tipz platform health (issues #1347, #1348).
+#
+# Business alerts key off tipz_* counters emitted by the API, indexer and jobs
+# processes. "Tips per minute dropped to zero" is the primary outage signal: it
+# fires on failures no health check models (a bug that silently stops tips from
+# being recorded, an indexer that stopped projecting, an RPC that accepts
+# nothing). Baseline comparisons use the same window one hour and one day
+# earlier so low-traffic hours do not page anyone.
+#
+# Validate with: promtool check rules backend/observability/prometheus/alerts.yml
+groups:
+  - name: stellar-tipz-business
+    rules:
+      - alert: TipsFlowStopped
+        expr: |
+          sum(rate(tipz_tips_total{result="success"}[15m])) == 0
+          and
+          sum(rate(tipz_tips_total{result="success"}[1h] offset 1d)) > 0
+        for: 10m
+        labels:
+          severity: critical
+          area: business
+        annotations:
+          summary: No tips have been recorded for 15 minutes
+          description: >-
+            Successful tips (API and indexer combined) fell to zero while the
+            same window yesterday had traffic. Check the indexer lag, the
+            Soroban RPC circuit breaker and POST /tips error rates before
+            anything else.
+          runbook: backend/docs/METRICS.md#alerts
+
+      - alert: TipsVolumeAnomalousDrop
+        expr: |
+          sum(rate(tipz_tips_total{result="success"}[30m]))
+            < 0.25 * sum(rate(tipz_tips_total{result="success"}[30m] offset 1d))
+          and
+          sum(rate(tipz_tips_total{result="success"}[30m] offset 1d)) > 0.02
+        for: 15m
+        labels:
+          severity: warning
+          area: business
+        annotations:
+          summary: Tips per minute are below a quarter of yesterday's rate
+          description: >-
+            Tip throughput dropped sharply against the same 30 minute window a
+            day earlier. Not a full outage, but a common early signal of a
+            broken wallet flow or frontend release.
+
+      - alert: TipSystemErrorRatioHigh
+        expr: |
+          sum(rate(tipz_tips_total{result="system_error"}[10m]))
+            / clamp_min(sum(rate(tipz_tips_total[10m])), 0.001) > 0.05
+        for: 10m
+        labels:
+          severity: critical
+          area: business
+        annotations:
+          summary: More than 5% of tip recordings fail for platform reasons
+          description: >-
+            system_error excludes user-caused failures (validation, duplicates),
+            so this ratio reflects database or dependency problems on the
+            platform side.
+
+      - alert: WithdrawalSystemErrors
+        expr: |
+          sum(increase(tipz_withdrawals_total{result="system_error"}[15m])) > 3
+        for: 5m
+        labels:
+          severity: critical
+          area: business
+        annotations:
+          summary: Withdrawals are failing for platform reasons
+          description: >-
+            More than three withdrawal submissions or scheduled payouts failed
+            because of RPC, keeper or database errors in 15 minutes. User
+            errors (insufficient balance, bad amount) are not counted here.
+
+      - alert: SubscriptionChargeSystemErrorRatioHigh
+        expr: |
+          sum(rate(tipz_subscription_charges_total{source="job",result="system_error"}[1h]))
+            / clamp_min(sum(rate(tipz_subscription_charges_total{source="job"}[1h])), 0.0001) > 0.2
+        for: 30m
+        labels:
+          severity: warning
+          area: business
+        annotations:
+          summary: Over 20% of subscription charge attempts fail on the platform side
+          description: >-
+            Network errors, a paused contract or persistence failures are
+            dominating charge attempts. Revoked authorisations and insufficient
+            balances are user-caused and excluded.
+
+      - alert: RegistrationsStalled
+        expr: |
+          sum(increase(tipz_registrations_total{result="success"}[6h])) == 0
+          and
+          sum(increase(tipz_registrations_total{result="success"}[6h] offset 1d)) > 0
+        for: 30m
+        labels:
+          severity: warning
+          area: business
+        annotations:
+          summary: No new registrations in six hours
+          description: >-
+            Neither wallet sign-ins nor on-chain profile registrations created a
+            user in six hours, although the same window yesterday did.
+
+  - name: stellar-tipz-http
+    rules:
+      - alert: HttpServerErrorRateHigh
+        expr: |
+          sum by (route) (rate(tipz_http_requests_total{status_class="5xx"}[5m]))
+            / clamp_min(sum by (route) (rate(tipz_http_requests_total[5m])), 0.01) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          area: http
+        annotations:
+          summary: 5xx rate above 5% on {{ $labels.route }}
+          description: >-
+            Per-route error ratio from the RED metrics. Routes are labelled by
+            pattern, so one alert covers every user of that endpoint.
+
+      - alert: HttpLatencyP99High
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le, route) (rate(tipz_http_request_duration_seconds_bucket[5m]))) > 2
+        for: 10m
+        labels:
+          severity: warning
+          area: http
+        annotations:
+          summary: p99 latency above 2s on {{ $labels.route }}
+          description: >-
+            Ninety-ninth percentile request duration over five minutes exceeds
+            two seconds for this route pattern.
+
+      - alert: HttpInFlightSaturation
+        expr: sum(tipz_http_requests_in_flight) > 200
+        for: 5m
+        labels:
+          severity: warning
+          area: http
+        annotations:
+          summary: More than 200 requests in flight for 5 minutes
+          description: >-
+            Requests are queueing inside the process. Pair with event loop lag
+            and database pool saturation to find the bottleneck.
+
+  - name: stellar-tipz-process
+    rules:
+      - alert: EventLoopLagHigh
+        expr: nodejs_eventloop_lag_p99_seconds > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          area: process
+        annotations:
+          summary: Event loop p99 lag above 200ms on {{ $labels.process }}
+          description: >-
+            The Node.js event loop is blocked. Every request and job in this
+            process is delayed by at least this much.
+
+      - alert: DatabasePoolSaturated
+        expr: increase(tipz_db_pool_saturation_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          area: database
+        annotations:
+          summary: Prisma pool acquisition timed out on {{ $labels.process }}
+          description: >-
+            At least one query waited longer than DATABASE_POOL_TIMEOUT_SECONDS
+            for a connection in the last ten minutes.

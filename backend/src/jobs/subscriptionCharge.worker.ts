@@ -16,6 +16,10 @@ import {
   classifySubscriptionChargeFailure,
   type SubscriptionChargeFailure,
 } from './subscriptionCharge.failure.js';
+import {
+  classifySubscriptionFailure,
+  observeSubscriptionCharge,
+} from '../common/observability/businessMetrics.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DUNNING_RETRY_DAYS = [1, 3, 7] as const;
@@ -189,6 +193,9 @@ export async function processDueSubscriptions(
       } catch (err) {
         failed += 1;
         const failure = classifySubscriptionChargeFailure(err);
+        observeSubscriptionCharge('job', classifySubscriptionFailure(failure.code), {
+          failureCode: failure.code,
+        });
         const outcome = await persistFailure(sub, now, failure);
 
         if (outcome.persisted) {
@@ -217,9 +224,11 @@ export async function processDueSubscriptions(
       // Retain the claim until projection (or claim expiry) to prevent duplicate
       // attempts while the confirmed event is still being indexed.
       processed += 1;
+      observeSubscriptionCharge('job', 'success');
       logger.info({ subscriptionId: sub.id }, 'Subscription charge confirmed; awaiting projection');
     } catch (err) {
       failed += 1;
+      observeSubscriptionCharge('job', 'system_error', { failureCode: 'PERSIST_ERROR' });
       logger.error({ err, subscriptionId: sub.id }, 'Failed to persist subscription charge state');
     }
   }
