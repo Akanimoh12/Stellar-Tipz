@@ -227,7 +227,7 @@ fn test_send_tip_zero_amount() {
 
     let message = String::from_str(&env, "Zero tip");
     let result = client.try_send_tip(&tipper, &creator, &0, &message, &false, &false);
-    assert_eq!(result, Err(Ok(ContractError::InvalidAmount)));
+    assert_eq!(result, Err(Ok(ContractError::TipBelowMinimum)));
 }
 
 #[test]
@@ -236,7 +236,7 @@ fn test_send_tip_invalid_amount_negative() {
 
     let message = String::from_str(&env, "Negative tip");
     let result = client.try_send_tip(&tipper, &creator, &-1, &message, &false, &false);
-    assert_eq!(result, Err(Ok(ContractError::InvalidAmount)));
+    assert_eq!(result, Err(Ok(ContractError::TipBelowMinimum)));
 }
 
 #[test]
@@ -661,4 +661,59 @@ fn test_get_recent_tips_pagination_full_walk() {
     // Page 4: offset 5, limit 2 → empty
     let page4 = client.get_recent_tips(&creator, &2, &5);
     assert_eq!(page4.len(), 0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ANTI-WASH / CONCENTRATION CAP (Issue #022)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_self_tip_excluded_from_leaderboard() {
+    let (env, client, _contract_id, _tipper, creator, sac) = setup_env();
+    let msg = String::from_str(&env, "self tip");
+
+    // Register creator with a different address, then tip from creator to self
+    let result = client.try_send_tip(&creator, &creator, &10_000_000, &msg, &false, &false);
+    assert_eq!(result, Err(Ok(ContractError::CannotTipSelf)));
+}
+
+#[test]
+fn test_concentration_cap_limits_leaderboard_credit() {
+    let (env, client, _contract_id, tipper, creator, sac) = setup_env();
+    let token_client = token::StellarAssetClient::new(&env, &sac);
+    token_client.mint(&tipper, &1_000_000_000);
+    let msg = String::from_str(&env, "tip");
+
+    // First tip: 10M (100% from this sender, gets full leaderboard credit)
+    client.send_tip(&tipper, &creator, &10_000_000, &msg, &false, &false);
+
+    // Second tip from a different sender: 10M (50/50 split, both under cap)
+    let tipper2 = Address::generate(&env);
+    token_client.mint(&tipper2, &1_000_000_000);
+    client.send_tip(&tipper2, &creator, &10_000_000, &msg, &false, &false);
+
+    // Third tip from tipper again: 80M (now tipper has 90M of 100M total = 90%)
+    // With 50% cap, only the portion up to 50M counts (already at 10M, so 40M more max)
+    client.send_tip(&tipper, &creator, &80_000_000, &msg, &false, &false);
+
+    // Verify the profile total includes all tips
+    let profile = client.get_profile(&creator);
+    assert_eq!(profile.profile.total_tips_received, 100_000_000);
+}
+
+#[test]
+fn test_multiple_senders_under_concentration_cap() {
+    let (env, client, _contract_id, _tipper, creator, sac) = setup_env();
+    let token_client = token::StellarAssetClient::new(&env, &sac);
+    let msg = String::from_str(&env, "tip");
+
+    // 5 different senders each tip 10M (20% each, under 50% cap)
+    for _ in 0..5 {
+        let tipper = Address::generate(&env);
+        token_client.mint(&tipper, &100_000_000);
+        client.send_tip(&tipper, &creator, &10_000_000, &msg, &false, &false);
+    }
+
+    let profile = client.get_profile(&creator);
+    assert_eq!(profile.profile.total_tips_received, 50_000_000);
 }

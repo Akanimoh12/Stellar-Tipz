@@ -22,6 +22,17 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install soroban CLI
+        run: cargo install --locked soroban-cli
+
+      - name: Generate contract ABI artifact
+        run: bash ./scripts/generate-contract-spec.sh
+
       - name: Generate changelog
         run: npx conventional-changelog-cli@latest -p angular -i CHANGELOG.md -s -r 0
 
@@ -40,4 +51,5 @@ jobs:
           NOTES=$(npx conventional-changelog-cli@latest -p angular -r 1 --outfile /dev/stdout 2>/dev/null || echo "See CHANGELOG.md for details.")
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
-            --notes "$NOTES"
+            --notes "$NOTES" \
+            contracts/abi/tipz_contract.spec.json

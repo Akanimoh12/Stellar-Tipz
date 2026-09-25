@@ -1,53 +1,202 @@
-import type { Request, Response, NextFunction } from 'express';
-import { imageUploadSchema, checkUsernameQuerySchema, updateProfileSchema } from './profiles.schema.js';
-import * as profilesService from './profiles.service.js';
+import { Request, Response, NextFunction } from "express";
+import { z } from "zod";
+import { BadRequestError } from "../../common/errors/AppError.js";
+import {
+  getProfileById,
+  getProfileByUsername,
+  getProfileByAddress,
+  updateProfile,
+  listProfiles,
+  deactivateProfile,
+  checkUsernameAvailability,
+  reactivateProfile,
+  uploadProfileImage,
+} from "./profiles.service.js";
+import {
+  updateProfileSchema,
+  profileIdSchema,
+  usernameSchema,
+  uploadProfileImageSchema,
+} from "./profiles.schema.js";
+import type { AuthPayload } from "../auth/auth.types.js";
 
-export async function getByAddress(req: Request, res: Response, next: NextFunction): Promise<void> {
+/**
+ * GET /profiles
+ * Lists all profiles with pagination.
+ */
+export async function listProfilesController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   try {
-    const { address } = req.params;
-    const profile = await profilesService.getProfileByAddress(address);
-    res.status(200).json({ data: profile });
-  } catch (err) {
-    next(err);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+
+    if (page < 1 || limit < 1 || limit > 100) {
+      throw new BadRequestError("Invalid pagination parameters");
+    }
+
+    const result = await listProfiles(page, limit);
+    res.json({ data: result });
+  } catch (error) {
+    next(error);
   }
 }
 
-export async function reactivate(req: Request, res: Response, next: NextFunction): Promise<void> {
+/**
+ * GET /profiles/:id
+ * Gets a profile by user ID.
+ */
+export async function getProfileController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   try {
-    const profile = await profilesService.reactivateProfile(req.user!.id);
-    res.status(200).json({ data: profile });
-  } catch (err) {
-    next(err);
+    const { id } = profileIdSchema.parse(req.params);
+    const profile = await getProfileById(id);
+    res.json({ data: profile });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(new BadRequestError("Invalid profile ID", error.issues));
+    } else {
+      next(error);
+    }
   }
 }
 
-export async function checkUsername(req: Request, res: Response, next: NextFunction): Promise<void> {
+/**
+ * GET /profiles/username/:username
+ * Gets a profile by username.
+ */
+export async function getProfileByUsernameController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   try {
-    const { username } = checkUsernameQuerySchema.parse(req.query);
-    const result = await profilesService.checkUsernameAvailability(username);
-    res.status(200).json({ data: result });
-  } catch (err) {
-    next(err);
+    const { username } = usernameSchema.parse(req.params);
+    const profile = await getProfileByUsername(username);
+    res.json({ data: profile });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(new BadRequestError("Invalid username", error.issues));
+    } else {
+      next(error);
+    }
   }
 }
 
-export async function uploadImage(req: Request, res: Response, next: NextFunction): Promise<void> {
+/**
+ * GET /profiles/address/:address
+ * Gets a profile by Stellar address.
+ */
+export async function getProfileByAddressController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   try {
-    const { dataUrl } = imageUploadSchema.parse(req.body);
-    const result = await profilesService.uploadProfileImage(req.user!.id, dataUrl);
-    res.status(200).json({ data: result });
-  } catch (err) {
-    next(err);
+    const address = req.params.address;
+    if (!address) {
+      throw new BadRequestError("Stellar address is required");
+    }
+    const profile = await getProfileByAddress(address);
+    res.json({ data: profile });
+  } catch (error) {
+    next(error);
   }
 }
 
-/** PATCH /profiles/me — update the authenticated user's profile. */
-export async function update(req: Request, res: Response, next: NextFunction): Promise<void> {
+/**
+ * PATCH/PUT /profiles/me
+ * Updates the authenticated user's profile.
+ */
+export async function updateProfileController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   try {
+    const auth = req.auth as AuthPayload;
     const data = updateProfileSchema.parse(req.body);
-    const profile = await profilesService.updateProfile(req.user!.id, data);
-    res.status(200).json({ data: profile });
-  } catch (err) {
-    next(err);
+    const profile = await updateProfile(auth.userId, data);
+    res.json({ data: profile });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(new BadRequestError("Invalid profile data", error.issues));
+    } else {
+      next(error);
+    }
+  }
+}
+
+/**
+ * DELETE /profiles/me
+ * Deactivates (soft-deletes) the authenticated user's profile.
+ */
+export async function deactivateProfileController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const auth = req.auth as AuthPayload;
+    await deactivateProfile(auth.userId);
+    res.json({ success: true, message: "Profile deactivated successfully" });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function checkUsernameController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const username = z.string().min(3).parse(req.query.username);
+    const result = await checkUsernameAvailability(username);
+    res.json({ data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(new BadRequestError("Invalid username", error.issues));
+    } else {
+      next(error);
+    }
+  }
+}
+
+export async function reactivateProfileController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const auth = req.auth as AuthPayload;
+    const profile = await reactivateProfile(auth.userId);
+    res.json({ data: profile });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function uploadImageController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const auth = req.auth as AuthPayload;
+    const { dataUrl } = uploadProfileImageSchema.parse(req.body);
+    const result = await uploadProfileImage(auth.userId, dataUrl);
+    res.json({ data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(new BadRequestError("Invalid dataUrl", error.issues));
+    } else {
+      next(error);
+    }
   }
 }

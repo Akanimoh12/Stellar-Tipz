@@ -35,31 +35,58 @@ const comparisonRows = [
 
 const StatsSection: React.FC = () => {
   const { t } = useI18n();
-  const [stats, setStats] = useState<ContractStats | null>(
-    env.useMockData ? MOCK_STATS : null,
-  );
+  const [stats, setStats] = useState<ContractStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
   const { getStats } = useContract();
 
   useEffect(() => {
-    // Skip contract call when ID is not configured — show mock data if enabled
-    if (!env.contractId) {
-      if (env.useMockData) {
-        setStats(MOCK_STATS);
-      }
-      return;
-    }
+    const fetchStats = async () => {
+      setLoading(true);
+      setHasError(false);
 
-    getStats()
-      .then(setStats)
-      .catch((err) => {
-        // Contract may not be deployed yet — render gracefully with fallback
-        logger.warn('features/landing/StatsSection', 'Could not fetch live platform stats', undefined, err instanceof Error ? err : new Error(String(err)));
+      if (env.useMockData) {
+        if (import.meta.env.PROD) {
+          logger.error(
+            'features/landing/StatsSection',
+            'VITE_USE_MOCK_DATA enabled in production build — real stats will not be displayed',
+          );
+        }
+        setStats(MOCK_STATS);
+        setLoading(false);
+        return;
+      }
+
+      if (!env.contractId) {
+        setStats(null);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const data = await getStats();
+        setStats(data);
+      } catch (err) {
+        logger.warn(
+          'features/landing/StatsSection',
+          'Could not fetch live platform stats',
+          undefined,
+          err instanceof Error ? err : new Error(String(err)),
+        );
+        setHasError(true);
         const { addToast } = useToastStore.getState();
         addToast({
-          message: categorizeError(err).category === 'network' ? ERRORS.NETWORK : t('stats.liveError'),
+          message: categorizeError(err).category === 'network'
+            ? ERRORS.NETWORK
+            : t('stats.liveError'),
           type: 'error',
         });
-      });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void fetchStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -89,33 +116,51 @@ const StatsSection: React.FC = () => {
         >
           <div className="card-brutalist text-center">
             <div className="text-4xl font-black mb-1">
-              {stats ? stats.totalCreators.toLocaleString() : (
+              {loading ? (
                 <div className="flex justify-center" role="status" aria-busy="true">
                   <Skeleton variant="text" width="140px" height="40px" />
                 </div>
+              ) : stats ? (
+                stats.totalCreators.toLocaleString()
+              ) : (
+                <span className="text-gray-400">—</span>
               )}
             </div>
-            <div className="text-sm uppercase font-bold tracking-wide">{t("stats.creators")}</div>
+            <div className="text-sm uppercase font-bold tracking-wide">
+              {t("stats.creators")}
+            </div>
           </div>
           <div className="card-brutalist text-center">
             <div className="text-4xl font-black mb-1">
-              {stats ? stats.totalTipsCount.toLocaleString() : (
+              {loading ? (
                 <div className="flex justify-center" role="status" aria-busy="true">
                   <Skeleton variant="text" width="140px" height="40px" />
                 </div>
+              ) : stats ? (
+                stats.totalTipsCount.toLocaleString()
+              ) : (
+                <span className="text-gray-400">—</span>
               )}
             </div>
-            <div className="text-sm uppercase font-bold tracking-wide">{t("stats.tipsSent")}</div>
+            <div className="text-sm uppercase font-bold tracking-wide">
+              {t("stats.tipsSent")}
+            </div>
           </div>
           <div className="card-brutalist text-center">
             <div className="text-4xl font-black mb-1">
-              {stats ? `${stats.feeBps / 100}%` : (
+              {loading ? (
                 <div className="flex justify-center" role="status" aria-busy="true">
                   <Skeleton variant="text" width="110px" height="40px" />
                 </div>
+              ) : stats ? (
+                `${stats.feeBps / 100}%`
+              ) : (
+                <span className="text-gray-400">—</span>
               )}
             </div>
-            <div className="text-sm uppercase font-bold tracking-wide">{t("stats.platformFee")}</div>
+            <div className="text-sm uppercase font-bold tracking-wide">
+              {t("stats.platformFee")}
+            </div>
           </div>
         </motion.div>
 

@@ -5,8 +5,8 @@ import { logger } from './common/utils/logger.js';
 import { prisma } from './db/prisma.js';
 import { redis } from './db/redis.js';
 import { registerClosable, closeAll } from './common/utils/lifecycle.js';
-import { startIndexer } from './indexer/index.js';
-import { IndexerService } from './indexer/indexer.service.js';
+import { initializeQueues, closeAllQueues } from './modules/jobs/queue.factory.js';
+import { initRealtime } from './realtime/gateway.js';
 
 /** Process entry point: starts the HTTP server (and, later, the WebSocket + indexer). */
 async function bootstrap(): Promise<void> {
@@ -25,20 +25,15 @@ async function bootstrap(): Promise<void> {
     },
   });
 
-  // Start the off-chain indexer poll loop and stop it on shutdown.
-  const indexer = startIndexer();
+  // Initialize job queues (issue #1288, #1289, #1287)
+  await initializeQueues();
   registerClosable({
-    name: 'Indexer',
-    close: async () => {
-      indexer.stop();
-    },
+    name: 'Job Queues',
+    close: closeAllQueues,
   });
-  // Start the on-chain event indexer.
-  const indexer = new IndexerService();
-  indexer.start().catch((err) => logger.error({ err }, 'Indexer failed to start'));
 
-  // The realtime gateway (Socket.IO) attaches to this httpServer — see the realtime issues.
-  // initRealtime(httpServer);
+  // Initialize realtime gateway (issue #1286)
+  initRealtime(httpServer);
 
   httpServer.listen(env.PORT, () => {
     logger.info(`🚀 Stellar Tipz backend listening on http://localhost:${env.PORT}`);

@@ -1,49 +1,41 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const reservedUsernames = [
-  'admin',
-  'root',
-  'system',
-  'api',
-  'tipz',
-  'stellar',
-  'support',
-  'moderator',
-  'null',
-  'undefined',
-  'test',
-  'help',
-] as const;
+/**
+ * Zod validation schemas for profiles endpoints.
+ */
 
-export const usernameSchema = z
-  .string()
-  .min(3, 'Username must be at least 3 characters')
-  .max(32, 'Username must be at most 32 characters')
-  .regex(/^[a-z0-9_]+$/, 'Username can only contain lowercase letters, numbers, and underscores');
-
-export const usernameParamSchema = z.object({
-  username: usernameSchema,
-});
-
-export const imageUploadSchema = z.object({
-  dataUrl: z
-    .string()
-    .regex(/^data:image\/(png|jpeg|gif|webp);base64,/, 'Invalid image data URL'),
-});
-
-export type ImageUploadInput = z.infer<typeof imageUploadSchema>;
-
-export const checkUsernameQuerySchema = z.object({
+export const updateProfileSchema = z.object({
   username: z
     .string()
-    .min(3, 'Username must be at least 3 characters')
-    .max(32, 'Username must be at most 32 characters')
-    .regex(/^[a-z0-9_]+$/, 'Username must be lowercase alphanumeric with underscores'),
-});
+    .min(3)
+    .max(30)
+    .regex(/^[a-zA-Z0-9_-]+$/)
+    .optional(),
+  displayName: z.string().min(1).max(100).optional(),
+  bio: z.string().max(500).optional(),
+  imageUrl: z.string().url().optional(),
+  avatarCid: z.string().optional(),
+  xHandle: z
+    .string()
+    .min(1)
+    .max(15)
+    .regex(/^[a-zA-Z0-9_]+$/)
+    .optional(),
+}).strict();
 
-/** Body for `PATCH /profiles/me` — all fields are optional; at least one must change. */
-export const updateProfileSchema = z.object({
-  username: usernameSchema.optional(),
-});
+export const profileIdSchema = z.object({
+  id: z.string().min(1),
+}).strict();
+
+export const usernameSchema = z.object({
+  username: z.string().min(1),
+}).strict();
+
+export const uploadProfileImageSchema = z.object({
+  dataUrl: z.string().startsWith("data:"),
+}).strict();
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+export type ProfileIdInput = z.infer<typeof profileIdSchema>;
+export type UsernameInput = z.infer<typeof usernameSchema>;
+export type UploadProfileImageInput = z.infer<typeof uploadProfileImageSchema>;

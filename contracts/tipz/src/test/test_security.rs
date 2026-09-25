@@ -1,13 +1,13 @@
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
 
 use crate::errors::ContractError;
 use crate::{TipzContract, TipzContractClient};
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-fn setup() -> (Env, TipzContractClient<'static>) {
+fn setup() -> (Env, TipzContractClient<'static>, token::StellarAssetClient<'static>, Address) {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -15,15 +15,16 @@ fn setup() -> (Env, TipzContractClient<'static>) {
     let client = TipzContractClient::new(&env, &contract_id);
 
     let token_admin = Address::generate(&env);
-    let token_address = env
-        .register_stellar_asset_contract_v2(token_admin)
-        .address();
+    let token_contract = env
+        .register_stellar_asset_contract_v2(token_admin);
+    let token_address = token_contract.address();
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_address);
 
     let admin = Address::generate(&env);
     let fee_collector = Address::generate(&env);
     client.initialize(&admin, &fee_collector, &200_u32, &token_address);
 
-    (env, client)
+    (env, client, token_admin_client, token_address)
 }
 
 fn register_user(env: &Env, client: &TipzContractClient<'static>, name: &str) -> Address {
@@ -43,14 +44,9 @@ fn register_user(env: &Env, client: &TipzContractClient<'static>, name: &str) ->
 
 #[test]
 fn test_integer_overflow_protection() {
-    let (env, client) = setup();
+    let (env, client, token_admin_client, _token_address) = setup();
     let creator = register_user(&env, &client, "creator1");
     let tipper = register_user(&env, &client, "tipper1");
-
-    // In a real environment, `checked_add` prevents overflow.
-    // However, since we can't easily mint i128::MAX tokens for the tipper in the test environment
-    // without hitting balance limits first, we ensure that the contract logic
-    // handles large amounts properly or rejects them.
 
     // Attempting to tip a negative amount should fail validation before overflow logic
     let result = client.try_send_tip(
@@ -61,7 +57,7 @@ fn test_integer_overflow_protection() {
         &false,
         &false,
     );
-    assert_eq!(result, Err(Ok(ContractError::InvalidAmount)));
+    assert_eq!(result, Err(Ok(ContractError::TipBelowMinimum)));
 
     // Attempting to withdraw negative amount
     let withdraw_result = client.try_withdraw_tips(&creator, &-1i128);
@@ -70,15 +66,15 @@ fn test_integer_overflow_protection() {
 
 #[test]
 fn test_state_consistency() {
-    let (env, client) = setup();
+    let (env, client, token_admin_client, _token_address) = setup();
     let creator1 = register_user(&env, &client, "creator1");
     let creator2 = register_user(&env, &client, "creator2");
     let tipper = register_user(&env, &client, "tipper");
 
-    // Setup balances via token admin if needed, but in mock_all_auths we just send tips
-    // Assume tipper has enough balance (mocked)
+    // Fund the tipper
+    token_admin_client.mint(&tipper, &100_000_000_000);
 
-    let tip_amount = 1000_i128;
+    let tip_amount = 10_000_000_i128;
     client.send_tip(
         &tipper,
         &creator1,
@@ -97,10 +93,10 @@ fn test_state_consistency() {
     );
 
     let stats = client.get_stats();
-    assert_eq!(stats.total_tips_volume, 2000_i128);
+    assert_eq!(stats.total_tips_volume, 20_000_000_i128);
 
     // Withdraw from creator1
-    client.withdraw_tips(&creator1, &500_i128);
+    client.withdraw_tips(&creator1, &5_000_000_i128);
 
     let profile1 = client.get_profile(&creator1);
     let profile2 = client.get_profile(&creator2);
@@ -112,28 +108,31 @@ fn test_state_consistency() {
     );
 
     // After withdrawal, balance is reduced but total_tips_received remains unchanged
-    assert_eq!(profile1.profile.balance, 500_i128);
-    assert_eq!(profile2.profile.balance, 1000_i128);
-    assert_eq!(profile1.profile.total_tips_received, 1000_i128);
+    assert_eq!(profile1.profile.balance, 5_000_000_i128);
+    assert_eq!(profile2.profile.balance, 10_000_000_i128);
+    assert_eq!(profile1.profile.total_tips_received, 10_000_000_i128);
 
     // Ensure fees collected + net withdrawn + remaining balances == total tips volume
-    // Fee is 200 bps (2%) of 500 = 10. Net is 490.
+    // Fee is 200 bps (2%) of 5_000_000 = 100_000. Net is 4_900_000.
     let updated_stats = client.get_stats();
-    assert_eq!(updated_stats.total_fees_collected, 10_i128);
+    assert_eq!(updated_stats.total_fees_collected, 100_000_i128);
 }
 
 #[test]
 fn test_storage_bounds() {
-    let (env, client) = setup();
+    let (env, client, token_admin_client, _token_address) = setup();
     let tipper = register_user(&env, &client, "tipper");
     let creator = register_user(&env, &client, "creator");
+
+    // Fund the tipper
+    token_admin_client.mint(&tipper, &100_000_000_000);
 
     // Attempting to send many tips to see if it handles bounds
     for _ in 0..10 {
         client.send_tip(
             &tipper,
             &creator,
-            &100_i128,
+            &1_000_000_i128,
             &String::from_str(&env, "msg"),
             &false,
             &false,

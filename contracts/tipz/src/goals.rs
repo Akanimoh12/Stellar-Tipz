@@ -103,6 +103,14 @@ pub fn update_goal_progress(env: &Env, creator: &Address, tip_amount: i128) {
         if reached && goal.reached_at.is_none() {
             goal.reached_at = Some(env.ledger().timestamp());
             events::emit_goal_reached(env, creator, goal.target, goal.raised);
+            events::emit_goal_completed(
+                env,
+                creator,
+                goal.created_at,
+                goal.target,
+                goal.raised,
+                env.ledger().sequence(),
+            );
         }
 
         storage::set_active_goal(env, creator, &goal);

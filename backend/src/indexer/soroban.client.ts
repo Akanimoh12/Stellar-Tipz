@@ -2,6 +2,8 @@ import { SorobanRpc, Contract } from '@stellar/stellar-sdk';
 import { config } from '../config/index.js';
 import { ApiQueue } from './throttle.js';
 import { parseEventTopic } from './indexer.types.js';
+import { withRetry } from './retry.js';
+import { logger } from '../common/utils/logger.js';
 
 export interface SorobanClientOptions {
   rpcUrl?: string;
@@ -32,9 +34,8 @@ export class SorobanClient {
 
   async getLatestLedger(): Promise<number> {
     return this.queue.add(async () => {
-      const ledger = await this.server.getLatestLedger();
-      return ledger.sequence;
-    });
+      return withRetry(() => this.server.getLatestLedger(), { maxAttempts: 3 });
+    }).then(ledger => ledger.sequence);
   }
 
   async fetchEvents(
@@ -47,12 +48,21 @@ export class SorobanClient {
         filters.push({ contractIds: options.contractIds });
       }
 
-      const response: SorobanRpc.Api.GetEventsResponse = await this.server.getEvents({
-        startLedger,
-        filters,
-        cursor: options?.cursor,
-        limit: options?.limit ?? 100,
-      });
+      let response: SorobanRpc.Api.GetEventsResponse;
+      try {
+        response = await withRetry(
+          () => this.server.getEvents({
+            startLedger,
+            filters,
+            cursor: options?.cursor,
+            limit: options?.limit ?? 100,
+          }),
+          { maxAttempts: 3 },
+        );
+      } catch (error) {
+        logger.error({ err: error, startLedger }, 'Failed to fetch events after retries');
+        throw error;
+      }
 
       const events = response.events
         .filter((e) => e.inSuccessfulContractCall)

@@ -8,7 +8,15 @@
 use soroban_sdk::{testutils::Address as _, token, Address, BytesN, Env, String};
 
 use crate::errors::ContractError;
+use crate::types::PauseFlag;
 use crate::{TipzContract, TipzContractClient};
+
+const PAUSE_ALL: u32 = PauseFlag::All as u32;
+const PAUSE_TIPS: u32 = PauseFlag::Tips as u32;
+const PAUSE_WITHDRAWALS: u32 = PauseFlag::Withdrawals as u32;
+const PAUSE_REGISTRATION: u32 = PauseFlag::Registration as u32;
+const PAUSE_SUBSCRIPTIONS: u32 = PauseFlag::Subscriptions as u32;
+const PAUSE_REFUNDS: u32 = PauseFlag::Refunds as u32;
 
 // ── shared setup ─────────────────────────────────────────────────────────────
 
@@ -68,7 +76,7 @@ fn setup() -> TestCtx<'static> {
 fn test_non_admin_cannot_pause() {
     let ctx = setup();
     let non_admin = Address::generate(&ctx.env);
-    let result = ctx.client.try_pause(&non_admin);
+    let result = ctx.client.try_pause(&non_admin, &PAUSE_ALL);
     assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
 }
 
@@ -76,19 +84,19 @@ fn test_non_admin_cannot_pause() {
 fn test_non_admin_cannot_unpause() {
     let ctx = setup();
     // First pause with admin so unpause makes sense
-    ctx.client.pause(&ctx.admin);
+    ctx.client.pause(&ctx.admin, &PAUSE_ALL);
     let non_admin = Address::generate(&ctx.env);
-    let result = ctx.client.try_unpause(&non_admin);
+    let result = ctx.client.try_unpause(&non_admin, &PAUSE_ALL);
     assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
 }
 
 #[test]
 fn test_admin_can_pause_and_unpause() {
     let ctx = setup();
-    ctx.client.pause(&ctx.admin);
-    assert!(ctx.client.is_paused());
-    ctx.client.unpause(&ctx.admin);
-    assert!(!ctx.client.is_paused());
+    ctx.client.pause(&ctx.admin, &PAUSE_ALL);
+    assert!(ctx.client.is_paused(&PAUSE_ALL));
+    ctx.client.unpause(&ctx.admin, &PAUSE_ALL);
+    assert!(!ctx.client.is_paused(&PAUSE_ALL));
 }
 
 // ── fee management ────────────────────────────────────────────────────────────
@@ -113,9 +121,8 @@ fn test_non_admin_cannot_set_fee_collector() {
 #[test]
 fn test_admin_can_update_fees() {
     let ctx = setup();
-    ctx.client.set_fee(&ctx.admin, &300_u32);
-    let stats = ctx.client.get_stats();
-    let _ = stats; // fee is applied at withdrawal; confirms no panic
+    ctx.client.set_fee(&ctx.admin, &100_u32);
+    assert_eq!(ctx.client.get_config().fee_bps, 100);
 }
 
 #[test]
@@ -184,7 +191,7 @@ fn test_non_admin_cannot_set_min_tip_amount() {
 #[test]
 fn test_pause_blocks_send_tip() {
     let ctx = setup();
-    ctx.client.pause(&ctx.admin);
+    ctx.client.pause(&ctx.admin, &PAUSE_TIPS);
     let result = ctx.client.try_send_tip(
         &ctx.tipper,
         &ctx.creator,
@@ -208,7 +215,7 @@ fn test_pause_blocks_withdraw_tips() {
         &false,
         &false,
     );
-    ctx.client.pause(&ctx.admin);
+    ctx.client.pause(&ctx.admin, &PAUSE_WITHDRAWALS);
     let result = ctx.client.try_withdraw_tips(&ctx.creator, &1_000_000_i128);
     assert_eq!(result, Err(Ok(ContractError::ContractPaused)));
 }
@@ -216,7 +223,7 @@ fn test_pause_blocks_withdraw_tips() {
 #[test]
 fn test_pause_blocks_register_profile() {
     let ctx = setup();
-    ctx.client.pause(&ctx.admin);
+    ctx.client.pause(&ctx.admin, &PAUSE_REGISTRATION);
     let new_user = Address::generate(&ctx.env);
     let result = ctx.client.try_register_profile(
         &new_user,
@@ -251,18 +258,18 @@ fn test_admin_access_control_matrix() {
 
     // pause
     assert_eq!(
-        ctx.client.try_pause(&non_admin),
+        ctx.client.try_pause(&non_admin, &PAUSE_ALL),
         Err(Ok(ContractError::NotAuthorized)),
         "pause must reject non-admin"
     );
     // unpause (pause first with admin to make the call meaningful)
-    ctx.client.pause(&ctx.admin);
+    ctx.client.pause(&ctx.admin, &PAUSE_ALL);
     assert_eq!(
-        ctx.client.try_unpause(&non_admin),
+        ctx.client.try_unpause(&non_admin, &PAUSE_ALL),
         Err(Ok(ContractError::NotAuthorized)),
         "unpause must reject non-admin"
     );
-    ctx.client.unpause(&ctx.admin);
+    ctx.client.unpause(&ctx.admin, &PAUSE_ALL);
 
     // set_fee
     assert_eq!(
@@ -312,4 +319,92 @@ fn test_admin_access_control_matrix() {
         Err(Ok(ContractError::NotAuthorized)),
         "bump_ttl must reject non-admin"
     );
+}
+
+// ── pause blocks subscriptions ──────────────────────────────────────────────
+
+#[test]
+fn test_pause_blocks_create_subscription() {
+    let ctx = setup();
+    ctx.client.pause(&ctx.admin, &PAUSE_SUBSCRIPTIONS);
+    let result = ctx.client.try_create_subscription(
+        &ctx.tipper,
+        &ctx.creator,
+        &100_000_000_i128,
+        &7_u32,
+    );
+    assert_eq!(result, Err(Ok(ContractError::ContractPaused)));
+}
+
+#[test]
+fn test_pause_blocks_cancel_subscription() {
+    let ctx = setup();
+    // Create subscription first
+    ctx.client.create_subscription(
+        &ctx.tipper,
+        &ctx.creator,
+        &100_000_000_i128,
+        &7_u32,
+    );
+    ctx.client.pause(&ctx.admin, &PAUSE_SUBSCRIPTIONS);
+    let result = ctx.client.try_cancel_subscription(&ctx.tipper, &ctx.creator);
+    assert_eq!(result, Err(Ok(ContractError::ContractPaused)));
+}
+
+// ── pause blocks refunds ────────────────────────────────────────────────────
+
+#[test]
+fn test_pause_blocks_request_refund() {
+    let ctx = setup();
+    // Send a tip first
+    ctx.client.send_tip(
+        &ctx.tipper,
+        &ctx.creator,
+        &10_000_000_i128,
+        &String::from_str(&ctx.env, "tip"),
+        &false,
+        &false,
+    );
+    ctx.client.pause(&ctx.admin, &PAUSE_REFUNDS);
+    // tip_id 0 (first tip in this test)
+    let result = ctx.client.try_request_refund(&ctx.tipper, &0_u32);
+    assert_eq!(result, Err(Ok(ContractError::ContractPaused)));
+}
+
+#[test]
+fn test_pause_blocks_approve_refund() {
+    let ctx = setup();
+    // Send a tip first
+    ctx.client.send_tip(
+        &ctx.tipper,
+        &ctx.creator,
+        &10_000_000_i128,
+        &String::from_str(&ctx.env, "tip"),
+        &false,
+        &false,
+    );
+    // Request refund before pausing
+    ctx.client.request_refund(&ctx.tipper, &0_u32);
+    ctx.client.pause(&ctx.admin, &PAUSE_REFUNDS);
+    let result = ctx.client.try_approve_refund(&ctx.creator, &0_u32);
+    assert_eq!(result, Err(Ok(ContractError::ContractPaused)));
+}
+
+#[test]
+fn test_pause_blocks_reject_refund() {
+    let ctx = setup();
+    // Send a tip first
+    ctx.client.send_tip(
+        &ctx.tipper,
+        &ctx.creator,
+        &10_000_000_i128,
+        &String::from_str(&ctx.env, "tip"),
+        &false,
+        &false,
+    );
+    // Request refund before pausing
+    ctx.client.request_refund(&ctx.tipper, &0_u32);
+    ctx.client.pause(&ctx.admin, &PAUSE_REFUNDS);
+    let result = ctx.client.try_reject_refund(&ctx.creator, &0_u32);
+    assert_eq!(result, Err(Ok(ContractError::ContractPaused)));
 }

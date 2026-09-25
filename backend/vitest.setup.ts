@@ -1,5 +1,8 @@
 process.env.DATABASE_URL = 'postgresql://u:p@localhost:5432/db';
 process.env.REDIS_URL = 'redis://localhost:6379';
+// Skip the Socket.IO Redis adapter by default in tests — it's covered by its own
+// unit test, and attaching it here would open real pub/sub connections per test file.
+process.env.REALTIME_REDIS_ADAPTER_ENABLED = 'false';
 process.env.JWT_SECRET = 'test-secret-key-for-testing';
 process.env.SOROBAN_RPC_URL = 'https://soroban-testnet.stellar.org';
 process.env.HORIZON_URL = 'https://horizon-testnet.stellar.org';
