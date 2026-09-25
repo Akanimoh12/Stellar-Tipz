@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { projectEvent } from './projections.js';
+import { registry } from '../common/observability/prometheus.js';
 import type { DecodedEvent } from './sorobanClient.js';
 
 const {
@@ -767,5 +768,56 @@ describe('projectEvent — refunds (#1038)', () => {
     await projectEvent(refundEvent);
 
     expect(mockPublishProjection).toHaveBeenCalledWith(refundEvent);
+  });
+});
+
+describe('projectEvent — business metrics (#1348)', () => {
+  type Series = { labels: Record<string, string>; value: number };
+  const series = async (name: string): Promise<Series[]> =>
+    ((await registry.getMetricsAsJSON()).find((m) => m.name === name)?.values ?? []) as Series[];
+
+  beforeEach(() => {
+    registry.resetMetrics();
+  });
+
+  it('counts a newly projected tip as an indexer success with its volume', async () => {
+    await projectEvent(tipEvent);
+    expect(await series('tipz_tips_total')).toContainEqual({ labels: { source: 'indexer', result: 'success' }, value: 1 });
+    expect(await series('tipz_tip_volume_stroops_total')).toContainEqual({ labels: { source: 'indexer' }, value: 5_000_000 });
+  });
+
+  it('counts a replayed tip as a duplicate without adding volume', async () => {
+    mockTipFindUnique.mockResolvedValue({ id: 'existing' });
+    await projectEvent(tipEvent);
+    expect(await series('tipz_tips_total')).toContainEqual({ labels: { source: 'indexer', result: 'duplicate' }, value: 1 });
+    expect(await series('tipz_tip_volume_stroops_total')).toEqual([]);
+  });
+
+  it('counts an unparseable tip payload separately', async () => {
+    await projectEvent({ ...tipEvent, txHash: 'bad-tip', value: { nope: true } });
+    expect(await series('tipz_tips_total')).toContainEqual({ labels: { source: 'indexer', result: 'unparseable' }, value: 1 });
+  });
+
+  it('counts a database failure while projecting a tip as a system error', async () => {
+    mockTipCreate.mockRejectedValueOnce(new Error('connection reset'));
+    await expect(projectEvent(tipEvent)).rejects.toThrow('connection reset');
+    expect(await series('tipz_tips_total')).toContainEqual({ labels: { source: 'indexer', result: 'system_error' }, value: 1 });
+  });
+
+  it('counts an on-chain profile registration once, not on replay', async () => {
+    const registration = event('profile_register', [ADDR_A, 'alice']);
+    await projectEvent(registration);
+    mockEventLogFindFirst.mockResolvedValue({ id: 'seen' });
+    await projectEvent(registration);
+    expect(await series('tipz_registrations_total')).toEqual([{ labels: { source: 'indexer', result: 'success' }, value: 1 }]);
+  });
+
+  it('counts a confirmed subscription charge with its volume', async () => {
+    await projectEvent(event('sub_exec', [ADDR_A, ADDR_B, '2500000', 30, 0]));
+    expect(await series('tipz_subscription_charges_total')).toContainEqual({
+      labels: { source: 'indexer', result: 'success', failure_code: 'none' },
+      value: 1,
+    });
+    expect(await series('tipz_subscription_charge_volume_stroops_total')).toEqual([{ labels: { source: 'indexer' }, value: 2_500_000 }]);
   });
 });

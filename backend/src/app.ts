@@ -8,7 +8,8 @@ import { createV1Router } from './api/v1.routes.js';
 import { createVersionedApiRouter, parseVersionedApiBasePath } from './api/versioning.js';
 import { errorHandler, notFoundHandler } from './common/middleware/errorHandler.js';
 import { globalRateLimiter, mutationRateLimiter } from './common/middleware/rateLimiter.js';
-import { metricsController, metricsMiddleware } from './common/observability/metrics.js';
+import { httpMetricsMiddleware } from './common/observability/httpMetrics.js';
+import { metricsController } from './common/observability/metrics.js';
 import { getSentryRequestHandler, getSentryErrorHandler } from './common/observability/sentry.js';
 import { logger } from './common/utils/logger.js';
 import { truncateStellarAddress, truncateEmail, truncateMessage } from './common/utils/logRedaction.js';
@@ -59,6 +60,9 @@ function buildDocsCspDirectives(): Record<string, Iterable<string>> {
 /** Builds and configures the Express application without starting a listener. */
 export function createApp(): Express {
   const app = express();
+
+  // RED metrics first: in-memory only, so probes and every later route are counted (issue #1347).
+  app.use(httpMetricsMiddleware);
 
   // Probes must remain reachable even when Redis-backed middleware is unavailable.
   app.use('/health', healthRouter);
@@ -135,7 +139,6 @@ export function createApp(): Express {
   app.use(mutationRateLimiter);
   app.use(requestId);
   app.use(requestTimeoutAndSignal);
-  app.use(metricsMiddleware);
   app.use(express.json({ limit: '1mb' }));
 
   app.use(

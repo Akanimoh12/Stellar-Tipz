@@ -11,7 +11,7 @@ Prisma creates one PostgreSQL pool per Node.js process. The defaults are:
 The pool is configured through Prisma URL parameters (`connection_limit`,
 `pool_timeout`, and `socket_timeout`). Slow queries remain observable through
 the existing slow-query threshold; Prisma `P2024` pool acquisition failures are
-logged as `database_pool_saturated` and counted in `/metrics` as
+logged as `database_pool_saturated` and counted in `/metrics` (`tipz_db_pool_saturation_total` in Prometheus format, or with `Accept: application/json`) as
 `database.pool_saturation_total`.
 
 ## Capacity arithmetic

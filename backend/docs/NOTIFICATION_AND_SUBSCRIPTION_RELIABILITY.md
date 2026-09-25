@@ -117,7 +117,7 @@ the channel are rejected. Existing in-flight provider requests cannot be recalle
 Restoring a channel requires an operator to verify that the underlying problem
 has been fixed before clearing its disabled state; no automatic re-enable occurs.
 
-`GET /metrics` includes `notificationDelivery`: counts by channel/status and
+`GET /metrics` with `Accept: application/json` includes `notificationDelivery`: counts by channel/status and
 `deliveryRate` (`delivered / total`, including queued attempts). Counts come from
 the database and survive process restarts. They describe current attempt states,
 not a rolling-window success rate or unique-recipient rate.

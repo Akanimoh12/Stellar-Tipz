@@ -260,6 +260,15 @@ Each feature module lives in `src/modules/<name>/` and typically contains:
 Mount the router in `src/app.ts`. Throw `AppError` subclasses (`src/common/errors`)
 for HTTP errors — the global error handler formats them.
 
+## Metrics
+
+Every process serves Prometheus metrics on `METRICS_HOST:METRICS_PORT`
+(default `127.0.0.1:9464`): default Node.js process metrics, RED metrics per
+HTTP route, and business outcomes (tips, volume, withdrawals, registrations,
+subscription charges) split into user-caused and system-caused failures. The
+Grafana dashboard and alert rules are in `observability/`. See
+[`docs/METRICS.md`](./docs/METRICS.md).
+
 ## Contributing
 
 Start with **[docs/BACKEND_CONTRIBUTING.md](docs/BACKEND_CONTRIBUTING.md)** — it is the

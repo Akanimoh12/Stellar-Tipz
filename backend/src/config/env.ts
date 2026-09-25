@@ -273,6 +273,17 @@ export const envSchema = z.object({
 
   LOG_LEVEL: z.string().default('info'),
   SENTRY_DSN: z.string().optional(),
+
+  // ── Prometheus metrics (issue #1346) ──────────────────────────────────
+  /** Port of the internal `GET /metrics` listener every process starts. `0` disables it. */
+  METRICS_PORT: z.coerce.number().int().min(0).max(65535).default(9464),
+  /** Interface the metrics listener binds to. Keep it on loopback unless METRICS_BEARER_TOKEN is set. */
+  METRICS_HOST: z.string().min(1).default('127.0.0.1'),
+  /** When set, every `/metrics` endpoint requires `Authorization: Bearer <token>`. */
+  METRICS_BEARER_TOKEN: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().min(16, 'METRICS_BEARER_TOKEN must be at least 16 characters').optional(),
+  ),
 })
   .superRefine((data, ctx) => {
     // Production-specific hardening (issue #098) — dev ergonomics untouched,

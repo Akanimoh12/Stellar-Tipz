@@ -342,6 +342,87 @@ Use this sparingly. The CI pipeline enforces the same checks, so the branch will
 
 ---
 
+## Visual Regression Baselines
+
+The Playwright visual suite in `frontend-scaffold/tests/visual` screenshots the
+landing, leaderboard, help, register and 404 pages at desktop, tablet and mobile
+widths and compares them against committed baselines in
+`frontend-scaffold/tests/visual/__screenshots__`. It runs on every PR that
+touches `frontend-scaffold/` and it is a real check: a failure is not ignored
+and the PR should not be merged over it.
+
+### How a failure shows up
+
+- The **Visual Regression Tests** check fails and the job's step summary lists
+  every snapshot that differs, why (pixel diff with the ratio, missing baseline,
+  size mismatch, fonts not loaded) and which files to look at.
+- The same table is posted as a sticky comment on the PR (same-repository
+  branches only; fork PRs rely on the step summary).
+- The `visual-diffs` artifact holds `expected`, `actual` and `diff` PNGs for
+  each failure; the `playwright-visual-report` artifact opens a side-by-side
+  viewer.
+
+### Reviewing and approving a baseline change
+
+1. Open the diff images. Decide whether the change is intentional (part of the
+   PR) or a regression.
+2. A regression is fixed in the PR like any other bug.
+3. An intentional change needs new baselines. Baselines are only ever rendered
+   inside the pinned Playwright container, never on a laptop, so they are
+   byte-for-byte comparable in CI:
+   - A maintainer adds the `visual-baselines:update` label to the PR after
+     reviewing the diffs. The **Visual Baselines** workflow regenerates the
+     PNGs, re-runs the suite three times to prove they are stable, commits them
+     to the branch and removes the label.
+   - For a PR from a fork the workflow cannot push. It uploads a
+     `visual-baselines` artifact instead; copy its contents to
+     `frontend-scaffold/tests/visual/__screenshots__/` and commit them.
+   - Maintainers can also run the workflow by hand from the Actions tab for any
+     branch (`workflow_dispatch`, input `ref`).
+4. The reviewer looks at the new PNGs in the PR diff as part of the review. A
+   baseline update without a visible design change in the same PR is a red
+   flag.
+
+To reproduce the CI rendering locally, run the suite in the same image:
+
+```bash
+cd frontend-scaffold
+docker run --rm -it -v "$PWD:/work" -w /work mcr.microsoft.com/playwright:v1.59.1-jammy \
+  bash -c "npm ci --legacy-peer-deps && npm run test:visual"          # compare
+# add `:update` to regenerate baselines, `:flaky` to run each snapshot 3 times
+```
+
+Running `npm run test:visual` outside the container is fine for a quick look,
+but expect font and antialiasing differences; never commit baselines produced
+that way. The image tag must match `@playwright/test` in
+`frontend-scaffold/package-lock.json`; bump both together.
+
+### Writing a deterministic visual test
+
+Every test goes through `openForScreenshot` from `tests/visual/fixtures.ts`,
+which pins the things that made the old suite flaky: time (`Date` is frozen),
+`Math.random` (seeded), theme, reduced motion and the first-visit tour (set
+through the app's own localStorage keys and media emulation), language,
+viewport and device scale factor, and the network (only the app origin and Google Fonts are reachable;
+every `/api/v1` call answers a fixed 503 so components render their error and
+empty states; RPC, Horizon, analytics and Sentry are blocked). The app is built
+with `--mode visual`, which enables `VITE_USE_MOCK_DATA` so pages that read the
+chain render fixtures. Screenshots wait for the web fonts and fail with a clear
+message if they are not loaded, and inherently dynamic elements
+(`DYNAMIC_SELECTOR`) are masked.
+
+When adding a page:
+
+- Add a scenario to `tests/visual/visual-regression.spec.ts`; do not call
+  `page.goto` directly.
+- If the page shows live values, give the element a `data-testid` from
+  `DYNAMIC_SELECTOR` or extend that list rather than widening
+  `maxDiffPixelRatio`.
+- Run `npm run test:visual:flaky` (each snapshot three times). A snapshot that
+  does not pass three consecutive runs is flaky: mask or stabilise the source
+  of variation, or remove the snapshot. Never raise thresholds or add retries
+  to make it pass; the config deliberately has `retries: 0`.
+
 ## Questions?
 
 - Open a [Discussion](https://github.com/akan_nigeria/stellar-tipz/discussions) for general questions

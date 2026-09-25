@@ -1,14 +1,17 @@
 import { pathToFileURL } from 'node:url';
 import { logger } from '../common/utils/logger.js';
-import { registerClosable, closeAll } from '../common/utils/lifecycle.js';
+import { registerClosable, closeAllWithTimeout } from '../common/utils/lifecycle.js';
 import { prisma, prismaIncludingDeleted } from '../db/prisma.js';
 import { startIndexer } from './poller.js';
+import { startProcessMetrics } from '../common/observability/metricsServer.js';
 
 /**
  * Standalone indexer process bootstrap. Starts the Soroban poll loop and
  * registers graceful shutdown for Prisma and the indexer.
  */
 export async function bootstrapIndexer(): Promise<void> {
+  await startProcessMetrics('indexer');
+
   registerClosable({
     name: 'Prisma',
     close: () => prisma.$disconnect(),

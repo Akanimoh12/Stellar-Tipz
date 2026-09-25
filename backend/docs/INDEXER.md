@@ -142,7 +142,8 @@ the `/metrics` endpoint:
 | `indexer.errors_total` | Cumulative projection/processing errors (error rate can be derived) |
 
 ```bash
-curl http://localhost:4000/metrics | python -m json.tool | grep -A20 indexer
+curl -H 'Accept: application/json' http://localhost:4000/metrics | python -m json.tool | grep -A20 indexer
+# Prometheus format (default): curl http://127.0.0.1:9465/metrics | grep tipz_indexer
 ```
 
 A **sustained-lag alert** fires when `lag_ledgers` exceeds the threshold, and a
