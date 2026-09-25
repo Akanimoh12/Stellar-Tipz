@@ -1,0 +1,13 @@
+{
+  "environment": "staging",
+  "capturedAt": "2025-02-10T00:00:00Z",
+  "commit": "initial-approved-baseline",
+  "workload": "mixed 70% reads / 30% signed tip submissions; 60-minute staged run",
+  "limits": {
+    "http_req_failed_rate": 0.02,
+    "http_req_duration_p50_ms": 350,
+    "http_req_duration_p95_ms": 1200,
+    "http_req_duration_p99_ms": 2500,
+    "rpc_failures_rate": 0.02
+  }
+}
