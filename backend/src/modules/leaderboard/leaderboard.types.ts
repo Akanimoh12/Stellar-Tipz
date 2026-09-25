@@ -27,4 +27,8 @@ export interface LeaderboardResponse {
   total: number;
   page: number;
   limit: number;
+  /** Data source: "on-chain" or "off-chain-snapshot" */
+  dataSource: "on-chain" | "off-chain-snapshot";
+  /** ISO timestamp of when data was last refreshed */
+  freshness: string;
 }

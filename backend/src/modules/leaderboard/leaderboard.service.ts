@@ -21,7 +21,7 @@ async function getTipsLeaderboard(
   period: LeaderboardPeriod,
   page: number,
   limit: number,
-): Promise<{ entries: LeaderboardEntry[]; total: number }> {
+): Promise<{ entries: LeaderboardEntry[]; total: number; dataSource: "on-chain" | "off-chain-snapshot"; freshness: string }> {
   if (period !== "ALL_TIME") {
     // Use periodic snapshots for fast pre-aggregated reads.
     const skip = (page - 1) * limit;
@@ -55,7 +55,7 @@ async function getTipsLeaderboard(
       totalTipsStroops: s.totalTips.toString(),
     }));
 
-    return { entries, total };
+    return { entries, total, dataSource: "off-chain-snapshot" as const, freshness: new Date().toISOString() };
   }
 
   // ALL_TIME: aggregate directly from Tip table.
@@ -90,7 +90,7 @@ async function getTipsLeaderboard(
     }),
   );
 
-  return { entries, total };
+  return { entries, total, dataSource: "on-chain" as const, freshness: new Date().toISOString() };
 }
 
 // ── Credit score leaderboard (issue #933 variant) ────────────────────────────
@@ -107,7 +107,7 @@ async function getTipsLeaderboard(
 async function getCreditLeaderboard(
   page: number,
   limit: number,
-): Promise<{ entries: LeaderboardEntry[]; total: number }> {
+): Promise<{ entries: LeaderboardEntry[]; total: number; dataSource: "on-chain"; freshness: string }> {
   const skip = (page - 1) * limit;
 
   const [users, total] = await Promise.all([
@@ -177,7 +177,7 @@ async function getCreditLeaderboard(
     creditScore: item.creditScore,
   }));
 
-  return { entries, total };
+  return { entries, total, dataSource: "on-chain" as const, freshness: new Date().toISOString() };
 }
 
 // ── Public service function ───────────────────────────────────────────────────
@@ -198,10 +198,10 @@ export async function getLeaderboard(
 ): Promise<LeaderboardResponse> {
   logger.info({ variant, period, page, limit }, "Fetching leaderboard");
 
-  const { entries, total } =
+  const result =
     variant === "credit"
       ? await getCreditLeaderboard(page, limit)
       : await getTipsLeaderboard(period, page, limit);
 
-  return { variant, period, entries, total, page, limit };
+  return { variant, period, entries: result.entries, total: result.total, page, limit, dataSource: result.dataSource, freshness: result.freshness };
 }
