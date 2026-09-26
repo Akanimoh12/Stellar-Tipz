@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { redis } from '../../db/redis.js';
 import { NotFoundError } from '../../common/errors/AppError.js';
+import { invalidateCreatorSearch } from '../search/search.cache.js';
 
 type SerializableRecord = Record<string, unknown>;
 
@@ -76,7 +77,7 @@ export async function exportUserData(userId: string): Promise<SerializableRecord
 export async function deleteAccount(userId: string): Promise<SerializableRecord> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, stellarAddress: true, deletedAt: true },
+    select: { id: true, stellarAddress: true, username: true, displayName: true, deletedAt: true },
   });
 
   if (!user || user.deletedAt) {
@@ -141,6 +142,7 @@ export async function deleteAccount(userId: string): Promise<SerializableRecord>
   ]);
 
   await redis.del(`profile:${user.stellarAddress}`);
+  await invalidateCreatorSearch([user.username, user.displayName]);
 
   return toPortableJson({
     deletedAt,

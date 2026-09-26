@@ -5,6 +5,7 @@ import { prisma } from "../../db/prisma.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../common/utils/logger.js";
 import { observeRegistration } from "../../common/observability/businessMetrics.js";
+import { invalidateCreatorSearch } from "../search/search.cache.js";
 import {
   BadRequestError,
   UnauthorizedError,
@@ -528,7 +529,11 @@ export async function verifyChallenge(
     },
   );
  
-  if (registered) observeRegistration("auth", "success");
+  if (registered) {
+    observeRegistration("auth", "success");
+    // A new wallet user has no names yet, so only the trending cache is affected.
+    await invalidateCreatorSearch([]);
+  }
  
   const payload: AuthPayload = {
     userId: user.id,

@@ -64,6 +64,13 @@ export const config = {
     finalityDepth: env.INDEXER_FINALITY_DEPTH,
     /** Recent ledger hashes retained for reorg detection (issue #1257). */
     reorgLookback: env.INDEXER_REORG_LOOKBACK,
+    /** Redis lease-based leader election across indexer instances (issue #1263). */
+    leaderElection: {
+      enabled: env.INDEXER_LEADER_ELECTION_ENABLED,
+      key: env.INDEXER_LEADER_KEY,
+      leaseMs: env.INDEXER_LEADER_LEASE_MS,
+      renewIntervalMs: env.INDEXER_LEADER_RENEW_INTERVAL_MS,
+    },
   },
 
   twitter: {
@@ -83,6 +90,7 @@ export const config = {
 
   analytics: {
     dailyCron: env.ANALYTICS_DAILY_CRON,
+    tipperRollupCron: env.ANALYTICS_TIPPER_ROLLUP_CRON,
   },
 
   leaderboard: {

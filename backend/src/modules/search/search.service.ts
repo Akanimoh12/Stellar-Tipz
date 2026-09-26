@@ -1,34 +1,8 @@
 import { prisma } from '../../db/prisma.js';
-import { redis } from '../../db/redis.js';
-import { env } from '../../config/env.js';
 import { logger } from '../../common/utils/logger.js';
 import type { SearchCreatorsResponse, SearchCreator } from './search.types.js';
 import type { SearchSort } from './search.schema.js';
-
-const CACHE_PREFIX = 'search:creators:';
-const CACHE_TTL_SECONDS = env.SEARCH_CACHE_TTL_SECONDS ?? 60;
-
-function cacheKey(query: string, limit: number, offset: number, sort: string = 'relevance'): string {
-  return `${CACHE_PREFIX}${query.trim().toLowerCase()}:${limit}:${offset}:${sort}`;
-}
-
-async function readCache(key: string): Promise<SearchCreatorsResponse | null> {
-  try {
-    const cached = await redis.get(key);
-    return cached ? (JSON.parse(cached) as SearchCreatorsResponse) : null;
-  } catch (err) {
-    logger.warn({ err, key }, 'Search cache read failed');
-    return null;
-  }
-}
-
-async function writeCache(key: string, result: SearchCreatorsResponse): Promise<void> {
-  try {
-    await redis.set(key, JSON.stringify(result), 'EX', CACHE_TTL_SECONDS);
-  } catch (err) {
-    logger.warn({ err, key }, 'Search cache write failed');
-  }
-}
+import { cachedSearch, creatorSearchKey, normalizeSearchQuery, trendingKey } from './search.cache.js';
 
 function buildWhere(query: string): Record<string, unknown> {
   return {
@@ -53,28 +27,34 @@ const selectFields = {
  * Searches creators by name or username using case-insensitive partial matching.
  * Supports relevance, recent, and popular sort orders with pagination.
  * Returns paginated results ordered by relevance (username match first, then displayName).
- * Results are cached in Redis, keyed by the normalized query and pagination params.
+ * Results are cached in Redis (see search.cache.ts): the query is normalized
+ * once and that same value drives both the SQL and the cache key, and profile
+ * writes invalidate the cached queries they affect.
  */
 export async function searchCreators(
-  query: string,
+  rawQuery: string,
   limit: number,
   offset: number,
   sort: SearchSort = 'relevance',
 ): Promise<SearchCreatorsResponse> {
+  const query = normalizeSearchQuery(rawQuery);
   logger.info({ query, limit, offset, sort }, 'Searching creators');
 
-  const key = cacheKey(query, limit, offset, sort);
-  const cached = await readCache(key);
-  if (cached) {
-    return cached;
-  }
+  return cachedSearch('search_creators', creatorSearchKey(query, limit, offset, sort), query, () =>
+    runCreatorSearch(query, limit, offset, sort),
+  );
+}
 
+async function runCreatorSearch(
+  query: string,
+  limit: number,
+  offset: number,
+  sort: SearchSort,
+): Promise<SearchCreatorsResponse> {
   const where = buildWhere(query);
 
-  let result: SearchCreatorsResponse;
-
   if (sort === 'relevance') {
-    result = await searchWithRelevanceRanking(query, where, limit, offset);
+    return searchWithRelevanceRanking(query, where, limit, offset);
   } else {
     const orderBy = getOrderBy(sort);
     const [rows, total] = await Promise.all([
@@ -88,7 +68,7 @@ export async function searchCreators(
       prisma.user.count({ where }),
     ]);
 
-    result = {
+    return {
       data: rows as unknown as SearchCreator[],
       pagination: {
         limit,
@@ -98,9 +78,6 @@ export async function searchCreators(
       },
     };
   }
-
-  await writeCache(key, result);
-  return result;
 }
 
 function getOrderBy(sort: Exclude<SearchSort, 'relevance'>): Record<string, unknown>[] {
@@ -168,7 +145,7 @@ async function searchWithRelevanceRanking(
 
 /**
  * Gets trending creators based on received tips.
- * Results are cached in Redis.
+ * Results are cached in Redis and invalidated by any profile write.
  */
 export async function getTrendingCreators(
   limit: number,
@@ -176,12 +153,12 @@ export async function getTrendingCreators(
 ): Promise<SearchCreatorsResponse> {
   logger.info({ limit, offset }, 'Getting trending creators');
 
-  const key = `search:trending:${limit}:${offset}`;
-  const cached = await readCache(key);
-  if (cached) {
-    return cached;
-  }
+  return cachedSearch('search_trending', trendingKey(limit, offset), '', () =>
+    runTrending(limit, offset),
+  );
+}
 
+async function runTrending(limit: number, offset: number): Promise<SearchCreatorsResponse> {
   const [rows, total] = await Promise.all([
     prisma.user.findMany({
       where: { deletedAt: null },
@@ -197,7 +174,7 @@ export async function getTrendingCreators(
     prisma.user.count({ where: { deletedAt: null } }),
   ]);
 
-  const result = {
+  return {
     data: rows as unknown as SearchCreator[],
     pagination: {
       limit,
@@ -206,7 +183,4 @@ export async function getTrendingCreators(
       hasMore: offset + rows.length < total,
     },
   };
-
-  await writeCache(key, result);
-  return result;
 }

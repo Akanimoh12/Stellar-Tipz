@@ -133,10 +133,24 @@ export const envSchema = z.object({
    * (issue #1257). Must comfortably exceed `INDEXER_FINALITY_DEPTH`.
    */
   INDEXER_REORG_LOOKBACK: z.coerce.number().int().positive().default(64),
+  /**
+   * Leader election for running several indexer instances (issue #1263). Only
+   * the instance holding the Redis lease indexes; the others stand by and take
+   * over when the lease lapses. Disable only for a single instance without Redis.
+   */
+  INDEXER_LEADER_ELECTION_ENABLED: booleanString,
+  /** Redis key holding the indexer leader lease. */
+  INDEXER_LEADER_KEY: z.string().min(1).default('tipz:indexer:leader'),
+  /** Lease lifetime; a crashed leader is replaced at most this long after its last renewal. */
+  INDEXER_LEADER_LEASE_MS: z.coerce.number().int().min(1000).default(15_000),
+  /** How often the leader renews (and a standby tries to acquire) the lease. Must be under half the lease. */
+  INDEXER_LEADER_RENEW_INTERVAL_MS: z.coerce.number().int().min(100).default(5_000),
 
   CREDIT_RECOMPUTE_CRON: z.string().default('0 */6 * * *'),
   /** Cron expression for the daily analytics rollup job. Runs at 00:05 UTC daily by default. */
   ANALYTICS_DAILY_CRON: z.string().default('5 0 * * *'),
+  /** Cron expression for rebuilding the ranked top-tippers rollup (issue #1265). Every 10 minutes by default. */
+  ANALYTICS_TIPPER_ROLLUP_CRON: z.string().default('*/10 * * * *'),
   /** Cron expression for the leaderboard snapshot job. Runs at 00:15 UTC daily by default. */
   LEADERBOARD_SNAPSHOT_CRON: z.string().default('15 0 * * *'),
   /** Cron expression for the X metrics refresh job. Runs at 00:30 UTC daily by default. */
@@ -161,6 +175,17 @@ export const envSchema = z.object({
   CREDIT_SCORE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional(),
   /** Search results cache TTL in seconds */
   SEARCH_CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional(),
+  /**
+   * TTL for analytics computed from raw tips (volume, top tippers, creator
+   * analytics). Creator entries are also invalidated when that creator's tips
+   * change (issue #1265).
+   */
+  ANALYTICS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
+  /**
+   * TTL for analytics read from the AnalyticsDaily rollup (daily, summary,
+   * active users). Also invalidated whenever the rollup job rewrites a day.
+   */
+  ANALYTICS_ROLLUP_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
   /**
    * Minimum withdrawal amount, in stroops (1 XLM = 10,000,000 stroops).
    * Stored and validated as a bigint at the config boundary — never a float —
@@ -286,6 +311,16 @@ export const envSchema = z.object({
   ),
 })
   .superRefine((data, ctx) => {
+    // A leader must get at least two renewal attempts per lease, or one slow
+    // Redis round trip would hand leadership over (issue #1263).
+    if (data.INDEXER_LEADER_RENEW_INTERVAL_MS * 2 >= data.INDEXER_LEADER_LEASE_MS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['INDEXER_LEADER_RENEW_INTERVAL_MS'],
+        message: 'INDEXER_LEADER_RENEW_INTERVAL_MS must be less than half of INDEXER_LEADER_LEASE_MS',
+      });
+    }
+
     // Production-specific hardening (issue #098) — dev ergonomics untouched,
     // but production reports ALL violations together for actionable startup failure.
     if (data.NODE_ENV !== 'production') return;

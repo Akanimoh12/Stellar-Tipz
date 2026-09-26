@@ -1,11 +1,12 @@
 import { config } from '../config/index.js';
 import { logger } from '../common/utils/logger.js';
-import { getCursorLedger, setCursorLedger } from './cursor.js';
+import { CursorFencedError, getCursorLedger, setCursorLedger } from './cursor.js';
 import { getEventsFrom, getLatestLedger, getLedgerHash } from './sorobanClient.js';
 import { projectEvent } from './projections.js';
 import { recordIndexerTick, noteIndexerError, noteProcessedLedger } from './monitor.js';
 import { checkAndHandleReorg } from './reorg.js';
 import { recordCheckpoint } from './ledger-checkpoint.store.js';
+import { LeadershipLostError, type LeadershipGuard } from './leader.js';
 
 /** Cursor topic under which tip-event indexing progress is tracked. */
 const CURSOR_TOPIC = 'tip_events';
@@ -15,6 +16,11 @@ const MAX_PAGES_PER_TICK = 50;
 
 export interface IndexerHandle {
   stop: () => Promise<void>;
+}
+
+export interface StartIndexerOptions {
+  /** When set, only ticks while this instance holds the leader lease (issue #1263). */
+  leader?: LeadershipGuard & { isLeader(): boolean };
 }
 
 /**
@@ -41,9 +47,17 @@ async function resolveStartLedger(): Promise<number> {
  *   2. Advance the cursor to the finalized ledger we covered and record its
  *      ledger hash as a reorg-detection checkpoint.
  * On failure, throws without advancing the cursor to keep replay safe.
+ *
+ * With a leadership `guard` (issue #1263) the lease is checked before every
+ * commit — the reorg rollback, each projection, and the cursor advance — and
+ * the rollback and cursor writes carry the leader's fencing epoch, so a leader
+ * that was paused past its lease can never commit on resume. Projections are
+ * idempotent, so the new leader re-reading from the persisted cursor neither
+ * skips nor duplicates ledgers.
  */
-export async function pollOnce(): Promise<void> {
-  if (await checkAndHandleReorg(CURSOR_TOPIC)) {
+export async function pollOnce(guard?: LeadershipGuard): Promise<void> {
+  const fence = await guard?.assertLeadership();
+  if (await checkAndHandleReorg(CURSOR_TOPIC, fence)) {
     return;
   }
 
@@ -73,6 +87,7 @@ export async function pollOnce(): Promise<void> {
         skippedUnfinalized++;
         continue;
       }
+      guard?.assertLocalLease();
       try {
         await projectEvent(event);
         pagingToken = event.pagingToken;
@@ -99,7 +114,12 @@ export async function pollOnce(): Promise<void> {
 
   // Advance only to the finality ceiling — never past what has finalized.
   const nextCursor = Math.max(maxFinalizedLedgerSeen, finalityCeiling);
-  await setCursorLedger(CURSOR_TOPIC, nextCursor);
+  const commitFence = await guard?.assertLeadership();
+  if (commitFence !== fence) {
+    // Leadership was lost and re-acquired mid-tick; another leader may have run in between.
+    throw new LeadershipLostError('Leadership changed during the tick; cursor not advanced');
+  }
+  await setCursorLedger(CURSOR_TOPIC, nextCursor, commitFence);
   noteProcessedLedger(nextCursor);
   recordIndexerTick(processed);
 
@@ -107,6 +127,7 @@ export async function pollOnce(): Promise<void> {
   try {
     const hash = await getLedgerHash(nextCursor);
     if (hash) {
+      guard?.assertLocalLease();
       await recordCheckpoint(CURSOR_TOPIC, nextCursor, hash);
     }
   } catch (err) {
@@ -126,9 +147,11 @@ export async function pollOnce(): Promise<void> {
 /**
  * Start the indexer poll loop. Returns a handle whose `stop()` halts further
  * polling (e.g. on graceful shutdown). Errors in a tick are logged and the loop
- * keeps running.
+ * keeps running. With a `leader`, ticks are skipped while this instance is on
+ * standby.
  */
-export function startIndexer(): IndexerHandle {
+export function startIndexer(options: StartIndexerOptions = {}): IndexerHandle {
+  const { leader } = options;
   let stopped = false;
   let timer: NodeJS.Timeout | undefined;
   let activePoll: Promise<void> | undefined;
@@ -140,12 +163,20 @@ export function startIndexer(): IndexerHandle {
 
   const run = async (): Promise<void> => {
     if (stopped) return;
-    const poll = pollOnce();
+    if (leader && !leader.isLeader()) {
+      schedule(config.indexer.pollIntervalMs);
+      return;
+    }
+    const poll = pollOnce(leader);
     activePoll = poll;
     try {
       await poll;
     } catch (err) {
-      logger.error({ err }, 'Indexer poll failed');
+      if (err instanceof LeadershipLostError || err instanceof CursorFencedError) {
+        logger.warn({ err }, 'Indexer tick abandoned: this instance is no longer the leader');
+      } else {
+        logger.error({ err }, 'Indexer poll failed');
+      }
     } finally {
       if (activePoll === poll) activePoll = undefined;
       schedule(config.indexer.pollIntervalMs);

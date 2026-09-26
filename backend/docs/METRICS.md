@@ -143,6 +143,21 @@ histogram_quantile(0.99, sum by (le, route) (rate(tipz_http_request_duration_sec
 Volumes are summed as doubles; a single increment above 2^53 stroops (about
 900 million XLM) would lose precision.
 
+### Caches (issues #1265, #1267)
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `tipz_cache_requests_total` | counter | `cache`, `result`=`hit`\|`miss`\|`coalesced` | Lookups; hit rate = `hit / sum(result)`. `coalesced` = waited on a fill already running (stampede protection) |
+| `tipz_cache_invalidations_total` | counter | `cache` | Entries (search) or generations (analytics) dropped by writes |
+
+`cache` is one of `search_creators`, `search_trending`, `analytics_rollup`,
+`analytics_platform`, `analytics_creator`. See `docs/CACHING.md`.
+
+### Indexer leadership (issue #1263)
+
+`tipz_indexer_is_leader` (gauge), `tipz_indexer_leadership_transitions_total{transition}`
+and `tipz_indexer_lease_errors_total`. See `docs/INDEXER.md`.
+
 ### Legacy counters
 
 The JSON report's counters are mirrored: `tipz_db_slow_queries_total`,
