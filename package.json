@@ -19,7 +19,8 @@
     "typecheck": "cd frontend-scaffold && npm run typecheck",
     "lint": "cd frontend-scaffold && npm run lint",
     "test": "cd frontend-scaffold && npm run test",
-    "load:test": "k6 run scripts/load-test.js"
+    "load:test": "k6 run scripts/load-test.js",
+    "load:compare": "node scripts/compare-load-baseline.mjs"
   },
   "repository": {
     "type": "git",
