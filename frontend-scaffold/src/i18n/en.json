@@ -7,6 +7,7 @@
   "offline.description": "You appear to be offline. Reconnect to continue using live features.",
   "offline.title": "Offline",
   "common.auto": "Auto",
+  "common.close": "Close",
   "common.componentStack": "Component Stack:",
   "common.dark": "Dark",
   "common.error": "Error:",
