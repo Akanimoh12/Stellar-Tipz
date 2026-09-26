@@ -109,6 +109,41 @@ describe('rollbackToLedger', () => {
       update: { lastLedger: 95 },
     });
   });
+
+  function fencedTx(storedEpoch: number) {
+    return {
+      $queryRaw: vi.fn().mockResolvedValue([{ leaderEpoch: storedEpoch }]),
+      refund: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      tip: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      eventLog: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      indexerCursor: { upsert: vi.fn().mockResolvedValue({}) },
+    };
+  }
+
+  it('records the leader epoch when the current leader rolls back (issue #1263)', async () => {
+    const tx = fencedTx(4);
+    mockTx.mockImplementation(async (fn: (t: typeof tx) => unknown) => fn(tx));
+
+    await rollbackToLedger('tip_events', 95, 4);
+
+    expect(tx.indexerCursor.upsert).toHaveBeenCalledWith({
+      where: { topic: 'tip_events' },
+      create: { topic: 'tip_events', lastLedger: 95, leaderEpoch: 4 },
+      update: { lastLedger: 95, leaderEpoch: 4 },
+    });
+  });
+
+  it('a deposed leader deletes nothing: the fence aborts the rollback first (issue #1263)', async () => {
+    const tx = fencedTx(5);
+    mockTx.mockImplementation(async (fn: (t: typeof tx) => unknown) => fn(tx));
+
+    await expect(rollbackToLedger('tip_events', 95, 4)).rejects.toThrow(/older than the stored epoch/);
+
+    expect(tx.refund.deleteMany).not.toHaveBeenCalled();
+    expect(tx.tip.deleteMany).not.toHaveBeenCalled();
+    expect(tx.eventLog.deleteMany).not.toHaveBeenCalled();
+    expect(tx.indexerCursor.upsert).not.toHaveBeenCalled();
+  });
 });
 
 describe('checkAndHandleReorg', () => {

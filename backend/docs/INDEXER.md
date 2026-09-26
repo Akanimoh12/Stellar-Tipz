@@ -126,6 +126,69 @@ curl http://localhost:4000/health/ready
 | `INDEXER_STALL_INTERVALS` | Consecutive unchanged-cursor polls that trigger a stall alert | 3 |
 | `STELLAR_RPC_URL` | Soroban RPC endpoint | Required |
 | `STELLAR_CONTRACT_ID` | Target contract for events | Optional (all contracts) |
+| `INDEXER_LEADER_ELECTION_ENABLED` | Redis lease-based leader election (see below). Disable only for a single instance without Redis | `true` |
+| `INDEXER_LEADER_KEY` | Redis key holding the lease | `tipz:indexer:leader` |
+| `INDEXER_LEADER_LEASE_MS` | Lease lifetime: a crashed leader is replaced at most this long after its last renewal | 15000 |
+| `INDEXER_LEADER_RENEW_INTERVAL_MS` | Renewal / acquisition attempt interval. Must be under half the lease | 5000 |
+
+## Horizontal Scaling & Leader Election (issue #1263)
+
+Any number of indexer processes may run; exactly one — the **leader** — indexes.
+The others stand by and take over automatically. Implementation:
+`src/indexer/leader.ts`, wired in `main.ts` and `poller.ts`.
+
+**Election.** Each instance tries `SET <key> <instance-id> NX PX <lease>` every
+`INDEXER_LEADER_RENEW_INTERVAL_MS`. The holder renews with an atomic
+compare-and-`PEXPIRE` script, so it can only extend a lease it still owns. On
+graceful shutdown the leader stops polling, then releases the lease
+(compare-and-delete), so a standby takes over on its next attempt instead of
+waiting for expiry.
+
+**Failover.** If the leader dies, its lease expires after at most
+`INDEXER_LEADER_LEASE_MS` and a standby acquires it. The new leader resumes from
+the persisted `IndexerCursor` (+1). Because every projection is idempotent
+(keyed by tx hash / event identity, #113) and the cursor only advances after a
+tick's events are all projected, failover neither skips nor double-applies a
+ledger: at worst the new leader replays the old leader's unfinished tick.
+
+**Split-brain protection.** A leader paused (GC, VM freeze) past its lease can
+resume still believing it leads. Three layers stop it from committing:
+
+1. *Local deadline.* Each acquisition/renewal sets a deadline of
+   `lease − 20%` measured from **before** the Redis round trip, on both the
+   monotonic and the wall clock. The poller checks it (no I/O) before every
+   projection, so a resumed leader stops at the next event even if one clock
+   did not advance during the pause.
+2. *Lease check before every commit.* Before the reorg rollback and before the
+   cursor advance, `assertLeadership()` runs the compare-and-extend script in
+   Redis; if another instance holds the lease the tick is abandoned.
+3. *Fencing token.* Every acquisition takes a new, monotonically increasing
+   epoch (`INCR <key>:epoch`, floored at the highest epoch already persisted so
+   a Redis flush cannot reset it). Cursor writes and reorg rollbacks lock the
+   `IndexerCursor` row (`SELECT … FOR UPDATE`) and are rejected with
+   `CursorFencedError` if a newer epoch has already been written — closing the
+   window between the lease check and the commit. A rejected rollback deletes
+   nothing.
+
+**Observability.** Transitions are logged (`Indexer acquired leadership`,
+`Indexer lost leadership` with `reason` = `expired`\|`superseded`,
+`Indexer released leadership`, all with `instanceId` and `epoch`) and metered:
+
+| Metric | Type | Meaning |
+|--------|------|---------|
+| `tipz_indexer_is_leader` | gauge | 1 while this instance holds the lease, else 0 (sum across instances should be 1) |
+| `tipz_indexer_leadership_transitions_total{transition}` | counter | `acquired`, `lost`, `released` |
+| `tipz_indexer_lease_errors_total` | counter | Redis errors/timeouts while acquiring or renewing |
+
+Alert when `sum(tipz_indexer_is_leader)` is 0 for longer than the lease (no
+leader) or above 1 (should be impossible), and on a high rate of `lost`
+transitions (flapping — usually Redis latency close to the renew interval).
+
+**Tests.** Election, failover and split-brain scenarios run in `leader.test.ts`
+and `leaderFailover.test.ts` (real poll loop + fenced cursor against in-memory
+chain/Redis/DB); the Lua scripts and the row lock run against real services in
+`leader.redis.test.ts` and `cursor.db.test.ts` (see
+`src/common/testing/liveServices.ts`).
 
 ## Monitoring & Alerting (issue #1258)
 

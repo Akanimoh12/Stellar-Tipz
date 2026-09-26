@@ -12,6 +12,7 @@ import { TipStatus } from '../../types/enums.js';
 import type { RecordTipInput } from './tips.schema.js';
 import { serializeTip } from './tips.serializer.js';
 import type { TipResponseDto, TipAggregateByCreatorDto } from './tips.dto.js';
+import { invalidateCreatorAnalytics } from '../analytics/analytics.cache.js';
 
 export type { TipResponseDto, TipAggregateByCreatorDto };
 
@@ -344,16 +345,16 @@ export async function recordTip(input: RecordTipInput): Promise<TipResponseDto> 
  * No external calls are held inside.
  */
 export async function confirmTip(txHash: string): Promise<TipResponseDto> {
-  return prisma.$transaction(
+  const { dto, confirmedFor } = await prisma.$transaction(
     async (tx) => {
       const tip = await tx.tip.findUnique({ where: { txHash } });
       if (!tip) throw new NotFoundError("Tip not found");
-      if (tip.status === TipStatus.CONFIRMED) return serializeTip(tip);
+      if (tip.status === TipStatus.CONFIRMED) return { dto: serializeTip(tip), confirmedFor: null };
       const updated = await tx.tip.update({
         where: { txHash },
         data: { status: TipStatus.CONFIRMED },
       });
-      return serializeTip(updated);
+      return { dto: serializeTip(updated), confirmedFor: updated.toAddress };
     },
     {
       timeout: 5000,
@@ -361,6 +362,9 @@ export async function confirmTip(txHash: string): Promise<TipResponseDto> {
       isolationLevel: "ReadCommitted",
     },
   );
+  // The creator's cached analytics now miss this tip (issue #1265).
+  if (confirmedFor) await invalidateCreatorAnalytics(confirmedFor);
+  return dto;
 }
 
 /**

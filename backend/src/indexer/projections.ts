@@ -6,6 +6,8 @@ import { logger } from '../common/utils/logger.js';
 import type { DecodedEvent } from './sorobanClient.js';
 import { publishProjection } from './realtime-publisher.js';
 import * as notificationsService from '../modules/notifications/notifications.service.js';
+import { invalidateCreatorSearch } from '../modules/search/search.cache.js';
+import { invalidateCreatorAnalytics } from '../modules/analytics/analytics.cache.js';
 import { recordUnknownEvent, recordIndexerLedgerProcessed } from '../common/observability/metrics.js';
 import { observeRegistration, observeSubscriptionCharge, observeTip } from '../common/observability/businessMetrics.js';
 
@@ -145,6 +147,7 @@ async function projectTip(event: DecodedEvent): Promise<void> {
     throw err;
   });
   observeTip('indexer', outcome.created ? 'success' : 'duplicate', outcome.created ? tip.amount : undefined);
+  if (outcome.created) await invalidateCreatorAnalytics(tip.to);
   if (outcome.notification) {
     emitNotificationCreated({ ...outcome.notification, createdAt: outcome.notification.createdAt.toISOString() });
   }
@@ -175,12 +178,12 @@ async function projectRefund(event: DecodedEvent): Promise<void> {
     return;
   }
 
-  await prisma.$transaction(
+  const refundedTo = await prisma.$transaction(
     async (tx) => {
       const tip = await tx.tip.findUnique({ where: { txHash: refund.tipTxHash } });
       if (!tip) {
         logger.warn({ tipTxHash: refund.tipTxHash }, 'Refund event references unknown tip, skipping');
-        return;
+        return null;
       }
 
       await tx.refund.upsert({
@@ -204,6 +207,7 @@ async function projectRefund(event: DecodedEvent): Promise<void> {
         where: { id: tip.id },
         data: { status: 'REFUNDED' },
       });
+      return tip.toAddress;
     },
     {
       timeout: 5000,
@@ -211,6 +215,7 @@ async function projectRefund(event: DecodedEvent): Promise<void> {
       isolationLevel: "RepeatableRead",
     },
   );
+  if (refundedTo) await invalidateCreatorAnalytics(refundedTo);
 }
 
 /**
@@ -308,11 +313,18 @@ async function projectProfileRegistered(event: DecodedEvent, isNewEvent = true):
   }
   const name = typeof username === 'string' && username.length > 0 ? username : null;
 
+  const previous = await prisma.user.findUnique({
+    where: { stellarAddress: owner },
+    select: { username: true, displayName: true },
+  });
   await prisma.user.upsert({
     where: { stellarAddress: owner },
     create: { stellarAddress: owner, username: name },
     update: name === null ? {} : { username: name },
   });
+  // A newly registered creator must be findable immediately, not after the
+  // search cache TTL (issue #1267).
+  await invalidateCreatorSearch([previous?.username, previous?.displayName, name]);
   if (isNewEvent) observeRegistration('indexer', 'success');
 }
 

@@ -54,25 +54,28 @@ export function encodeCursor(position: CursorPosition, scope: string): string {
   return `${encodedPayload}.${sign(encodedPayload).toString('base64url')}`;
 }
 
+/** Checks the signature and returns the decoded (still unvalidated) JSON payload. */
+function verifySignedPayload(cursor: string): unknown {
+  const parts = cursor.split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) throw invalidCursor();
+
+  const suppliedSignature = Buffer.from(parts[1], 'base64url');
+  const expectedSignature = sign(parts[0]);
+  if (
+    suppliedSignature.toString('base64url') !== parts[1] ||
+    suppliedSignature.length !== expectedSignature.length ||
+    !timingSafeEqual(suppliedSignature, expectedSignature)
+  ) {
+    throw invalidCursor();
+  }
+
+  return JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+}
+
 /** Verifies and decodes a cursor, rejecting tampering, malformed data, and scope reuse. */
 export function decodeCursor(cursor: string, expectedScope: string): CursorPosition {
   try {
-    const parts = cursor.split('.');
-    if (parts.length !== 2 || !parts[0] || !parts[1]) throw invalidCursor();
-
-    const suppliedSignature = Buffer.from(parts[1], 'base64url');
-    const expectedSignature = sign(parts[0]);
-    if (
-      suppliedSignature.toString('base64url') !== parts[1] ||
-      suppliedSignature.length !== expectedSignature.length ||
-      !timingSafeEqual(suppliedSignature, expectedSignature)
-    ) {
-      throw invalidCursor();
-    }
-
-    const payload = cursorPayloadSchema.parse(
-      JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8')),
-    );
+    const payload = cursorPayloadSchema.parse(verifySignedPayload(cursor));
     if (payload.scope !== expectedScope) throw invalidCursor();
 
     return { sortValue: new Date(payload.sortValue), id: payload.id };
@@ -117,4 +120,36 @@ export function toCursorPage<T extends { id: string }>(
         ? encodeCursor({ sortValue: getSortValue(last), id: last.id }, scope)
         : null,
   };
+}
+
+const keysetPayloadSchema = z.object({
+  version: z.literal(1),
+  scope: z.string().min(1),
+  keyset: z.unknown(),
+});
+
+/**
+ * Signs an arbitrary keyset position, for sort orders whose keys are not a
+ * timestamp plus ID (e.g. aggregate rankings). Same signing key and scope
+ * binding as `encodeCursor`.
+ */
+export function encodeKeysetCursor(keyset: Record<string, string | number>, scope: string): string {
+  const encodedPayload = Buffer.from(JSON.stringify({ version: 1, scope, keyset })).toString('base64url');
+  return `${encodedPayload}.${sign(encodedPayload).toString('base64url')}`;
+}
+
+/** Verifies a keyset cursor and validates its position against `schema`. */
+export function decodeKeysetCursor<T>(
+  cursor: string,
+  expectedScope: string,
+  schema: z.ZodType<T>,
+): T {
+  try {
+    const payload = keysetPayloadSchema.parse(verifySignedPayload(cursor));
+    if (payload.scope !== expectedScope) throw invalidCursor();
+    return schema.parse(payload.keyset);
+  } catch (error) {
+    if (error instanceof BadRequestError) throw error;
+    throw invalidCursor();
+  }
 }

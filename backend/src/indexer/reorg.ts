@@ -17,6 +17,7 @@ import {
   type Checkpoint,
 } from './ledger-checkpoint.store.js';
 import { noteReorg } from './monitor.js';
+import { claimCursorFence } from './cursor.js';
 
 export interface ReorgDetection {
   reorged: boolean;
@@ -72,19 +73,29 @@ export interface RollbackResult {
  * `forkLedger + 1` and re-projects the canonical chain — deterministic
  * projections (`Goal`, `Subscription`, `CreditScore`, …) self-heal on
  * re-projection, so only the ledger-stamped tables need explicit deletion.
+ *
+ * With a `fence` (the caller's leader epoch, issue #1263) the transaction first
+ * claims the cursor row and aborts before deleting anything if a newer leader
+ * has already committed — a deposed leader can never roll back live data.
  */
-export async function rollbackToLedger(topic: string, forkLedger: number): Promise<RollbackResult> {
+export async function rollbackToLedger(
+  topic: string,
+  forkLedger: number,
+  fence?: number,
+): Promise<RollbackResult> {
   return prisma.$transaction(async (tx) => {
+    if (fence !== undefined) await claimCursorFence(tx, topic, fence);
     const { count: refunds } = await tx.refund.deleteMany({
       where: { tip: { ledger: { gt: forkLedger } } },
     });
     const { count: tips } = await tx.tip.deleteMany({ where: { ledger: { gt: forkLedger } } });
     const { count: eventLog } = await tx.eventLog.deleteMany({ where: { ledger: { gt: forkLedger } } });
     await deleteCheckpointsAbove(topic, forkLedger, tx);
+    const epoch = fence === undefined ? {} : { leaderEpoch: fence };
     await tx.indexerCursor.upsert({
       where: { topic },
-      create: { topic, lastLedger: forkLedger },
-      update: { lastLedger: forkLedger },
+      create: { topic, lastLedger: forkLedger, ...epoch },
+      update: { lastLedger: forkLedger, ...epoch },
     });
     return { eventLog, tips, refunds };
   });
@@ -95,7 +106,7 @@ export async function rollbackToLedger(topic: string, forkLedger: number): Promi
  * a reorg was handled (the caller should skip the rest of this tick and let
  * the next one reprocess from the fork).
  */
-export async function checkAndHandleReorg(topic: string): Promise<boolean> {
+export async function checkAndHandleReorg(topic: string, fence?: number): Promise<boolean> {
   if (config.indexer.reorgLookback <= 0) return false;
 
   const checkpoints = await getRecentCheckpoints(topic);
@@ -109,7 +120,7 @@ export async function checkAndHandleReorg(topic: string): Promise<boolean> {
     'Chain reorg detected — rolling back affected projections',
   );
 
-  const removed = await rollbackToLedger(topic, detection.forkLedger);
+  const removed = await rollbackToLedger(topic, detection.forkLedger, fence);
   noteReorg({
     topic,
     forkLedger: detection.forkLedger,

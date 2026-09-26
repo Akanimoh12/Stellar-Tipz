@@ -11,6 +11,7 @@ import type {
 } from "./profiles.types.js";
 import type { ProfileResponseDto, PaginatedProfilesDto } from "./profiles.dto.js";
 import { serializeProfile } from "./profiles.serializer.js";
+import { invalidateCreatorSearch } from "../search/search.cache.js";
 
 /**
  * Helper to fetch aggregate tip stats for a user.
@@ -204,6 +205,12 @@ export async function updateProfile(
     });
 
     await redis.del(cacheKey(user.stellarAddress));
+    await invalidateCreatorSearch([
+      user.username,
+      user.displayName,
+      updatedUser.username,
+      updatedUser.displayName,
+    ]);
 
     logger.info({ userId }, "Profile updated successfully");
     const stats = await getTipStats(updatedUser.id);
@@ -281,6 +288,7 @@ export async function deactivateProfile(userId: string): Promise<void> {
     where: { id: userId },
     data: { deletedAt: new Date() },
   });
+  await invalidateCreatorSearch([user.username, user.displayName]);
 
   logger.info({ userId }, "Profile deactivated successfully");
 }
@@ -329,6 +337,7 @@ export async function reactivateProfile(userId: string): Promise<ProfileResponse
   });
 
   await redis.del(cacheKey(user.stellarAddress));
+  await invalidateCreatorSearch([user.username, user.displayName]);
 
   const stats = await getTipStats(updatedUser.id);
   return serializeProfile(updatedUser, stats);

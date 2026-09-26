@@ -27,6 +27,13 @@
 //! amount in order (A → B → C), the leaderboard will maintain the order
 //! `[A, B, C, ...]` regardless of the order in which subsequent tips update
 //! the leaderboard.
+//!
+//! ### Off-chain mirror
+//! The backend leaderboard API (`backend/src/modules/leaderboard/leaderboard.service.ts`)
+//! applies the same rule: equal amounts are ordered by the ledger of each
+//! creator's latest counted tip, ascending (reached the amount first), with the
+//! address as a final key so its keyset pagination has a total order (#1269).
+//! Keep the two in sync when changing either.
 
 use soroban_sdk::{Address, Env, Vec};
 

@@ -92,9 +92,12 @@ model Tip {
 
 /// Tracks indexer progress per event topic so it can resume after a restart.
 model IndexerCursor {
-  topic      String   @id
-  lastLedger Int
-  updatedAt  DateTime @updatedAt
+  topic       String   @id
+  lastLedger  Int
+  /// Fencing token of the indexer leader that last wrote this cursor (issue #1263).
+  /// A write carrying a lower epoch comes from a deposed leader and is rejected.
+  leaderEpoch Int      @default(0)
+  updatedAt   DateTime @updatedAt
 }
 
 /// Refund requests tied to a specific tip.
@@ -333,6 +336,41 @@ model WebhookDeliveryAttempt {
 
   @@unique([deliveryId, attemptNumber])
   @@index([deliveryId, attemptedAt])
+}
+
+/// Pre-aggregated daily platform analytics, one row per calendar day (UTC).
+/// Populated by a scheduled job so dashboards can read trends without scanning
+/// the raw Tip/User tables.
+/// Version column guards concurrent increments (optimistic locking); primary
+/// mutation path uses atomic increment (no read-then-write) so version is
+/// for the rare read-modify-write path.
+model AnalyticsDaily {
+  id          String   @id @default(cuid())
+  /// Calendar day (UTC) this aggregate covers; one row per day.
+  date        DateTime @unique @db.Date
+  /// Number of tips recorded on this day.
+  totalTips   Int      @default(0)
+  /// Sum of tip amounts (in stroops) on this day.
+  totalVolume BigInt   @default(0)
+  /// Users that registered on this day.
+  newUsers    Int      @default(0)
+  /// Distinct users that sent or received a tip on this day.
+  activeUsers Int      @default(0)
+  version     Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// Precomputed all-time tip totals per tipper, ranked (issue #1265). Rebuilt by
+/// the analytics rollup job so /analytics/top-tippers reads one indexed page
+/// instead of aggregating every tip. Rank order: total desc, then address.
+/// Keyed by rank only: reads page by rank, and rebuilds append in rank order.
+model TipperRollup {
+  rank         Int      @id
+  fromAddress  String
+  totalStroops BigInt
+  tipCount     Int
+  refreshedAt  DateTime @default(now())
 }
 
 /// Audit log for tracking sensitive actions and job execution (issues #1289, #1288, #1287).

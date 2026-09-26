@@ -30,6 +30,7 @@ vi.mock('./sorobanClient.js', () => ({
 vi.mock('./cursor.js', () => ({
   getCursorLedger: mockGetCursorLedger,
   setCursorLedger: mockSetCursorLedger,
+  CursorFencedError: class CursorFencedError extends Error {},
 }));
 
 vi.mock('./projections.js', () => ({ projectEvent: mockProjectEvent }));
@@ -61,7 +62,7 @@ describe('pollOnce', () => {
 
     expect(mockProjectEvent).toHaveBeenCalledWith(tipSentEvent);
     expect(mockProjectEvent).toHaveBeenCalledWith(profileRegisterEvent);
-    expect(mockSetCursorLedger).toHaveBeenCalledWith('tip_events', CEILING);
+    expect(mockSetCursorLedger).toHaveBeenCalledWith('tip_events', CEILING, undefined);
     expect(mockRecordCheckpoint).toHaveBeenCalledWith('tip_events', CEILING, 'ledger-hash');
   });
 
@@ -85,7 +86,7 @@ describe('pollOnce', () => {
 
     expect(mockProjectEvent).not.toHaveBeenCalled();
     // Cursor still advances to the ceiling (finalized ledgers with no events).
-    expect(mockSetCursorLedger).toHaveBeenCalledWith('tip_events', CEILING);
+    expect(mockSetCursorLedger).toHaveBeenCalledWith('tip_events', CEILING, undefined);
   });
 
   it('does nothing when nothing has finalized past the cursor yet', async () => {
@@ -116,7 +117,7 @@ describe('pollOnce', () => {
     await pollOnce();
 
     expect(mockGetEventsFrom).toHaveBeenCalledWith(51, undefined);
-    expect(mockSetCursorLedger).toHaveBeenCalledWith('tip_events', CEILING);
+    expect(mockSetCursorLedger).toHaveBeenCalledWith('tip_events', CEILING, undefined);
   });
 
   it('re-running over the same finalized ledgers replays projections idempotently', async () => {
@@ -175,6 +176,32 @@ describe('startIndexer', () => {
     resolveEvents({ events: [], latestLedger: HEAD });
     await stopping;
     expect(stopped).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('stays idle on standby and polls once it becomes leader (issue #1263)', async () => {
+    vi.useFakeTimers();
+    mockGetEventsFrom.mockResolvedValue({ events: [], latestLedger: HEAD });
+    let leading = false;
+    const leader = {
+      isLeader: () => leading,
+      assertLeadership: vi.fn(async () => 1),
+      assertLocalLease: vi.fn(() => 1),
+    };
+
+    const { startIndexer } = await import('./poller.js');
+    const handle = startIndexer({ leader });
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(mockGetLatestLedger).not.toHaveBeenCalled();
+
+    leading = true;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(mockGetLatestLedger).toHaveBeenCalled();
+    expect(leader.assertLeadership).toHaveBeenCalled();
+    expect(mockSetCursorLedger).toHaveBeenCalledWith('tip_events', CEILING, 1);
+
+    await handle.stop();
     vi.useRealTimers();
   });
 });

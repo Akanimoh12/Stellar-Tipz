@@ -65,7 +65,7 @@ const {
 
 vi.mock('../db/prisma.js', () => ({
   prisma: {
-    user: { upsert: mockUserUpsert },
+    user: { upsert: mockUserUpsert, findUnique: vi.fn(async () => null) },
     goal: { upsert: mockGoalUpsert, updateMany: mockGoalUpdateMany, findUnique: mockGoalFindUnique },
     subscription: { upsert: mockSubUpsert, updateMany: mockSubUpdateMany },
     tip: { upsert: mockTipUpsert },
