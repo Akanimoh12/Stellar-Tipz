@@ -5,28 +5,34 @@ clients. See `src/realtime/`.
 
 ## Components
 
-| File | Purpose |
-|------|---------|
-| `types.ts` | Shared typed contract: event names + payloads, `SocketData` |
-| `auth.ts` | Handshake middleware — verifies the same JWT the REST API issues |
-| `rateLimit.ts` | Per-IP connection throttling and per-socket event throttling |
-| `gateway.ts` | Server init, room management, `emitTipCreated` / `emitNotificationCreated` / `emitLeaderboardUpdated`, Redis adapter wiring |
+| File           | Purpose                                                                                                                     |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `types.ts`     | Shared typed contract: event names + payloads, `SocketData`                                                                 |
+| `auth.ts`      | Handshake middleware — verifies the same JWT the REST API issues                                                            |
+| `rateLimit.ts` | Per-IP connection throttling and per-socket event throttling                                                                |
+| `gateway.ts`   | Server init, room management, `emitTipCreated` / `emitNotificationCreated` / `emitLeaderboardUpdated`, Redis adapter wiring |
 
 ## Connecting
 
 Clients authenticate on the handshake, not via a separate event:
 
 ```ts
-import { io } from 'socket.io-client';
+import { io } from 'socket.io-client'
 
 const socket = io(API_URL, {
   auth: { token: accessToken }, // the same access token used for REST calls
   transports: ['websocket'],
-});
+})
 
-socket.on('connected', ({ userId }) => { /* handshake accepted */ });
-socket.on('auth.expired', ({ code, message }) => { /* refresh, then reconnect */ });
-socket.on('error', ({ code, message }) => { /* FORBIDDEN, RATE_LIMITED, ... */ });
+socket.on('connected', ({ userId }) => {
+  /* handshake accepted */
+})
+socket.on('auth.expired', ({ code, message }) => {
+  /* refresh, then reconnect */
+})
+socket.on('error', ({ code, message }) => {
+  /* FORBIDDEN, RATE_LIMITED, ... */
+})
 ```
 
 A connection with a missing or invalid token is rejected before `connection`
@@ -65,10 +71,10 @@ flow — see `modules/tips/tips.controller.ts`). Best-effort: a failure to
 compute the new rank never blocks the tip confirmation response.
 
 ```ts
-socket.emit('subscribe:leaderboard');
+socket.emit('subscribe:leaderboard')
 socket.on('leaderboard.updated', ({ window, entry }) => {
   // entry: { rank, userId, stellarAddress, totalTips }
-});
+})
 ```
 
 ## Heartbeat
@@ -106,33 +112,41 @@ capped, with jitter). Important behavior to build clients against:
 
 ```ts
 socket.on('auth.expired', async ({ code }) => {
-  if (code !== 'AUTH_TOKEN_EXPIRED') return;
+  if (code !== 'AUTH_TOKEN_EXPIRED') return
 
-  const accessToken = await refreshAccessToken();
-  socket.auth = { token: accessToken };
-  const jitterMs = 1_000 + Math.random() * 4_000;
-  setTimeout(() => socket.connect(), jitterMs);
-});
+  const accessToken = await refreshAccessToken()
+  socket.auth = { token: accessToken }
+  const jitterMs = 1_000 + Math.random() * 4_000
+  setTimeout(() => socket.connect(), jitterMs)
+})
 
 socket.on('reconnect', () => {
-  socket.emit('subscribe:notifications', currentUserId);
-  socket.emit('subscribe:creator', watchedCreatorAddress);
-});
+  socket.emit('subscribe:notifications', currentUserId)
+  socket.emit('subscribe:creator', watchedCreatorAddress)
+})
 ```
 
 ## Rate limiting
 
-Two independent limiters, both in-memory per server process (see
-`rateLimit.ts`):
+Realtime rate limiting protects against connection and message flooding (see `rateLimit.ts`):
 
-- **Connections:** 20 new connections per IP per 60s window, enforced as a
+- **Connections per IP:** 20 new connections per IP per 60s window, enforced as a
   handshake middleware before auth runs.
-- **Events:** 30 client→server events per socket per 10s window, enforced at
-  the top of every event handler.
+- **Connections per User:** 10 new connections per authenticated user per 60s window,
+  enforced as a handshake middleware after auth runs.
+- **Inbound Events:** 30 client→server events per socket per 10s window, enforced
+  across all inbound event types via incoming packet middleware.
+- **Redis-Backed Enforcement:** When `REALTIME_REDIS_ADAPTER_ENABLED=true`, connection
+  and event quotas are tracked in Redis (`rl:rt:*`) so limits hold across horizontally
+  scaled server instances. When disabled, an in-memory fallback is used.
+- **Repeated Violations & Temporary Ban:** Sockets that repeatedly exceed event rate limits
+  (5 violations within 60s) emit an error (`code: 'BANNED'`), are disconnected, and their
+  IP and user ID are temporarily banned for 60 seconds. Subsequent connection attempts during
+  the ban are rejected at handshake.
 
-Exceeding the connection limit rejects the handshake (`connect_error`).
+Exceeding connection limits rejects the handshake (`connect_error`).
 Exceeding the event limit emits `error` (`code: 'RATE_LIMITED'`) and drops
-that event; the socket stays connected.
+that event; the socket stays connected until the repeated violation threshold is reached.
 
 ## Horizontal scaling (Redis adapter)
 
