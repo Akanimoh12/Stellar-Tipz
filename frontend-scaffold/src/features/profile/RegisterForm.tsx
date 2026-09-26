@@ -18,6 +18,8 @@ import { useToastStore } from "@/store/toastStore";
 import { ProfileFormData } from "@/types/profile";
 import { categorizeError, ERRORS } from "@/helpers/error";
 import { useFormAutosave } from "@/hooks/useFormAutosave";
+import { useOnboardingProgress } from "@/hooks/useOnboardingProgress";
+import { useWallet } from "@/hooks/useWallet";
 import { analytics } from "@/services/analytics";
 
 type TxStatus =
@@ -88,10 +90,31 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
   const [txStatus, setTxStatus] = useState<TxStatus>("idle");
   const [txHash, setTxHash] = useState<string | undefined>(undefined);
   const [txError, setTxError] = useState<string | undefined>(undefined);
+  const [walletPrompt, setWalletPrompt] = useState(false);
 
   const { registerProfile } = useContract();
   const { addToast } = useToastStore();
   const navigate = useNavigate();
+  const { connected, connect, connecting, walletError } = useWallet();
+
+  // Funnel instrumentation + resumable progress (#1345).
+  const { currentStep, resumed, trackStep } = useOnboardingProgress();
+
+  // Track step entries and surface a resume notice for interrupted registrations.
+  React.useEffect(() => {
+    if (currentStep === "landing" || currentStep === "register") {
+      trackStep("register");
+    }
+    // Only on mount / step change into the register step.
+  }, [currentStep, trackStep]);
+
+  const walletConnectedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (connected && !walletConnectedRef.current) {
+      walletConnectedRef.current = true;
+      trackStep("wallet");
+    }
+  }, [connected, trackStep]);
 
   // Transaction guard to prevent duplicate submissions
   const {
@@ -163,6 +186,12 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
     };
 
   const handleBlur = (field: keyof ProfileFormData) => () => {
+    if (field === "username") {
+      // Per-step funnel: a valid username is the first drop-off checkpoint (#1345).
+      const result = validateUsername(form.username);
+      if (result.valid) trackStep("username");
+    }
+
     if (field === "xHandle" && form.xHandle.trim()) {
       const result = validateXHandle(form.xHandle);
       setErrors((prev) => ({
@@ -200,7 +229,18 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
 
       const validationErrors = validate(trimmedForm, available, checking);
       if (Object.keys(validationErrors).length > 0) {
+        analytics.trackEvent("onboarding_step_failed", {
+          step: "register",
+          failed_fields: Object.keys(validationErrors).join(","),
+        });
         setErrors(validationErrors);
+        return;
+      }
+
+      // Registration needs a wallet to sign the profile transaction (#1345).
+      if (!connected) {
+        analytics.trackEvent("onboarding_wallet_required", { step: "register" });
+        setWalletPrompt(true);
         return;
       }
 
@@ -223,6 +263,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
 
           setTxStatus("success");
           analytics.trackEvent("profile_registered");
+          trackStep("complete");
           addToast({
             message: "Profile registered successfully!",
             type: "success",
@@ -234,6 +275,10 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
           const { category } = categorizeError(err);
           setTxStatus("error");
           setTxError(category === "network" ? ERRORS.NETWORK : ERRORS.CONTRACT);
+          analytics.trackEvent("onboarding_registration_failed", {
+            step: "wallet",
+            error_category: category,
+          });
           throw err; // Re-throw to let transaction guard handle it
         }
       });
@@ -270,6 +315,55 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
           onRestore={restoreDraft}
           onDiscard={discardRegisterDraft}
         />
+      )}
+
+      {resumed && (
+        <p
+          className="text-sm text-gray-800 dark:text-gray-200"
+          data-testid="onboarding-resume-notice"
+        >
+          Welcome back — we saved your progress, so you can pick up where you
+          left off.
+        </p>
+      )}
+
+      {/* Wallet-connection recovery: registration cannot be signed without one (#1345) */}
+      {(walletPrompt || (!connected && walletError)) && (
+        <div
+          role="alert"
+          data-testid="wallet-recovery"
+          className="rounded-md border-2 border-amber-500 bg-amber-50 p-4"
+        >
+          <p className="text-sm font-bold text-gray-900">
+            Your profile is ready, but a wallet is needed to finish registering.
+          </p>
+          <p className="mt-1 text-sm text-gray-800">
+            {walletError
+              ? `We couldn't reach your wallet: ${walletError}.`
+              : "Registration is confirmed on the Stellar network, so a connected wallet has to approve the transaction."}{" "}
+            Your details are saved — reconnect the same wallet and press
+            Register again, and nothing has to be retyped.
+          </p>
+          <Button
+            type="button"
+            variant="primary"
+            size="md"
+            className="mt-3 w-full sm:w-auto"
+            disabled={connecting}
+            onClick={() => {
+              analytics.trackEvent("onboarding_wallet_reconnect_attempted", {
+                step: "wallet",
+              });
+              void connect().catch(() => {
+                analytics.trackEvent("onboarding_wallet_reconnect_failed", {
+                  step: "wallet",
+                });
+              });
+            }}
+          >
+            {connecting ? "Reconnecting…" : "Reconnect wallet"}
+          </Button>
+        </div>
       )}
 
       {/* Username */}
@@ -377,6 +471,10 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
         placeholder="Your Name"
         value={form.displayName}
         onChange={handleChange("displayName")}
+        onBlur={() => {
+          handleBlur("displayName")();
+          if (form.displayName.trim()) trackStep("profile_details");
+        }}
         error={errors.displayName}
         disabled={isSubmitting}
         maxLength={64}
