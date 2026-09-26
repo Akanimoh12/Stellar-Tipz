@@ -18,17 +18,12 @@ const Input: React.FC<InputProps> = ({
   const inputId = id || label?.toLowerCase().replace(/\s+/g, '-') || generatedId;
   const errorId = error ? `${inputId}-error` : undefined;
   const helperTextId = helperText ? `${inputId}-helper` : undefined;
-  
-  // Build aria-describedby from available helper elements
   const describedBy = [errorId, helperTextId].filter(Boolean).join(' ') || undefined;
 
   return (
     <div className="w-full">
       {label && (
-        <label
-          htmlFor={inputId}
-          className="block text-sm font-bold uppercase tracking-wide mb-2"
-        >
+        <label htmlFor={inputId} className="block text-sm font-bold uppercase tracking-wide mb-2">
           {label}
         </label>
       )}
@@ -36,7 +31,7 @@ const Input: React.FC<InputProps> = ({
         id={inputId}
         className={`w-full px-4 py-3 border-2 bg-white text-black font-medium transition-colors duration-150
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist focus:border-gray-500
-          placeholder:text-gray-700 dark:text-gray-300 ${
+          placeholder:text-gray-700 dark:text-gray-300 dark:placeholder:text-gray-400 ${
             error ? 'border-red-500' : 'border-black'
           } ${className}`}
         aria-invalid={error ? 'true' : 'false'}
@@ -44,12 +39,7 @@ const Input: React.FC<InputProps> = ({
         {...props}
       />
       {error && (
-        <p
-          id={errorId}
-          role="alert"
-          aria-live="assertive"
-          className="mt-1 text-sm text-red-500 font-medium"
-        >
+        <p id={errorId} role="alert" aria-live="assertive" className="mt-1 text-sm text-red-500 font-medium">
           {error}
         </p>
       )}

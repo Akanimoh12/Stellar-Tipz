@@ -1,0 +1,10 @@
+import type { Meta, StoryObj } from '@storybook/react-vite';
+import { fn } from 'storybook/test';
+import Tooltip from '@/components/ui/Tooltip';
+import Button from '@/components/ui/Button';
+const meta = { title: 'UI/Tooltip', component: Tooltip, tags: ['autodocs'], argTypes: { content: { control: 'text' }, position: { control: 'select', options: ['top', 'bottom', 'left', 'right'] } } } satisfies Meta<typeof Tooltip>;
+export default meta; type Story = StoryObj<typeof meta>;
+export const Top: Story = { args: { content: 'Tooltip text', position: 'top', children: <Button variant="outline">Hover me</Button> } };
+export const Bottom: Story = { args: { content: 'Tooltip text', position: 'bottom', children: <Button variant="outline">Hover me</Button> } };
+export const Left: Story = { args: { content: 'Tooltip text', position: 'left', children: <Button variant="outline">Hover me</Button> } };
+export const Right: Story = { args: { content: 'Tooltip text', position: 'right', children: <Button variant="outline">Hover me</Button> } };
