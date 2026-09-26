@@ -4,6 +4,7 @@ import { z } from "zod";
 export const WEBHOOK_EVENT_TYPES = [
   "tip.received",
   "tip.sent",
+  "subscription.charged",
   "goal.completed",
   "withdrawal.completed",
   "credit_score.updated",
@@ -12,15 +13,23 @@ export const WEBHOOK_EVENT_TYPES = [
 /** Union of valid webhook event type strings. */
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 
-export const createWebhookSubscriptionSchema = z.object({
-  url: z
-    .string()
-    .url("Must be a valid URL")
-    .startsWith("https://", "Webhook URL must use https"),
-  events: z
-    .array(z.enum(WEBHOOK_EVENT_TYPES))
-    .min(1, "At least one event is required"),
-}).strict();
+export const webhookEventTypeSchema = z.enum(WEBHOOK_EVENT_TYPES);
+
+const webhookUrlSchema = z
+  .string()
+  .url("Must be a valid URL")
+  .startsWith("https://", "Webhook URL must use https");
+
+const webhookEventsSchema = z
+  .array(webhookEventTypeSchema)
+  .min(1, "At least one event is required");
+
+export const createWebhookSubscriptionSchema = z
+  .object({
+    url: webhookUrlSchema,
+    events: webhookEventsSchema,
+  })
+  .strict();
 
 export const listWebhookSubscriptionsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),

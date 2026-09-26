@@ -19,6 +19,13 @@ Content-Type: application/json
 
 Response includes the signing `secret` — store it securely; it is only shown once.
 
+Choose one or more values from the supported event types below. Unknown values
+are rejected with `400 Bad Request`; they are never stored as subscriptions.
+
+Subscriptions and deliveries are scoped to the authenticated owner. A
+subscription only receives matching events belonging to that owner; another
+user's events are never delivered to it.
+
 ## Signature Verification
 
 Every delivery includes the `X-Signature` header:
@@ -98,8 +105,11 @@ attempt history and does not enter the dead-letter store.
 
 ## Events
 
-| Event            | Description                          |
-|------------------|--------------------------------------|
-| `tip.received`   | A tip was received by a creator      |
-| `tip.sent`       | A tip was sent by a tipper           |
-| `subscription.charged` | A recurring subscription was charged |
+| Event                  | Description                            |
+| ---------------------- | -------------------------------------- |
+| `tip.received`         | A tip was received by a creator        |
+| `tip.sent`             | A tip was sent by a tipper             |
+| `subscription.charged` | A recurring subscription was charged  |
+| `goal.completed`       | A creator's funding goal completed     |
+| `withdrawal.completed` | A user's withdrawal completed          |
+| `credit_score.updated` | A user's credit score was recalculated |
