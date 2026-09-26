@@ -8,7 +8,13 @@ import { logger } from '../common/utils/logger.js';
 import { registerClosable } from '../common/utils/lifecycle.js';
 import { redis } from '../db/redis.js';
 import { socketAuth } from './auth.js';
-import { connectionRateLimit, eventLimiter, guardEventRate } from './rateLimit.js';
+import {
+  connectionRateLimit,
+  userConnectionRateLimit,
+  attachPacketRateLimiter,
+  sweepRateLimiter,
+  guardEventRate,
+} from './rateLimit.js';
 import type {
   ServerToClientEvents,
   ClientToServerEvents,
@@ -101,6 +107,7 @@ export function initRealtime(httpServer: HttpServer): RealtimeServer {
   configureBackpressure(io as unknown as SocketIOServer);
   io.use(connectionRateLimit);
   io.use(socketAuth);
+  io.use(userConnectionRateLimit);
 
   if (config.realtime.redisAdapterEnabled) {
     const pubClient = redis.duplicate()
@@ -139,6 +146,7 @@ export function initRealtime(httpServer: HttpServer): RealtimeServer {
 
   io.on('connection', (socket) => {
     const { userId } = socket.data.auth
+    attachPacketRateLimiter(socket)
     scheduleTokenExpiry(socket)
     logger.info({ socketId: socket.id, userId }, 'Client connected')
     socket.emit('connected', { userId })
@@ -234,7 +242,7 @@ export function initRealtime(httpServer: HttpServer): RealtimeServer {
     })
   })
 
-  const sweepInterval = setInterval(() => eventLimiter.sweep(), 60_000)
+  const sweepInterval = setInterval(() => sweepRateLimiter(), 60_000)
   sweepInterval.unref()
 
   registerClosable({
