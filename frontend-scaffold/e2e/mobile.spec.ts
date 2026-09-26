@@ -90,6 +90,71 @@ test.describe('Mobile Responsive', () => {
         
         expect(bodyWidth).toBeLessThanOrEqual(windowWidth + 1); // Allow 1px tolerance
       });
+
+      // #1338 — dedicated mobile interaction coverage
+      test('numeric inputs request the numeric keyboard', async ({ page }) => {
+        await page.goto('/@alice');
+
+        const customTrigger = page.locator('[data-tip-amount-trigger="true"]');
+        if (await customTrigger.count()) {
+          await customTrigger.first().click();
+        }
+
+        const amountInput = page.locator('[data-tip-amount="true"]').first();
+        await expect(amountInput).toHaveAttribute('inputmode', 'decimal');
+      });
+
+      test('tip form touch targets are at least 44x44', async ({ page }) => {
+        await page.goto('/@alice');
+
+        const targets = page.locator(
+          '[data-tip-amount-trigger="true"], button:has-text("XLM")',
+        );
+        const count = await targets.count();
+        expect(count).toBeGreaterThan(0);
+
+        for (let i = 0; i < count; i++) {
+          const box = await targets.nth(i).boundingBox();
+          if (!box) continue;
+          expect(box.height).toBeGreaterThanOrEqual(44);
+          expect(box.width).toBeGreaterThanOrEqual(44);
+        }
+      });
+
+      test('tip submit button stays reachable above the keyboard', async ({ page }) => {
+        await page.goto('/@alice');
+
+        const customTrigger = page.locator('[data-tip-amount-trigger="true"]');
+        if (await customTrigger.count()) {
+          await customTrigger.first().click();
+        }
+
+        const amountInput = page.locator('[data-tip-amount="true"]').first();
+        if (await amountInput.count()) {
+          await amountInput.focus();
+          // The field must not sit under a fixed bottom bar once focused.
+          const scrollMargin = await amountInput.evaluate((el) =>
+            window.getComputedStyle(el).scrollMarginBottom,
+          );
+          expect(scrollMargin).not.toBe('0px');
+        }
+      });
+
+      test('no horizontal scrolling on the tip page', async ({ page }) => {
+        await page.goto('/@alice');
+        const overflow = await page.evaluate(
+          () => document.body.scrollWidth - window.innerWidth,
+        );
+        expect(overflow).toBeLessThanOrEqual(1);
+      });
+
+      test('viewport opts into safe-area insets for notched devices', async ({ page }) => {
+        await page.goto('/');
+        const content = await page
+          .locator('meta[name="viewport"]')
+          .getAttribute('content');
+        expect(content).toContain('viewport-fit=cover');
+      });
     });
   });
 

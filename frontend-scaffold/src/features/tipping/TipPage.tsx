@@ -200,7 +200,7 @@ const TipPage: React.FC = () => {
   }
 
   return (
-    <PageContainer maxWidth="xl" className="space-y-8 py-10">
+    <PageContainer maxWidth="xl" className="space-y-8 py-10 pb-safe">
       <Breadcrumbs
         items={[
           { label: "Home", href: "/" },
