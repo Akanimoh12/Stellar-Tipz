@@ -20,8 +20,6 @@ const Input: React.FC<InputProps> = ({
   const inputId = id || label?.toLowerCase().replace(/\s+/g, '-') || generatedId;
   const errorId = error ? `${inputId}-error` : undefined;
   const helperTextId = helperText ? `${inputId}-helper` : undefined;
-  
-  // Build aria-describedby from available helper elements
   const describedBy = [errorId, helperTextId].filter(Boolean).join(' ') || undefined;
 
   // #1338: number inputs open the numeric keyboard on mobile. An explicit
@@ -31,10 +29,7 @@ const Input: React.FC<InputProps> = ({
   return (
     <div className="w-full">
       {label && (
-        <label
-          htmlFor={inputId}
-          className="block text-sm font-bold uppercase tracking-wide mb-2"
-        >
+        <label htmlFor={inputId} className="block text-sm font-bold uppercase tracking-wide mb-2">
           {label}
         </label>
       )}
@@ -52,12 +47,7 @@ const Input: React.FC<InputProps> = ({
         {...props}
       />
       {error && (
-        <p
-          id={errorId}
-          role="alert"
-          aria-live="assertive"
-          className="mt-1 text-sm text-red-500 font-medium"
-        >
+        <p id={errorId} role="alert" aria-live="assertive" className="mt-1 text-sm text-red-500 font-medium">
           {error}
         </p>
       )}
