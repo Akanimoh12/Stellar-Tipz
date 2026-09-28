@@ -13,7 +13,14 @@ export type AuthStatus =
   | "refreshing"
   | "reauth-required";
 
-const STORAGE_KEY = "tipz_auth_tokens";
+export const STORAGE_KEY = "tipz_auth_tokens";
+export const TOKEN_STORAGE_VERSION = 1;
+
+interface StoredTokenPayload {
+  version: number;
+  accessToken: string;
+  refreshToken: string;
+}
 
 /** Refresh the access token this long before it expires. */
 export const REFRESH_MARGIN_MS = 60_000;
@@ -28,18 +35,33 @@ function loadFromStorage(): void {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as TokenPair;
+      const parsed = JSON.parse(raw) as Partial<StoredTokenPayload>;
+      // Strict schema and version validation: discard stale or malformed shapes
       if (
         parsed &&
+        typeof parsed === "object" &&
         typeof parsed.accessToken === "string" &&
-        typeof parsed.refreshToken === "string"
+        typeof parsed.refreshToken === "string" &&
+        (parsed.version === undefined || parsed.version === TOKEN_STORAGE_VERSION)
       ) {
-        tokens = parsed;
+        // Strip any potential unexpected non-essential PII fields, storing only the minimal token pair
+        tokens = {
+          accessToken: parsed.accessToken,
+          refreshToken: parsed.refreshToken,
+        };
         status = "authenticated";
+      } else {
+        tokens = null;
+        localStorage.removeItem(STORAGE_KEY);
       }
     }
   } catch {
     tokens = null;
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore
+    }
   }
 }
 
@@ -54,7 +76,13 @@ function setStatus(next: AuthStatus): void {
 function persist(): void {
   try {
     if (tokens) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(tokens));
+      // Strictly store only the version and credential pair; zero PII is persisted
+      const payload: StoredTokenPayload = {
+        version: TOKEN_STORAGE_VERSION,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } else {
       localStorage.removeItem(STORAGE_KEY);
     }

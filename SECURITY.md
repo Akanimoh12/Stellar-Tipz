@@ -262,6 +262,91 @@ Any changes to logging behavior must maintain or strengthen these protections.
 
 ---
 
+## Client Storage Security Audit & Hardening
+
+Stellar Tipz implements a comprehensive client-side storage security model across `localStorage`, `sessionStorage`, `secureStorage` (AES-GCM encryption), and in-memory state management (Zustand).
+
+### 1. Client Storage Inventory & Justification
+
+| Key / Namespace | Storage Medium | Classification | Purpose & Justification | Versioning & Schema | Retention Policy |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `tipz_auth_tokens` | `localStorage` | High Sensitivity (Auth) | Holds `{ accessToken, refreshToken }` for REST API requests. Preserves active session across page reloads and multiple open tabs without repetitive wallet re-signing. | `v1` (`{ version, accessToken, refreshToken }`) | Revoked on logout, cleared on disconnect, expires via JWT TTL or 30m idle timeout. |
+| `tipz-wallet` / `tipz_tipz-wallet` | `secureStorage` (`localStorage` encrypted) | High Sensitivity (Wallet & Session) | Stores connected wallet public keys, active wallet address, network mode, and session expiration timestamp. Encrypted via AES-GCM (Web Crypto API) with PBKDF2 key derivation. | `v1` (Zustand `version: 1` + `SECURE_STORAGE_VERSION: 1`) | Cleared on disconnect/logout or session expiry. |
+| `tipz_settings` | `localStorage` / `secureStorage` | Low (UX Preference) | UI display preferences (theme, language, notification preferences, display options). | `v1` (Default-merged fallback) | Persists indefinitely unless manually reset. |
+| `tipz_favorites` | `localStorage` | Low (Curated Public Data) | Cached list of favorited creator addresses, display names, and tip counts to reduce repetitive network fetches. | `v1` (Zustand `version: 1`) | Cleared on logout. |
+| `tipz_goals` | `localStorage` | Low (Public Campaign Data) | Cached creator goals and progress metrics. | `v1` (Zustand `version: 1`) | Cleared on logout. |
+| `tipz_notifications` | `localStorage` | Medium (Activity History) | Recent user activity notifications (tips received, milestones). Non-sensitive event metadata. | `v1` (Zustand `version: 1`) | Cleared on logout. |
+| `tipz_draft_*` / `tipz_register_form` | `localStorage` | Medium (Form Recovery) | Form autosave drafts to prevent data loss on accidental navigation or reload. All sensitive credentials, keys, amounts, and destination addresses are stripped before writing. | `v2` (`useFormAutosave` with 24h TTL) | Auto-discarded after 24h TTL; cleared on logout. |
+| `tipz_unseen_tips` / `tipz_last_notified_tip_id` | `localStorage` | Low (UI Badge) | Counter and cursor for unread tips to prevent duplicate system popups. | Unversioned scalar | Cleared on logout. |
+| `tipz_theme` / `tipz_language` | `localStorage` | Low (Device Preference) | Theme (`light`/`dark`) and locale code. | Scalar strings | Device-level preference; preserved across logout. |
+| `tipz_tx_pending` | `localStorage` | Low (In-flight TX) | Tracking hash and status for in-flight transactions. | Object payload | Cleared upon transaction confirmation or logout. |
+| `tipz_tx_guard_v1` | `sessionStorage` | Medium (Idempotency) | Active transaction guard to prevent double-spending or duplicate submission within the current tab. | `v1` | Cleared on transaction completion or tab close. |
+| `tipz_recent_searches` | `sessionStorage` | Low (Query History) | Recent creator search queries within the current browsing session. | Array of strings | Cleared on tab close or logout. |
+| `tipz_scroll:*` | `sessionStorage` | Low (Scroll Position) | Virtualized list scroll offsets for smooth back-navigation. | Number | Cleared on tab close or logout. |
+
+---
+
+### 2. Token Storage Architecture & Documented Tradeoff Decision
+
+#### Architectural Context
+The Stellar Tipz API is a cross-platform REST service utilizing Bearer JWT authentication (`Authorization: Bearer <accessToken>`). 
+
+#### Options Evaluated
+1. **HttpOnly SameSite Cookies**:
+   - *Strengths*: Completely inaccessible to origin JavaScript; immune to direct token theft via XSS.
+   - *Why Not Currently Viable*: The backend is a decoupled stateless API serving multi-platform clients. Cookie-based authentication across domains introduces cross-site credential complexities and requires CSRF infrastructure not suited for decentralized wallet interactions.
+2. **In-Memory Only**:
+   - *Strengths*: No disk or origin storage footprint.
+   - *Why Not Viable*: Every page refresh (F5) or multi-tab navigation completely terminates the user's session, forcing constant re-challenge signing via wallet extensions.
+3. **SessionStorage**:
+   - *Strengths*: Scoped to a single browser tab; wiped on tab close.
+   - *Limitation*: Tabs cannot share session state. Opening a creator profile, tipping link, or transaction receipt in a new tab treats the user as logged out.
+4. **LocalStorage with Defense-in-Depth (Selected Decision)**:
+   - *Decision*: Tokens are persisted in `localStorage` under `tipz_auth_tokens`, backed by comprehensive mitigations:
+     - **Short-Lived Access Tokens**: 15-minute access token lifespan.
+     - **Proactive Token Refresh**: Automatic rotation scheduled 60 seconds before expiration via single-flight refresh mutex.
+     - **Single-Flight Refresh Token Rotation**: Server revokes used refresh tokens upon issuance of new pairs.
+     - **Idle Session Timeout**: Inactivity for 30 minutes triggers automated logout and token revocation.
+     - **Multi-Tab Cross-Session Invalidation**: BroadcastChannel propagates logout and session termination to all open tabs simultaneously.
+     - **Namespacing & Payload Versioning**: Strict `version: 1` schema validation discards unexpected or corrupted token formats.
+     - **Strict Clear-on-Logout**: All tokens and associated caches are purged immediately upon user logout or wallet disconnection.
+
+---
+
+### 3. Non-Essential PII Protection Policy
+
+- **Zero Sensitive PII in Client Storage**: No seed phrases, private keys, passwords, email addresses, phone numbers, or government IDs are ever persisted in client storage.
+- **In-Memory Profile Boundary**: The `profileStore` (which holds user profile metadata) is strictly maintained **in-memory** and never persisted to `localStorage` or `sessionStorage`.
+- **Form Draft Sanitization**: The `useFormAutosave` hook runs all form state through `stripSensitiveFields()`, stripping password, secret, token, apikey, privatekey, mnemonic, seed, credential, otp, amount, and destination fields before any draft touches storage.
+- **Creator Favorites**: The `favoritesStore` only stores public on-chain addresses, public usernames, and public avatar URLs needed for the UI, omitting private user metadata.
+
+---
+
+### 4. Namespacing & Versioning Standards
+
+To prevent schema collision, prototype pollution, and stale shape corruption:
+1. **Global Prefix**: All application keys must use the `tipz_` namespace (or `tipz-` in store persistence).
+2. **Schema Versioning**:
+   - Encrypted payloads in `secureStorage` include an explicit `version: 1` field.
+   - Stored auth tokens in `tokenManager` require `version: 1`.
+   - All persisted Zustand stores (`walletStore`, `favoritesStore`, `goalStore`, `notificationStore`) declare a `version` and implement `migrate()` functions to discard stale or mismatched structures.
+3. **Automatic Stale Discarding**: Any unversioned or mismatched data encountered upon reading storage is automatically pruned (`removeItem`) to ensure corrupted structures do not break application rendering.
+
+---
+
+### 5. Storage Clear-on-Logout Guarantees
+
+When a user logs out or disconnects their wallet:
+1. `clearClientStorageOnLogout()` is invoked.
+2. `secureStorage.clear()` removes all encrypted storage entries.
+3. All authentication tokens (`tipz_auth_tokens`), connected wallets (`tipz-wallet`), notifications (`tipz_notifications`), favorites, goals, and autosaved drafts (`tipz_draft_*`) are removed from `localStorage`.
+4. `sessionStorage` (containing recent queries and transaction guards) is completely cleared.
+5. In-memory Zustand stores (`walletStore`, `profileStore`, `notificationStore`, `subscriptionStore`) are reset to initial empty states.
+6. A cross-tab logout signal is broadcast to guarantee all open tabs immediately execute the same purge.
+7. Automated unit tests (`services/__tests__/secureStorage.test.ts`) verify that all client-side storage keys are purged on logout.
+
+---
+
 ## Resources
 
 - [GitHub Security Advisories for this repo](../../security/advisories)

@@ -27,6 +27,7 @@ import { forceLogout } from "@/services/auth/tokenManager";
 import OnboardingTour from "@/features/onboarding/OnboardingTour";
 
 import { onUpdateAvailable, skipWaiting } from "@/services/serviceWorker";
+import { initCrossTabSync } from "@/services/crossTabSync";
 
 const PageFallback: React.FC = () => <PageFallbackContent />;
 
@@ -78,7 +79,11 @@ const AppLayout: React.FC = () => {
 
   React.useEffect(() => {
     const unsub = onUpdateAvailable(() => setUpdateReady(true));
-    return unsub;
+    const unsubCrossTab = initCrossTabSync();
+    return () => {
+      unsub();
+      unsubCrossTab();
+    };
   }, []);
 
   const { isTourOpen, completeTour, skipTour } = useOnboarding();

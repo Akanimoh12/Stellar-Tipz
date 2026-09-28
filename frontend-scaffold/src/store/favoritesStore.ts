@@ -88,6 +88,17 @@ export const useFavoritesStore = create<FavoritesState>()(
     }),
     {
       name: "tipz_favorites",
+      version: 1,
+      migrate: (persistedState: unknown, version: number) => {
+        if (version !== 1 || !persistedState || typeof persistedState !== "object") {
+          return {
+            favoritesByWallet: {},
+            migratedByWallet: {},
+            syncing: false,
+          };
+        }
+        return persistedState as FavoritesState;
+      },
     },
   ),
 );

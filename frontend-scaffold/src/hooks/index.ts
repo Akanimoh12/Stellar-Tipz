@@ -17,3 +17,5 @@ export * from "./useFeatureFlag";
 export * from "./useAnalytics";
 export * from "./useTransactionHistory";
 export * from "./useOnboardingProgress";
+export * from "./useFeeBreakdown";
+export * from "./useXlmPrice";
