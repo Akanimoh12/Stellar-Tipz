@@ -61,9 +61,17 @@ async function rewriteExternalAssets(html: string, validateOnly = false) {
       continue;
     }
 
-    const integrity = await computeSri(externalUrl);
     const existingIntegrity = originalTag.match(/integrity=(["'])(.*?)\1/i)?.[2];
     const existingCrossOrigin = originalTag.match(/crossorigin=(["'])(.*?)\1/i)?.[2];
+
+    let integrity = existingIntegrity;
+    try {
+      integrity = await computeSri(externalUrl);
+    } catch (e) {
+      if (!existingIntegrity) {
+        throw e;
+      }
+    }
 
     if (validateOnly) {
       if (!existingIntegrity) {

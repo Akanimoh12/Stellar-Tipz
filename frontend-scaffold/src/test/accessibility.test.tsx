@@ -269,6 +269,57 @@ describe("Accessibility", () => {
     const { container } = renderPage(<DashboardSkeleton />);
     await expectAccessible("DashboardPage", container);
   });
+
+  describe("WCAG AA color contrast automated audit", () => {
+    function hexToLuminance(hex: string): number {
+      const cleanHex = hex.replace("#", "");
+      const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
+      const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
+      const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
+
+      const toLinear = (c: number) =>
+        c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+
+      return (
+        0.2126 * toLinear(r) +
+        0.7152 * toLinear(g) +
+        0.0722 * toLinear(b)
+      );
+    }
+
+    function getContrastRatio(hex1: string, hex2: string): number {
+      const l1 = hexToLuminance(hex1);
+      const l2 = hexToLuminance(hex2);
+      const lighter = Math.max(l1, l2);
+      const darker = Math.min(l1, l2);
+      return (lighter + 0.05) / (darker + 0.05);
+    }
+
+    it("verifies theme text and placeholder colors achieve WCAG AA contrast ratio (>= 4.5:1)", () => {
+      const lightBg = "#FFFFFF";
+      const darkBg = "#000000";
+
+      const pairings = [
+        { name: "foreground.light on white", text: "#111111", bg: lightBg, minRatio: 4.5 },
+        { name: "foreground.dark on black", text: "#F5F5F5", bg: darkBg, minRatio: 4.5 },
+        { name: "gray-400 on white (body/secondary)", text: "#525866", bg: lightBg, minRatio: 4.5 },
+        { name: "gray-300 on black (body/secondary)", text: "#D1D5DB", bg: darkBg, minRatio: 4.5 },
+        { name: "placeholder light on white", text: "#525866", bg: lightBg, minRatio: 4.5 },
+        { name: "placeholder dark on black", text: "#D1D5DB", bg: darkBg, minRatio: 4.5 },
+        { name: "gray-500 on white", text: "#4B5563", bg: lightBg, minRatio: 4.5 },
+        { name: "gray-600 on white", text: "#374151", bg: lightBg, minRatio: 4.5 },
+        { name: "gray-700 on white", text: "#1F2937", bg: lightBg, minRatio: 4.5 },
+      ];
+
+      for (const pair of pairings) {
+        const ratio = getContrastRatio(pair.text, pair.bg);
+        expect(
+          ratio,
+          `Expected ${pair.name} (${pair.text} on ${pair.bg}) to have contrast >= ${pair.minRatio}:1, got ${ratio.toFixed(2)}:1`,
+        ).toBeGreaterThanOrEqual(pair.minRatio);
+      }
+    });
+  });
 });
 
 afterAll(() => {
