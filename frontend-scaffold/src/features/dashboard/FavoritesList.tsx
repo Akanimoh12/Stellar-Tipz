@@ -5,6 +5,7 @@ import { Heart, Send, Trash2, ArrowUpDown, Users } from "lucide-react";
 import Avatar from "../../components/ui/Avatar";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
+import EmptyState from "../../components/ui/EmptyState";
 import { useFavorites } from "../../hooks/useFavorites";
 
 const FavoritesList: React.FC = () => {
@@ -24,24 +25,12 @@ const FavoritesList: React.FC = () => {
 
   if (favorites.length === 0) {
     return (
-      <Card className="p-8 text-center border-4 border-dashed border-gray-200 bg-gray-50/50 shadow-none">
-        <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-          <Users className="h-8 w-8 text-gray-700 dark:text-gray-300" />
-        </div>
-        <h3 className="text-lg font-black uppercase text-gray-900 mb-2">
-          No favorites yet
-        </h3>
-        <p className="text-gray-800 dark:text-gray-200 font-bold max-w-xs mx-auto text-sm">
-          Add creators to your favorites for quick access and faster tipping.
-        </p>
-        <Button
-          variant="outline"
-          className="mt-6 bg-white border-2 border-black shadow-brutalist hover:shadow-none transition-all"
-          onClick={() => navigate("/leaderboard")}
-        >
-          Explore Creators
-        </Button>
-      </Card>
+      <EmptyState
+        icon={<Users className="h-8 w-8" />}
+        title="No favorites yet"
+        description="Add creators to your favorites for quick access and faster tipping."
+        action={{ label: "Explore Creators", to: "/leaderboard" }}
+      />
     );
   }
 
