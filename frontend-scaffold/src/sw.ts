@@ -4,7 +4,7 @@ export {};
 
 declare const self: ServiceWorkerGlobalScope;
 
-const CACHE_VERSION = "tipz-pwa-v2";
+const CACHE_VERSION = "tipz-pwa-v1";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGES_CACHE = `${CACHE_VERSION}-pages`;
 
@@ -22,30 +22,19 @@ async function preCache() {
   await cache.addAll(STATIC_ASSETS);
 }
 
-// ---------------------------------------------------------------------------
-// Install Event: Pre-cache static assets
-// ---------------------------------------------------------------------------
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
       await preCache();
-      // Notify client that a new version is installed and waiting
-      const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      for (const client of clients) {
-        client.postMessage({ type: "UPDATE_AVAILABLE", version: "2.0.0" });
-      }
+      await self.skipWaiting();
     })(),
   );
 });
 
-// ---------------------------------------------------------------------------
-// Activate Event: Purge old caches and claim clients (#1312)
-// ---------------------------------------------------------------------------
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      // Delete every cache namespace that doesn't match current CACHE_VERSION
       await Promise.all(
         keys
           .filter((k) => !k.startsWith(CACHE_VERSION))
@@ -56,29 +45,13 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// ---------------------------------------------------------------------------
-// Message Event: Handle SKIP_WAITING from client
-// ---------------------------------------------------------------------------
-self.addEventListener("message", (event) => {
-  if (event.data === "SKIP_WAITING" || event.data?.type === "SKIP_WAITING") {
-    void self.skipWaiting();
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Fetch Event: Cache strategies
-// ---------------------------------------------------------------------------
 async function cacheFirst(request: Request) {
   const cache = await caches.open(STATIC_CACHE);
   const cached = await cache.match(request);
   if (cached) return cached;
-  try {
-    const res = await fetch(request);
-    if (res.ok) cache.put(request, res.clone());
-    return res;
-  } catch {
-    return new Response("Network error", { status: 408, headers: { "Content-Type": "text/plain" } });
-  }
+  const res = await fetch(request);
+  if (res.ok) cache.put(request, res.clone());
+  return res;
 }
 
 async function networkFirstForPages(request: Request) {
@@ -102,7 +75,7 @@ self.addEventListener("fetch", (event) => {
   // Only handle same-origin requests
   if (url.origin !== self.location.origin) return;
 
-  // Navigation requests: network-first with cache and offline fallback
+  // Navigation requests: cache landing + leaderboard for offline viewing, fallback to offline.html
   if (request.mode === "navigate") {
     event.respondWith(networkFirstForPages(request));
     return;
@@ -115,9 +88,7 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
-// ---------------------------------------------------------------------------
-// Push Notifications
-// ---------------------------------------------------------------------------
+// Basic push notification support (payload optional).
 self.addEventListener("push", (event) => {
   const data = event.data?.json?.() as { title?: string; body?: string; url?: string } | undefined;
   const title = data?.title ?? "New tip received";
@@ -150,3 +121,4 @@ self.addEventListener("notificationclick", (event) => {
     })(),
   );
 });
+

@@ -93,14 +93,12 @@ export async function meController(
     }
 
     res.json({
-      data: {
-        id: user.id,
-        stellarAddress: user.stellarAddress,
-        username: user.username,
-        role: user.role,
-        scopes: user.scopes,
-        createdAt: user.createdAt.toISOString(),
-      },
+      id: user.id,
+      stellarAddress: user.stellarAddress,
+      username: user.username,
+      role: user.role,
+      scopes: user.scopes,
+      createdAt: user.createdAt.toISOString(),
     });
   } catch (error) {
     next(error);
