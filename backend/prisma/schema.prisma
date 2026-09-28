@@ -31,8 +31,14 @@ model User {
   refreshTokens  RefreshToken[]
   goals          Goal[]
 
-  tipperSubscriptions  Subscription[] @relation("SubscriptionTipper")
-  creatorSubscriptions Subscription[] @relation("SubscriptionCreator")
+  tipperSubscriptions  Subscription[]        @relation("SubscriptionTipper")
+  creatorSubscriptions Subscription[]        @relation("SubscriptionCreator")
+  sentTips             Tip[]                 @relation("SentTips")
+  receivedTips         Tip[]                 @relation("ReceivedTips")
+  notifications        Notification[]
+  leaderboardSnapshots LeaderboardSnapshot[]
+  streak               Streak?
+  withdrawals          Withdrawal[]
 }
 
 /// API key for service/admin access and webhook integrations.
@@ -261,3 +267,69 @@ model WebhookDelivery {
   @@index([subscriptionId])
   @@index([status, nextAttemptAt])
 }
+
+/// Lifecycle status of an on-chain tip.
+enum TipStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+/// Lifecycle status of a creator withdrawal.
+enum WithdrawalStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+/// Creator withdrawal record.
+model Withdrawal {
+  id            String           @id @default(cuid())
+  userId        String
+  user          User             @relation(fields: [userId], references: [id])
+  amountStroops BigInt
+  destination   String
+  status        WithdrawalStatus @default(PENDING)
+  txHash        String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([userId])
+}
+
+
+/// Dead letter queue storage for unprocessable indexer events.
+model DeadLetterEvent {
+  id         String    @id @default(cuid())
+  topic      String
+  ledger     Int
+  eventId    String?
+  payload    Json
+  error      String
+  stack      String?
+  attempts   Int       @default(0)
+  status     String    @default("pending")
+  replayedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([topic, status])
+  @@index([createdAt])
+}
+
+/// Aggregated daily rollup metrics for platform analytics.
+model AnalyticsDaily {
+  id             String   @id @default(cuid())
+  date           DateTime @unique
+  totalTips      Int      @default(0)
+  totalStroops   BigInt   @default(0)
+  uniqueTippers  Int      @default(0)
+  uniqueCreators Int      @default(0)
+  activeUsers    Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([date])
+}
+

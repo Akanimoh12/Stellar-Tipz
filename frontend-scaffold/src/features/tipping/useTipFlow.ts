@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useTipz } from "../../hooks";
-import { queueOfflineTip } from "../../services/serviceWorker";
 import { logger } from "../../services/logger";
 
 export type TipFlowStep =
@@ -71,23 +70,15 @@ export const useTipFlow = (creatorAddress: string): UseTipFlowReturn => {
 
     setStep("preparing");
 
-    // Queue the operation if the user is currently offline.
+    // Block offline submission per #1311: transactions cannot be queued offline
+    // to prevent sequence desynchronization, fee mismatch, and stale recipient state.
     if (!navigator.onLine) {
-      try {
-        await queueOfflineTip({
-          creator: creatorAddress,
-          amount: draft.amount,
-          message: draft.message,
-        });
-      } catch (err) {
-        logger.warn(
-          'features/tipping/useTipFlow',
-          'queueOfflineTip failed',
-          { creator: creatorAddress },
-          err instanceof Error ? err : new Error(String(err)),
-        );
-      }
-      setStep("queued");
+      logger.warn(
+        'features/tipping/useTipFlow',
+        'Cannot sign transactions offline',
+        { creator: creatorAddress },
+      );
+      setStep("error");
       return;
     }
 
