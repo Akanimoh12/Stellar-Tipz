@@ -33,7 +33,7 @@ const Toast: React.FC<ToastProps> = ({
 
   return (
     <div
-      className={`fixed bottom-4 right-4 z-50 px-6 py-4 border-2 font-bold ${colors[type]}`}
+      className={`fixed bottom-safe right-safe z-50 px-6 py-4 border-2 font-bold ${colors[type]}`}
       style={{ boxShadow: '4px 4px 0px 0px rgba(0,0,0,1)' }}
       role="alert"
     >

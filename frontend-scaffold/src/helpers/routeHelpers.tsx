@@ -7,10 +7,11 @@ import ErrorBoundary from '@/components/shared/ErrorBoundary';
 /**
  * Wraps a component with ErrorBoundary, Suspense (PageLoader) and PageTransition.
  * Issue #733: All routes now have error boundaries
+ * Issue #1337: `skeleton` is the route-shaped Suspense fallback.
  */
-export const wrap = (element: React.ReactElement) => (
+export const wrap = (element: React.ReactElement, skeleton?: React.ReactNode) => (
   <ErrorBoundary>
-    <Suspense fallback={<PageLoader />}>
+    <Suspense fallback={<PageLoader skeleton={skeleton} />}>
       <PageTransition>{element}</PageTransition>
     </Suspense>
   </ErrorBoundary>
@@ -19,6 +20,6 @@ export const wrap = (element: React.ReactElement) => (
 /**
  * Wraps a component with ProtectedRoute and the default wrap (error boundary + transitions + loading).
  */
-export const protect = (element: React.ReactElement) => (
-  <ProtectedRoute>{wrap(element)}</ProtectedRoute>
+export const protect = (element: React.ReactElement, skeleton?: React.ReactNode) => (
+  <ProtectedRoute>{wrap(element, skeleton)}</ProtectedRoute>
 );

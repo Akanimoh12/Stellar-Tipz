@@ -47,7 +47,9 @@ const Textarea: React.FC<TextareaProps> = ({
         className={`w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
           placeholder:text-gray-700 dark:text-gray-300 dark:placeholder:text-gray-400 resize-y ${error ? 'border-red-600' : ''} ${className}`}
-        onChange={handleChange} value={value} defaultValue={defaultValue}
+        onChange={handleChange}
+        value={value}
+        defaultValue={defaultValue}
         aria-invalid={error ? 'true' : 'false'}
         aria-describedby={[errorId, counterId].filter(Boolean).join(' ') || undefined}
         {...props}

@@ -7,6 +7,7 @@ import Textarea from "@/components/ui/Textarea";
 import Button from "@/components/ui/Button";
 import TransactionStatus from "@/components/shared/TransactionStatus";
 import ImageCropper from "@/components/shared/ImageCropper";
+import DraftRestoreBanner from "@/components/shared/DraftRestoreBanner";
 import { useContract } from "@/hooks";
 import { useToastStore } from "@/store/toastStore";
 import type { Profile } from "@/types/contract";
@@ -14,6 +15,7 @@ import type { ProfileFormData } from "@/types/profile";
 import ProfilePreview from "./ProfilePreview";
 import { THEME_COLORS } from "./profileThemes";
 import { renderMarkdown } from "@/helpers/markdown";
+import { useFormAutosave } from "@/hooks/useFormAutosave";
 import {
   MAX_BIO_LENGTH,
   validateBio,
@@ -111,6 +113,47 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
   const { updateProfile } = useContract();
   const { addToast } = useToastStore();
   const navigate = useNavigate();
+
+  const {
+    hasDraft,
+    draftSavedAt,
+    restoreDraft,
+    discardDraft: discardEditDraft,
+    clearSaved: clearEditDraft,
+  } = useFormAutosave({
+    storageKey: "tipz_edit_profile_form",
+    data: {
+      displayName: form.displayName,
+      bio: form.bio,
+      xHandle: form.xHandle,
+      githubHandle: form.githubHandle ?? "",
+      websiteUrl: form.websiteUrl ?? "",
+      themeKey: form.themeKey ?? "default",
+    },
+    excludeFields: ["imageUrl", "bannerUrl"],
+    onRestore: (saved) => {
+      setForm((prev) => ({
+        ...prev,
+        displayName:
+          typeof saved.displayName === "string"
+            ? saved.displayName
+            : prev.displayName,
+        bio: typeof saved.bio === "string" ? saved.bio : prev.bio,
+        xHandle:
+          typeof saved.xHandle === "string" ? saved.xHandle : prev.xHandle,
+        githubHandle:
+          typeof saved.githubHandle === "string"
+            ? saved.githubHandle
+            : prev.githubHandle,
+        websiteUrl:
+          typeof saved.websiteUrl === "string"
+            ? saved.websiteUrl
+            : prev.websiteUrl,
+        themeKey:
+          typeof saved.themeKey === "string" ? saved.themeKey : prev.themeKey,
+      }));
+    },
+  });
 
   useEffect(() => {
     const isDirty =
@@ -232,6 +275,7 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
       setTxStatus("confirming");
       setTxHash(hash);
       setTxStatus("success");
+      clearEditDraft();
 
       addToast({
         message: "Profile updated successfully!",
@@ -257,6 +301,14 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
       noValidate
       className="space-y-8 max-w-lg mx-auto"
     >
+      {hasDraft && (
+        <DraftRestoreBanner
+          savedAt={draftSavedAt}
+          onRestore={restoreDraft}
+          onDiscard={discardEditDraft}
+        />
+      )}
+
       {/* Username (read-only) */}
       <div>
         <label className="block text-sm font-bold uppercase tracking-wide mb-2">

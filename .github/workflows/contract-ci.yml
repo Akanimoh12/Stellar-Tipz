@@ -44,6 +44,19 @@ jobs:
       - name: cargo test
         run: cargo test
 
+      - name: Budget regression report
+        # Run only the budget tests and extract the BASELINE log lines so reviewers
+        # can see the delta between the committed baselines and the current run in
+        # the PR checks output without failing the build.
+        run: |
+          echo "### Budget regression deltas" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo test --features testutils -- budget 2>&1 \
+            | grep -E "BASELINE|regression|ok|FAILED" \
+            | tee -a $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        continue-on-error: false
+
       - name: cargo clippy
         run: cargo clippy -- -D warnings
 
@@ -70,9 +83,22 @@ jobs:
       - name: Build WASM (soroban)
         run: soroban contract build
 
+      - name: Generate contract ABI spec
+        run: bash ../scripts/generate-contract-spec.sh
+
+      - name: Verify committed ABI spec is current
+        working-directory: .
+        run: git diff --exit-code -- contracts/abi/tipz_contract.spec.json
+
       - name: Upload WASM artifact
         uses: actions/upload-artifact@v4
         with:
           name: soroban-wasm
           path: |
             contracts/target/wasm32-unknown-unknown/release/*.wasm
+
+      - name: Upload ABI spec artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-abi-spec
+          path: contracts/abi/tipz_contract.spec.json

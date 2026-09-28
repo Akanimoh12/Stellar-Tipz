@@ -5,7 +5,28 @@ use soroban_sdk::{Address, Env};
 use crate::errors::ContractError;
 use crate::events;
 use crate::storage;
-use crate::types::{VerificationStatus, VerificationType};
+use crate::types::{Profile, VerificationStatus, VerificationType};
+
+fn is_profile_verification_expired(env: &Env, profile: &Profile) -> bool {
+    if !profile.verification.is_verified {
+        return false;
+    }
+    match profile.verification.verified_at {
+        Some(verified_at) => {
+            env.ledger().timestamp().saturating_sub(verified_at)
+                > storage::get_domain_reverification_interval(env)
+        }
+        None => true,
+    }
+}
+
+pub fn is_verification_expired(env: &Env, creator: Address) -> Result<bool, ContractError> {
+    if !storage::has_profile(env, &creator) {
+        return Err(ContractError::NotRegistered);
+    }
+    let profile = storage::get_profile(env, &creator);
+    Ok(is_profile_verification_expired(env, &profile))
+}
 
 /// Submit a verification request for the caller's profile.
 ///
@@ -32,7 +53,7 @@ pub fn request_verification(
     }
 
     let profile = storage::get_profile(env, &caller);
-    if profile.verification.is_verified {
+    if profile.verification.is_verified && !is_profile_verification_expired(env, &profile) {
         return Err(ContractError::AlreadyVerified);
     }
 
@@ -68,7 +89,7 @@ pub fn approve_verification(
     }
 
     let mut profile = storage::get_profile(env, &creator);
-    if profile.verification.is_verified {
+    if profile.verification.is_verified && !is_profile_verification_expired(env, &profile) {
         return Err(ContractError::AlreadyVerified);
     }
 
@@ -136,5 +157,13 @@ pub fn get_verification_status(
     }
 
     let profile = storage::get_profile(env, &creator);
+    if is_profile_verification_expired(env, &profile) {
+        return Ok(VerificationStatus {
+            is_verified: false,
+            verification_type: VerificationType::Unverified,
+            verified_at: profile.verification.verified_at,
+            revoked_at: profile.verification.revoked_at,
+        });
+    }
     Ok(profile.verification)
 }

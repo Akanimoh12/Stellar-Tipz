@@ -12,6 +12,8 @@ const Input: React.FC<InputProps> = ({
   helperText,
   className = '',
   id,
+  type,
+  inputMode,
   ...props
 }) => {
   const generatedId = React.useId();
@@ -19,6 +21,10 @@ const Input: React.FC<InputProps> = ({
   const errorId = error ? `${inputId}-error` : undefined;
   const helperTextId = helperText ? `${inputId}-helper` : undefined;
   const describedBy = [errorId, helperTextId].filter(Boolean).join(' ') || undefined;
+
+  // #1338: number inputs open the numeric keyboard on mobile. An explicit
+  // inputMode from the caller still wins.
+  const resolvedInputMode = inputMode ?? (type === 'number' ? 'decimal' : undefined);
 
   return (
     <div className="w-full">
@@ -29,6 +35,8 @@ const Input: React.FC<InputProps> = ({
       )}
       <input
         id={inputId}
+        type={type}
+        inputMode={resolvedInputMode}
         className={`w-full px-4 py-3 border-2 bg-white text-black font-medium transition-colors duration-150
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist focus:border-gray-500
           placeholder:text-gray-700 dark:text-gray-300 dark:placeholder:text-gray-400 ${

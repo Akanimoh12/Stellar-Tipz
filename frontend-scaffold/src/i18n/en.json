@@ -235,5 +235,8 @@
   "wallet.connect": "Connect Wallet",
   "wallet.connecting": "Connecting...",
   "wallet.disconnect": "Disconnect",
-  "wallet.disconnectWithAddress": "Disconnect {{address}}"
+  "wallet.disconnectWithAddress": "Disconnect {{address}}",
+  "common": {
+    "close": "Close"
+  }
 }

@@ -1,0 +1,117 @@
+groups:
+  - name: stellar-tipz-slo-recording
+    interval: 1m
+    rules:
+      - record: tipz:slo:api_availability:bad_ratio_rate5m
+        expr: |
+          sum(rate(app_http_requests_total{service="api",environment="production",code=~"5..|0"}[5m]))
+          /
+          clamp_min(sum(rate(app_http_requests_total{service="api",environment="production"}[5m])), 1)
+      - record: tipz:slo:api_availability:bad_ratio_rate1h
+        expr: |
+          sum(rate(app_http_requests_total{service="api",environment="production",code=~"5..|0"}[1h]))
+          /
+          clamp_min(sum(rate(app_http_requests_total{service="api",environment="production"}[1h])), 1)
+      - record: tipz:slo:api_availability:bad_ratio_rate30m
+        expr: |
+          sum(rate(app_http_requests_total{service="api",environment="production",code=~"5..|0"}[30m]))
+          / clamp_min(sum(rate(app_http_requests_total{service="api",environment="production"}[30m])), 1)
+      - record: tipz:slo:api_availability:bad_ratio_rate6h
+        expr: |
+          sum(rate(app_http_requests_total{service="api",environment="production",code=~"5..|0"}[6h]))
+          / clamp_min(sum(rate(app_http_requests_total{service="api",environment="production"}[6h])), 1)
+      - record: tipz:slo:api_availability:bad_ratio_rate30d
+        expr: |
+          sum(increase(app_http_requests_total{service="api",environment="production",code=~"5..|0"}[30d]))
+          /
+          clamp_min(sum(increase(app_http_requests_total{service="api",environment="production"}[30d])), 1)
+      - record: tipz:slo:api_availability:budget_remaining_ratio30d
+        expr: clamp_min(1 - (tipz:slo:api_availability:bad_ratio_rate30d / 0.005), 0)
+      - record: tipz:slo:api_latency:bad_ratio_rate5m
+        expr: |
+          1 - (
+            sum(rate(app_http_request_duration_seconds_bucket{service="api",environment="production",le="1"}[5m]))
+            / clamp_min(sum(rate(app_http_request_duration_seconds_count{service="api",environment="production"}[5m])), 1)
+          )
+      - record: tipz:slo:api_latency:bad_ratio_rate1h
+        expr: |
+          1 - (
+            sum(rate(app_http_request_duration_seconds_bucket{service="api",environment="production",le="1"}[1h]))
+            / clamp_min(sum(rate(app_http_request_duration_seconds_count{service="api",environment="production"}[1h])), 1)
+          )
+      - record: tipz:slo:api_latency:bad_ratio_rate30d
+        expr: |
+          1 - (
+            sum(increase(app_http_request_duration_seconds_bucket{service="api",environment="production",le="1"}[30d]))
+            / clamp_min(sum(increase(app_http_request_duration_seconds_count{service="api",environment="production"}[30d])), 1)
+          )
+      - record: tipz:slo:api_latency:budget_remaining_ratio30d
+        expr: clamp_min(1 - (tipz:slo:api_latency:bad_ratio_rate30d / 0.01), 0)
+      - record: tipz:slo:api_latency:p50_seconds
+        expr: histogram_quantile(0.50, sum by (le) (rate(app_http_request_duration_seconds_bucket{service="api",environment="production"}[5m])))
+      - record: tipz:slo:api_latency:p95_seconds
+        expr: histogram_quantile(0.95, sum by (le) (rate(app_http_request_duration_seconds_bucket{service="api",environment="production"}[5m])))
+      - record: tipz:slo:api_latency:p99_seconds
+        expr: histogram_quantile(0.99, sum by (le) (rate(app_http_request_duration_seconds_bucket{service="api",environment="production"}[5m])))
+      - record: tipz:slo:indexer_freshness:lag_seconds
+        expr: clamp_min((stellar_latest_finalized_ledger{environment="production"} - indexer_last_processed_ledger{environment="production"}) * 5, 0)
+      - record: tipz:slo:indexer_freshness:bad_ratio_rate30d
+        expr: avg_over_time((tipz:slo:indexer_freshness:lag_seconds > bool 60)[30d:1m])
+      - record: tipz:slo:indexer_freshness:budget_remaining_ratio30d
+        expr: clamp_min(1 - (tipz:slo:indexer_freshness:bad_ratio_rate30d / 0.001), 0)
+      - record: tipz:slo:indexer_freshness:bad_ratio_rate5m
+        expr: avg_over_time((tipz:slo:indexer_freshness:lag_seconds > bool 60)[5m:1m])
+      - record: tipz:slo:indexer_freshness:bad_ratio_rate1h
+        expr: avg_over_time((tipz:slo:indexer_freshness:lag_seconds > bool 60)[1h:1m])
+
+  - name: stellar-tipz-slo-alerts
+    rules:
+      - alert: ApiAvailabilityBudgetFastBurn
+        expr: tipz:slo:api_availability:bad_ratio_rate5m / 0.005 > 14.4 and tipz:slo:api_availability:bad_ratio_rate1h / 0.005 > 14.4
+        for: 2m
+        labels:
+          severity: critical
+          service: api
+          slo: api-availability
+        annotations:
+          summary: API availability is rapidly consuming its error budget
+          runbook_url: https://github.com/Akanimoh12/Stellar-Tipz/blob/main/docs/runbooks/api-slo-burn.md
+      - alert: ApiAvailabilityBudgetSlowBurn
+        expr: tipz:slo:api_availability:bad_ratio_rate30m / 0.005 > 6 and tipz:slo:api_availability:bad_ratio_rate6h / 0.005 > 6
+        for: 15m
+        labels:
+          severity: warning
+          service: api
+          slo: api-availability
+        annotations:
+          summary: API availability is steadily consuming its error budget
+          runbook_url: https://github.com/Akanimoh12/Stellar-Tipz/blob/main/docs/runbooks/api-slo-burn.md
+      - alert: ApiLatencyBudgetFastBurn
+        expr: tipz:slo:api_latency:bad_ratio_rate5m / 0.01 > 14.4 and tipz:slo:api_latency:bad_ratio_rate1h / 0.01 > 14.4
+        for: 2m
+        labels:
+          severity: critical
+          service: api
+          slo: api-latency
+        annotations:
+          summary: API latency is rapidly consuming its error budget
+          runbook_url: https://github.com/Akanimoh12/Stellar-Tipz/blob/main/docs/runbooks/api-slo-burn.md
+      - alert: IndexerFreshnessBudgetFastBurn
+        expr: tipz:slo:indexer_freshness:bad_ratio_rate5m / 0.001 > 14.4 and tipz:slo:indexer_freshness:bad_ratio_rate1h / 0.001 > 14.4
+        for: 2m
+        labels:
+          severity: critical
+          service: indexer
+          slo: indexer-freshness
+        annotations:
+          summary: Indexer freshness is rapidly consuming its error budget
+          runbook_url: https://github.com/Akanimoh12/Stellar-Tipz/blob/main/docs/runbooks/indexer-freshness.md
+      - alert: SloTelemetryMissing
+        expr: absent(app_http_requests_total{service="api",environment="production"}) or absent(indexer_last_processed_ledger{environment="production"})
+        for: 10m
+        labels:
+          severity: warning
+          service: observability
+        annotations:
+          summary: SLO telemetry is missing
+          runbook_url: https://github.com/Akanimoh12/Stellar-Tipz/blob/main/docs/runbooks/slo-telemetry.md
