@@ -489,17 +489,27 @@ Generate TypeScript bindings from the deployed contract:
 
 ## 7. Emergency Procedures and Rollback
 
+> **For anything that is actually happening right now, use [`docs/INCIDENT_RESPONSE.md`](INCIDENT_RESPONSE.md).**
+> It supersedes this section: it has severity definitions, escalation paths, exact
+> pause commands, rollback procedures, key-compromise handling, user-facing
+> communication templates, and the postmortem template. The summary below is
+> orientation only — in particular, the pause commands in §5a of the runbook
+> carry a required `flag` argument that the lines below omit.
+
 ### Contract pause (first response)
 
 The contract supports an admin **pause** that blocks state-changing entry
 points (tips, withdrawals) while reads stay available. On a suspected exploit or
 critical bug:
 
-1. As admin, call the contract's `pause` (see `admin.rs`) to halt mutations.
-2. Communicate status to users (status page / social) — the frontend should
-   surface a maintenance banner.
+1. As admin, call the contract's `pause(caller, flag)` to halt the affected
+   operations — `flag` is required and selects which operations stop
+   (see `admin.rs` and the runbook §5a).
+2. Communicate status to users (social / Discussions) — there is no maintenance
+   banner in the frontend yet (runbook §8).
 3. Investigate with on-chain events and logs before resuming.
-4. Call `unpause` only once the issue is understood and mitigated.
+4. Call `unpause(caller, flag)` only once the issue is understood and mitigated.
+   A global pause is only lifted by `unpause(caller, 4294967295)`.
 
 ### Frontend rollback
 
@@ -527,9 +537,12 @@ and redeploy rather than rolling back code.
 
 ### Key compromise
 
-If the admin key is compromised: pause immediately, transfer admin to a new
-secure key (hardware wallet / multisig) via the admin-transfer path, rotate any
-related operational secrets, and post-mortem before unpausing.
+If the admin key is compromised, there is **no admin revocation path**:
+`set_admin` always returns `NotAuthorized`, and rotating the admin requires
+`propose_admin_change` (48 h timelock) plus confirmation by the *new* admin —
+neither of which the current admin's key can be forced through after it is
+lost. Assume the contract is attacker-controlled, rotate every off-chain secret
+first, and work the redeploy path. See runbook §5c.
 
 ### Post-incident
 

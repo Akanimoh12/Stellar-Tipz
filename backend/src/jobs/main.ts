@@ -34,6 +34,7 @@ import { initTracing, shutdownTracing } from '../common/observability/tracing.js
  * graceful shutdown for Prisma, Redis, and every worker.
  */
 export async function bootstrapJobs(): Promise<void> {
+  // Initialize OpenTelemetry tracing (issue #1349)
   initTracing();
   registerClosable({
     name: 'OpenTelemetry',
