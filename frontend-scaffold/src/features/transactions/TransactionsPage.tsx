@@ -109,7 +109,7 @@ const TransactionsPage: React.FC = () => {
   if (error && filtered.length === 0) {
     return (
       <PageContainer maxWidth="xl" className="py-20">
-        <ErrorState category={categorizeError(error).category} onRetry={refetch} />
+        <ErrorState errorData={categorizeError(error)} onRetry={refetch} />
       </PageContainer>
     );
   }
