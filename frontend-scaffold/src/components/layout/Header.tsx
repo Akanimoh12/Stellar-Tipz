@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { Github, Keyboard, Menu, Moon, Sun, X } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 
 import { useTheme } from "@/hooks/useTheme";
 import { useWallet } from "@/hooks/useWallet";
 import { useI18n } from "@/i18n";
 
 import NetworkBadge from "../shared/NetworkBadge";
+import PrefetchLink from "../shared/PrefetchLink";
 import WalletBalance from "../shared/WalletBalance";
 import WalletSwitcher from "../shared/WalletSwitcher";
 import Button from "../ui/Button";
@@ -83,17 +84,17 @@ const Header: React.FC = () => {
       className="relative z-30 border-b-3 border-black bg-white dark:border-white dark:bg-black"
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
-        <Link
+        <PrefetchLink
           to="/"
           className="flex items-center gap-2"
           onClick={closeMobileMenu}
         >
           <span className="text-2xl font-black tracking-tight">TIPZ</span>
           <span className="text-xl">*</span>
-        </Link>
+        </PrefetchLink>
 
         <nav aria-label={t("nav.primary")} className="hidden items-center gap-6 md:flex">
-          <Link
+          <PrefetchLink
             to="/leaderboard"
             aria-current={isActivePath("/leaderboard") ? "page" : undefined}
             className={`text-sm uppercase tracking-wide nav-indicator ${
@@ -103,8 +104,8 @@ const Header: React.FC = () => {
             }`}
           >
             {t("nav.leaderboard")}
-          </Link>
-          <Link
+          </PrefetchLink>
+          <PrefetchLink
             to="/help"
             aria-current={isActivePath("/help") ? "page" : undefined}
             className={`text-sm uppercase tracking-wide nav-indicator ${
@@ -114,8 +115,8 @@ const Header: React.FC = () => {
             }`}
           >
             {t("nav.help")}
-          </Link>
-          <Link
+          </PrefetchLink>
+          <PrefetchLink
             to="/dashboard"
             aria-current={isActivePath("/dashboard") ? "page" : undefined}
             className={`text-sm uppercase tracking-wide nav-indicator ${
@@ -125,8 +126,8 @@ const Header: React.FC = () => {
             }`}
           >
             {navDashboard}
-          </Link>
-          <Link
+          </PrefetchLink>
+          <PrefetchLink
             to="/transactions"
             aria-current={isActivePath("/transactions") ? "page" : undefined}
             className={`text-sm uppercase tracking-wide nav-indicator ${
@@ -136,8 +137,8 @@ const Header: React.FC = () => {
             }`}
           >
             {t("nav.transactions")}
-          </Link>
-          <Link
+          </PrefetchLink>
+          <PrefetchLink
             to="/profile"
             aria-current={isActivePath("/profile") ? "page" : undefined}
             className={`text-sm uppercase tracking-wide nav-indicator ${
@@ -147,7 +148,7 @@ const Header: React.FC = () => {
             }`}
           >
             {t("nav.profile")}
-          </Link>
+          </PrefetchLink>
         </nav>
 
         <div className="hidden items-center gap-4 md:flex">
