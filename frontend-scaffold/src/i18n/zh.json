@@ -4,6 +4,7 @@
   "app.reloadNow": "立即重新加载",
   "app.skipToMain": "跳到主要内容",
   "app.updateAvailable": "有更新可用",
+  "app.criticalUpdateRequired": "需要关键更新以继续",
   "offline.description": "你似乎已离线。重新连接后可继续使用实时功能。",
   "offline.title": "离线",
   "common.auto": "自动",

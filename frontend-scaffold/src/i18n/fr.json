@@ -4,6 +4,7 @@
   "app.reloadNow": "Recharger maintenant",
   "app.skipToMain": "Aller au contenu principal",
   "app.updateAvailable": "Mise a jour disponible",
+  "app.criticalUpdateRequired": "Mise a jour critique requise pour continuer",
   "offline.description": "Vous semblez hors ligne. Reconnectez-vous pour continuer a utiliser les fonctions en direct.",
   "offline.title": "Hors ligne",
   "common.auto": "Auto",

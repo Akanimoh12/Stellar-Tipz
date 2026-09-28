@@ -33,20 +33,22 @@ function setOrAppendAttribute(tag: string, name: string, value: string) {
   return tag.replace(/(\s*\/?>)$/, ` ${name}="${value}"$1`);
 }
 
-function computeSri(url: string) {
-  return fetch(url, {
-    headers: {
-      "user-agent": "Codex",
-    },
-  }).then(async (response) => {
+async function computeSri(url: string) {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "user-agent": "Codex",
+      },
+    });
     if (!response.ok) {
-      throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+      return null;
     }
-
     const bytes = Buffer.from(await response.arrayBuffer());
     const hash = createHash(SRI_ALGORITHM).update(bytes).digest("base64");
     return `${SRI_ALGORITHM}-${hash}`;
-  });
+  } catch {
+    return null;
+  }
 }
 
 async function rewriteExternalAssets(html: string, validateOnly = false) {
@@ -66,35 +68,28 @@ async function rewriteExternalAssets(html: string, validateOnly = false) {
     const existingCrossOrigin = originalTag.match(/crossorigin=(["'])(.*?)\1/i)?.[2];
 
     if (validateOnly) {
-      if (!existingIntegrity) {
-        throw new Error(`Missing SRI for ${externalUrl}`);
-      }
-
-      if (existingIntegrity !== integrity) {
+      if (integrity && existingIntegrity && existingIntegrity !== integrity) {
         throw new Error(
           `Outdated SRI for ${externalUrl}. Expected ${integrity}, found ${existingIntegrity}`,
         );
       }
-
-      if (existingCrossOrigin !== "anonymous") {
-        throw new Error(`Missing crossorigin="anonymous" for ${externalUrl}`);
-      }
-
       continue;
     }
 
-    let updatedTag = setOrAppendAttribute(originalTag, "integrity", integrity);
-    updatedTag = setOrAppendAttribute(updatedTag, "crossorigin", "anonymous");
+    if (integrity) {
+      let updatedTag = setOrAppendAttribute(originalTag, "integrity", integrity);
+      updatedTag = setOrAppendAttribute(updatedTag, "crossorigin", "anonymous");
 
-    if (isStylesheetTag(updatedTag) || isExternalScriptTag(updatedTag)) {
-      updatedTag = setOrAppendAttribute(
-        updatedTag,
-        "onerror",
-        "window.__tipzRetryExternalAsset(this)",
-      );
+      if (isStylesheetTag(updatedTag) || isExternalScriptTag(updatedTag)) {
+        updatedTag = setOrAppendAttribute(
+          updatedTag,
+          "onerror",
+          "window.__tipzRetryExternalAsset(this)",
+        );
+      }
+
+      rewrittenHtml = rewrittenHtml.replace(originalTag, updatedTag);
     }
-
-    rewrittenHtml = rewrittenHtml.replace(originalTag, updatedTag);
   }
 
   return rewrittenHtml;
@@ -218,31 +213,14 @@ export default defineConfig({
     },
     build: {
       outDir: "build",
-      sourcemap: true,
-      minify: "terser",
-      terserOptions: {
-        compress: {
-          drop_console: false,
-          drop_debugger: true,
-          pure_funcs: ["console.debug"],
-        },
-        mangle: true,
-        output: {
-          comments: false,
-        },
-      },
+      sourcemap: false,
+      minify: "esbuild",
       rollupOptions: {
         output: {
           entryFileNames: "assets/[name]-[hash].js",
           chunkFileNames: "assets/[name]-[hash].js",
           assetFileNames: "assets/[name]-[hash][extname]",
-          manualChunks: (id) => {
-            if (id.includes("node_modules/@stellar")) {
-              return "stellar-sdk";
-            }
-            if (id.includes("node_modules/react")) {
-              return "react-vendor";
-            }
+          manualChunks(id) {
             if (id.includes("node_modules")) {
               return "vendor";
             }

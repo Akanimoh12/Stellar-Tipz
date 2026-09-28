@@ -1,30 +1,41 @@
 /**
- * Service worker registration, update management, and offline tip queue.
+ * #1311 & #1312 — Service worker registration, update management, and offline support.
  *
- * Usage:
- *   import * as SW from '@/services/serviceWorker';
- *   SW.register();                          // call once at app boot
- *   SW.onUpdateAvailable(() => showBanner); // subscribe to update events
- *   SW.skipWaiting();                       // called when user confirms update
- *   await SW.queueOfflineTip(data);         // queue a tip while offline
+ * ## Architectural Note on Offline Transactions (#1311):
+ * Blockchain transactions (tips, claimable balances, contract invocations) are
+ * **explicitly NOT queued for offline signing or deferred broadcasting**.
+ *
+ * Rationale:
+ * 1. Sequence Number Desynchronization: Stellar transactions require strictly monotonic
+ *    account sequence numbers. Offline transactions signed out-of-order will fail on-chain
+ *    with `txBAD_SEQ`.
+ * 2. Stale Network Fees & Surge Pricing: Network base fees change dynamically across ledgers.
+ *    Queued transactions with outdated fee bids fail or stall indefinitely.
+ * 3. Contract & Creator State Invalidation: Between offline creation and online broadcast,
+ *    a creator may change their receiving address, alter goals, or deregister.
+ * 4. User Intent & Double-Spend Risks: Delayed auto-broadcast may surprise the user hours
+ *    later or double-submit when connectivity is intermittently restored.
+ *
+ * Therefore, read-only views serve cached data with a staleness indicator, while
+ * state-modifying actions requiring network are disabled with an explicit explanation.
  */
 
-const SW_URL = '/sw.js';
-const SYNC_TAG = 'tipz-tip-sync';
-const DB_NAME = 'tipz-sync';
-const STORE_NAME = 'pendingTips';
+import { logger } from './logger';
 
-export interface PendingTip {
-  id?: number;
-  data: Record<string, unknown>;
-  createdAt: number;
+const SW_URL = '/sw.js';
+export const CURRENT_SW_VERSION = '2.0.0';
+
+export interface UpdateInfo {
+  isCritical?: boolean;
+  version?: string;
+  minRequiredVersion?: string;
 }
 
 // ---------------------------------------------------------------------------
-// Update notification
+// Update notification & Version Gate (#1312)
 // ---------------------------------------------------------------------------
 
-type UpdateCallback = () => void;
+export type UpdateCallback = (info: UpdateInfo) => void;
 const updateListeners: UpdateCallback[] = [];
 
 /**
@@ -39,24 +50,54 @@ export function onUpdateAvailable(cb: UpdateCallback): () => void {
   };
 }
 
-function notifyUpdateAvailable(): void {
-  updateListeners.forEach((cb) => cb());
+export function notifyUpdateAvailable(info: UpdateInfo = {}): void {
+  updateListeners.forEach((cb) => cb(info));
+}
+
+/**
+ * Compares two semantic version strings (e.g. "1.2.0" vs "2.0.0").
+ * Returns -1 if v1 < v2, 0 if v1 === v2, 1 if v1 > v2.
+ */
+export function compareVersions(v1: string, v2: string): number {
+  const parts1 = v1.split('.').map((p) => parseInt(p, 10) || 0);
+  const parts2 = v2.split('.').map((p) => parseInt(p, 10) || 0);
+
+  const len = Math.max(parts1.length, parts2.length);
+  for (let i = 0; i < len; i++) {
+    const num1 = parts1[i] ?? 0;
+    const num2 = parts2[i] ?? 0;
+    if (num1 > num2) return 1;
+    if (num1 < num2) return -1;
+  }
+  return 0;
+}
+
+/**
+ * Checks whether the current client version satisfies the minimum version gate.
+ * If currentVersion < minRequiredVersion, forces immediate reload/update.
+ */
+export function isVersionGateTriggered(
+  currentVersion: string,
+  minRequiredVersion?: string,
+): boolean {
+  if (!minRequiredVersion) return false;
+  return compareVersions(currentVersion, minRequiredVersion) < 0;
 }
 
 // ---------------------------------------------------------------------------
-// Registration
+// Registration & Proactive Update Checks (#1312)
 // ---------------------------------------------------------------------------
 
 /** Register the service worker and wire up update detection. */
-import { logger } from "./logger";
-
-export async function register(): Promise<void> {
-  if (!('serviceWorker' in navigator)) return;
+export async function register(): Promise<ServiceWorkerRegistration | undefined> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+    return undefined;
+  }
 
   try {
     const registration = await navigator.serviceWorker.register(SW_URL);
 
-    // Detect future updates.
+    // Detect incoming updates
     registration.addEventListener('updatefound', () => {
       const incoming = registration.installing;
       if (!incoming) return;
@@ -65,115 +106,92 @@ export async function register(): Promise<void> {
           incoming.state === 'installed' &&
           navigator.serviceWorker.controller
         ) {
-          notifyUpdateAvailable();
+          notifyUpdateAvailable({ version: CURRENT_SW_VERSION });
         }
       });
     });
 
-    // A worker was already waiting before this page load.
+    // A worker was already waiting before this page load
     if (registration.waiting && navigator.serviceWorker.controller) {
-      notifyUpdateAvailable();
+      notifyUpdateAvailable({ version: CURRENT_SW_VERSION });
     }
 
-    // The SW itself can also post UPDATE_AVAILABLE (e.g. on install).
+    // SW message listener for update events and version gates
     navigator.serviceWorker.addEventListener('message', (event) => {
-      if (event.data === 'UPDATE_AVAILABLE') {
-        notifyUpdateAvailable();
+      if (event.data?.type === 'UPDATE_AVAILABLE' || event.data === 'UPDATE_AVAILABLE') {
+        const info: UpdateInfo = typeof event.data === 'object' ? event.data : {};
+        notifyUpdateAvailable(info);
+
+        if (info.minRequiredVersion && isVersionGateTriggered(CURRENT_SW_VERSION, info.minRequiredVersion)) {
+          logger.warn('services/serviceWorker', 'Critical version gate triggered, applying update immediately', undefined);
+          void skipWaiting();
+        }
       }
     });
 
-    // Proactively check for updates.
+    // Proactively check for updates
     try {
       await registration.update();
     } catch (err) {
       logger.warn(
         'services/serviceWorker',
-        'registration.update() failed',
+        'registration.update() check failed',
         undefined,
         err instanceof Error ? err : new Error(String(err)),
       );
     }
+
+    return registration;
   } catch (err) {
     logger.warn('services/serviceWorker', 'SW registration failed', undefined, err instanceof Error ? err : new Error(String(err)));
+    return undefined;
   }
 }
 
+/**
+ * Manually trigger an update check (e.g. on navigation or app focus).
+ */
+export async function checkForUpdate(): Promise<boolean> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+    return false;
+  }
+
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (registration) {
+      await registration.update();
+      return !!registration.waiting;
+    }
+  } catch (err) {
+    logger.warn('services/serviceWorker', 'checkForUpdate error', undefined, err instanceof Error ? err : new Error(String(err)));
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------------------
-// Update activation
+// Update Activation (#1312)
 // ---------------------------------------------------------------------------
 
 /**
- * Tell the waiting service worker to skip waiting and take control.
- * Call this when the user confirms the "update available" prompt.
- * The page will reload once the new SW claims clients.
+ * Instructs the waiting service worker to skip waiting, claim clients,
+ * and refreshes the page to prevent mismatched chunk loading.
  */
 export async function skipWaiting(): Promise<void> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+    return;
+  }
+
   const registration = await navigator.serviceWorker.getRegistration();
   if (registration?.waiting) {
+    registration.waiting.postMessage({ type: 'SKIP_WAITING' });
     registration.waiting.postMessage('SKIP_WAITING');
-    // Reload once the new SW has claimed this client.
+
+    // Reload window as soon as new service worker claims control
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       window.location.reload();
     });
+  } else {
+    // If no waiting worker, reload directly to ensure fresh assets
+    window.location.reload();
   }
-}
-
-// ---------------------------------------------------------------------------
-// Offline tip queue (IndexedDB)
-// ---------------------------------------------------------------------------
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => {
-      req.result.createObjectStore(STORE_NAME, {
-        keyPath: 'id',
-        autoIncrement: true,
-      });
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-/**
- * Persist a tip operation to IndexedDB so the SW can replay it once online.
- * Also registers a Background Sync tag when the API is available.
- */
-export async function queueOfflineTip(
-  data: Record<string, unknown>,
-): Promise<void> {
-  const db = await openDB();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const req = tx.objectStore(STORE_NAME).add({
-      data,
-      createdAt: Date.now(),
-    } as PendingTip);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
-
-  // Request Background Sync if the browser supports it.
-  if ('serviceWorker' in navigator) {
-    const swRegistration = await navigator.serviceWorker.ready;
-    if ('sync' in swRegistration) {
-      await (
-        swRegistration as ServiceWorkerRegistration & {
-          sync: { register: (tag: string) => Promise<void> };
-        }
-      ).sync.register(SYNC_TAG);
-    }
-  }
-}
-
-/** Returns the number of tips currently waiting in the offline queue. */
-export async function getPendingTipCount(): Promise<number> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const req = tx.objectStore(STORE_NAME).count();
-    req.onsuccess = () => resolve(req.result as number);
-    req.onerror = () => reject(req.error);
-  });
 }

@@ -4,6 +4,7 @@
   "app.reloadNow": "Recargar ahora",
   "app.skipToMain": "Saltar al contenido principal",
   "app.updateAvailable": "Actualizacion disponible",
+  "app.criticalUpdateRequired": "Actualizacion critica requerida para continuar",
   "offline.description": "Parece que no tienes conexion. Reconecta para seguir usando las funciones en vivo.",
   "offline.title": "Sin conexion",
   "common.auto": "Automatico",

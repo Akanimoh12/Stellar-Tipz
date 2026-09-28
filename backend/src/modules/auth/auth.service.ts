@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import { randomBytes } from "crypto";
+import { randomBytes, createHash } from "crypto";
 import { prisma } from "../../db/prisma.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../common/utils/logger.js";
@@ -36,6 +36,7 @@ function generateAccessToken(payload: AuthPayload): string {
  */
 async function generateRefreshToken(userId: string): Promise<string> {
   const token = randomBytes(32).toString("hex");
+  const hashedToken = createHash("sha256").update(token).digest("hex");
   const expiresAt = new Date(
     Date.now() + parseDuration(env.REFRESH_TOKEN_EXPIRES_IN),
   );
@@ -43,7 +44,7 @@ async function generateRefreshToken(userId: string): Promise<string> {
   await prisma.refreshToken.create({
     data: {
       userId,
-      token,
+      hashedToken,
       expiresAt,
     },
   });
@@ -234,9 +235,10 @@ export async function verifyChallenge(
  * Refreshes an access token using a refresh token.
  */
 export async function refreshToken(refreshToken: string): Promise<TokenPair> {
+  const hashedToken = createHash("sha256").update(refreshToken).digest("hex");
   // Find the refresh token
   const tokenRecord = await prisma.refreshToken.findUnique({
-    where: { token: refreshToken },
+    where: { hashedToken },
     include: { user: true },
   });
 
@@ -281,8 +283,9 @@ export async function refreshToken(refreshToken: string): Promise<TokenPair> {
  * Revokes a refresh token (logout).
  */
 export async function revokeRefreshToken(refreshToken: string): Promise<void> {
+  const hashedToken = createHash("sha256").update(refreshToken).digest("hex");
   const tokenRecord = await prisma.refreshToken.findUnique({
-    where: { token: refreshToken },
+    where: { hashedToken },
   });
 
   if (!tokenRecord) {
