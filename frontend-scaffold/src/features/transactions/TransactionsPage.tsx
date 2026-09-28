@@ -5,6 +5,7 @@ import PageContainer from "@/components/layout/PageContainer";
 import EmptyState from "@/components/ui/EmptyState";
 import Loader from "@/components/ui/Loader";
 import Button from "@/components/ui/Button";
+import VirtualizedList from "@/components/ui/VirtualizedList";
 import WalletConnect from "@/components/shared/WalletConnect";
 import ErrorState from "@/components/shared/ErrorState";
 import { categorizeError } from "@/helpers/error";
@@ -212,11 +213,16 @@ const TransactionsPage: React.FC = () => {
             }
           />
         ) : (
-          <div className="space-y-3">
-            {filtered.map((tx) => (
-              <TransactionRow key={tx.id} tx={tx} />
-            ))}
-          </div>
+          <VirtualizedList
+            items={filtered}
+            ariaLabel="Transactions"
+            estimatedItemHeight={88}
+            height={600}
+            scrollRestoreKey={`transactions-${activeTab}`}
+            getItemKey={(tx) => tx.id}
+            itemClassName="pb-3"
+            renderItem={(tx) => <TransactionRow tx={tx} />}
+          />
         )}
 
         {/* Infinite scroll sentinel */}

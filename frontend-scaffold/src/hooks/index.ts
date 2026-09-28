@@ -16,3 +16,4 @@ export * from "./useReducedMotion";
 export * from "./useFeatureFlag";
 export * from "./useAnalytics";
 export * from "./useTransactionHistory";
+export * from "./useOnboardingProgress";
