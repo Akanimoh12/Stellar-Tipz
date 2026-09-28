@@ -7,6 +7,16 @@ import { redis } from './db/redis.js';
 import { registerClosable, closeAll } from './common/utils/lifecycle.js';
 import { initializeQueues, closeAllQueues } from './modules/jobs/queue.factory.js';
 import { initRealtime } from './realtime/gateway.js';
+import { initTracing, shutdownTracing } from './common/observability/tracing.js';
+
+/** Process entry point: starts the HTTP server (and, later, the WebSocket + indexer). */
+async function bootstrap(): Promise<void> {
+  // Initialize OpenTelemetry tracing (issue #1349)
+  initTracing();
+  registerClosable({
+    name: 'OpenTelemetry',
+    close: shutdownTracing,
+  });
 import { startProcessMetrics } from './common/observability/metricsServer.js';
 
 /** Process entry point: starts the HTTP server (and, later, the WebSocket + indexer). */

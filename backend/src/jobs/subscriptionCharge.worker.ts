@@ -16,6 +16,7 @@ import {
   classifySubscriptionChargeFailure,
   type SubscriptionChargeFailure,
 } from './subscriptionCharge.failure.js';
+import { withTracing } from '../common/observability/bullmqTracing.js';
 import {
   classifySubscriptionFailure,
   observeSubscriptionCharge,
@@ -240,10 +241,10 @@ export async function processDueSubscriptions(
 export function createSubscriptionChargeWorker(): Worker {
   const worker = new Worker(
     SUBSCRIPTION_CHARGE_QUEUE,
-    async (_job) => {
+    withTracing(SUBSCRIPTION_CHARGE_QUEUE, async (_job) => {
       const result = await processDueSubscriptions();
       logger.info(result, 'Subscription charge job complete');
-    },
+    }),
     { connection: redis as never },
   );
 

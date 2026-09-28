@@ -3,12 +3,16 @@ import { config } from "../../config/index.js";
 import { CircuitBreaker } from "../utils/circuitBreaker.js";
 import { withTimeoutAndSignal } from "../utils/fetchWithTimeout.js";
 import { logger } from "../utils/logger.js";
+import { withSpan, addSpanAttributes, isTracingActive } from "../observability/tracing.js";
+import { SpanStatusCode } from "@opentelemetry/api";
+import { SEMATTRS_RPC_SYSTEM, SEMATTRS_RPC_METHOD, SEMATTRS_NETWORK_PEER_ADDRESS } from "@opentelemetry/semantic-conventions";
 
 /**
  * Centralized Soroban RPC and Horizon resilience layer (issues #090, #091).
  * - Timeouts via withTimeoutAndSignal (configurable SOROBAN_RPC_TIMEOUT_MS / HORIZON_TIMEOUT_MS)
  * - Circuit breaker fast-fails when upstream degrades
  * - Client disconnect cancellation via parentSignal (req.signal)
+ * - OpenTelemetry tracing for outbound RPC calls (issue #1349)
  */
 
 // Shared breaker instances — state exposed via metrics endpoint (issue #091)
@@ -33,7 +37,7 @@ export function getRpcServer(): SorobanRpc.Server {
 }
 
 /**
- * Wraps an RPC operation with circuit breaker and timeout.
+ * Wraps an RPC operation with circuit breaker, timeout, and tracing.
  * Use this for every SorobanRpc.Server call (getAccount, simulateTransaction, sendTransaction, getHealth).
  */
 export async function rpcCall<T>(
@@ -43,22 +47,43 @@ export async function rpcCall<T>(
   const timeoutMs = opts.timeoutMs ?? (config as unknown as { timeouts?: { sorobanRpcMs: number } })?.timeouts?.sorobanRpcMs ?? 10_000;
   const name = opts.operationName ?? "RPC call";
 
-  return rpcCircuitBreaker.call(async () => {
-    const server = getRpcServer();
-    const promise = operation(server);
-    try {
-      return await withTimeoutAndSignal(promise, timeoutMs, opts.signal, name);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "TimeoutError") {
-        logger.warn({ operation: name, timeoutMs }, "Soroban RPC timeout");
+  return withSpan(
+    `rpc.soroban.${name}`,
+    async (span) => {
+      if (span) {
+        span.setAttributes({
+          [SEMATTRS_RPC_SYSTEM]: "soroban",
+          [SEMATTRS_RPC_METHOD]: name,
+          [SEMATTRS_NETWORK_PEER_ADDRESS]: (config as unknown as { stellar?: { rpcUrl: string } })?.stellar?.rpcUrl ?? "https://soroban-testnet.stellar.org",
+        });
       }
-      throw err;
-    }
-  });
+
+      return rpcCircuitBreaker.call(async () => {
+        const server = getRpcServer();
+        const promise = operation(server);
+        try {
+          return await withTimeoutAndSignal(promise, timeoutMs, opts.signal, name);
+        } catch (err) {
+          if (span) {
+            span.setStatus({
+              code: SpanStatusCode.ERROR,
+              message: err instanceof Error ? err.message : String(err),
+            });
+            span.recordException(err as Error);
+          }
+          if (err instanceof DOMException && err.name === "TimeoutError") {
+            logger.warn({ operation: name, timeoutMs }, "Soroban RPC timeout");
+          }
+          throw err;
+        }
+      });
+    },
+    { kind: 2 }, // SpanKind.CLIENT
+  );
 }
 
 /**
- * Horizon fetch wrapper with same resilience properties.
+ * Horizon fetch wrapper with same resilience properties and tracing.
  */
 export async function horizonFetch(
   path: string,
@@ -69,13 +94,29 @@ export async function horizonFetch(
   const horizonUrl = (config as unknown as { stellar?: { horizonUrl: string } })?.stellar?.horizonUrl ?? "https://horizon-testnet.stellar.org";
   const url = `${horizonUrl.replace(/\/+$/, "")}${path}`;
 
-  return horizonCircuitBreaker.call(async () => {
-    // Import here to avoid cycle
-    const { fetchWithTimeout } = await import("../utils/fetchWithTimeout.js");
-    return fetchWithTimeout(url, {
-      ...options,
-      timeoutMs,
-      parentSignal: signal,
-    });
-  });
+  return withSpan(
+    `rpc.horizon.${options.method ?? "GET"} ${path}`,
+    async (span) => {
+      if (span) {
+        span.setAttributes({
+          [SEMATTRS_RPC_SYSTEM]: "horizon",
+          [SEMATTRS_RPC_METHOD]: options.method ?? "GET",
+          [SEMATTRS_NETWORK_PEER_ADDRESS]: horizonUrl,
+          "http.url": url,
+          "http.path": path,
+        });
+      }
+
+      return horizonCircuitBreaker.call(async () => {
+        // Import here to avoid cycle
+        const { fetchWithTimeout } = await import("../utils/fetchWithTimeout.js");
+        return fetchWithTimeout(url, {
+          ...options,
+          timeoutMs,
+          parentSignal: signal,
+        });
+      });
+    },
+    { kind: 2 }, // SpanKind.CLIENT
+  );
 }

@@ -5,6 +5,7 @@ import { prisma, prismaIncludingDeleted } from '../db/prisma.js';
 import { redis } from '../db/redis.js';
 import { config } from '../config/index.js';
 import { startIndexer } from './poller.js';
+import { initTracing, shutdownTracing } from '../common/observability/tracing.js';
 import { getMaxLeaderEpoch } from './cursor.js';
 import { LeaderElector, type LeaseClient } from './leader.js';
 import { startProcessMetrics } from '../common/observability/metricsServer.js';
@@ -31,6 +32,12 @@ function createLeaderElector(): LeaderElector | null {
  * the indexer. Any number of instances may run; only the leader indexes.
  */
 export async function bootstrapIndexer(): Promise<void> {
+  // Initialize OpenTelemetry tracing (issue #1349)
+  initTracing();
+  registerClosable({
+    name: 'OpenTelemetry',
+    close: shutdownTracing,
+  });
   await startProcessMetrics('indexer');
 
   registerClosable({

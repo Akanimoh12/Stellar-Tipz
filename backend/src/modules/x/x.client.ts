@@ -2,7 +2,7 @@ import { config } from '../../config/index.js';
 import { BadGatewayError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
 import { xCircuitBreaker, type CircuitBreaker } from './x.circuit-breaker.js';
-import { fetchWithTimeout } from '../../common/utils/fetchWithTimeout.js';
+import { tracedFetchWithTimeout } from '../../common/utils/tracedFetchWithTimeout.js';
 
 export interface XApiUser {
   id: string;
@@ -132,13 +132,14 @@ export class XApiClient {
 
     let response: Response;
     try {
-      response = await fetchWithTimeout(url, {
+      response = await tracedFetchWithTimeout(url, {
         ...options,
         headers,
         timeoutMs,
         parentSignal: parentSignal ?? explicitSignal ?? undefined,
-        // Remove explicit signal to avoid duplication — fetchWithTimeout merges them
         signal: undefined,
+        operationName: 'x-api.request',
+        serviceName: 'x-api',
       });
     } catch (err) {
       if (err instanceof DOMException && err.name === 'TimeoutError') {
