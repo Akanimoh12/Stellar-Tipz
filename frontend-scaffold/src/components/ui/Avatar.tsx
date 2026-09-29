@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useHeroPreload } from '../../hooks/useHeroPreload';
 
 import {
   AVATAR_DIMENSIONS,
@@ -86,6 +87,12 @@ const Avatar: React.FC<AvatarProps> = ({
   const normalizedSrc = useMemo(() => normalizeAvatarSrc(src), [src]);
   const displaySize = AVATAR_DIMENSIONS[size];
   const srcSet = useMemo(() => getAvatarSrcSet(src, size), [src, size]);
+  const fallbackSrcSet = useMemo(() => getAvatarSrcSet(src, size, 'jpg'), [src, size]);
+  useHeroPreload(priority && !imageError ? normalizedSrc : undefined, {
+    srcSet: useOptimizedSrcSet ? srcSet : undefined,
+    sizes: getAvatarSizes(size),
+    type: useOptimizedSrcSet && srcSet ? 'image/webp' : undefined,
+  });
   const showImage = Boolean(normalizedSrc) && !imageError;
   const showFallback = !showImage && fallback;
   const showAddressFallback = !showImage && !fallback && address;
@@ -111,28 +118,34 @@ const Avatar: React.FC<AvatarProps> = ({
               className="absolute inset-0 z-10 bg-gray-200 animate-pulse"
             />
           )}
-          <img
-            src={normalizedSrc}
-            alt={alt}
-            width={displaySize}
-            height={displaySize}
-            srcSet={useOptimizedSrcSet ? srcSet : undefined}
-            sizes={useOptimizedSrcSet && srcSet ? getAvatarSizes(size) : undefined}
-            className={`w-full h-full object-cover transition-opacity duration-200 ${
-              imageLoaded ? 'opacity-100' : 'opacity-0'
-            }`}
-            loading={priority ? 'eager' : 'lazy'}
-            decoding={priority ? 'sync' : 'async'}
-            onLoad={() => setImageLoaded(true)}
-            onError={() => {
-              if (useOptimizedSrcSet && srcSet) {
-                setUseOptimizedSrcSet(false);
-                setImageLoaded(false);
-                return;
-              }
-              setImageError(true);
-            }}
-          />
+          <picture className="contents">
+            {useOptimizedSrcSet && srcSet && (
+              <source type="image/webp" srcSet={srcSet} sizes={getAvatarSizes(size)} />
+            )}
+            <img
+              src={normalizedSrc}
+              alt={alt}
+              width={displaySize}
+              height={displaySize}
+              srcSet={useOptimizedSrcSet ? fallbackSrcSet : undefined}
+              sizes={useOptimizedSrcSet && srcSet ? getAvatarSizes(size) : undefined}
+              className={`w-full h-full object-cover transition-opacity duration-200 ${
+                imageLoaded ? 'opacity-100' : 'opacity-0'
+              }`}
+              loading={priority ? 'eager' : 'lazy'}
+              {...{ fetchpriority: priority ? 'high' : 'auto' }}
+              decoding={priority ? 'sync' : 'async'}
+              onLoad={() => setImageLoaded(true)}
+              onError={() => {
+                if (useOptimizedSrcSet && srcSet) {
+                  setUseOptimizedSrcSet(false);
+                  setImageLoaded(false);
+                  return;
+                }
+                setImageError(true);
+              }}
+            />
+          </picture>
         </>
       ) : showFallback ? (
         <div className={`w-full h-full ${bgColorClass} flex items-center justify-center`}>
