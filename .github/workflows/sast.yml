@@ -61,11 +61,9 @@ jobs:
           languages: javascript-typescript
           # Tune the ruleset rather than accepting the default. `security` keeps
           # only the high-confidence security queries; the noisy
-          # maintainability/style queries are left off deliberately.
+          # maintainability/style queries in `security-and-quality` are left
+          # off deliberately.
           queries: security
-          # Do not download the whole default pack — `security` already selects
-          # the subset we enforce.
-          disable-default-queries: false
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
@@ -105,7 +103,11 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: rust
-          queries: security
+          # Rust ships a smaller set of default suites, and the standalone
+          # `security` pack does not exist for it — naming it fails at
+          # `database init` with "Query pack security cannot be found". For
+          # this language we keep the default suite, which is already
+          # security-focused for Rust.
           disable-default-queries: false
 
       - name: Autobuild

@@ -42,12 +42,14 @@ Deliberately **out of scope**:
 
 ## Ruleset
 
+TypeScript uses the tuned security-only suite:
+
 ```yaml
+# .github/workflows/sast.yml — analyze-typescript
 queries: security
 ```
 
-This is the tuned starting point the issue asks for, and it is a deliberate
-narrowing of the CodeQL defaults:
+This is a deliberate narrowing of the CodeQL defaults:
 
 - `security-and-quality` (the default) includes maintainability and style
   queries. On this codebase that produces hundreds of findings that are not
@@ -57,6 +59,13 @@ narrowing of the CodeQL defaults:
 - `security` keeps only the high-confidence security queries: injection
   (including SQL/command/code), hardcoded credentials, unsafe deserialisation,
   path traversal, SSRF, cryptography misuse, and XSS.
+
+**Rust is different and does not use `queries: security`.** CodeQL has no
+standalone `security` query pack for Rust — requesting it fails at
+`database init` with `Query pack security cannot be found`. The Rust job
+therefore keeps the default suite, which for that language is already
+security-focused. If a narrower Rust ruleset is wanted later, it has to be
+expressed as an explicit query selection rather than a suite name.
 
 ### What the security suite is expected to catch here
 
