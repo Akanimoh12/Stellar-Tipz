@@ -2,6 +2,7 @@
   "name": "stellar-tipz-backend",
   "version": "0.1.0",
   "description": "Off-chain real-time backend for Stellar Tipz: REST API, on-chain indexer, credit scoring, notifications and WebSocket realtime.",
+  "license": "MIT",
   "main": "dist/server.js",
   "type": "module",
   "engines": {
