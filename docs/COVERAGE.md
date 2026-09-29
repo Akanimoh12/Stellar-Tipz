@@ -99,3 +99,19 @@ configs, but the failures are real and out of scope for the coverage work:
 Because of this, the `Run ... coverage` steps in `.github/workflows/coverage.yml`
 use `continue-on-error: true` so the ratchet can run. Remove that once the suites
 are green, so test failures block the build directly.
+
+## Other pre-existing blockers surfaced by enabling CI
+
+Running CI for the first time exposed two unrelated, pre-existing problems:
+
+- **Broken migration history.** `prisma migrate deploy` fails on a fresh database
+  because `20260623124048_add_refund_notification_xaccount_indexer_models`
+  recreates the `"User"` table already created by
+  `20250623120000_initial_schema` (`P3018` / `42P07`). The backend coverage job
+  therefore prepares its test database with `prisma db push --force-reset`, which
+  derives the schema from `schema.prisma`. The migration history still needs a
+  separate fix for real deployments.
+- **Contracts do not compile.** The `coverage-rust` job cannot produce coverage
+  (unresolved `crate::storage::DataKey`, missing event helpers), so it is marked
+  non-blocking to avoid masking the backend and frontend ratchets. Remove that
+  once the contracts build.
