@@ -9,7 +9,7 @@ import ErrorBoundary from '@/components/shared/ErrorBoundary';
  * Issue #733: All routes now have error boundaries
  */
 export const wrap = (element: React.ReactElement) => (
-  <ErrorBoundary>
+  <ErrorBoundary level="feature" name="route">
     <Suspense fallback={<PageLoader />}>
       <PageTransition>{element}</PageTransition>
     </Suspense>

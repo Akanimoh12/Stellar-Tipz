@@ -10,7 +10,7 @@ import CTASection from "./CTASection";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useI18n } from "@/i18n";
 
-import ErrorBoundary from "@/components/shared/ErrorBoundary";
+import { FeatureErrorBoundary } from "@/components/shared/ErrorBoundary";
 
 /**
  * Landing page assembled from individual section components.
@@ -28,31 +28,39 @@ const LandingPage: React.FC = () => {
       aria-label={t("landing.aria")}
       className="min-h-screen bg-white focus:outline-none"
     >
-      <HeroSection />
+      <FeatureErrorBoundary name="landing-hero">
+        <HeroSection />
+      </FeatureErrorBoundary>
       <Divider />
-      <FeaturesSection />
+      <FeatureErrorBoundary name="landing-features">
+        <FeaturesSection />
+      </FeatureErrorBoundary>
       <Divider />
-      <section
-        id="how-it-works"
-        role="region"
-        aria-label={t("landing.how.aria")}
-      >
-        <HowItWorksSection />
-      </section>
+      <FeatureErrorBoundary name="landing-how-it-works">
+        <section
+          id="how-it-works"
+          role="region"
+          aria-label={t("landing.how.aria")}
+        >
+          <HowItWorksSection />
+        </section>
+      </FeatureErrorBoundary>
       <Divider />
-      <ErrorBoundary>
+      <FeatureErrorBoundary name="landing-stats">
         <StatsSection />
-      </ErrorBoundary>
+      </FeatureErrorBoundary>
       <Divider />
-      <ErrorBoundary>
+      <FeatureErrorBoundary name="landing-top-creators">
         <TopCreatorsSection />
-      </ErrorBoundary>
+      </FeatureErrorBoundary>
       <Divider />
-      <ErrorBoundary>
+      <FeatureErrorBoundary name="landing-trending-creators">
         <TrendingCreatorsSection />
-      </ErrorBoundary>
+      </FeatureErrorBoundary>
       <Divider />
-      <CTASection />
+      <FeatureErrorBoundary name="landing-cta">
+        <CTASection />
+      </FeatureErrorBoundary>
     </main>
   );
 };

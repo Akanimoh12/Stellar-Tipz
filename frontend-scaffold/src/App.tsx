@@ -55,7 +55,7 @@ const AppRoutes: React.FC = () => {
       <ScrollToTop />
       <PageAnnouncement />
       <KeyboardShortcutsProvider />
-      <ErrorBoundary>
+      <ErrorBoundary level="root" name="app">
         <RpcHealthBanner />
         <OfflineBanner />
         <UpdatePrompt />
@@ -74,9 +74,9 @@ const AppRoutes: React.FC = () => {
           </div>
           <Footer />
         </div>
+        <ToastContainer />
+        <OnboardingTour open={isTourOpen} onComplete={completeTour} onSkip={skipTour} />
       </ErrorBoundary>
-      <ToastContainer />
-      <OnboardingTour open={isTourOpen} onComplete={completeTour} onSkip={skipTour} />
     </MotionConfig>
   );
 };

@@ -6,6 +6,7 @@ import { I18nProvider, useI18n } from "./i18n";
 import { logger } from "./services/logger";
 import { validateEnv } from "./helpers/env";
 import { initSentry } from "./services/sentry";
+import ErrorBoundary from "./components/shared/ErrorBoundary";
 
 import "./index.scss";
 
@@ -152,7 +153,9 @@ registerSW();
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <I18nProvider>
-      <Root />
+      <ErrorBoundary level="root" name="root">
+        <Root />
+      </ErrorBoundary>
     </I18nProvider>
   </React.StrictMode>,
 );

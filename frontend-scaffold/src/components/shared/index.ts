@@ -3,7 +3,7 @@ export { default as QRCode } from "./QRCode";
 export { default as CreditBadge } from "./CreditBadge";
 export { default as DataTable } from "./DataTable";
 export type { DataTableColumn, DataTableProps } from "./DataTable";
-export { default as ErrorBoundary } from "./ErrorBoundary";
+export { default as ErrorBoundary, FeatureErrorBoundary } from "./ErrorBoundary";
 export { default as GlobalSearch } from "./GlobalSearch";
 export { default as PageTransition } from "./PageTransition";
 export { default as PullToRefresh } from "./PullToRefresh";

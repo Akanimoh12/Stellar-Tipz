@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import PageContainer from "@/components/layout/PageContainer";
 import Breadcrumbs from "@/components/shared/Breadcrumbs";
 import ErrorState from "@/components/shared/ErrorState";
+import { FeatureErrorBoundary } from "@/components/shared/ErrorBoundary";
 import PullToRefresh from "@/components/shared/PullToRefresh";
 import WalletConnect from "@/components/shared/WalletConnect";
 import Button from "@/components/ui/Button";
@@ -124,6 +125,7 @@ const DashboardPage: React.FC = () => {
       id: "overview",
       label: "Overview",
       content: (
+        <FeatureErrorBoundary name="dashboard-overview">
         <div className="pt-6 space-y-8">
           <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
             <OverviewTab />
@@ -162,35 +164,45 @@ const DashboardPage: React.FC = () => {
             <TipsChart tips={tips} />
           </section>
         </div>
+        </FeatureErrorBoundary>
       ),
     },
     {
       id: "tips",
       label: "Tips",
       content: (
+        <FeatureErrorBoundary name="dashboard-tips">
         <div className="pt-6">
           <TipsTab />
         </div>
+        </FeatureErrorBoundary>
       ),
     },
     {
       id: "earnings",
       label: "Earnings",
-      content: <EarningsTab />,
+      content: (
+        <FeatureErrorBoundary name="dashboard-earnings">
+          <EarningsTab />
+        </FeatureErrorBoundary>
+      ),
     },
     {
       id: "favorites",
       label: "Favorites",
       content: (
+        <FeatureErrorBoundary name="dashboard-favorites">
         <div className="pt-6">
           <FavoritesList />
         </div>
+        </FeatureErrorBoundary>
       ),
     },
     {
       id: "achievements",
       label: "Achievements",
       content: (
+        <FeatureErrorBoundary name="dashboard-achievements">
         <div className="pt-6 space-y-6">
           <section
             role="region"
@@ -203,15 +215,18 @@ const DashboardPage: React.FC = () => {
             />
           </section>
         </div>
+        </FeatureErrorBoundary>
       ),
     },
     {
       id: "settings",
       label: "Settings",
       content: (
+        <FeatureErrorBoundary name="dashboard-settings">
         <div className="pt-6">
           <SettingsTab profile={creator} />
         </div>
+        </FeatureErrorBoundary>
       ),
     },
   ];
