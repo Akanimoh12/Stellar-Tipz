@@ -2,6 +2,7 @@
   "name": "stellar-tipz-docs",
   "version": "1.0.0",
   "description": "Stellar Tipz documentation site",
+  "license": "MIT",
   "scripts": {
     "docusaurus": "docusaurus",
     "start": "docusaurus start",

@@ -46,7 +46,7 @@
   },
   "prettier": "@stellar/prettier-config",
   "keywords": [],
-  "license": "Apache-2.0",
+  "license": "MIT",
   "devDependencies": {
     "@chromatic-com/storybook": "^5.2.1",
     "@eslint/js": "^10.0.1",
