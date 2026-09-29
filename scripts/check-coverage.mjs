@@ -252,9 +252,26 @@ if (criticalDetail.length > 0) {
   lines.push('No uncovered lines detected in critical paths.');
 }
 
+const baselineTotal = baselineData?.[component]?.totalLines;
+const infraSuspect =
+  component === 'backend' &&
+  typeof baselineTotal === 'number' &&
+  totalMeasured < baselineTotal - tolerance &&
+  !process.env.DATABASE_URL;
+
+if (infraSuspect) {
+  lines.push('');
+  lines.push(
+    '> **Heads up:** the backend baseline is measured in CI with Postgres and Redis. ' +
+      'This run looks far below it and `DATABASE_URL` is not set, so the database-backed tests ' +
+      'probably did not run. Start the services (`docker compose up -d`) before measuring; ' +
+      'otherwise the number is not comparable.',
+  );
+}
+
 lines.push('');
-lines.push('Floors are seeded from measured coverage on the default branch. Raise them by adding tests;');
-lines.push('never lower one to make a build pass.');
+lines.push('Floors and baselines are measured in CI (backend with Postgres/Redis). Raise them by');
+lines.push('adding tests; never lower one to make a build pass.');
 
 mkdirSync(dirname(reportPath), { recursive: true });
 writeFileSync(reportPath, lines.join('\n') + '\n', 'utf8');

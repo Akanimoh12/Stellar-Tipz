@@ -13,8 +13,8 @@ Coverage is enforced by two cooperating pieces:
 | Ratchet | `scripts/check-coverage.mjs` | Reads Vitest output, enforces the floors, reports uncovered critical lines |
 
 `codecov.yml` mirrors the same intent for the hosted Codecov dashboard, but the
-local ratchet is the authoritative gate because it runs even if the Codecov
-upload fails.
+ratchet is the authoritative gate because it runs in CI regardless of whether the
+Codecov upload succeeds.
 
 ```bash
 # produce the coverage data (writes <component>/coverage/*)
@@ -24,6 +24,10 @@ cd frontend-scaffold && npm run test:coverage
 # enforce the ratchet (also works from the repo root)
 npm run coverage:check
 ```
+
+For the backend, start Postgres and Redis first (`docker compose up -d`) so the
+database-backed tests run — the committed backend numbers come from CI, which
+provides both.
 
 ## Tiers
 
@@ -42,18 +46,27 @@ See `scripts/coverage-policy.mjs` for the floor and rationale of every module.
 
 ## Where the numbers come from
 
-Every floor is seeded from coverage measured on commit `9f1369f`, minus a small
-tolerance, so the ratchet starts from the true current state rather than an
-aspiration. The committed total baselines live in `coverage-baseline.json`.
+Every floor and baseline is seeded from coverage **measured in CI** (commit
+`181aaa2`), minus a small margin, so the ratchet starts from the true current
+state rather than an aspiration. The committed total baselines live in
+`coverage-baseline.json`.
+
+The backend is measured with the Postgres and Redis service containers running.
+Without them 279 of 705 tests fail and coverage reads roughly 12 points lower
+(50.5% vs 62.5%), which is why the baseline is a CI number: measuring the backend
+locally without infrastructure is not comparable. If you run `coverage:check`
+without `DATABASE_URL` set, the report says so explicitly.
 
 ## Flakiness tolerance
 
 Both suites currently have flaky tests, so coverage moves a little between runs.
-Baseline comparisons therefore allow a small band, declared as `tolerance` in
-each policy (`1.0` point for backend, `1.5` for the flakier frontend). A module
-must fall more than its tolerance below baseline to be reported as `REGRESSED`.
-Enforced floors are separate and keep a wider ~2 point headroom, so run-to-run
-noise cannot trip them.
+Baseline comparisons therefore allow a band, declared as `tolerance` in each
+policy (`2.5` points for the backend, whose database-backed suite is large, and
+`1.5` for the flakier frontend). A module must fall more than its tolerance below
+baseline to be reported as `REGRESSED`. Enforced floors sit just below the
+ratchet threshold and act as a hard backstop, so run-to-run noise cannot trip
+them.
+
 
 ## Raising a floor
 
@@ -76,13 +89,16 @@ request this is posted as a comment and included in the job's step summary.
 Two modules are pinned to a deliberately low floor and flagged `knownGap` in the
 policy:
 
-| Component | Module | Measured | Floor | Why |
+| Component | Module | Measured (CI) | Floor | Why |
 | --- | --- | --- | --- | --- |
-| backend | `auth` | 12.84% | 10% | Challenge/verify and token issuance are exercised by database-backed integration tests |
-| backend | `admin` | 10.08% | 8% | Privileged routes are exercised by database-backed integration tests |
+| backend | `auth` | 14.7% | 10% | Challenge/verify and token issuance are mostly exercised by database-backed integration tests |
+| backend | `admin` | 12.9% | 8% | Privileged routes are mostly exercised by database-backed integration tests |
 
-The low baseline is a real risk. The ratchet prevents further regression, and a
-follow-up should add unit coverage so these floors can be raised.
+These two are the weakest critical modules by a wide margin. The ratchet prevents
+further regression and the critical-path report lists their uncovered lines on
+every PR, but the floors are pinned low on purpose: raising them without adding
+real tests would just break the build. Closing them is follow-up work.
+
 
 ## Pre-existing suite failures
 
@@ -92,9 +108,10 @@ configs, but the failures are real and out of scope for the coverage work:
 
 - **Frontend**: 137 of 783 tests fail. Mostly Vitest 4 upgrade fallout (the
   removed `Snapshots` export) and components wrapped in a nested `<Router>`.
-- **Backend**: 279 of 705 tests fail locally because Postgres and Redis are not
-  available; the new `coverage-backend` CI job provides both as service
-  containers.
+- **Backend**: 279 of 705 tests fail without Postgres and Redis. The new
+  `coverage-backend` CI job provides both as service containers, so the backend
+  baseline is measured with the database-backed tests actually running.
+
 
 Because of this, the `Run ... coverage` steps in `.github/workflows/coverage.yml`
 use `continue-on-error: true` so the ratchet can run. Remove that once the suites

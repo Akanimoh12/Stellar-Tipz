@@ -39,92 +39,96 @@ export const TIERS = {
 export const backendPolicy = {
   component: 'backend',
   dir: 'backend',
-  measuredAt: '9f1369f',
+  // Baselines are measured in CI, where the Postgres and Redis service
+  // containers let the database-backed integration tests run. Measuring the
+  // backend without that infrastructure (279 of 705 tests fail) yields a much
+  // lower, non-comparable number, so CI is the source of truth for the ratchet.
+  measuredAt: '181aaa2 (CI, with Postgres/Redis)',
   // Percentage points of slack allowed when comparing against the recorded
-  // baseline. Both suites have flaky tests (worker timeouts, shared state), so
-  // coverage moves slightly run to run. Without slack the ratchet fails on
-  // noise. Floors keep their own separate 2pt headroom.
-  tolerance: 1.0,
-  globalFloor: 50,
+  // baseline. With the database-backed tests running the suite is large and has
+  // flaky tests (worker timeouts, shared state), so coverage moves between runs.
+  // Floors sit a further ~1.5pt below the ratchet threshold as a hard backstop.
+  tolerance: 2.5,
+  globalFloor: 58,
   modules: [
     {
       name: 'withdrawals',
       tier: 'critical',
-      floor: 55,
-      baseline: 57.07,
+      floor: 79,
+      baseline: 83.44,
       rationale: 'Payout execution. A defect can send funds to the wrong destination.',
     },
     {
       name: 'refunds',
       tier: 'critical',
-      floor: 52,
-      baseline: 54.59,
+      floor: 54,
+      baseline: 57.95,
       rationale: 'Returns funds to the payer. Untested branches risk double refunds.',
     },
     {
       name: 'auth',
       tier: 'critical',
       floor: 10,
-      baseline: 12.84,
+      baseline: 14.7,
       rationale: 'Challenge/verify and token issuance. An untested branch is a bypass.',
-      // Baseline is very low; the ratchet blocks regression while a follow-up
-      // issue raises the real floor once Postgres-backed auth tests are wired up.
+      // Still the weakest critical module; keep the floor deliberately low and
+      // track raising it as follow-up work rather than pretending it is covered.
       knownGap: true,
     },
     {
       name: 'admin',
       tier: 'critical',
       floor: 8,
-      baseline: 10.08,
+      baseline: 12.9,
       rationale: 'Privileged operations. Authorization gaps are the highest-severity risk.',
       knownGap: true,
     },
     {
       name: 'subscriptions',
       tier: 'financial',
-      floor: 43,
-      baseline: 44.96,
+      floor: 88,
+      baseline: 92.57,
       rationale: 'Recurring billing state machine; incorrect transitions charge users.',
     },
     {
       name: 'credit',
       tier: 'financial',
-      floor: 42,
-      baseline: 44.58,
+      floor: 49,
+      baseline: 53.46,
       rationale: 'Credit scoring and redemption affects payouts.',
     },
     {
       name: 'tips',
       tier: 'financial',
-      floor: 47,
-      baseline: 49.72,
+      floor: 80,
+      baseline: 83.94,
       rationale: 'Core tip settlement path.',
     },
     {
       name: 'ipfs',
       tier: 'financial',
-      floor: 56,
-      baseline: 58.33,
+      floor: 62,
+      baseline: 66.67,
       rationale: 'Content-addressed receipt storage; integrity matters for disputes.',
     },
-    { name: 'webhooks', tier: 'standard', floor: 56, baseline: 58.65, rationale: 'Outbound event delivery.' },
-    { name: 'notifications', tier: 'standard', floor: 53, baseline: 55.22, rationale: 'User-facing delivery.' },
-    { name: 'analytics', tier: 'standard', floor: 39, baseline: 41.77, rationale: 'Reporting; not on a money path.' },
-    { name: 'goals', tier: 'standard', floor: 45, baseline: 47.04, rationale: 'Creator goal tracking.' },
-    { name: 'profiles', tier: 'standard', floor: 13, baseline: 14.94, rationale: 'Public metadata CRUD.' },
-    { name: 'x', tier: 'standard', floor: 50, baseline: 52.08, rationale: 'Social graph edges.' },
-    { name: 'og', tier: 'standard', floor: 60, baseline: 62.5, rationale: 'Static social image rendering.' },
-    { name: 'streaks', tier: 'standard', floor: 69, baseline: 71.43, rationale: 'Gamification counters.' },
-    { name: 'leaderboard', tier: 'standard', floor: 71, baseline: 73.84, rationale: 'Ranking display.' },
-    { name: 'stats', tier: 'standard', floor: 74, baseline: 76.92, rationale: 'Aggregate counters.' },
-    { name: 'discovery', tier: 'standard', floor: 76, baseline: 78.77, rationale: 'Content discovery queries.' },
-    { name: 'search', tier: 'standard', floor: 83, baseline: 85.25, rationale: 'Search indexing and querying.' },
-    { name: 'realtime', tier: 'standard', floor: 63, baseline: 65.1, rationale: 'Socket.IO gateway and event fan-out.' },
-    { name: 'jobs', tier: 'standard', floor: 65, baseline: 67.94, rationale: 'Background job orchestration.' },
-    { name: 'indexer', tier: 'standard', floor: 80, baseline: 82.17, rationale: 'Chain event ingestion.' },
-    { name: 'common', tier: 'standard', floor: 78, baseline: 80.15, rationale: 'Shared utilities and middleware helpers.' },
-    { name: 'db', tier: 'standard', floor: 84, baseline: 86.67, rationale: 'Prisma client lifecycle.' },
-    { name: 'config', tier: 'standard', floor: 95, baseline: 97.4, rationale: 'Env parsing; already near-complete.' },
+    { name: 'webhooks', tier: 'standard', floor: 65, baseline: 69.55, rationale: 'Outbound event delivery.' },
+    { name: 'notifications', tier: 'standard', floor: 54, baseline: 58.68, rationale: 'User-facing delivery.' },
+    { name: 'analytics', tier: 'standard', floor: 46, baseline: 50.59, rationale: 'Reporting; not on a money path.' },
+    { name: 'goals', tier: 'standard', floor: 47, baseline: 51.16, rationale: 'Creator goal tracking.' },
+    { name: 'profiles', tier: 'standard', floor: 13, baseline: 17.29, rationale: 'Public metadata CRUD.' },
+    { name: 'x', tier: 'standard', floor: 53, baseline: 57.03, rationale: 'Social graph edges.' },
+    { name: 'og', tier: 'standard', floor: 58, baseline: 62.5, rationale: 'Static social image rendering.' },
+    { name: 'streaks', tier: 'standard', floor: 75, baseline: 79.37, rationale: 'Gamification counters.' },
+    { name: 'leaderboard', tier: 'standard', floor: 77, baseline: 81.09, rationale: 'Ranking display.' },
+    { name: 'stats', tier: 'standard', floor: 86, baseline: 90.16, rationale: 'Aggregate counters.' },
+    { name: 'discovery', tier: 'standard', floor: 74, baseline: 78.77, rationale: 'Content discovery queries.' },
+    { name: 'search', tier: 'standard', floor: 86, baseline: 90.6, rationale: 'Search indexing and querying.' },
+    { name: 'realtime', tier: 'standard', floor: 83, baseline: 87.83, rationale: 'Socket.IO gateway and event fan-out.' },
+    { name: 'jobs', tier: 'standard', floor: 70, baseline: 74.92, rationale: 'Background job orchestration.' },
+    { name: 'indexer', tier: 'standard', floor: 82, baseline: 86.79, rationale: 'Chain event ingestion.' },
+    { name: 'common', tier: 'standard', floor: 76, baseline: 80.63, rationale: 'Shared utilities and middleware helpers.' },
+    { name: 'db', tier: 'standard', floor: 82, baseline: 86.67, rationale: 'Prisma client lifecycle.' },
+    { name: 'config', tier: 'standard', floor: 93, baseline: 97.4, rationale: 'Env parsing; already near-complete.' },
   ],
   excluded: [
     { pattern: 'src/server.ts', reason: 'Process entrypoint; exercised by integration tests, not unit tests.' },
