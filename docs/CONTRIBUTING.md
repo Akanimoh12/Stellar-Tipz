@@ -432,3 +432,18 @@ When adding a page:
 ---
 
 **Thank you for contributing to Stellar Tipz! Every contribution helps empower creators worldwide. 💫**
+
+
+# Pre-Commit Hooks & DX Guidelines
+
+To maintain code quality without frustrating developer velocity, our pre-commit hooks are optimized for speed and reliability.
+
+## Performance & Reliability Standards
+- **Time Budget**: Hooks must execute within **5 seconds** under normal conditions.
+- **Staged Files Only**: `lint-staged` ensures checks run exclusively on files staged for commit.
+- **Cross-Platform**: Compatible across macOS, Linux, and Windows environments.
+
+## Emergency Bypass Protocol
+In genuine production emergencies where hooks block an urgent fix, you may bypass hooks explicitly:
+```bash
+git commit -m "hotfix: critical production patch" --no-verify
