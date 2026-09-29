@@ -717,3 +717,190 @@ fn test_multiple_senders_under_concentration_cap() {
     let profile = client.get_profile(&creator);
     assert_eq!(profile.profile.total_tips_received, 50_000_000);
 }
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BATCH TIPPING (Issue #XXX)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_batch_tip_single_recipient() {
+    let (env, client, _contract_id, tipper, creator, _sac) = setup_env();
+    let msg = String::from_str(&env, "batch tip");
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    recipients.push_back((creator.clone(), 10_000_000));
+
+    let count = client.batch_tip(&tipper, &recipients, &msg).unwrap();
+    assert_eq!(count, 1);
+
+    let profile = client.get_profile(&creator);
+    assert_eq!(profile.profile.total_tips_received, 10_000_000);
+    assert_eq!(profile.profile.total_tips_count, 1);
+}
+
+#[test]
+fn test_batch_tip_max_recipients() {
+    let (env, client, _contract_id, tipper, _creator, sac) = setup_env();
+    let token_client = token::StellarAssetClient::new(&env, &sac);
+    let msg = String::from_str(&env, "batch");
+
+    token_client.mint(&tipper, &1_000_000_000);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    let mut creators = soroban_sdk::Vec::new(&env);
+
+    // Register 5 creators and add to batch
+    for _ in 0..5 {
+        let creator = Address::generate(&env);
+        client.register_profile(
+            &creator,
+            &String::from_str(&env, "usr"),
+            &String::from_str(&env, "usr"),
+            &String::from_str(&env, ""),
+            &String::from_str(&env, ""),
+            &String::from_str(&env, ""),
+        );
+        creators.push_back(creator.clone());
+        recipients.push_back((creator, 10_000_000));
+    }
+
+    let count = client.batch_tip(&tipper, &recipients, &msg).unwrap();
+    assert_eq!(count, 5);
+
+    // Verify all creators received tips
+    for i in 0..5 {
+        let creator = creators.get(i).unwrap();
+        let profile = client.get_profile(&creator);
+        assert_eq!(profile.profile.total_tips_received, 10_000_000);
+    }
+}
+
+#[test]
+fn test_batch_tip_over_max_reverts() {
+    let (env, client, _contract_id, tipper, _creator, sac) = setup_env();
+    let token_client = token::StellarAssetClient::new(&env, &sac);
+    let msg = String::from_str(&env, "batch");
+
+    token_client.mint(&tipper, &1_000_000_000);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+
+    // Try to register 6 creators (exceeds max 5)
+    for _ in 0..6 {
+        let creator = Address::generate(&env);
+        client.register_profile(
+            &creator,
+            &String::from_str(&env, "usr"),
+            &String::from_str(&env, "usr"),
+            &String::from_str(&env, ""),
+            &String::from_str(&env, ""),
+            &String::from_str(&env, ""),
+        );
+        recipients.push_back((creator, 10_000_000));
+    }
+
+    let result = client.try_batch_tip(&tipper, &recipients, &msg);
+    assert_eq!(result, Err(Ok(ContractError::BatchTooLarge)));
+}
+
+#[test]
+fn test_batch_tip_one_invalid_recipient_reverts_all() {
+    let (env, client, _contract_id, tipper, creator1, sac) = setup_env();
+    let token_client = token::StellarAssetClient::new(&env, &sac);
+    let msg = String::from_str(&env, "batch");
+
+    token_client.mint(&tipper, &1_000_000_000);
+
+    // Register second creator
+    let creator2 = Address::generate(&env);
+    client.register_profile(
+        &creator2,
+        &String::from_str(&env, "creator2"),
+        &String::from_str(&env, "creator2"),
+        &String::from_str(&env, ""),
+        &String::from_str(&env, ""),
+        &String::from_str(&env, ""),
+    );
+
+    // Unregistered creator
+    let creator3 = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    recipients.push_back((creator1.clone(), 10_000_000));
+    recipients.push_back((creator2.clone(), 10_000_000));
+    recipients.push_back((creator3.clone(), 10_000_000)); // This one is unregistered
+
+    // Entire batch should revert
+    let result = client.try_batch_tip(&tipper, &recipients, &msg);
+    assert_eq!(result, Err(Ok(ContractError::NotRegistered)));
+
+    // Verify no tips were sent
+    let profile1 = client.get_profile(&creator1);
+    assert_eq!(profile1.profile.total_tips_received, 0);
+    let profile2 = client.get_profile(&creator2);
+    assert_eq!(profile2.profile.total_tips_received, 0);
+}
+
+#[test]
+fn test_batch_tip_duplicate_recipient() {
+    let (env, client, _contract_id, tipper, creator, sac) = setup_env();
+    let token_client = token::StellarAssetClient::new(&env, &sac);
+    let msg = String::from_str(&env, "batch");
+
+    token_client.mint(&tipper, &1_000_000_000);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    // Same creator twice
+    recipients.push_back((creator.clone(), 10_000_000));
+    recipients.push_back((creator.clone(), 20_000_000));
+
+    let count = client.batch_tip(&tipper, &recipients, &msg).unwrap();
+    assert_eq!(count, 2);
+
+    let profile = client.get_profile(&creator);
+    assert_eq!(profile.profile.total_tips_received, 30_000_000);
+    assert_eq!(profile.profile.total_tips_count, 2);
+}
+
+#[test]
+fn test_batch_tip_empty_recipients_fails() {
+    let (env, client, _contract_id, tipper, _creator, _sac) = setup_env();
+    let msg = String::from_str(&env, "batch");
+
+    let recipients = soroban_sdk::Vec::new(&env);
+
+    let result = client.try_batch_tip(&tipper, &recipients, &msg);
+    assert_eq!(result, Err(Ok(ContractError::InvalidInput)));
+}
+
+#[test]
+fn test_batch_tip_emits_individual_events() {
+    let (env, client, _contract_id, tipper, creator1, sac) = setup_env();
+    let token_client = token::StellarAssetClient::new(&env, &sac);
+    let msg = String::from_str(&env, "batch");
+
+    token_client.mint(&tipper, &1_000_000_000);
+
+    let creator2 = Address::generate(&env);
+    client.register_profile(
+        &creator2,
+        &String::from_str(&env, "creator2"),
+        &String::from_str(&env, "creator2"),
+        &String::from_str(&env, ""),
+        &String::from_str(&env, ""),
+        &String::from_str(&env, ""),
+    );
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    recipients.push_back((creator1.clone(), 10_000_000));
+    recipients.push_back((creator2.clone(), 20_000_000));
+
+    client.batch_tip(&tipper, &recipients, &msg).unwrap();
+
+    // Verify events were emitted by checking tip records exist
+    let tips1 = client.get_creator_tip_count(&creator1);
+    assert_eq!(tips1, 1);
+    let tips2 = client.get_creator_tip_count(&creator2);
+    assert_eq!(tips2, 1);
+}

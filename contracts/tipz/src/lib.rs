@@ -275,6 +275,37 @@ impl TipzContract {
         tips::send_tip_on_behalf(&env, &sender, &on_behalf_of, &creator, amount, &message)
     }
 
+    /// Send tips to multiple creators atomically.
+    ///
+    /// All recipients are validated before any transfers occur. If any recipient
+    /// is invalid or blocked, the entire batch reverts (all-or-nothing semantics).
+    /// Per-tip events emit individually, so the indexer needs no changes.
+    ///
+    /// # Parameters
+    /// - `from` – the address sending all tips (must authenticate)
+    /// - `recipients` – Vec<(creator_address, amount)>, max 5 entries, max 5 XLM per tip
+    /// - `message` – optional message (max 280 chars, sent with all tips)
+    ///
+    /// # Returns
+    /// Number of tips successfully sent on success.
+    ///
+    /// # Errors
+    /// - `BatchTooLarge` if more than max recipients
+    /// - `InvalidInput` if recipients is empty
+    /// - `NotRegistered` if any recipient has no profile
+    /// - `CannotTipSelf` if from tries to tip themselves
+    /// - `TipperBlocked` if any creator blocked from
+    /// - `BelowCreatorMinimum` if any tip is below creator's minimum
+    /// - Other send_tip errors (paused, rate limited, etc.)
+    pub fn batch_tip(
+        env: Env,
+        from: Address,
+        recipients: Vec<(Address, i128)>,
+        message: String,
+    ) -> Result<u32, ContractError> {
+        tips::batch_tip(&env, &from, recipients, &message)
+    }
+
     /// Withdraw accumulated tips (fee deducted).
     pub fn withdraw_tips(env: Env, caller: Address, amount: i128) -> Result<(), ContractError> {
         tips::withdraw_tips(&env, &caller, amount)

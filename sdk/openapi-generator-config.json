@@ -1,0 +1,21 @@
+{
+  "packageName": "@stellar-tipz/sdk",
+  "packageVersion": "1.0.0",
+  "packageTitle": "Stellar Tipz API Client",
+  "packageDescription": "Auto-generated TypeScript client for Stellar Tipz API",
+  "npmName": "@stellar-tipz/sdk",
+  "npmVersion": "1.0.0",
+  "npmRepository": "https://github.com/mariam-farrukh/Stellar-Tipz",
+  "supportsES6": true,
+  "withInterfaces": true,
+  "generateSourceMap": true,
+  "modelPropertyNaming": "camelCase",
+  "enumPropertyNaming": "camelCase",
+  "apiDocumentationUrl": "/api/v1/docs",
+  "httpUserAgent": "StellarTipzSDK/1.0.0",
+  "additionalProperties": {
+    "apiBasePathWithoutHost": "/api/v1",
+    "basePathWithoutHost": "/api/v1",
+    "dateLibrary": "date-fns"
+  }
+}

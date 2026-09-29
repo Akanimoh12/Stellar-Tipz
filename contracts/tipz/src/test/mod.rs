@@ -2,6 +2,7 @@
 
 mod test_admin_audit;
 mod test_circuit_breaker;
+mod test_credit_vectors;
 mod test_emergency_withdraw;
 mod test_entrypoint_fuzz;
 mod test_fuzz;
