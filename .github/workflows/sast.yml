@@ -59,11 +59,26 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: javascript-typescript
-          # Tune the ruleset rather than accepting the default. `security` keeps
-          # only the high-confidence security queries; the noisy
-          # maintainability/style queries in `security-and-quality` are left
-          # off deliberately.
-          queries: security
+          # Tune the ruleset rather than accepting the default, but do it by
+          # excluding queries rather than naming a `security` pack: there is no
+          # standalone pack of that name for any language here, and requesting
+          # one fails at `database init` with
+          # "Query pack security cannot be found".
+          #
+          # Instead we keep the default suite and exclude the query tags that
+          # produce non-security noise. `maintainability` and `usability` are
+          # the style/design queries; `experimental` and `external/cwe` are
+          # lower-confidence. What remains is the high-confidence
+          # security-focused set — injection, hardcoded secrets, unsafe
+          # deserialisation, path traversal, SSRF, XSS, and crypto misuse.
+          queries: security-and-quality
+          query-filters:
+            - exclude:
+                tags:
+                  - maintainability
+                  - usability
+                  - experimental
+                  - external/cwe
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
@@ -103,12 +118,17 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: rust
-          # Rust ships a smaller set of default suites, and the standalone
-          # `security` pack does not exist for it — naming it fails at
-          # `database init` with "Query pack security cannot be found". For
-          # this language we keep the default suite, which is already
-          # security-focused for Rust.
-          disable-default-queries: false
+          # Same tuning as TypeScript: keep the default suite, drop the
+          # non-security query tags. See the comment in the TypeScript job for
+          # why this is expressed as a filter rather than `queries: security`.
+          queries: security-and-quality
+          query-filters:
+            - exclude:
+                tags:
+                  - maintainability
+                  - usability
+                  - experimental
+                  - external/cwe
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3

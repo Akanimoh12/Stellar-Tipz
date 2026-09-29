@@ -42,30 +42,45 @@ Deliberately **out of scope**:
 
 ## Ruleset
 
-TypeScript uses the tuned security-only suite:
+Both jobs keep the default `security-and-quality` suite and narrow it by
+excluding query tags:
 
 ```yaml
-# .github/workflows/sast.yml — analyze-typescript
-queries: security
+queries: security-and-quality
+query-filters:
+  - exclude:
+      tags:
+        - maintainability
+        - usability
+        - experimental
+        - external/cwe
 ```
 
-This is a deliberate narrowing of the CodeQL defaults:
+This is the tuning the issue asks for, and it is deliberate:
 
-- `security-and-quality` (the default) includes maintainability and style
-  queries. On this codebase that produces hundreds of findings that are not
-  security problems, which is exactly how SAST gets switched off.
-- `security-extended` adds lower-confidence security queries. Useful later, not
-  on day one.
-- `security` keeps only the high-confidence security queries: injection
-  (including SQL/command/code), hardcoded credentials, unsafe deserialisation,
-  path traversal, SSRF, cryptography misuse, and XSS.
+- `maintainability` and `usability` are the style and design queries. On this
+  codebase they produce hundreds of findings that are not security problems,
+  which is exactly how SAST ends up switched off.
+- `experimental` and `external/cwe` are lower-confidence and would add volume
+  before anyone has triaged a baseline.
 
-**Rust is different and does not use `queries: security`.** CodeQL has no
-standalone `security` query pack for Rust — requesting it fails at
-`database init` with `Query pack security cannot be found`. The Rust job
-therefore keeps the default suite, which for that language is already
-security-focused. If a narrower Rust ruleset is wanted later, it has to be
-expressed as an explicit query selection rather than a suite name.
+What remains is the high-confidence security-focused set: injection (including
+SQL/command/code), hardcoded credentials, unsafe deserialisation, path
+traversal, SSRF, XSS, and cryptography misuse.
+
+### Why not `queries: security`
+
+The obvious spelling — `queries: security` — **does not work**. There is no
+standalone query pack named `security`; it fails during `database init` with:
+
+```
+A fatal error occurred: Query pack security cannot be found. Check the spelling of the pack.
+```
+
+This was confirmed in CI on both languages, not assumed. The `security-*` names
+that do exist are full suites (`security-extended`, `security-and-quality`), and
+selecting one of those cannot be combined with a tag filter to mean "security
+only". Filtering tags off a known suite is the approach that actually works.
 
 ### What the security suite is expected to catch here
 
