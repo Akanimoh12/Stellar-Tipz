@@ -82,7 +82,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sast-sarif-typescript
-          path: frontend-scaffold/results/*.sarif
+          # `output: sarif-results` writes to the workspace root, not under the
+          # component directory, so the artifact glob is workspace-relative.
+          path: sarif-results/*.sarif
           if-no-files-found: warn
           retention-days: 30
 
@@ -120,6 +122,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sast-sarif-rust
-          path: contracts/results/*.sarif
+          # Workspace-relative for the same reason as the TypeScript job.
+          path: sarif-results/*.sarif
           if-no-files-found: warn
           retention-days: 30
