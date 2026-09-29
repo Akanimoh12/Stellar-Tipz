@@ -68,6 +68,7 @@ Our unique credit score algorithm provides transparent creator credibility. For 
 
 **Quick Overview:**
 - Score range: **0–100**
+![Docs CI](https://github.com/Akanimoh12/Stellar-Tipz/actions/workflows/docs-ci.yml/badge.svg)
 - Base score: **40** (all new creators start at Silver tier)
 - Components: Tip volume (20%), X metrics (30%), Account age (10%), Streak bonus (max 10 pts)
 - Maximum score: **100** (Diamond tier)
