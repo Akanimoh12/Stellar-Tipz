@@ -698,6 +698,8 @@ export const useContract = () => {
       amount: string,
       message: string,
       isEncrypted = false,
+      expectedMinTip?: bigint,
+      expectedFeeBps?: number,
     ): Promise<string> => {
       const publicKey = wallet.publicKey;
       if (!publicKey) throw new Error("Wallet not connected");
@@ -714,6 +716,15 @@ export const useContract = () => {
         // Convert XLM amount to stroops before sending to contract
         const stroopAmount = xlmToStroop(amount).toString();
 
+        const optionalI128 = (value?: bigint): xdr.ScVal =>
+          value === undefined
+            ? nativeToScVal({ type: "none" })
+            : nativeToScVal({ type: "some", value });
+        const optionalU32 = (value?: number): xdr.ScVal =>
+          value === undefined
+            ? nativeToScVal({ type: "none" })
+            : nativeToScVal({ type: "some", value });
+
         const tx = txBuilder
           .addOperation(
             contract.call(
@@ -724,6 +735,8 @@ export const useContract = () => {
               nativeToScVal(message),
               nativeToScVal(false, { type: "bool" }),
               nativeToScVal(isEncrypted, { type: "bool" }),
+              optionalI128(expectedMinTip),
+              optionalU32(expectedFeeBps),
             ),
           )
           .setTimeout(TimeoutInfinite)

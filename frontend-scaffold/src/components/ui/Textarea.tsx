@@ -11,7 +11,7 @@ interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement
 
 const Textarea: React.FC<TextareaProps> = ({
   label, error, maxLength, rows = 4, className = '', id,
-  onChange, value, defaultValue, warnAt, dangerAt, ...props
+  onChange, value, defaultValue, warnAt, dangerAt, required, ...props
 }) => {
   const generatedId = React.useId();
   const textareaId = id || label?.toLowerCase().replace(/\s+/g, '-') || generatedId;
@@ -40,6 +40,9 @@ const Textarea: React.FC<TextareaProps> = ({
       {label && (
         <label htmlFor={textareaId} className="block text-sm font-bold uppercase tracking-wide mb-2">
           {label}
+          {required && (
+            <span aria-hidden="true" className="ml-1 text-red-500">*</span>
+          )}
         </label>
       )}
       <textarea
@@ -47,8 +50,12 @@ const Textarea: React.FC<TextareaProps> = ({
         className={`w-full px-4 py-3 border-2 border-black bg-white text-black font-medium
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist
           placeholder:text-gray-700 dark:text-gray-300 dark:placeholder:text-gray-400 resize-y ${error ? 'border-red-600' : ''} ${className}`}
-        onChange={handleChange} value={value} defaultValue={defaultValue}
-        aria-invalid={error ? 'true' : 'false'}
+        onChange={handleChange}
+        value={value}
+        defaultValue={defaultValue}
+        required={required}
+        aria-required={required ? 'true' : undefined}
+        aria-invalid={error ? 'true' : undefined}
         aria-describedby={[errorId, counterId].filter(Boolean).join(' ') || undefined}
         {...props}
       />

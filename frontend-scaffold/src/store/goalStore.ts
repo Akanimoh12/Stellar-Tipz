@@ -45,7 +45,14 @@ export const useGoalStore = create<GoalState>()(
     }),
     {
       name: 'tipz_goals',
+      version: 1,
       partialize: (state) => ({ goals: state.goals }),
+      migrate: (persistedState: unknown, version: number) => {
+        if (version !== 1 || !persistedState || typeof persistedState !== 'object') {
+          return { goals: [] };
+        }
+        return persistedState as { goals: Goal[] };
+      },
     },
   ),
 );

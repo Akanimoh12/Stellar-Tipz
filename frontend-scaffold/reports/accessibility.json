@@ -1,25 +1,30 @@
 {
-  "generatedAt": "2026-05-28T16:12:14.295Z",
+  "generatedAt": "2026-09-29T08:39:58.533Z",
   "pages": [
     {
       "page": "LandingPage",
       "violations": 0,
-      "checkedAt": "2026-05-28T16:11:47.934Z"
+      "checkedAt": "2026-09-29T08:39:55.480Z"
     },
     {
       "page": "ProfilePage",
       "violations": 0,
-      "checkedAt": "2026-05-28T16:11:53.262Z"
+      "checkedAt": "2026-09-29T08:39:56.108Z"
     },
     {
       "page": "TipPage",
       "violations": 0,
-      "checkedAt": "2026-05-28T16:11:56.601Z"
+      "checkedAt": "2026-09-29T08:39:56.497Z"
     },
     {
       "page": "LeaderboardPage",
       "violations": 0,
-      "checkedAt": "2026-05-28T16:12:09.477Z"
+      "checkedAt": "2026-09-29T08:39:57.896Z"
+    },
+    {
+      "page": "DashboardPage",
+      "violations": 0,
+      "checkedAt": "2026-09-29T08:39:58.528Z"
     }
   ]
 }

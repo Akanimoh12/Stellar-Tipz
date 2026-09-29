@@ -83,6 +83,29 @@
 }
 
 @layer utilities {
+  /* #1338: notched-device safe area insets. Requires `viewport-fit=cover` in
+     index.html for the insets to be non-zero on iOS. */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .mb-safe {
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .bottom-safe {
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .right-safe {
+    right: calc(1rem + env(safe-area-inset-right, 0px));
+  }
+
+  /* Keeps a focused field clear of fixed bottom bars and the on-screen keyboard */
+  .scroll-safe-bottom {
+    scroll-margin-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+  }
+
   /* Hide scrollbar while keeping scroll functionality */
   .no-scrollbar {
     -ms-overflow-style: none;

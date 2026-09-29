@@ -1,0 +1,17 @@
+// backend/prisma/schema.prisma
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  name        String    // Friendly name or description for the key
+  hashedKey   String    @unique
+  scopes      String[]  // Array of permission scopes (e.g., ["admin:all", "webhook:write"])
+  createdBy   String    // Admin user ID or service identifier who generated the key
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([hashedKey])
+  @@index([createdBy])
+}

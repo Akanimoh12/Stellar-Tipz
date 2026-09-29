@@ -52,7 +52,7 @@ function InstallPromptBanner() {
       role="status"
       aria-live="polite"
       aria-busy="false"
-      className="fixed bottom-4 left-1/2 z-[9999] w-[min(560px,calc(100%-2rem))] -translate-x-1/2 border-4 border-black bg-white p-4 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
+      className="fixed bottom-safe left-1/2 z-[9999] w-[min(560px,calc(100%-2rem))] -translate-x-1/2 border-4 border-black bg-white p-4 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">

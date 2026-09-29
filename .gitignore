@@ -6,6 +6,9 @@ FRONTEND_ISSUE.md
 frontend
 contract
 
+# SDK Generation temporaries
+/tmp/openapi-current.json
+
 # Dependencies
 node_modules/
 target/
@@ -35,3 +38,7 @@ Thumbs.db
 
 issue.md
 pr.md
+
+...
+.npm_cache/
+

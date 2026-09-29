@@ -4,7 +4,6 @@
   "app.reloadNow": "Reload now",
   "app.skipToMain": "Skip to main content",
   "app.updateAvailable": "Update available",
-  "app.criticalUpdateRequired": "Critical update required to continue",
   "offline.description": "You appear to be offline. Reconnect to continue using live features.",
   "offline.title": "Offline",
   "common.auto": "Auto",
@@ -240,5 +239,8 @@
   "wallet.connect": "Connect Wallet",
   "wallet.connecting": "Connecting...",
   "wallet.disconnect": "Disconnect",
-  "wallet.disconnectWithAddress": "Disconnect {{address}}"
+  "wallet.disconnectWithAddress": "Disconnect {{address}}",
+  "common": {
+    "close": "Close"
+  }
 }
