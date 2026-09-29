@@ -67,7 +67,7 @@ const ProfileEditPage: React.FC = () => {
     return (
       <PageContainer maxWidth="md" className="py-20">
         <ErrorState
-          category={categorizeError(error).category}
+          errorData={categorizeError(error)}
           onRetry={refetch}
         />
       </PageContainer>

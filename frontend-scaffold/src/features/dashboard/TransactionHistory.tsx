@@ -214,7 +214,7 @@ const TransactionHistory: React.FC = () => {
   }
 
   if (error && filtered.length === 0) {
-    return <ErrorState category={categorizeError(error)} onRetry={refetch} />;
+    return <ErrorState errorData={categorizeError(error)} onRetry={refetch} />;
   }
 
   return (

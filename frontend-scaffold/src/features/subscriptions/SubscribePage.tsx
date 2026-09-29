@@ -170,7 +170,7 @@ const SubscribePage: React.FC = () => {
     return (
       <PageContainer maxWidth="lg" className="py-20">
         <ErrorState
-          category={categorizeError(error).category}
+          errorData={categorizeError(error)}
           onRetry={fetchSubscriptions}
         />
       </PageContainer>

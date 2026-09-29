@@ -199,8 +199,7 @@ const TipPage: React.FC = () => {
     return (
       <PageContainer maxWidth="xl" className="py-20">
         <ErrorState
-          category={categorizeError(fetchError || "Not Found").category}
-          message={categorizeError(fetchError || "Not Found").message}
+          errorData={categorizeError(fetchError || "Not Found")}
           onRetry={fetchCreator}
         />
       </PageContainer>

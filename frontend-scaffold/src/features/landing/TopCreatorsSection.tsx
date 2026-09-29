@@ -140,8 +140,7 @@ export default function TopCreatorsSection() {
           </div>
         ) : error ? (
           <ErrorState
-            category={categorizeError(error).category}
-            message={categorizeError(error).message}
+            errorData={categorizeError(error)}
             onRetry={handleRetry}
           />
         ) : creators.length === 0 ? (

@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import Card from "../ui/Card";
 import Button from "../ui/Button";
-import { ErrorCategory } from "@/helpers/error";
+import { ErrorCategory, ErrorInfo } from "@/helpers/error";
 import { useNavigate } from "react-router-dom";
 import { useI18n } from "@/i18n";
 
@@ -25,6 +25,7 @@ interface ErrorStateProps {
   className?: string;
   error?: Error | null;
   errorInfo?: React.ErrorInfo | null;
+  errorData?: ErrorInfo;
 }
 
 const WALLET_INSTALLS = [
@@ -40,12 +41,19 @@ const ErrorState: React.FC<ErrorStateProps> = ({
   className = "",
   error,
   errorInfo,
+  errorData,
 }) => {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [showErrorDetails, setShowErrorDetails] = useState(false);
+  
+  // Use errorData if provided, otherwise fall back to category/message pattern
+  const effectiveCategory = errorData?.category || category;
+  const effectiveMessage = errorData?.message || message;
+  const effectiveRetryable = errorData?.retryable !== undefined ? errorData.retryable : true;
+  
   const getContent = () => {
-    switch (category) {
+    switch (effectiveCategory) {
       case "network":
         return {
           icon: (
@@ -147,11 +155,11 @@ const ErrorState: React.FC<ErrorStateProps> = ({
         </h3>
 
         <p className="font-bold text-gray-600 mb-8 leading-relaxed">
-          {message || content.defaultMessage}
+          {effectiveMessage || content.defaultMessage}
         </p>
 
         <div className="space-y-3">
-          {onRetry && (
+          {onRetry && effectiveRetryable && (
             <Button
               onClick={onRetry}
               variant="primary"
@@ -162,7 +170,7 @@ const ErrorState: React.FC<ErrorStateProps> = ({
             </Button>
           )}
 
-          {category === "wallet" && (
+          {effectiveCategory === "wallet" && (
             <div className="space-y-2 pt-2 border-t border-gray-200">
               <p className="text-xs font-black uppercase tracking-wide text-gray-500">
                 {t("error.installWallet")}
@@ -196,7 +204,7 @@ const ErrorState: React.FC<ErrorStateProps> = ({
         </div>
 
         {/* Error Details - Development Only */}
-        {import.meta.env.DEV && error && (
+        {(import.meta.env.DEV || errorData?.technicalDetails) && (error || errorData?.technicalDetails) && (
           <div className="mt-6 pt-6 border-t border-gray-200">
             <Button
               onClick={toggleErrorDetails}
@@ -211,13 +219,23 @@ const ErrorState: React.FC<ErrorStateProps> = ({
             {showErrorDetails && (
               <div className="mt-4 text-left bg-gray-50 border border-gray-300 rounded p-4">
                 <div className="space-y-2">
-                  <div>
-                    <strong>{t("common.error")}</strong>
-                    <pre className="text-xs text-red-600 mt-1 whitespace-pre-wrap">
-                      {error.message}
-                    </pre>
-                  </div>
-                  {error.stack && (
+                  {errorData?.technicalDetails && (
+                    <div>
+                      <strong>Technical Details</strong>
+                      <pre className="text-xs text-gray-600 mt-1 whitespace-pre-wrap">
+                        {errorData.technicalDetails}
+                      </pre>
+                    </div>
+                  )}
+                  {error && (
+                    <div>
+                      <strong>{t("common.error")}</strong>
+                      <pre className="text-xs text-red-600 mt-1 whitespace-pre-wrap">
+                        {error.message}
+                      </pre>
+                    </div>
+                  )}
+                  {error?.stack && (
                     <div>
                       <strong>{t("common.stackTrace")}</strong>
                       <pre className="text-xs text-gray-600 mt-1 whitespace-pre-wrap">

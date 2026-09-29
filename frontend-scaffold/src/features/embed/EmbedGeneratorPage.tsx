@@ -32,7 +32,7 @@ const EmbedGeneratorPage: React.FC = () => {
   if (error) {
     return (
       <PageContainer maxWidth="xl" className="py-20">
-        <ErrorState category={categorizeError(error).category} onRetry={refetch} />
+        <ErrorState errorData={categorizeError(error)} onRetry={refetch} />
       </PageContainer>
     );
   }
