@@ -110,10 +110,41 @@ Rules for the suppression register:
 
 ### Current register
 
-Populated from the first real scan; see the PR for the initial triage table. At
-the time of writing the manual review above found no confirmed issues, and the
-`dangerouslySetInnerHTML` uses are covered by `sanitizeHTML` with a tag and
-attribute allowlist, so they are expected to be triaged as false positives.
+Every rule-level exclusion in
+[`.github/codeql/codeql-config.yml`](../.github/codeql/codeql-config.yml) is
+recorded there with its reason and the count it removes. The three
+source-level suppressions, each verified by hand:
+
+| Query | Location | Why it is a false positive |
+| --- | --- | --- |
+| `js/incomplete-multi-character-sanitization` | `frontend-scaffold/src/helpers/sanitize.ts` | `sanitize()` escapes all five HTML metacharacters before markup is added, so user text cannot introduce a tag. The DOM allowlist walk is the real sanitizer; the flagged line is the no-`document` fallback. |
+| `js/missing-await` | `backend/src/indexer/poller.ts` | `poll` is awaited in the `try` above. The `finally` block only clears the `activePoll` reference if no newer tick replaced it. |
+| `js/regex/missing-regexp-anchor` | `frontend-scaffold/src/features/profile/__tests__/ProfileEditPage.test.tsx` | Test-only placeholder matcher against a hardcoded `example.com` fixture, not URL validation. |
+
+### What the first scan found
+
+One real defect: `js/missing-origin-check` on the service worker's `message`
+handler in `frontend-scaffold/public/sw.js`. A service worker receives `message`
+events from any page holding a reference to it, so any cross-origin page could
+call `skipWaiting()` and force an update on its own schedule. Fixed by checking
+`event.origin` before acting.
+
+Two things the scan surfaced that are **not** SAST problems, and are left for
+their own PRs:
+
+- `@opentelemetry/instrumentation-bullmq` is declared in `backend/package.json`
+  but does not exist in the npm registry and is absent from
+  `backend/package-lock.json`, so `npm ci` fails in `backend`. The SAST job
+  tolerates this rather than blocking on it.
+- `frontend-scaffold/src/App.tsx` has an unclosed `<ErrorBoundary>`, which
+  `tsc --noEmit` also rejects. This is why `js/syntax-error` is **not**
+  excluded: it looked like extractor noise, but it was pointing at a genuine
+  parse failure. Excluding it would have hidden every other finding in any
+  file that fails to parse.
+
+`js/syntax-error` currently reports 8 results; 7 of the 8 are extractor limits
+on valid syntax (JSDoc code fences in `backend/tests/helpers/queryCounter.ts`,
+for example). The eighth is the real `App.tsx` bug above.
 
 ## Gating policy
 

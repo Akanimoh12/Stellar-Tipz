@@ -178,6 +178,11 @@ export function startIndexer(options: StartIndexerOptions = {}): IndexerHandle {
         logger.error({ err }, 'Indexer poll failed');
       }
     } finally {
+      // codeql[js/missing-await]
+      // False positive. `poll` is assigned to activePoll so stop() can await an
+      // in-flight tick, and it is awaited in the try above; this block only
+      // clears the reference if no newer tick has replaced it. Nothing here
+      // needs awaiting.
       if (activePoll === poll) activePoll = undefined;
       schedule(config.indexer.pollIntervalMs);
     }

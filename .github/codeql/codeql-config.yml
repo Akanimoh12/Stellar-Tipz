@@ -62,13 +62,11 @@ query-filters:
       id:
         - js/call-to-non-callable
         - js/property-access-on-non-object
-  # - js/syntax-error (8): CodeQL's parser rejects valid TypeScript in
-  #   backend/src/server.ts, backend/tests/helpers/queryCounter.ts (JSDoc code
-  #   fences) and frontend-scaffold/src/App.tsx. These are extractor bugs, not
-  #   defects in the code, and they arrive at severity "error".
-  - exclude:
-      id:
-        - js/syntax-error
+  # js/syntax-error is deliberately NOT excluded. It looks like extractor noise,
+  # but it is a true signal: it flagged an unclosed <ErrorBoundary> in
+  # frontend-scaffold/src/App.tsx that `tsc --noEmit` also rejects. Excluding it
+  # would hide files that fail to parse, and therefore everything CodeQL would
+  # otherwise have to say about them.
   # - js/react/unused-or-undefined-state-property (1) and
   #   js/file-system-race (3): the latter only in build scripts (vite.config.ts,
   #   scripts/analyze-bundle.mjs) where a TOCTOU window is not attacker
