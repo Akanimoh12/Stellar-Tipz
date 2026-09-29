@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Lock, Eye } from "lucide-react";
 
@@ -8,7 +8,7 @@ import Button from "@/components/ui/Button";
 import TransactionStatus from "@/components/shared/TransactionStatus";
 import ImageCropper from "@/components/shared/ImageCropper";
 import DraftRestoreBanner from "@/components/shared/DraftRestoreBanner";
-import { useContract } from "@/hooks";
+import ErrorSummary, { ErrorSummaryItem } from "@/components/shared/ErrorSummary";
 import { useToastStore } from "@/store/toastStore";
 import type { Profile } from "@/types/contract";
 import type { ProfileFormData } from "@/types/profile";
@@ -109,6 +109,8 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
   const [txError, setTxError] = useState<string | undefined>(undefined);
   const [showBioPreview, setShowBioPreview] = useState(false);
   const [showProfilePreview, setShowProfilePreview] = useState(false);
+  // Error summary — populated on submit failure, cleared on success.
+  const [errorSummaryItems, setErrorSummaryItems] = useState<ErrorSummaryItem[]>([]);
 
   const { updateProfile } = useContract();
   const { addToast } = useToastStore();
@@ -235,8 +237,34 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
     const validationErrors = validate(trimmedForm);
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
+
+      // Build ordered error summary (matches DOM field order).
+      const fieldOrder: Array<{ key: keyof FormErrors; label: string; fieldId: string }> = [
+        { key: "displayName", label: "Display Name", fieldId: "display-name" },
+        { key: "bio",         label: "Bio",          fieldId: "bio" },
+        { key: "xHandle",     label: "X Handle",     fieldId: "x-(twitter)-handle-(optional)" },
+        { key: "githubHandle",label: "GitHub Handle",fieldId: "github-handle-(optional)" },
+        { key: "websiteUrl",  label: "Website URL",  fieldId: "website-url-(optional)" },
+        { key: "imageUrl",    label: "Profile Image URL", fieldId: "profile-image-url-(optional)" },
+      ];
+      const summary = fieldOrder
+        .filter(({ key }) => validationErrors[key as keyof FormErrors])
+        .map(({ key, label, fieldId }) => ({
+          fieldId,
+          label,
+          message: validationErrors[key as keyof FormErrors]!,
+        }));
+      setErrorSummaryItems(summary);
+
+      // Focus the first invalid field directly.
+      const firstId = summary[0]?.fieldId;
+      if (firstId) {
+        const el = document.getElementById(firstId);
+        el?.focus();
+      }
       return;
     }
+    setErrorSummaryItems([]);
 
     try {
       setTxStatus("signing");
@@ -309,9 +337,12 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
         />
       )}
 
+      {/* Error summary — auto-focuses when errors are present */}
+      <ErrorSummary errors={errorSummaryItems} />
+
       {/* Username (read-only) */}
       <div>
-        <label className="block text-sm font-bold uppercase tracking-wide mb-2">
+        <label htmlFor="edit-username" className="block text-sm font-bold uppercase tracking-wide mb-2">
           Username
         </label>
         <div className="relative">
@@ -319,12 +350,14 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
             <Lock size={18} />
           </div>
           <input
+            id="edit-username"
             value={form.username}
             disabled
+            aria-describedby="edit-username-hint"
             className="w-full px-4 py-3 pl-12 border-2 border-black bg-gray-100 text-black font-medium opacity-75 cursor-not-allowed focus:outline-none"
           />
         </div>
-        <p className="mt-1 text-xs text-gray-800 dark:text-gray-200">
+        <p id="edit-username-hint" className="mt-1 text-xs text-gray-800 dark:text-gray-200">
           Username cannot be changed after registration.
         </p>
       </div>

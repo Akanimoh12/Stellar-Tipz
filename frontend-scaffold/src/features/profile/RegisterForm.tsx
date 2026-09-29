@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Input from "@/components/ui/Input";
 import Textarea from "@/components/ui/Textarea";
@@ -6,6 +6,7 @@ import Button from "@/components/ui/Button";
 import TransactionStatus from "@/components/shared/TransactionStatus";
 import DraftRestoreBanner from "@/components/shared/DraftRestoreBanner";
 import TransactionRestoredNotice from "@/components/shared/TransactionRestoredNotice";
+import ErrorSummary, { ErrorSummaryItem } from "@/components/shared/ErrorSummary";
 import {
   MAX_BIO_LENGTH,
   validateBio,
@@ -91,6 +92,9 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
   const [txHash, setTxHash] = useState<string | undefined>(undefined);
   const [txError, setTxError] = useState<string | undefined>(undefined);
   const [walletPrompt, setWalletPrompt] = useState(false);
+  // Error summary items — populated on submit failure, cleared on success.
+  const [errorSummaryItems, setErrorSummaryItems] = useState<ErrorSummaryItem[]>([]);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const { registerProfile } = useContract();
   const { addToast } = useToastStore();
@@ -234,8 +238,34 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
           failed_fields: Object.keys(validationErrors).join(","),
         });
         setErrors(validationErrors);
+
+        // Build the ordered error summary (field order matches DOM order).
+        const fieldOrder: Array<{ key: keyof FormErrors; label: string; fieldId: string }> = [
+          { key: "username",    label: "Username",     fieldId: "username" },
+          { key: "displayName", label: "Display Name", fieldId: "display-name" },
+          { key: "bio",         label: "Bio",          fieldId: "bio" },
+          { key: "xHandle",     label: "X Handle",     fieldId: "x-(twitter)-handle-(optional)" },
+          { key: "imageUrl",    label: "Profile Image URL", fieldId: "profile-image-url-(optional)" },
+        ];
+        const summary: ErrorSummaryItem[] = fieldOrder
+          .filter(({ key }) => validationErrors[key])
+          .map(({ key, label, fieldId }) => ({
+            fieldId,
+            label,
+            message: validationErrors[key]!,
+          }));
+        setErrorSummaryItems(summary);
+
+        // Focus the first invalid field so keyboard/AT users land on the problem.
+        const firstFieldId = summary[0]?.fieldId;
+        if (firstFieldId) {
+          const el = document.getElementById(firstFieldId);
+          el?.focus();
+        }
         return;
       }
+      // Clear any previous summary when the form validates cleanly.
+      setErrorSummaryItems([]);
 
       // Registration needs a wallet to sign the profile transaction (#1345).
       if (!connected) {
@@ -301,6 +331,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
 
   return (
     <form
+      ref={formRef}
       onSubmit={handleSubmit}
       noValidate
       className="space-y-6 max-w-lg mx-auto"
@@ -316,6 +347,9 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
           onDiscard={discardRegisterDraft}
         />
       )}
+
+      {/* Error summary — rendered above all fields; auto-focuses on mount */}
+      <ErrorSummary errors={errorSummaryItems} />
 
       {resumed && (
         <p
