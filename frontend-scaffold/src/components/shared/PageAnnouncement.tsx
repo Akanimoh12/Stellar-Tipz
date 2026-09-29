@@ -1,5 +1,6 @@
 import React from "react";
 import { useLocation } from "react-router-dom";
+import { useLiveRegion } from "../../lib/liveRegion";
 
 const routeLabels: Record<string, string> = {
   "/": "Home",
@@ -28,17 +29,17 @@ function readablePath(pathname: string) {
 
 const PageAnnouncement: React.FC = () => {
   const location = useLocation();
-  const [announcement, setAnnouncement] = React.useState("");
+  const { announce } = useLiveRegion();
 
   React.useEffect(() => {
     const title = document.title.replace(/\s*\|\s*Stellar Tipz\s*$/i, "").trim();
     const pageName = title || readablePath(location.pathname);
-    setAnnouncement(`Navigated to ${pageName}`);
+    announce(`Navigated to ${pageName}`);
   }, [location.pathname]);
 
   return (
     <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-      {announcement}
+      {/* Live region is handled by useLiveRegion hook */}
     </div>
   );
 };

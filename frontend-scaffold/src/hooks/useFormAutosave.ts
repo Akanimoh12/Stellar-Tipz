@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { announce } from "./liveRegion";
 
 type StoredPayload<T extends Record<string, unknown>> = {
   version: 1 | 2;

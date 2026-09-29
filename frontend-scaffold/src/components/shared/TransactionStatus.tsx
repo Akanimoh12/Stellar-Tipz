@@ -3,6 +3,7 @@ import Button from "../ui/Button";
 import CopyButton from "../ui/CopyButton";
 import Loader from "../ui/Loader";
 import { useWallet } from "../../hooks/useWallet";
+import { useLiveRegion } from "../../lib/liveRegion";
 
 interface TransactionStatusProps {
   status:
@@ -33,6 +34,7 @@ const TransactionStatus: React.FC<TransactionStatusProps> = ({
   onRetry,
 }) => {
   const { network } = useWallet();
+  const { announce } = useLiveRegion();
   if (status === "idle") return null;
 
   const isLoading = ["signing", "submitting", "confirming"].includes(status);
@@ -44,6 +46,27 @@ const TransactionStatus: React.FC<TransactionStatusProps> = ({
     network === "PUBLIC"
       ? "https://stellar.expert/explorer/public/tx/"
       : "https://stellar.expert/explorer/testnet/tx/";
+
+  // Announce transaction status changes
+  useEffect(() => {
+    switch (status) {
+      case "signing":
+        announce("Starting transaction signing");
+        break;
+      case "submitting":
+        announce("Submitting transaction to network");
+        break;
+      case "confirming":
+        announce("Waiting for network confirmation");
+        break;
+      case "success":
+        announce(`Transaction confirmed. View on Stellar Expert`, "assertive");
+        break;
+      case "error":
+        announce(`Transaction failed: ${errorMessage || "unknown error"}`, "assertive");
+        break;
+    }
+  }, [status, errorMessage]);
 
   return (
     <div

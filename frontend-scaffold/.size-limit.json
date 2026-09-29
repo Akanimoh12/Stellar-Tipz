@@ -12,10 +12,28 @@
     "gzip": true
   },
   {
+    "name": "Landing Page",
+    "path": "dist/assets/landing-*.js",
+    "limit": "100 KB",
+    "gzip": true
+  },
+  {
+    "name": "Transactions Page",
+    "path": "dist/assets/transactions-*.js",
+    "limit": "250 KB",
+    "gzip": true
+  },
+  {
+    "name": "Profile Page",
+    "path": "dist/assets/profile-*.js",
+    "limit": "150 KB",
+    "gzip": true
+  },
+  {
     "name": "Per-route Chunks",
     "path": "dist/assets/*.js",
     "limit": "50 KB",
     "gzip": true,
-    "ignore": ["index-*.js", "vendor-*.js"]
+    "ignore": ["index-*.js", "vendor-*.js", "landing-*.js", "transactions-*.js", "profile-*.js"]
   }
 ]

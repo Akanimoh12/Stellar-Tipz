@@ -6,6 +6,7 @@ import type { Profile } from "../types";
 import { useContract } from "./useContract";
 import { env } from "../helpers/env";
 import { mockLeaderboard } from "../features/mockData";
+import { announce } from "../lib/liveRegion";
 
 const DEBOUNCE_MS = 300;
 const RECENT_SEARCHES_KEY = "stellar_tipz_recent_searches";
@@ -154,6 +155,7 @@ export const useSearch = () => {
       if (!trimmed) {
         setResults([]);
         setHasSearched(false);
+        announce("");
         return;
       }
 
@@ -189,12 +191,13 @@ export const useSearch = () => {
     if (!query.trim()) {
       setResults([]);
       setHasSearched(false);
+      announce("");
       return;
     }
 
     debounceRef.current = setTimeout(() => {
       performSearch(query);
-    }, DEBOUNCE_MS);
+    }, DEBUNCE_MS);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);

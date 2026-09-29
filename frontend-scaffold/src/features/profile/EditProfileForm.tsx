@@ -16,6 +16,7 @@ import ProfilePreview from "./ProfilePreview";
 import { THEME_COLORS } from "./profileThemes";
 import { renderMarkdown } from "@/helpers/markdown";
 import { useFormAutosave } from "@/hooks/useFormAutosave";
+import { useLiveRegion } from "@/lib/liveRegion";
 import {
   MAX_BIO_LENGTH,
   validateBio,
@@ -154,6 +155,14 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
       }));
     },
   });
+
+  const { announce } = useLiveRegion();
+
+  useEffect(() => {
+    if (hasDraft) {
+      announce("Restored saved form draft");
+    }
+  }, [hasDraft]);
 
   useEffect(() => {
     const isDirty =

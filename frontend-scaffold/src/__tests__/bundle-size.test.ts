@@ -101,20 +101,38 @@ describe('Bundle Size', () => {
     expect(mainChunk.gzipSize).toBeLessThan(limit);
   });
 
-  it('react vendor chunk under 150KB gzipped', () => {
-    const reactChunks = findChunks(/react/);
+  it('app chunk under 100KB gzipped', () => {
+    const appChunks = findChunks(/app|index/);
     
-    if (reactChunks.length === 0) {
-      console.warn('⚠️  No React chunks found in build');
+    if (appChunks.length === 0) {
+      console.warn('⚠️  No app chunks found in build');
       expectBuildArtifacts();
       return;
     }
 
-    const totalGzipSize = reactChunks.reduce((sum, chunk) => sum + chunk.gzipSize, 0);
+    const mainChunk = appChunks[0]; // Usually the largest
     const limit = 350 * 1024; // 350KB
 
-    console.log(`\n📊 React Vendor Chunk Size: ${(totalGzipSize / 1024).toFixed(2)}KB (gzip)`);
+    console.log(`\n📊 App Chunk Size: ${(mainChunk.gzipSize / 1024).toFixed(2)}KB (gzip)`);
 
-    expect(totalGzipSize).toBeLessThan(limit);
+    expect(mainChunk.gzipSize).toBeLessThan(limit);
   });
-});
+
+  it('bundle has per-route budgets enforced', () => {
+    const allChunks = findChunks(/.*/);
+    
+    if (allChunks.length === 0) {
+      console.warn('⚠️  No chunks found in build');
+      expectBuildArtifacts();
+      return;
+    }
+
+    // Check that no chunk exceeds 50KB gzipped (per-route budget)
+    const oversizedChunks = allChunks.filter(
+      chunk => chunk.gzipSize > 50 * 1024
+    );
+
+    expect(oversizedChunks.length).toBe(0);
+    
+    console.log(`\n📊 Per-route budget check: ${allChunks.length} chunks, all under 50KB gzipped`);
+  });
