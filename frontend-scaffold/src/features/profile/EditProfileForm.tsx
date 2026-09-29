@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, Lock, Eye } from "lucide-react";
 
@@ -216,6 +216,8 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
   const [txHash, setTxHash] = useState<string | undefined>(undefined);
   const [showBioPreview, setShowBioPreview] = useState(false);
   const [showProfilePreview, setShowProfilePreview] = useState(false);
+  // Error summary — populated on submit failure, cleared on success.
+  const [errorSummaryItems, setErrorSummaryItems] = useState<ErrorSummaryItem[]>([]);
 
   const { addToast } = useToastStore();
   const navigate = useNavigate();
@@ -370,8 +372,34 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
     const validationErrors = validate(trimmedForm);
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
+
+      // Build ordered error summary (matches DOM field order).
+      const fieldOrder: Array<{ key: keyof FormErrors; label: string; fieldId: string }> = [
+        { key: "displayName", label: "Display Name", fieldId: "display-name" },
+        { key: "bio",         label: "Bio",          fieldId: "bio" },
+        { key: "xHandle",     label: "X Handle",     fieldId: "x-(twitter)-handle-(optional)" },
+        { key: "githubHandle",label: "GitHub Handle",fieldId: "github-handle-(optional)" },
+        { key: "websiteUrl",  label: "Website URL",  fieldId: "website-url-(optional)" },
+        { key: "imageUrl",    label: "Profile Image URL", fieldId: "profile-image-url-(optional)" },
+      ];
+      const summary = fieldOrder
+        .filter(({ key }) => validationErrors[key as keyof FormErrors])
+        .map(({ key, label, fieldId }) => ({
+          fieldId,
+          label,
+          message: validationErrors[key as keyof FormErrors]!,
+        }));
+      setErrorSummaryItems(summary);
+
+      // Focus the first invalid field directly.
+      const firstId = summary[0]?.fieldId;
+      if (firstId) {
+        const el = document.getElementById(firstId);
+        el?.focus();
+      }
       return;
     }
+    setErrorSummaryItems([]);
 
     // Compute the diff against the canonical (or optimistic) profile.
     const data: Partial<ProfileFormData> = {};

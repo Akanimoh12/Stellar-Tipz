@@ -11,7 +11,7 @@ interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement
 
 const Textarea: React.FC<TextareaProps> = ({
   label, error, maxLength, rows = 4, className = '', id,
-  onChange, value, defaultValue, warnAt, dangerAt, ...props
+  onChange, value, defaultValue, warnAt, dangerAt, required, ...props
 }) => {
   const generatedId = React.useId();
   const textareaId = id || label?.toLowerCase().replace(/\s+/g, '-') || generatedId;
@@ -40,6 +40,9 @@ const Textarea: React.FC<TextareaProps> = ({
       {label && (
         <label htmlFor={textareaId} className="block text-sm font-bold uppercase tracking-wide mb-2">
           {label}
+          {required && (
+            <span aria-hidden="true" className="ml-1 text-red-500">*</span>
+          )}
         </label>
       )}
       <textarea
@@ -50,7 +53,9 @@ const Textarea: React.FC<TextareaProps> = ({
         onChange={handleChange}
         value={value}
         defaultValue={defaultValue}
-        aria-invalid={error ? 'true' : 'false'}
+        required={required}
+        aria-required={required ? 'true' : undefined}
+        aria-invalid={error ? 'true' : undefined}
         aria-describedby={[errorId, counterId].filter(Boolean).join(' ') || undefined}
         {...props}
       />

@@ -48,6 +48,7 @@ import TransactionTracker, {
 import { useFormAutosave } from "@/hooks/useFormAutosave";
 import DraftRestoreBanner from "@/components/shared/DraftRestoreBanner";
 import TransactionRestoredNotice from "@/components/shared/TransactionRestoredNotice";
+import ErrorSummary, { ErrorSummaryItem } from "@/components/shared/ErrorSummary";
 import { logger } from "../../services/logger";
 
 const TipPage: React.FC = () => {
@@ -57,6 +58,8 @@ const TipPage: React.FC = () => {
   const [message, setMessage] = useState("");
   const [isEncrypted, setIsEncrypted] = useState(false);
   const [addressError, setAddressError] = useState<string | null>(null);
+  // Error summary for accessible form-level error announcement.
+  const [tipFormErrors, setTipFormErrors] = useState<ErrorSummaryItem[]>([]);
   const { getProfileByUsername } = useContract();
   const [loading, setLoading] = useState(true);
   const [creator, setCreator] = useState<Profile | null>(null);
@@ -149,6 +152,7 @@ const TipPage: React.FC = () => {
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setAddressError(null);
+    setTipFormErrors([]);
 
     // Guard against submission during pending transaction
     if (isTransactionPending || step === "signing" || step === "submitting") {
@@ -159,13 +163,17 @@ const TipPage: React.FC = () => {
     const creatorAddress = creator?.owner ?? "";
     const sanitized = sanitizeStellarAddress(creatorAddress);
     if (!sanitized) {
-      setAddressError("Creator wallet address is invalid. Cannot send tip.");
+      const msg = "Creator wallet address is invalid. Cannot send tip.";
+      setAddressError(msg);
+      setTipFormErrors([{ fieldId: "tip-address-error", label: "Creator Address", message: msg }]);
       return;
     }
 
     const tipCheck = canTipAddress(sanitized, connectedWallet ?? undefined);
     if (!tipCheck.valid) {
-      setAddressError(tipCheck.error ?? "Cannot tip this address.");
+      const msg = tipCheck.error ?? "Cannot tip this address.";
+      setAddressError(msg);
+      setTipFormErrors([{ fieldId: "tip-address-error", label: "Creator Address", message: msg }]);
       return;
     }
 
@@ -375,6 +383,10 @@ const TipPage: React.FC = () => {
                   onDiscard={discardTipDraft}
                 />
               )}
+
+              {/* Error summary — auto-focuses when address/amount errors are present */}
+              <ErrorSummary errors={tipFormErrors} />
+
               <TipAmountPresets
                 value={amount}
                 onChange={(nextAmount) => setAmount(String(nextAmount))}
@@ -387,6 +399,7 @@ const TipPage: React.FC = () => {
 
               {addressError && (
                 <div
+                  id="tip-address-error"
                   role="alert"
                   className="border-2 border-red-600 bg-red-50 p-3 text-sm font-bold text-red-700"
                 >

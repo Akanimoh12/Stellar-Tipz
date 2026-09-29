@@ -15,6 +15,7 @@ import { useSubscriptionStore } from "@/store/subscriptionStore";
 import { useToastStore } from "@/store/toastStore";
 import { Subscription } from "@/types/contract";
 import { categorizeError } from "@/helpers/error";
+import ErrorSummary, { ErrorSummaryItem } from "@/components/shared/ErrorSummary";
 import SubscriptionCard from "./SubscriptionCard";
 
 const FREQUENCIES: { label: string; days: number }[] = [
@@ -43,6 +44,14 @@ const SubscribePage: React.FC = () => {
   const [frequencyDays, setFrequencyDays] = useState(30);
   const [isCreating, setIsCreating] = useState(false);
   const [creatorName, setCreatorName] = useState("");
+
+  // Field-level validation errors
+  interface SubFormErrors {
+    creatorAddress?: string;
+    amount?: string;
+  }
+  const [formErrors, setFormErrors] = useState<SubFormErrors>({});
+  const [subSummaryErrors, setSubSummaryErrors] = useState<ErrorSummaryItem[]>([]);
 
   const fetchSubscriptions = useCallback(async () => {
     if (!publicKey) return;
@@ -73,8 +82,41 @@ const SubscribePage: React.FC = () => {
   };
 
   const handleSubscribe = async () => {
-    if (!creatorAddress || !amount) return;
+    // Validate
+    const errors: SubFormErrors = {};
+    if (!creatorAddress.trim()) {
+      errors.creatorAddress = "Enter the creator's Stellar wallet address.";
+    } else if (!/^G[A-Z2-7]{55}$/.test(creatorAddress.trim().toUpperCase())) {
+      errors.creatorAddress =
+        "Enter a valid Stellar address starting with G (56 characters).";
+    }
+    const numericAmount = parseFloat(amount);
+    if (!amount.trim()) {
+      errors.amount = "Enter a tip amount in XLM.";
+    } else if (isNaN(numericAmount) || numericAmount <= 0) {
+      errors.amount = "Amount must be a number greater than 0.";
+    } else if (numericAmount < 1) {
+      errors.amount = "Minimum subscription amount is 1 XLM.";
+    }
 
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      const summary: ErrorSummaryItem[] = [];
+      if (errors.creatorAddress) {
+        summary.push({ fieldId: "creator-address", label: "Creator address", message: errors.creatorAddress });
+      }
+      if (errors.amount) {
+        summary.push({ fieldId: "sub-amount", label: "Amount", message: errors.amount });
+      }
+      setSubSummaryErrors(summary);
+      // Focus first invalid field
+      const firstId = summary[0]?.fieldId;
+      if (firstId) document.getElementById(firstId)?.focus();
+      return;
+    }
+
+    setFormErrors({});
+    setSubSummaryErrors([]);
     setIsCreating(true);
     try {
       await createSubscription(creatorAddress, amount, frequencyDays);
@@ -178,48 +220,61 @@ const SubscribePage: React.FC = () => {
           Changes to an active subscription take effect on its next billing date.
           Cancelling stops future tips; completed tips are not automatically refunded.
         </p>
+
+        {/* Error summary — auto-focuses when validation errors are present */}
+        <div className="mt-4">
+          <ErrorSummary errors={subSummaryErrors} />
+        </div>
+
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1">
-            <label
-              htmlFor="creator-address"
-              className="text-xs font-black uppercase"
-            >
-              {t("subs.creator")}
-            </label>
             <Input
               id="creator-address"
+              label={t("subs.creator")}
               placeholder="GABCD...WXYZ"
               value={creatorAddress}
               onChange={(e) => {
                 setCreatorAddress(e.target.value);
                 setCreatorName("");
+                if (formErrors.creatorAddress) {
+                  setFormErrors((prev) => ({ ...prev, creatorAddress: undefined }));
+                }
               }}
               onBlur={handleLookupCreator}
+              error={formErrors.creatorAddress}
+              aria-required="true"
+              required
             />
-            {creatorName && (
+            {creatorName && !formErrors.creatorAddress && (
               <p className="text-xs font-bold text-green-600">{creatorName}</p>
             )}
           </div>
 
           <div className="space-y-1">
-            <label htmlFor="sub-amount" className="text-xs font-black uppercase">
-              {t("subs.amount")} (XLM)
-            </label>
             <Input
               id="sub-amount"
+              label={`${t("subs.amount")} (XLM)`}
               type="number"
               min="1"
               step="0.1"
               placeholder="10"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => {
+                setAmount(e.target.value);
+                if (formErrors.amount) {
+                  setFormErrors((prev) => ({ ...prev, amount: undefined }));
+                }
+              }}
+              error={formErrors.amount}
+              aria-required="true"
+              required
             />
           </div>
 
           <div className="space-y-1">
             <label
               htmlFor="sub-frequency"
-              className="text-xs font-black uppercase"
+              className="block text-sm font-bold uppercase tracking-wide mb-2"
             >
               {t("subs.frequency")}
             </label>
@@ -243,9 +298,7 @@ const SubscribePage: React.FC = () => {
               size="sm"
               icon={<HeartHandshake size={16} />}
               onClick={handleSubscribe}
-              disabled={
-                isCreating || loading || !creatorAddress || !amount
-              }
+              disabled={isCreating || loading}
             >
               {isCreating ? t("subs.subscribing") : t("subs.subscribe")}
             </Button>
