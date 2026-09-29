@@ -97,6 +97,7 @@ const AppLayout: React.FC = () => {
       <ScrollToTop />
       <PageAnnouncement />
       <KeyboardShortcutsProvider />
+      <ErrorBoundary level="root" name="app">
       <TransactionNavigationBlock />
       <ErrorBoundary>
         <RpcHealthBanner />
@@ -142,6 +143,8 @@ const AppLayout: React.FC = () => {
           </div>
           <Footer />
         </div>
+        <ToastContainer />
+        <OnboardingTour open={isTourOpen} onComplete={completeTour} onSkip={skipTour} />
       </ErrorBoundary>
       <ToastContainer />
       <ReauthPrompt />

@@ -29,11 +29,11 @@ export const ERRORS = {
  */
 export const CONTRACT_ERROR_CODES: Record<number, string> = {
   1: "The contract has not been initialized yet. Please contact support.",
-  2: "The contract is already initialized. This action cannot be performed.",
+  2: "The contract is already initialized. No further initialization is needed.",
   3: "You are not authorized to perform this action. Please check your permissions.",
   4: "An admin change is already pending. Please wait for the current change to complete.",
   5: "The admin change timelock has not been met yet. Please wait for the required time period.",
-  6: "There is no pending admin change to complete.",
+  6: "There is no pending admin change to complete. Start an admin change first.",
   7: "The contract is currently paused. Please try again later.",
   8: "This profile is not registered. Please register your profile first.",
   9: "This profile is already registered. You cannot register again.",
@@ -45,16 +45,16 @@ export const CONTRACT_ERROR_CODES: Record<number, string> = {
   15: "Your balance must be zero to perform this action. Please withdraw your remaining balance first.",
   16: "A mathematical overflow occurred. Please try with a smaller amount.",
   17: "The requested resource was not found. Please check your input and try again.",
-  18: "This profile is already deactivated. You cannot deactivate it again.",
+  18: "This profile is already deactivated. No further deactivation is needed.",
   19: "This profile has been deactivated. Please activate it to perform this action.",
-  20: "This profile is not deactivated. You can only perform this action on deactivated profiles.",
+  20: "This profile is active. Deactivate it first, then try again.",
   21: "Your message is too long. Please shorten it and try again.",
   22: "The image URL provided is invalid. Please use a valid image URL.",
   23: "The batch size is too large. Please reduce the number of items and try again.",
   24: "The fee provided is invalid. Please check the fee amount and try again.",
   25: "You cannot tip yourself. Please send tips to other users.",
   26: "Your profile is not verified. Please complete verification to perform this action.",
-  27: "Your profile is already verified. You cannot verify it again.",
+  27: "Your profile is already verified. No further verification is needed.",
   28: "You are not authorized to perform this action. Please check your permissions.",
   29: "You have exceeded the rate limit. Please wait a moment and try again.",
   30: "The X (Twitter) handle format is invalid. Please provide a valid handle.",
@@ -69,10 +69,10 @@ export const CONTRACT_ERROR_CODES: Record<number, string> = {
   // Using refund-specific messages as they are more critical for user experience
   38: "The refund request window has expired. You can no longer request a refund for this tip.",
   39: "A refund has already been requested for this tip. Please wait for it to be processed.",
-  40: "A refund has already been processed for this tip. You cannot request another refund.",
+  40: "A refund has already been processed for this tip. Check the transaction history for its status.",
   41: "No refund request exists for this tip. Please check and try again.",
-  42: "Only the tipper can request a refund. You are not authorized to perform this action.",
-  43: "Only the creator can approve or reject a refund. You are not authorized to perform this action.",
+  42: "Only the tipper can request a refund. Connect the wallet that sent the tip, then try again.",
+  43: "Only the creator can approve or reject a refund. Connect the creator wallet, then try again.",
 };
 
 /**
@@ -119,21 +119,28 @@ export function extractApiErrorCode(error: unknown): string | null {
  * Reports an unmapped error to Sentry for tracking and future mapping.
  * This helps keep the error mapping current as the contract evolves.
  */
-export async function reportUnmappedError(error: unknown, errorType: 'contract' | 'api'): Promise<void> {
+export async function reportUnmappedError(
+  error: unknown,
+  errorType: 'contract' | 'api' | 'unknown',
+): Promise<void> {
   try {
     // Import Sentry dynamically to avoid circular dependencies
     const SentryModule = await import('@sentry/react');
-    const Sentry = SentryModule.default || SentryModule;
+    const Sentry = 'default' in SentryModule
+      ? SentryModule.default || SentryModule
+      : SentryModule;
     
     if (!Sentry || !Sentry.captureException) {
       console.warn('Sentry not available for error reporting');
       return;
     }
     
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorCode = errorType === 'contract' 
+    const errorMessage = getErrorMessage(error);
+    const errorCode = errorType === 'contract'
       ? extractContractErrorCode(errorMessage)
-      : extractApiErrorCode(error);
+      : errorType === 'api'
+        ? extractApiErrorCode(error)
+        : null;
     
     Sentry.captureException(new Error(`Unmapped ${errorType} error: ${errorMessage}`), {
       tags: {
@@ -165,6 +172,31 @@ export interface ErrorInfo {
   message: string;
   retryable: boolean;
   technicalDetails?: string;
+}
+
+/** Backwards-compatible name used by the shared frontend types. */
+export type CategorizedError = ErrorInfo;
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'error' in error) {
+    const nestedError = error.error;
+    if (
+      nestedError &&
+      typeof nestedError === 'object' &&
+      'message' in nestedError &&
+      typeof nestedError.message === 'string'
+    ) {
+      return nestedError.message;
+    }
+  }
+  return String(error);
+}
+
+function reportUnmapped(error: unknown, errorType: 'contract' | 'api' | 'unknown'): void {
+  void reportUnmappedError(error, errorType).catch((err) => {
+    console.error('Failed to report unmapped error:', err);
+  });
 }
 
 export type WalletErrorType =
@@ -354,11 +386,9 @@ export const categorizeError = (error: unknown): ErrorInfo => {
         ? CONTRACT_ERROR_CODES[code]
         : ERRORS.CONTRACT;
     
-    // Report unmapped contract errors to Sentry (fire and forget)
-    if (code !== null && !CONTRACT_ERROR_CODES[code]) {
-      reportUnmappedError(error, 'contract').catch(err => {
-        console.error('Failed to report unmapped error:', err);
-      });
+    // Report unknown codes and contract failures without a parsable code.
+    if (code === null || !CONTRACT_ERROR_CODES[code]) {
+      reportUnmapped(error, 'contract');
     }
     
     return {
@@ -380,12 +410,19 @@ export const categorizeError = (error: unknown): ErrorInfo => {
     };
   }
   
-  // Report unmapped API errors to Sentry (fire and forget)
+  // Report unknown API codes, while keeping the user-facing message generic.
   if (apiCode && !API_ERROR_CODES[apiCode]) {
-    reportUnmappedError(error, 'api').catch(err => {
-      console.error('Failed to report unmapped error:', err);
-    });
+    reportUnmapped(error, 'api');
+    return {
+      category: 'unknown',
+      message: 'An unexpected error occurred.',
+      retryable: true,
+      technicalDetails: `Unmapped API error code: ${apiCode}`,
+    };
   }
+
+  // Capture unexpected errors too, so newly introduced failure shapes can be mapped.
+  reportUnmapped(error, 'unknown');
 
   // Default — UNKNOWN, not contract
   return {

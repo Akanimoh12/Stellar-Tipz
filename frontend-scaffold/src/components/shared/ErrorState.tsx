@@ -203,8 +203,8 @@ const ErrorState: React.FC<ErrorStateProps> = ({
           </Button>
         </div>
 
-        {/* Error Details - Development Only */}
-        {(import.meta.env.DEV || errorData?.technicalDetails) && (error || errorData?.technicalDetails) && (
+        {/* Safe technical codes are available to support in every environment. */}
+        {(errorData?.technicalDetails || (import.meta.env.DEV && (error || errorInfo))) && (
           <div className="mt-6 pt-6 border-t border-gray-200">
             <Button
               onClick={toggleErrorDetails}
@@ -227,7 +227,7 @@ const ErrorState: React.FC<ErrorStateProps> = ({
                       </pre>
                     </div>
                   )}
-                  {error && (
+                  {import.meta.env.DEV && error && (
                     <div>
                       <strong>{t("common.error")}</strong>
                       <pre className="text-xs text-red-600 mt-1 whitespace-pre-wrap">
@@ -235,7 +235,7 @@ const ErrorState: React.FC<ErrorStateProps> = ({
                       </pre>
                     </div>
                   )}
-                  {error?.stack && (
+                  {import.meta.env.DEV && error?.stack && (
                     <div>
                       <strong>{t("common.stackTrace")}</strong>
                       <pre className="text-xs text-gray-600 mt-1 whitespace-pre-wrap">
@@ -243,7 +243,7 @@ const ErrorState: React.FC<ErrorStateProps> = ({
                       </pre>
                     </div>
                   )}
-                  {errorInfo?.componentStack && (
+                  {import.meta.env.DEV && errorInfo?.componentStack && (
                     <div>
                       <strong>{t("common.componentStack")}</strong>
                       <pre className="text-xs text-blue-600 mt-1 whitespace-pre-wrap">

@@ -138,8 +138,23 @@ export function initSentry(): void {
   });
 }
 
-export function captureError(error: Error, context?: CaptureContext): void {
-  Sentry.captureException(error, context);
+export function captureError(
+  error: Error,
+  context?: Record<string, unknown>,
+): void {
+  if (!context) {
+    Sentry.captureException(error);
+    return;
+  }
+
+  const tags: Record<string, string> = {};
+  if (typeof context.boundary === "string") tags.boundary = context.boundary;
+  if (typeof context.feature === "string") tags.feature = context.feature;
+
+  Sentry.captureException(error, {
+    tags: Object.keys(tags).length > 0 ? tags : undefined,
+    extra: context,
+  });
 }
 
 export function setUser(walletAddress: string | null): void {

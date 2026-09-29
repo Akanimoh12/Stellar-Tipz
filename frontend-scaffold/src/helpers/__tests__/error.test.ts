@@ -10,6 +10,12 @@ import {
   reportUnmappedError 
 } from '../error';
 
+const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
+
+vi.mock('@sentry/react', () => ({
+  captureException,
+}));
+
 describe('error helpers', () => {
   it('categorizes nullish errors as unknown', () => {
     expect(categorizeError(null)).toEqual({
@@ -105,6 +111,17 @@ describe('error helpers', () => {
       retryable: true,
     });
   });
+
+  it('reports uncategorized errors while returning a safe generic message', async () => {
+    captureException.mockClear();
+    const result = categorizeError(new Error('A new unexpected failure'));
+
+    expect(result.message).toBe('An unexpected error occurred.');
+    await vi.waitFor(() => expect(captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('A new unexpected failure') }),
+      expect.objectContaining({ tags: expect.objectContaining({ errorType: 'unknown' }) }),
+    ));
+  });
 });
 
 describe('extractContractErrorCode', () => {
@@ -145,8 +162,9 @@ describe('extractApiErrorCode', () => {
 
 describe('CONTRACT_ERROR_CODES mapping', () => {
   it('has mappings for all contract error codes', () => {
-    // Check a few key error codes
-    expect(CONTRACT_ERROR_CODES[1]).toContain('not been initialized');
+    for (let code = 1; code <= 43; code += 1) {
+      expect(CONTRACT_ERROR_CODES[code], `contract error #${code}`).toBeTruthy();
+    }
     expect(CONTRACT_ERROR_CODES[14]).toContain('Insufficient balance');
     expect(CONTRACT_ERROR_CODES[25]).toContain('cannot tip yourself');
   });
@@ -178,6 +196,9 @@ describe('API_ERROR_CODES mapping', () => {
   it('provides actionable messages', () => {
     expect(API_ERROR_CODES['BAD_REQUEST']).toMatch(/check your input/i);
     expect(API_ERROR_CODES['UNAUTHORIZED']).toMatch(/log in/i);
+    for (const message of Object.values(API_ERROR_CODES)) {
+      expect(message).toMatch(/please|try again|contact|wait|log in/i);
+    }
   });
 });
 
@@ -208,17 +229,31 @@ describe('categorizeError with API errors', () => {
       category: 'unknown',
       message: 'An unexpected error occurred.',
       retryable: true,
+      technicalDetails: 'Unmapped API error code: UNKNOWN_CODE',
     });
+  });
+
+  it('reports unmapped API codes to Sentry', async () => {
+    captureException.mockClear();
+    categorizeError({ error: { code: 'NEW_CODE', message: 'A new API failure' } });
+
+    await vi.waitFor(() => expect(captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('A new API failure') }),
+      expect.objectContaining({ tags: expect.objectContaining({ errorType: 'api', errorCode: 'NEW_CODE' }) }),
+    ));
   });
 });
 
 describe('reportUnmappedError', () => {
   it('handles Sentry reporting gracefully', async () => {
-    // Since reportUnmappedError uses dynamic import and try-catch,
-    // it should not throw even if Sentry is not available
+    captureException.mockClear();
     await expect(
       reportUnmappedError(new Error('Error(Contract, #999)'), 'contract')
     ).resolves.not.toThrow();
+    expect(captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Unmapped contract error: Error(Contract, #999)' }),
+      expect.objectContaining({ tags: { errorType: 'contract', errorCode: '999' } }),
+    );
   });
 
   it('handles API error reporting gracefully', async () => {
