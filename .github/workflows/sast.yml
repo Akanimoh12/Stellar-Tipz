@@ -54,6 +54,25 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend-scaffold/package-lock.json
+
+      # CodeQL's TypeScript extractor resolves types from node_modules. Without
+      # this, Express handlers and router objects are untyped, and type-driven
+      # queries report confident nonsense: `js/call-to-non-callable` fired on
+      # `res.json(...)` and `next(error)`, and `js/missing-rate-limiting` fired
+      # on every route because the global limiters in backend/src/app.ts could
+      # not be seen. `--ignore-scripts` skips the `prepare`/husky hook, which
+      # needs a git checkout and is irrelevant to analysis.
+      - name: Install backend dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: backend
+
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: frontend-scaffold
 
       - name: Initialize CodeQL (JavaScript/TypeScript)
         uses: github/codeql-action/init@v3
