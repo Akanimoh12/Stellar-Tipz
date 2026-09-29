@@ -11,6 +11,10 @@ pub const MAX_MESSAGE_LENGTH: u32 = 280;
 /// Maximum number of blocked tippers a creator can keep on-chain.
 pub const MAX_CREATOR_BLOCKED_TIPPERS: u32 = 100;
 
+/// Maximum batch tips per batch_tip call.
+/// Measured via test_budget.rs to fit within Soroban network limits.
+pub const MAX_BATCH_TIP_SIZE: u32 = 5;
+
 /// Maximum username length in characters.
 pub const MAX_USERNAME_LENGTH: u32 = 32;
 

@@ -20,7 +20,13 @@
     "lint": "cd frontend-scaffold && npm run lint",
     "test": "cd frontend-scaffold && npm run test",
     "load:test": "k6 run scripts/load-test.js",
-    "load:compare": "node scripts/compare-load-baseline.mjs"
+    "load:compare": "node scripts/compare-load-baseline.mjs",
+    "sdk:generate": "bash scripts/generate-sdk.sh",
+    "sdk:verify": "bash scripts/verify-sdk-up-to-date.sh",
+    "docs:build": "bash scripts/build-docs.sh",
+    "docs:validate-links": "npx tsx scripts/validate-docs-links.ts",
+    "docs:api-generate": "npx tsx scripts/generate-api-docs.ts",
+    "docs:contract-generate": "npx tsx scripts/generate-contract-docs.ts"
   },
   "repository": {
     "type": "git",
