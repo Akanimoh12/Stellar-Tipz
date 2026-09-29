@@ -19,3 +19,4 @@ export * from "./useTransactionHistory";
 export * from "./useOnboardingProgress";
 export * from "./useFeeBreakdown";
 export * from "./useXlmPrice";
+export * from "./useProfileUpdate";
