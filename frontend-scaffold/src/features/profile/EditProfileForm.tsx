@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { AlertTriangle, Lock, Eye } from "lucide-react";
 
 import Input from "@/components/ui/Input";
+import OptimizedImage from "@/components/ui/optimizedImage";
 import Textarea from "@/components/ui/Textarea";
 import Button from "@/components/ui/Button";
 import TransactionStatus from "@/components/shared/TransactionStatus";
@@ -658,11 +659,12 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
             </p>
           )}
           {form.bannerUrl && (
-            <img
+            <OptimizedImage
               src={form.bannerUrl}
               alt="Banner preview"
               width={640}
               height={80}
+              sizes="(max-width: 640px) 100vw, 640px"
               loading="lazy"
               decoding="async"
               className="h-20 w-full object-cover border-2 border-black"

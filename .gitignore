@@ -39,3 +39,9 @@ pr.md
 ...
 .npm_cache/
 
+
+# Generated image audit fixtures and results
+frontend-scaffold/tests/images/public/
+frontend-scaffold/dist-images/
+image-audit-results/
+.lighthouseci/
