@@ -42,45 +42,37 @@ Deliberately **out of scope**:
 
 ## Ruleset
 
-Both jobs keep the default `security-and-quality` suite and narrow it by
-excluding query tags:
+The ruleset lives in [`.github/codeql/codeql-config.yml`](../.github/codeql/codeql-config.yml)
+and is shared by both jobs via `config-file`. It keeps the default
+`security-and-quality` suite and excludes the query tags that produce noise:
 
-```yaml
-queries: security-and-quality
-query-filters:
-  - exclude:
-      tags:
-        - maintainability
-        - usability
-        - experimental
-        - external/cwe
-```
-
-This is the tuning the issue asks for, and it is deliberate:
-
-- `maintainability` and `usability` are the style and design queries. On this
-  codebase they produce hundreds of findings that are not security problems,
-  which is exactly how SAST ends up switched off.
-- `experimental` and `external/cwe` are lower-confidence and would add volume
-  before anyone has triaged a baseline.
+| Excluded tag | Why |
+| --- | --- |
+| `maintainability` | Style and design queries. On this codebase they produce hundreds of findings that are not security problems, which is exactly how SAST ends up switched off. |
+| `usability` | Same family as above. |
+| `experimental` | Lower confidence; not useful as a merge gate. |
+| `external/cwe` | Externally sourced CWE mappings; volume without triage value. |
 
 What remains is the high-confidence security-focused set: injection (including
 SQL/command/code), hardcoded credentials, unsafe deserialisation, path
 traversal, SSRF, XSS, and cryptography misuse.
 
-### Why not `queries: security`
+### Why the ruleset is a config file
 
-The obvious spelling — `queries: security` — **does not work**. There is no
-standalone query pack named `security`; it fails during `database init` with:
+Two dead ends, both confirmed in CI rather than assumed:
 
-```
-A fatal error occurred: Query pack security cannot be found. Check the spelling of the pack.
-```
+1. **`queries: security` does not work.** There is no query pack by that name;
+   `database init` fails with `Query pack security cannot be found`. The
+   `security-*` names that exist are full suites (`security-extended`,
+   `security-and-quality`), and picking one cannot be narrowed to "security
+   only" inline.
+2. **`query-filters` is not an `init` input.** Passing it inline caused GitHub
+   to reject the workflow outright — the run failed with *zero jobs* and the
+   workflow reported itself by file path rather than by name, which is the
+   signature of a workflow-level rejection rather than a failing step.
 
-This was confirmed in CI on both languages, not assumed. The `security-*` names
-that do exist are full suites (`security-extended`, `security-and-quality`), and
-selecting one of those cannot be combined with a tag filter to mean "security
-only". Filtering tags off a known suite is the approach that actually works.
+The supported way to express tag exclusions is a CodeQL config file passed via
+`config-file`, which is what the workflow does.
 
 ### What the security suite is expected to catch here
 

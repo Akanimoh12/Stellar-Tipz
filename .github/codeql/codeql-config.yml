@@ -1,0 +1,33 @@
+name: "Stellar Tipz security ruleset"
+
+# Tuning policy for CodeQL, shared by the TypeScript and Rust SAST jobs.
+#
+# CodeQL's default `security-and-quality` suite reports style and
+# maintainability issues as if they were security findings. On this codebase
+# that produces hundreds of non-security results, which is how SAST ends up
+# getting disabled. We keep the default suite and exclude the query tags
+# responsible for that noise, leaving the high-confidence security queries:
+# injection, hardcoded credentials, unsafe deserialisation, path traversal,
+# SSRF, XSS, and cryptography misuse.
+#
+# Note this cannot be written as `queries: security` — there is no query pack
+# by that name, and naming one fails at `database init` with
+# "Query pack security cannot be found".
+
+queries:
+  - uses: security-and-quality
+
+query-filters:
+  # Style, design, and readability queries. Not security problems.
+  - exclude:
+      tags:
+        - maintainability
+        - usability
+  # Lower-confidence and very low precision. Not useful as a merge gate.
+  - exclude:
+      tags:
+        - experimental
+  # Externally sourced CWE mappings; volume without triage value here.
+  - exclude:
+      tags:
+        - external/cwe

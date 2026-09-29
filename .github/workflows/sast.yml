@@ -7,11 +7,11 @@ name: SAST
 # CodeQL is used because it is GitHub-native: results land in the Security tab
 # (code scanning) and the analysis shows up as a check that can gate merges.
 #
-# Ruleset policy: the default `security-extended` suite is intentionally too
-# noisy to enforce on day one (it reports style and maintainability issues as
-# security findings). We start from the high-confidence `security-and-quality`
-# suite, then narrow to `security` only. See docs/SAST.md for the tuning
-# rationale and the suppression register.
+# Ruleset policy: CodeQL's default suite reports style and maintainability
+# issues as security findings, which on this codebase is hundreds of
+# non-security results. We keep the default suite and exclude the query tags
+# responsible for that noise, leaving the high-confidence security queries.
+# See docs/SAST.md for the tuning rationale and the suppression register.
 #
 # Only the languages we actually ship are scanned. The backend is TypeScript
 # (Node/Express) and the contracts are Rust (Soroban).
@@ -59,26 +59,10 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: javascript-typescript
-          # Tune the ruleset rather than accepting the default, but do it by
-          # excluding queries rather than naming a `security` pack: there is no
-          # standalone pack of that name for any language here, and requesting
-          # one fails at `database init` with
-          # "Query pack security cannot be found".
-          #
-          # Instead we keep the default suite and exclude the query tags that
-          # produce non-security noise. `maintainability` and `usability` are
-          # the style/design queries; `experimental` and `external/cwe` are
-          # lower-confidence. What remains is the high-confidence
-          # security-focused set — injection, hardcoded secrets, unsafe
-          # deserialisation, path traversal, SSRF, XSS, and crypto misuse.
-          queries: security-and-quality
-          query-filters:
-            - exclude:
-                tags:
-                  - maintainability
-                  - usability
-                  - experimental
-                  - external/cwe
+          # Ruleset lives in a config file rather than inline: the
+          # codeql-action `init` step takes `queries` but not `query-filters`,
+          # so the tag exclusions have to be declared in a config file.
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
@@ -118,17 +102,8 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: rust
-          # Same tuning as TypeScript: keep the default suite, drop the
-          # non-security query tags. See the comment in the TypeScript job for
-          # why this is expressed as a filter rather than `queries: security`.
-          queries: security-and-quality
-          query-filters:
-            - exclude:
-                tags:
-                  - maintainability
-                  - usability
-                  - experimental
-                  - external/cwe
+          # Same shared ruleset as the TypeScript job.
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
