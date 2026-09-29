@@ -89,7 +89,11 @@ const AppLayout: React.FC = () => {
   const { isTourOpen, completeTour, skipTour } = useOnboarding();
 
   return (
-    <MotionConfig reducedMotion={reduceMotion ? "always" : "never"}>
+    <MotionConfig
+      reducedMotion={reduceMotion ? "always" : "never"}
+      /* Instant transitions (rather than removed feedback) when motion is reduced. */
+      transition={reduceMotion ? { duration: 0 } : undefined}
+    >
       <ScrollToTop />
       <PageAnnouncement />
       <KeyboardShortcutsProvider />

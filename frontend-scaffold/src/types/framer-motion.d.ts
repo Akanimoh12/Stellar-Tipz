@@ -36,5 +36,6 @@ declare module 'framer-motion' {
   export const MotionConfig: React.FC<{
     children?: React.ReactNode;
     reducedMotion?: 'always' | 'never' | 'user';
+    transition?: Record<string, unknown>;
   }>;
 }
