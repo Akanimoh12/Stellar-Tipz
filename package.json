@@ -19,6 +19,7 @@
     "typecheck": "cd frontend-scaffold && npm run typecheck",
     "lint": "cd frontend-scaffold && npm run lint",
     "test": "cd frontend-scaffold && npm run test",
+    "coverage:check": "npm run coverage:check --prefix backend && npm run coverage:check --prefix frontend-scaffold",
     "load:test": "k6 run scripts/load-test.js",
     "load:compare": "node scripts/compare-load-baseline.mjs",
     "sdk:generate": "bash scripts/generate-sdk.sh",

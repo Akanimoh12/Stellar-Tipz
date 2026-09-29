@@ -8,7 +8,24 @@ coverage:
       default:
         target: 70%
         threshold: 5%
-        if_not_found: success
+        # A missing report must not silently pass. Coverage uploads are
+        # best-effort (see fail_ci_if_error in .github/workflows/coverage.yml)
+        # but the local ratchet in scripts/check-coverage.mjs is the real gate.
+        if_not_found: error
+        if_ci_failed: error
+      backend:
+        flags:
+          - backend
+        target: 50%
+        threshold: 2%
+        if_not_found: error
+        if_ci_failed: error
+      typescript:
+        flags:
+          - typescript
+        target: 57%
+        threshold: 2%
+        if_not_found: error
         if_ci_failed: error
     patch:
       default:
@@ -18,6 +35,10 @@ coverage:
         if_ci_failed: error
 
   flags:
+    backend:
+      paths:
+        - backend/src/
+      carryforward: true
     typescript:
       paths:
         - frontend-scaffold/src/
@@ -39,5 +60,9 @@ ignore:
   - "frontend-scaffold/src/**/__tests__/**"
   - "frontend-scaffold/src/**/*.test.ts"
   - "frontend-scaffold/src/**/*.test.tsx"
+  - "backend/tests/**"
+  - "backend/src/**/__tests__/**"
+  - "backend/src/**/*.test.ts"
+  - "backend/prisma/seed.ts"
   - "contracts/tipz/src/test/**"
   - "e2e/**"

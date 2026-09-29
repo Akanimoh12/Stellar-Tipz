@@ -1,0 +1,9 @@
+{
+  "_comment": "Coverage ratchet baseline. Measured on commit 9f1369f. `scripts/check-coverage.mjs` fails a PR when total or per-module coverage drops below these values. Update only when coverage genuinely improves.",
+  "backend": {
+    "totalLines": 50.51
+  },
+  "frontend": {
+    "totalLines": 57.81
+  }
+}
