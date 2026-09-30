@@ -2,7 +2,8 @@ name: Visual Regression Tests
 
 on:
   pull_request:
-    branches: [main]
+    # test-implement-drips is the integration branch PRs currently target.
+    branches: [main, test-implement-drips]
     paths:
       - "frontend-scaffold/**"
       - ".github/workflows/visual-regression.yml"
@@ -11,12 +12,23 @@ permissions:
   contents: read
   pull-requests: write
 
+concurrency:
+  group: visual-regression-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   visual-regression:
     name: Visual Regression (Playwright)
     runs-on: ubuntu-latest
+    # Baselines are rendered in this exact image (fonts, Chromium build,
+    # rasteriser), locally and in CI alike. Bump it together with
+    # @playwright/test in frontend-scaffold/package-lock.json.
+    container:
+      image: mcr.microsoft.com/playwright:v1.59.1-jammy
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      CI: "true"
+      HOME: /root
     defaults:
       run:
         working-directory: frontend-scaffold
@@ -35,18 +47,14 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
-
-      - name: Build app
-        run: npm run build
-
       - name: Run visual regression tests
-        run: npx playwright test tests/visual --reporter=html,github
-        env:
-          # Serve the built app on port 3000 for Playwright
-          CI: "true"
-        continue-on-error: true
+        id: visual
+        run: npx playwright test -c playwright.visual.config.ts
+
+      - name: Summarise results
+        if: always()
+        run: |
+          node scripts/visual-report.mjs test-results/visual/results.json | tee visual-summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4
@@ -56,10 +64,35 @@ jobs:
           path: frontend-scaffold/playwright-report/
           retention-days: 30
 
-      - name: Upload screenshot diffs
+      - name: Upload expected / actual / diff images
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: visual-diff-screenshots
-          path: frontend-scaffold/test-results/
-          retention-days: 7
+          name: visual-diffs
+          path: frontend-scaffold/test-results/visual/
+          retention-days: 14
+
+      # Sticky PR comment with the same table as the step summary. Fork PRs
+      # only get a read token, so the step is skipped for them; the step
+      # summary and artifacts still carry the diffs.
+      - name: Post results to the pull request
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('frontend-scaffold/visual-summary.md', 'utf8');
+            const marker = '<!-- visual-regression-report -->';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });
+            }

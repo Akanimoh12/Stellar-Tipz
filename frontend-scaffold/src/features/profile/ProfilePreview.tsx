@@ -2,6 +2,7 @@ import React from "react";
 import { Github, Globe, Twitter } from "lucide-react";
 
 import Avatar from "../../components/ui/Avatar";
+import OptimizedImage from "../../components/ui/optimizedImage";
 import type { Profile } from "../../types/contract";
 import type { ProfileFormData } from "../../types/profile";
 import { THEME_COLORS } from "./profileThemes";
@@ -40,11 +41,12 @@ const ProfilePreview: React.FC<ProfilePreviewProps> = ({ profile, form }) => {
       {/* Banner */}
       <div className={`relative h-28 w-full ${theme.accent}`}>
         {bannerSrc && (
-          <img
+          <OptimizedImage
             src={bannerSrc}
             alt="Profile banner"
             width={640}
             height={112}
+            sizes="(max-width: 640px) 100vw, 640px"
             loading="lazy"
             decoding="async"
             className="absolute inset-0 h-full w-full object-cover"

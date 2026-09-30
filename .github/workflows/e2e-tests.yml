@@ -2,13 +2,20 @@ name: E2E Tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, test-implement-drips]
     paths:
       - 'frontend-scaffold/**'
+
   pull_request:
-    branches: [main]
+    # #1342: the financial E2E suite must run on every PR. PRs in this repo
+    # target `test-implement-drips` as well as `main`, so both are listed.
+    branches: [main, test-implement-drips]
     paths:
       - 'frontend-scaffold/**'
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

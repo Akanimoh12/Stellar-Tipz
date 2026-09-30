@@ -1,0 +1,436 @@
+{
+  "version": "1.0",
+  "description": "Shared credit score test vectors for Rust contract and TypeScript backend validation. Ensures both implementations produce identical scores.",
+  "algorithm": "credit_score = base(40) + tip_score + x_score + age_score + streak_bonus, clamped to [0, 100]",
+  "vectors": [
+    {
+      "id": "zero_profile",
+      "description": "Brand new profile, no activity",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 0,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 3600,
+        "streak_bonus": 0
+      },
+      "expected_score": 40,
+      "tier": "Bronze"
+    },
+    {
+      "id": "minimum_age_threshold",
+      "description": "Account < 1 day old (age_sub should be 0)",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 0,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 3599,
+        "streak_bonus": 0
+      },
+      "expected_score": 40,
+      "tier": "Bronze"
+    },
+    {
+      "id": "one_day_old",
+      "description": "Exactly 1 day old (age_sub = 1 day / 10 = 0.1 clamped to int = 0)",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 0,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 86400,
+        "streak_bonus": 0
+      },
+      "expected_score": 40,
+      "tier": "Bronze"
+    },
+    {
+      "id": "age_boundary_10_days",
+      "description": "10 days old (age_sub = 10 / 10 = 1, age_score = 1 * 10 / 100 = 0)",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 0,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 864000,
+        "streak_bonus": 0
+      },
+      "expected_score": 40,
+      "tier": "Bronze"
+    },
+    {
+      "id": "age_100_days",
+      "description": "100 days old (age_sub = 100 / 10 = 10, age_score = 10 * 10 / 100 = 1)",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 0,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 8640000,
+        "streak_bonus": 0
+      },
+      "expected_score": 41,
+      "tier": "Bronze"
+    },
+    {
+      "id": "age_1000_days_capped",
+      "description": "1000 days old (age_sub capped at 100, age_score = 100 * 10 / 100 = 10)",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 0,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 86400000,
+        "streak_bonus": 0
+      },
+      "expected_score": 50,
+      "tier": "Silver"
+    },
+    {
+      "id": "single_tip_1_xlm",
+      "description": "1 XLM tip (tip_sub = 10_000_000 / 10_000_000 = 1, tip_score = 1 * 20 / 100 = 0)",
+      "inputs": {
+        "total_tips_received_stroops": 10000000,
+        "x_followers": 0,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 0,
+        "streak_bonus": 0
+      },
+      "expected_score": 40,
+      "tier": "Bronze"
+    },
+    {
+      "id": "tips_50_xlm",
+      "description": "50 XLM received (tip_sub = 500_000_000 / 10_000_000 = 50, tip_score = 50 * 20 / 100 = 10)",
+      "inputs": {
+        "total_tips_received_stroops": 500000000,
+        "x_followers": 0,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 0,
+        "streak_bonus": 0
+      },
+      "expected_score": 50,
+      "tier": "Silver"
+    },
+    {
+      "id": "tips_100_xlm_capped",
+      "description": "100+ XLM (tip_sub capped at 100, tip_score = 100 * 20 / 100 = 20)",
+      "inputs": {
+        "total_tips_received_stroops": 1000000000,
+        "x_followers": 0,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 0,
+        "streak_bonus": 0
+      },
+      "expected_score": 60,
+      "tier": "Gold"
+    },
+    {
+      "id": "x_followers_50",
+      "description": "50 X followers (follower_part = 50 / 50 = 1, capped at 50; x_sub = 1, x_score = 1 * 30 / 100 = 0)",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 50,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 0,
+        "streak_bonus": 0
+      },
+      "expected_score": 40,
+      "tier": "Bronze"
+    },
+    {
+      "id": "x_followers_500",
+      "description": "500 X followers (follower_part = 500 / 50 = 10, capped at 50; x_sub = 10, x_score = 10 * 30 / 100 = 3)",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 500,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 0,
+        "streak_bonus": 0
+      },
+      "expected_score": 43,
+      "tier": "Bronze"
+    },
+    {
+      "id": "x_followers_2500",
+      "description": "2500 X followers (follower_part = 2500 / 50 = 50, capped at 50; x_sub = 50, x_score = 50 * 30 / 100 = 15)",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 2500,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 0,
+        "streak_bonus": 0
+      },
+      "expected_score": 55,
+      "tier": "Silver"
+    },
+    {
+      "id": "x_engagement_100",
+      "description": "100% engagement avg (engagement_part = 100 / 10 = 10, capped at 50; x_sub = 10, x_score = 10 * 30 / 100 = 3)",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 0,
+        "x_engagement_avg": 100,
+        "account_age_seconds": 0,
+        "streak_bonus": 0
+      },
+      "expected_score": 43,
+      "tier": "Bronze"
+    },
+    {
+      "id": "x_engagement_500",
+      "description": "500% engagement avg (engagement_part = 500 / 10 = 50, capped at 50; x_sub = 50, x_score = 50 * 30 / 100 = 15)",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 0,
+        "x_engagement_avg": 500,
+        "account_age_seconds": 0,
+        "streak_bonus": 0
+      },
+      "expected_score": 55,
+      "tier": "Silver"
+    },
+    {
+      "id": "x_both_followers_and_engagement",
+      "description": "Both X followers and engagement (follower_part = 10, engagement_part = 10, x_sub = 20, x_score = 20 * 30 / 100 = 6)",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 500,
+        "x_engagement_avg": 100,
+        "account_age_seconds": 0,
+        "streak_bonus": 0
+      },
+      "expected_score": 46,
+      "tier": "Bronze"
+    },
+    {
+      "id": "x_both_maxed",
+      "description": "Both X followers and engagement maxed (x_sub = 50 + 50 = 100, capped at 100; x_score = 100 * 30 / 100 = 30)",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 2500,
+        "x_engagement_avg": 500,
+        "account_age_seconds": 0,
+        "streak_bonus": 0
+      },
+      "expected_score": 70,
+      "tier": "Gold"
+    },
+    {
+      "id": "streak_bonus_5",
+      "description": "Streak bonus of 5 (added directly)",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 0,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 0,
+        "streak_bonus": 5
+      },
+      "expected_score": 45,
+      "tier": "Bronze"
+    },
+    {
+      "id": "streak_bonus_10_capped",
+      "description": "Streak bonus capped at 10",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 0,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 0,
+        "streak_bonus": 100
+      },
+      "expected_score": 50,
+      "tier": "Silver"
+    },
+    {
+      "id": "tier_boundary_20_bronze",
+      "description": "Tier boundary: Bronze (20) - minimum bronze",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 0,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 8640000,
+        "streak_bonus": 0
+      },
+      "expected_score": 41,
+      "tier": "Bronze"
+    },
+    {
+      "id": "tier_boundary_40_silver",
+      "description": "Tier boundary: Silver (40) - base score is 40, so need +0 from components = Silver tier start",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 0,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 0,
+        "streak_bonus": 0
+      },
+      "expected_score": 40,
+      "tier": "Bronze"
+    },
+    {
+      "id": "tier_boundary_40_silver_exact",
+      "description": "Tier boundary: exactly 40 is Bronze. Need score 40+ for Silver.",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 0,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 0,
+        "streak_bonus": 1
+      },
+      "expected_score": 41,
+      "tier": "Bronze"
+    },
+    {
+      "id": "tier_boundary_60_gold",
+      "description": "Tier boundary: Gold (60) - need tips + age for 60 (tip_score 10 + age_score 10)",
+      "inputs": {
+        "total_tips_received_stroops": 500000000,
+        "x_followers": 0,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 86400000,
+        "streak_bonus": 0
+      },
+      "expected_score": 60,
+      "tier": "Gold"
+    },
+    {
+      "id": "tier_boundary_80_diamond",
+      "description": "Tier boundary: Diamond (80) - need all components maxed (20 + 30 + 10 + 10 = 70 + base 40 = 110, capped at 100)",
+      "inputs": {
+        "total_tips_received_stroops": 1000000000,
+        "x_followers": 2500,
+        "x_engagement_avg": 500,
+        "account_age_seconds": 86400000,
+        "streak_bonus": 10
+      },
+      "expected_score": 100,
+      "tier": "Diamond"
+    },
+    {
+      "id": "tier_boundary_80_near_diamond",
+      "description": "Near Diamond (79) - one point below diamond",
+      "inputs": {
+        "total_tips_received_stroops": 490000000,
+        "x_followers": 2500,
+        "x_engagement_avg": 500,
+        "account_age_seconds": 86400000,
+        "streak_bonus": 10
+      },
+      "expected_score": 99,
+      "tier": "Diamond"
+    },
+    {
+      "id": "combined_all_components",
+      "description": "All components contribute (tips + x + age + streak)",
+      "inputs": {
+        "total_tips_received_stroops": 250000000,
+        "x_followers": 1000,
+        "x_engagement_avg": 200,
+        "account_age_seconds": 43200000,
+        "streak_bonus": 3
+      },
+      "expected_score": 78,
+      "tier": "Gold"
+    },
+    {
+      "id": "precision_fractional_scores",
+      "description": "Fractional score components (should truncate, not round)",
+      "inputs": {
+        "total_tips_received_stroops": 15000000,
+        "x_followers": 75,
+        "x_engagement_avg": 15,
+        "account_age_seconds": 864000,
+        "streak_bonus": 0
+      },
+      "expected_score": 40,
+      "tier": "Bronze"
+    },
+    {
+      "id": "overflow_prevention",
+      "description": "Very large tip volume (capped at 100 XLM = 1_000_000_000 stroops)",
+      "inputs": {
+        "total_tips_received_stroops": 999999999999999,
+        "x_followers": 0,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 0,
+        "streak_bonus": 0
+      },
+      "expected_score": 60,
+      "tier": "Gold"
+    },
+    {
+      "id": "zero_engagement_with_followers",
+      "description": "Followers but zero engagement (should count followers)",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 1000,
+        "x_engagement_avg": 0,
+        "account_age_seconds": 0,
+        "streak_bonus": 0
+      },
+      "expected_score": 46,
+      "tier": "Bronze"
+    },
+    {
+      "id": "zero_followers_with_engagement",
+      "description": "Engagement but zero followers (should count engagement)",
+      "inputs": {
+        "total_tips_received_stroops": 0,
+        "x_followers": 0,
+        "x_engagement_avg": 200,
+        "account_age_seconds": 0,
+        "streak_bonus": 0
+      },
+      "expected_score": 46,
+      "tier": "Bronze"
+    },
+    {
+      "id": "realistic_creator_bronze",
+      "description": "Typical new creator (Bronze tier)",
+      "inputs": {
+        "total_tips_received_stroops": 50000000,
+        "x_followers": 200,
+        "x_engagement_avg": 80,
+        "account_age_seconds": 2592000,
+        "streak_bonus": 0
+      },
+      "expected_score": 47,
+      "tier": "Bronze"
+    },
+    {
+      "id": "realistic_creator_silver",
+      "description": "Established creator (Silver tier)",
+      "inputs": {
+        "total_tips_received_stroops": 200000000,
+        "x_followers": 800,
+        "x_engagement_avg": 150,
+        "account_age_seconds": 15552000,
+        "streak_bonus": 5
+      },
+      "expected_score": 56,
+      "tier": "Silver"
+    },
+    {
+      "id": "realistic_creator_gold",
+      "description": "Highly active creator (Gold tier)",
+      "inputs": {
+        "total_tips_received_stroops": 500000000,
+        "x_followers": 2000,
+        "x_engagement_avg": 300,
+        "account_age_seconds": 31536000,
+        "streak_bonus": 8
+      },
+      "expected_score": 76,
+      "tier": "Gold"
+    },
+    {
+      "id": "realistic_creator_diamond",
+      "description": "Top-tier creator (Diamond)",
+      "inputs": {
+        "total_tips_received_stroops": 750000000,
+        "x_followers": 3000,
+        "x_engagement_avg": 400,
+        "account_age_seconds": 63072000,
+        "streak_bonus": 10
+      },
+      "expected_score": 89,
+      "tier": "Diamond"
+    }
+  ]
+}

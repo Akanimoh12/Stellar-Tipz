@@ -52,6 +52,33 @@
   }
 }
 
+// Reduced-motion overrides are shared by the OS-level media query and the
+// in-app preference (`[data-reduced-motion="true"]` on <html>) so both are
+// honoured identically. Reduced motion means *reduced*, not removed: state
+// changes still render, they simply stop moving.
+@mixin st-reduced-motion-suppression {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-delay: 0ms !important;
+  transition-duration: 0.001ms !important;
+}
+
+// Loading spinners are the state change, so they keep a slow stepped rotation
+// instead of disappearing.
+@mixin st-essential-motion-preserved {
+  animation-duration: 1.5s !important;
+  animation-iteration-count: infinite !important;
+  animation-timing-function: steps(8, end) !important;
+  transition: none !important;
+}
+
+// Skeletons fall back to a static block: the loading state stays visible.
+@mixin st-static-skeleton {
+  animation: none !important;
+  background-size: 100% 100% !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html:focus-within {
     scroll-behavior: auto !important;
@@ -60,29 +87,67 @@
   *,
   *::before,
   *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    scroll-behavior: auto !important;
-    transition-delay: 0ms !important;
-    transition-duration: 0.001ms !important;
+    @include st-reduced-motion-suppression;
   }
 
   .animate-spin,
   [data-essential-motion="loading"],
   [data-essential-motion="loading"] * {
-    animation-duration: 1.5s !important;
-    animation-iteration-count: infinite !important;
-    animation-timing-function: steps(8, end) !important;
-    transition: none !important;
+    @include st-essential-motion-preserved;
   }
 
   .st-skeleton {
-    animation: none !important;
-    background-size: 100% 100% !important;
+    @include st-static-skeleton;
+  }
+}
+
+// In-app preference ("Reduce motion: always" in settings). The attribute is
+// mirrored onto <html> by useReducedMotion.
+[data-reduced-motion="true"] {
+  scroll-behavior: auto !important;
+
+  &,
+  & *,
+  & *::before,
+  & *::after {
+    @include st-reduced-motion-suppression;
+  }
+
+  .animate-spin,
+  [data-essential-motion="loading"],
+  [data-essential-motion="loading"] * {
+    @include st-essential-motion-preserved;
+  }
+
+  .st-skeleton {
+    @include st-static-skeleton;
   }
 }
 
 @layer utilities {
+  /* #1338: notched-device safe area insets. Requires `viewport-fit=cover` in
+     index.html for the insets to be non-zero on iOS. */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .mb-safe {
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .bottom-safe {
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .right-safe {
+    right: calc(1rem + env(safe-area-inset-right, 0px));
+  }
+
+  /* Keeps a focused field clear of fixed bottom bars and the on-screen keyboard */
+  .scroll-safe-bottom {
+    scroll-margin-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+  }
+
   /* Hide scrollbar while keeping scroll functionality */
   .no-scrollbar {
     -ms-overflow-style: none;

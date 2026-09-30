@@ -40,10 +40,6 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   useEffect(() => {
     if (isOpen) {
       setTypedConfirmation('');
-      // Focus input after modal opens
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 100);
     }
   }, [isOpen]);
 
@@ -65,8 +61,9 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       onClose={onClose}
       ariaLabelledBy="confirm-dialog-title"
       ariaDescribedBy="confirm-dialog-description"
+      closeOnEscape={!requireTyping}
     >
-      <div className="space-y-6 p-6">
+      <div className="space-y-6">
         {/* Header */}
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">

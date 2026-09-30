@@ -35,20 +35,22 @@ score = BASE_SCORE(40)
       + tip_sub * 20 / 100   (tip volume,   ≤20 pts)
       + x_sub   * 30 / 100   (X reach,      ≤30 pts)
       + age_sub * 10 / 100   (account age,  ≤10 pts)
-      + streak_bonus
+      + streak_bonus         (streak,       ≤10 pts)
 capped at 100
 ```
 
 Each sub-score is independently capped at 100 before weighting; new profiles
 start at the base score of 40 (bottom of Silver). A streak bonus rewards
-consistent tipping milestones.
+consistent tipping milestones and is itself bounded by `STREAK_BONUS_CAP`
+(10) — the raw accumulator grows with every supporter milestone, so leaving it
+unbounded would let a long streak saturate the score on its own.
 
 ## Rationale
 
 - A **base score** gives new creators a usable starting tier instead of zero.
-- **Capping each factor** (e.g. follower contribution ≤50, age 1 pt / 10 days)
-  blunts whales and bot-followers — buying one huge tip or fake followers
-  cannot max the score.
+- **Capping every factor, streak included** (e.g. follower contribution ≤50,
+  age 1 pt / 10 days, streak ≤10) blunts whales and bot-followers — buying one
+  huge tip, fake followers, or farming streaks cannot max the score.
 - **Integer-only, deterministic** math is verifiable by anyone re-running it on
   the same `Profile`, with no oracle to trust.
 - The breakdown (`CreditBreakdown`) is returned to the UI so creators see each

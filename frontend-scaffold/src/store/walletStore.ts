@@ -1,12 +1,19 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { secureStorage } from "../services/secureStorage";
+import { secureStorage, clearClientStorageOnLogout } from "../services/secureStorage";
+import { broadcastCrossTabEvent } from "../services/crossTabSync";
 import type { WalletErrorType } from "../helpers/error";
 import { setUser } from "../services/sentry";
 import { analytics } from "../services/analytics";
 
 export type Network = 'TESTNET' | 'PUBLIC';
 type SigningStatus = 'idle' | 'signing' | 'signed' | 'error';
+
+/** A single connected wallet entry. */
+export interface ConnectedWallet {
+  publicKey: string;
+  walletType: string;
+}
 
 export interface WalletError {
   type: WalletErrorType;
@@ -104,6 +111,10 @@ export const useWalletStore = create<WalletStore>()(
         });
         setUser(publicKey);
         analytics.trackEvent("wallet_connected", { walletType: wt ?? "unknown" });
+        broadcastCrossTabEvent({
+          type: "WALLET_CONNECT",
+          payload: { publicKey, walletType: wt ?? undefined },
+        });
       },
 
       setAddress: (publicKey: string, walletType?: string) => {
@@ -123,6 +134,8 @@ export const useWalletStore = create<WalletStore>()(
           signingStatus: 'idle',
           sessionExpiresAt: null,
         });
+        clearClientStorageOnLogout();
+        broadcastCrossTabEvent({ type: "LOGOUT" });
       },
 
       clearAddress: () => {
@@ -176,6 +189,13 @@ export const useWalletStore = create<WalletStore>()(
     }),
     {
       name: "tipz-wallet",
+      version: 1,
+      migrate: (persistedState: unknown, version: number) => {
+        if (version !== 1 || !persistedState || typeof persistedState !== "object") {
+          return initialWalletState;
+        }
+        return persistedState as WalletState;
+      },
       onRehydrateStorage: () => (state) => {
         if (state) {
           state._hasHydrated = true;

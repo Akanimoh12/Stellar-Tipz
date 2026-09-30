@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    paths:
+      - 'frontend-scaffold/**'
+      - 'contracts/**'
+      - '.github/workflows/coverage.yml'
 
 jobs:
   coverage-typescript:

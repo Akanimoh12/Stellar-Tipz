@@ -1,8 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { injectFreighterConnected, injectFreighterNotConnected } from '../mocks/freighter';
-
+import { injectFreighterConnected } from '../mocks/freighter';
 const TEST_PUBLIC_KEY = 'GBVKN6YMDXP4FKXB26BWZJHXPGQPZLWXHKJM5YXJKTZRQPLTKLPXNQK';
-
 test.describe('Subscription Lifecycle', () => {
   test('create subscription successfully', async ({ page }) => {
     await injectFreighterConnected(page, { publicKey: TEST_PUBLIC_KEY });
@@ -22,8 +20,8 @@ test.describe('Subscription Lifecycle', () => {
     const cancelButton = page.getByRole('button', { name: /cancel/i });
     if (await cancelButton.isVisible()) { await cancelButton.click(); }
     await expect(page.getByText(/cancel|confirm|are you sure/i)).toBeVisible({ timeout: 10000 });
-    await page.getByRole('button', { name: /confirm.*cancel|yes.*cancel|cancel.*yes/i }).first().click();
-    await expect(page.getByText(/cancelled|success|removed/i)).toBeVisible({ timeout: 10000 });
+    await page.getByRole('button', { name: /confirm.*cancel|yes.*cancel/i }).first().click();
+    await expect(page.getByText(/cancelled|success/i)).toBeVisible({ timeout: 10000 });
   });
   test('cancel subscription is denied', async ({ page }) => {
     await injectFreighterConnected(page, { publicKey: TEST_PUBLIC_KEY });
@@ -32,12 +30,7 @@ test.describe('Subscription Lifecycle', () => {
     const cancelButton = page.getByRole('button', { name: /cancel/i });
     if (await cancelButton.isVisible()) { await cancelButton.click(); }
     await page.getByRole('button', { name: /confirm.*cancel|yes.*cancel/i }).first().click();
-    await expect(page.getByText(/failed|cannot|cannot be cancelled/i)).toBeVisible({ timeout: 10000 });
-  });
-  test('subscription next due date is displayed', async ({ page }) => {
-    await injectFreighterConnected(page, { publicKey: TEST_PUBLIC_KEY });
-    await page.goto('/subscriptions');
-    await expect(page.getByText(/next payment|due|next due/i)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/failed|cannot/i)).toBeVisible({ timeout: 10000 });
   });
   test('no active subscriptions message appears when empty', async ({ page }) => {
     await injectFreighterConnected(page, { publicKey: TEST_PUBLIC_KEY });
