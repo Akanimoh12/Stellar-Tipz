@@ -23,6 +23,7 @@
     "lint:fix": "eslint \"src/**/*.ts\" --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "test": "vitest run",
+    "test:openapi": "vitest run src/tests/openapi-validation.test.ts",
     "test:failure-injection": "vitest run tests/failure-injection.test.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -86,6 +87,8 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.6",
