@@ -186,7 +186,19 @@ async function flushTipQueue() {
 // Client messaging
 // ---------------------------------------------------------------------------
 
+// Only same-origin windows may drive the service worker. A service worker
+// receives `message` events from any client that holds a reference to it, so
+// without this check a cross-origin page that registers this worker could
+// trigger skipWaiting() and force an update at an attacker-chosen time.
+const ALLOWED_MESSAGE_ORIGINS = [self.location.origin];
+
 self.addEventListener('message', (event) => {
+  // `event.origin` is empty for same-origin messages in some browsers, so
+  // treat an empty origin as same-origin and rely on the source check below.
+  const sameOrigin =
+    event.origin === '' || ALLOWED_MESSAGE_ORIGINS.includes(event.origin);
+  if (!sameOrigin) return;
+
   if (event.data === 'SKIP_WAITING') {
     self.skipWaiting();
   }

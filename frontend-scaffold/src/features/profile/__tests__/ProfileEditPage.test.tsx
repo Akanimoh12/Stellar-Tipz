@@ -186,6 +186,10 @@ describe('ProfileEditPage', () => {
             const bioTextarea = getByPlaceholderText(/tell supporters/i);
             expect(bioTextarea).toHaveValue(bio ?? '');
 
+            // codeql[js/regex/missing-regexp-anchor]
+            // False positive. This is a test-only placeholder matcher against a
+            // hardcoded example.com fixture, not URL validation. Anchoring it
+            // would break the match, which is the point of the helper.
             const imageUrlInput = getByPlaceholderText(/https:\/\/example\.com\/avatar/i);
             expect(imageUrlInput).toHaveValue(imageUrl);
 

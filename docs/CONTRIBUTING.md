@@ -62,6 +62,7 @@ The `main` branch is protected with the following settings (configured in reposi
 - `contract-ci` — Soroban contract build and tests
 - `pr-checks` — PR validation (title format, linked issue)
 - `security-audit` — dependency vulnerability scan
+- `SAST (TypeScript)` and `SAST (Rust)` — static analysis of first-party code (see [docs/SAST.md](SAST.md))
 
 The full branch protection configuration is documented in [`.github/branch-protection.json`](../.github/branch-protection.json).
 
