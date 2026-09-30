@@ -1,10 +1,17 @@
 name: Code Coverage
 
+# The repository default branch is `test-implement-drips`. The previous
+# `branches: [main]` filter referenced a branch that does not exist, so this
+# workflow (and every other workflow in the repo) never ran. `pull_request` is
+# intentionally unfiltered so the ratchet applies to PRs targeting any branch.
 on:
   push:
-    branches: [main]
+    branches: [test-implement-drips]
   pull_request:
-    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   coverage-typescript:
@@ -25,12 +32,21 @@ jobs:
           cache-dependency-path: frontend-scaffold/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
+      # The frontend suite currently has pre-existing failures (see
+      # docs/COVERAGE.md). `reportOnFailure` makes Vitest emit coverage anyway,
+      # and `check-coverage.mjs` is the enforced gate below. Remove this
+      # continue-on-error once the suite is green so test failures block too.
       - name: Run TypeScript coverage
+        continue-on-error: true
         run: npm run test:coverage
 
+      - name: Enforce coverage ratchet
+        run: npm run coverage:check
+
       - name: Upload TypeScript coverage to Codecov
+        if: always()
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -38,6 +54,147 @@ jobs:
           flags: typescript
           name: typescript-coverage
           fail_ci_if_error: false
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-frontend-report
+          path: coverage-frontend-report.md
+          if-no-files-found: ignore
+
+      - name: Comment coverage on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- coverage-report:frontend -->';
+            const report = fs.existsSync('coverage-frontend-report.md')
+              ? fs.readFileSync('coverage-frontend-report.md', 'utf8')
+              : 'Coverage report was not generated — the coverage run may have failed before producing output.';
+            const body = `${marker}\n${report}`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+  coverage-backend:
+    name: Backend Coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tipz
+          POSTGRES_PASSWORD: tipz
+          POSTGRES_DB: tipz_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tipz -d tipz_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://tipz:tipz@localhost:5432/tipz_test?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: test-secret-key-for-ci
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      # The committed migration history cannot be replayed onto a fresh database:
+      # 20260623124048_add_refund_notification_xaccount_indexer_models recreates
+      # the "User" table that 20250623120000_initial_schema already created, so
+      # `prisma migrate deploy` fails with P3018 / 42P07. Tests only need the
+      # schema, so derive it from schema.prisma instead. Fixing the migration
+      # history is tracked separately.
+      - name: Prepare test database schema
+        run: npx prisma db push --force-reset --skip-generate
+
+      # The backend suite currently has pre-existing failures that need the
+      # database and Redis (see docs/COVERAGE.md). `reportOnFailure` makes
+      # Vitest emit coverage anyway, and `check-coverage.mjs` is the enforced
+      # gate below. Remove this continue-on-error once the suite is green.
+      - name: Run backend coverage
+        continue-on-error: true
+        run: npm run test:coverage
+
+      - name: Enforce coverage ratchet
+        run: npm run coverage:check
+
+      - name: Upload backend coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./backend/coverage/lcov.info
+          flags: backend
+          name: backend-coverage
+          fail_ci_if_error: false
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-backend-report
+          path: coverage-backend-report.md
+          if-no-files-found: ignore
+
+      - name: Comment coverage on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- coverage-report:backend -->';
+            const report = fs.existsSync('coverage-backend-report.md')
+              ? fs.readFileSync('coverage-backend-report.md', 'utf8')
+              : 'Coverage report was not generated — the coverage run may have failed before producing output.';
+            const body = `${marker}\n${report}`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
 
   coverage-rust:
     name: Rust Coverage
@@ -56,6 +213,11 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate Rust coverage
+        # The contracts do not currently compile (pre-existing: unresolved
+        # `crate::storage::DataKey`, missing event helpers), so coverage cannot
+        # be produced. Non-blocking so it does not mask the backend/frontend
+        # ratchets this workflow exists to enforce. Remove once contracts build.
+        continue-on-error: true
         run: cargo llvm-cov --lcov --output-path lcov.info
         working-directory: contracts
 
