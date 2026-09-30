@@ -69,7 +69,7 @@ Our unique credit score algorithm provides transparent creator credibility. For 
 **Quick Overview:**
 - Score range: **0–100**
 - Base score: **40** (all new creators start at Silver tier)
-- Components: Tip volume (20%), X metrics (30%), Account age (10%), Streak bonus (uncapped)
+- Components: Tip volume (20%), X metrics (30%), Account age (10%), Streak bonus (max 10 pts)
 - Maximum score: **100** (Diamond tier)
 
 ### Scoring Tiers

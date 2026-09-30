@@ -199,3 +199,76 @@ fn test_event_fee_updated() {
     assert_topic!(topics.get(0).unwrap(), symbol_short!("fee"));
     assert_topic!(topics.get(1).unwrap(), symbol_short!("updated"));
 }
+
+// ── test_event_fee_collected ──────────────────────────────────────────────
+
+#[test]
+fn test_event_fee_collected() {
+    let (env, contract_id) = setup();
+    let payer = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        events::emit_fee_collected(
+            &env,
+            "withdrawal",
+            &payer,
+            1_000_000,  // gross
+            20_000,     // fee
+            980_000,    // net
+            200,        // fee_bps
+        );
+    });
+
+    let all = env.events().all();
+    assert_eq!(all.len(), 1);
+    let (_contract, topics, data) = all.get(0).unwrap();
+    assert_eq!(topics.len(), 2);
+    assert_topic!(topics.get(0).unwrap(), symbol_short!("fee"));
+    assert_topic!(topics.get(1).unwrap(), symbol_short!("collected"));
+
+    // Verify data contains all fields
+    let (operation, ev_payer, gross, fee, net, fee_bps): (String, Address, i128, i128, i128, u32) =
+        soroban_sdk::FromVal::from_val(&env, data);
+
+    assert_eq!(operation, String::from_str(&env, "withdrawal"));
+    assert_eq!(ev_payer, payer);
+    assert_eq!(gross, 1_000_000);
+    assert_eq!(fee, 20_000);
+    assert_eq!(net, 980_000);
+    assert_eq!(fee_bps, 200);
+}
+
+#[test]
+fn test_event_fee_collected_refund() {
+    let (env, contract_id) = setup();
+    let tipper = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        events::emit_fee_collected(
+            &env,
+            "refund",
+            &tipper,
+            500_000,    // gross (original tip amount)
+            10_000,     // fee (non-refundable)
+            490_000,    // net (amount refunded)
+            200,        // fee_bps
+        );
+    });
+
+    let all = env.events().all();
+    assert_eq!(all.len(), 1);
+    let (_contract, topics, data) = all.get(0).unwrap();
+    assert_eq!(topics.len(), 2);
+    assert_topic!(topics.get(0).unwrap(), symbol_short!("fee"));
+    assert_topic!(topics.get(1).unwrap(), symbol_short!("collected"));
+
+    // Verify data
+    let (operation, ev_payer, gross, fee, net, fee_bps): (String, Address, i128, i128, i128, u32) =
+        soroban_sdk::FromVal::from_val(&env, data);
+
+    assert_eq!(operation, String::from_str(&env, "refund"));
+    assert_eq!(ev_payer, tipper);
+    assert_eq!(gross, 500_000);
+    assert_eq!(fee, 10_000);
+    assert_eq!(net, 490_000);
+}

@@ -47,6 +47,16 @@ export const LEADERBOARD_CACHE_TTL_MS = Number(
   import.meta.env.VITE_LEADERBOARD_CACHE_TTL_MS ?? 60_000,
 );
 
+/** Default TTL for token metadata cache (symbol, name, decimals). */
+export const TOKEN_METADATA_TTL_MS = Number(
+  import.meta.env.VITE_TOKEN_METADATA_CACHE_TTL_MS ?? 3_600_000,
+);
+
+/** Default TTL for token balance cache. */
+export const TOKEN_BALANCE_TTL_MS = Number(
+  import.meta.env.VITE_TOKEN_BALANCE_CACHE_TTL_MS ?? 30_000,
+);
+
 /** Target max time for a leaderboard batch fetch (acceptance: load < 2s). */
 export const LEADERBOARD_PERF_BUDGET_MS = 2_000;
 

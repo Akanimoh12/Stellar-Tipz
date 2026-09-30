@@ -22,23 +22,32 @@ export interface FeeEstimation {
   hasSufficientBalance: boolean;
 }
 
-const STROOPS_PER_XLM = 10_000_000;
+export class FeeEstimationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'FeeEstimationError';
+  }
+}
+
+export const STROOPS_PER_XLM = 10_000_000;
 const HIGH_FEE_THRESHOLD_XLM = 0.1; // 0.1 XLM
 
 /**
- * Simulate a transaction and estimate gas costs
+ * Simulate a transaction and estimate gas costs.
+ * Never guesses or falls back silently to a dummy estimate when simulation fails.
  */
 export async function estimateTransactionFee(
   transaction: Transaction,
   server: SorobanRpc.Server,
-  userBalance?: string
+  userBalance?: string,
+  options: { allowFallback?: boolean } = {}
 ): Promise<FeeEstimation> {
   try {
     // Simulate the transaction
     const simulation = await server.simulateTransaction(transaction);
 
     if (SorobanRpc.Api.isSimulationError(simulation)) {
-      throw new Error(`Simulation failed: ${simulation.error}`);
+      throw new FeeEstimationError(`Simulation failed: ${simulation.error}`);
     }
 
     // Extract fee information
@@ -56,11 +65,12 @@ export async function estimateTransactionFee(
       : true;
 
     // Extract resource breakdown
+    const cost = simulation.cost as Record<string, unknown> | undefined;
     const breakdown = {
-      cpuInstructions: Number(simulation.cost?.cpuInsns || 0),
-      memoryBytes: Number(simulation.cost?.memBytes || 0),
-      readBytes: Number(simulation.cost?.readBytes || 0),
-      writeBytes: Number(simulation.cost?.writeBytes || 0),
+      cpuInstructions: Number(cost?.cpuInsns || 0),
+      memoryBytes: Number(cost?.memBytes || 0),
+      readBytes: Number(cost?.readBytes || 0),
+      writeBytes: Number(cost?.writeBytes || 0),
     };
 
     return {
@@ -74,13 +84,15 @@ export async function estimateTransactionFee(
     };
   } catch (error) {
     logger.error('services/gasEstimation', 'Fee estimation failed', undefined, error instanceof Error ? error : new Error(String(error)));
-    // Return fallback estimation
-    return getFallbackEstimation(userBalance);
+    if (options.allowFallback) {
+      return getFallbackEstimation(userBalance);
+    }
+    throw error instanceof FeeEstimationError ? error : new FeeEstimationError(error instanceof Error ? error.message : String(error));
   }
 }
 
 /**
- * Get fallback estimation when simulation fails
+ * Get fallback estimation when simulation fails (only if explicitly opted-in)
  */
 function getFallbackEstimation(userBalance?: string): FeeEstimation {
   const fallbackFee = '1000000'; // 0.1 XLM fallback
@@ -122,4 +134,53 @@ export function checkSufficientBalance(
 ): boolean {
   const total = BigInt(amount) + BigInt(fee);
   return BigInt(balance) >= total;
+}
+
+export interface FeeBreakdown {
+  amountXLM: string;
+  amountFiat: string | null;
+  platformFeeXLM: string;
+  platformFeeFiat: string | null;
+  networkFeeXLM: string;
+  networkFeeFiat: string | null;
+  totalXLM: string;
+  totalFiat: string | null;
+  platformFeePercent: number;
+}
+
+/**
+ * Calculate complete cost breakdown for transaction confirmations (both in XLM and fiat).
+ */
+export function calculateFeeBreakdown({
+  amount,
+  platformFeePercent = 0.02,
+  networkFeeXLM = '0.00001',
+  xlmUsdPrice = null,
+}: {
+  amount: string | number;
+  platformFeePercent?: number;
+  networkFeeXLM?: string | number;
+  xlmUsdPrice?: number | null;
+}): FeeBreakdown {
+  const numAmount = parseFloat(String(amount)) || 0;
+  const numPlatformFee = numAmount * platformFeePercent;
+  const numNetworkFee = parseFloat(String(networkFeeXLM)) || 0;
+  const numTotal = numAmount + numPlatformFee + numNetworkFee;
+
+  const formatFiat = (val: number): string | null => {
+    if (xlmUsdPrice === null || xlmUsdPrice === undefined || isNaN(xlmUsdPrice)) return null;
+    return `$${(val * xlmUsdPrice).toFixed(2)}`;
+  };
+
+  return {
+    amountXLM: numAmount.toFixed(2),
+    amountFiat: formatFiat(numAmount),
+    platformFeeXLM: numPlatformFee.toFixed(4),
+    platformFeeFiat: formatFiat(numPlatformFee),
+    networkFeeXLM: Number(numNetworkFee).toFixed(5),
+    networkFeeFiat: formatFiat(numNetworkFee),
+    totalXLM: numTotal.toFixed(5),
+    totalFiat: formatFiat(numTotal),
+    platformFeePercent: platformFeePercent * 100,
+  };
 }

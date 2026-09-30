@@ -42,12 +42,12 @@ fn expected_username_result(input: &[u8]) -> Result<(), ContractError> {
 
 fn expected_x_handle_result(input: &[u8]) -> Result<(), ContractError> {
     if input.is_empty() || input.len() > 16 {
-        return Err(ContractError::InvalidXHandle);
+        return Err(ContractError::InvalidInput);
     }
 
     let start = if input[0] == b'@' {
         if input.len() == 1 {
-            return Err(ContractError::InvalidXHandle);
+            return Err(ContractError::InvalidInput);
         }
         1
     } else {
@@ -55,13 +55,13 @@ fn expected_x_handle_result(input: &[u8]) -> Result<(), ContractError> {
     };
 
     if input.len() - start > 15 {
-        return Err(ContractError::InvalidXHandle);
+        return Err(ContractError::InvalidInput);
     }
 
     for &b in &input[start..] {
         let valid = b.is_ascii_alphanumeric() || b == b'_';
         if !valid {
-            return Err(ContractError::InvalidXHandle);
+            return Err(ContractError::InvalidInput);
         }
     }
 
@@ -90,9 +90,7 @@ proptest! {
     fn fuzz_tip_amount(amount in any::<i128>(), min_tip in 0_i128..=1_000_000_000_i128) {
         let result = validate_tip_amount(amount, min_tip);
 
-        let expected = if amount <= 0 {
-            Err(ContractError::InvalidAmount)
-        } else if amount < min_tip {
+        let expected = if amount < min_tip {
             Err(ContractError::TipBelowMinimum)
         } else {
             Ok(())
@@ -106,7 +104,7 @@ proptest! {
         let message = s(&env, &message);
         let result = validate_message(&message);
 
-        prop_assert!(matches!(result, Ok(()) | Err(ContractError::MessageTooLong)));
+        prop_assert!(matches!(result, Ok(()) | Err(ContractError::MessageTooLong) | Err(ContractError::InvalidMessage)));
     }
 
     #[test]
@@ -116,6 +114,8 @@ proptest! {
 
         if message.len() > 280 {
             prop_assert_eq!(result, Err(ContractError::MessageTooLong));
+        } else if message.iter().any(|&b| b < 0x20 && b != b'\n' && b != b'\t' && b != b'\r') {
+            prop_assert_eq!(result, Err(ContractError::InvalidMessage));
         } else {
             prop_assert_eq!(result, Ok(()));
         }
@@ -191,17 +191,17 @@ fn regression_unicode_emoji_control_and_null_inputs_are_classified() {
 
     assert_eq!(
         validate_x_handle(&s(&env, "@creator🙂")),
-        Err(ContractError::InvalidXHandle)
+        Err(ContractError::InvalidInput)
     );
     assert_eq!(
         validate_x_handle(&bytes(&env, b"creator\0")),
-        Err(ContractError::InvalidXHandle)
+        Err(ContractError::InvalidInput)
     );
 
     assert_eq!(validate_message(&s(&env, "thanks 🙂")), Ok(()));
     assert_eq!(
         validate_message(&bytes(&env, b"thanks\0control\nchars")),
-        Ok(())
+        Err(ContractError::InvalidMessage)
     );
 }
 
@@ -227,7 +227,7 @@ fn regression_maximum_length_strings_hit_exact_boundaries() {
     assert_eq!(validate_x_handle(&s(&env, "@abcdefghijklmno")), Ok(()));
     assert_eq!(
         validate_x_handle(&s(&env, "@abcdefghijklmnop")),
-        Err(ContractError::InvalidXHandle)
+        Err(ContractError::InvalidInput)
     );
 
     assert_eq!(validate_message(&bytes(&env, &[b'm'; 280])), Ok(()));

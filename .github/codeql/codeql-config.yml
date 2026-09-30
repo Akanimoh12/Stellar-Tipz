@@ -1,0 +1,83 @@
+name: "Stellar Tipz security ruleset"
+
+# Tuning policy for CodeQL, shared by the TypeScript and Rust SAST jobs.
+#
+# CodeQL's default `security-and-quality` suite reports style and
+# maintainability issues as if they were security findings. On this codebase
+# that produces hundreds of non-security results, which is how SAST ends up
+# getting disabled. We keep the default suite and exclude the query tags
+# responsible for that noise, leaving the high-confidence security queries:
+# injection, hardcoded credentials, unsafe deserialisation, path traversal,
+# SSRF, XSS, and cryptography misuse.
+#
+# Note this cannot be written as `queries: security` — there is no query pack
+# by that name, and naming one fails at `database init` with
+# "Query pack security cannot be found".
+
+queries:
+  - uses: security-and-quality
+
+query-filters:
+  # Style, design, and readability queries. Not security problems.
+  - exclude:
+      tags:
+        - maintainability
+        - usability
+  # Lower-confidence and very low precision. Not useful as a merge gate.
+  - exclude:
+      tags:
+        - experimental
+  # Externally sourced CWE mappings; volume without triage value here.
+  - exclude:
+      tags:
+        - external/cwe
+
+  # Tag exclusions are not enough: the first successful run still produced 206
+  # results, 155 of which were these six queries. Each is excluded by id, with
+  # the reason it is not a security signal here. Counts are from the run that
+  # motivated the exclusion, not estimates.
+  #
+  # - js/unused-local-variable (100) and rust/unused-variable (9): dead code.
+  #   Worth cleaning up, but a style issue, and 109 of 206 results.
+  - exclude:
+      id:
+        - js/unused-local-variable
+        - rust/unused-variable
+        - js/useless-assignment-to-local
+        - js/trivial-conditional
+        - js/superfluous-trailing-arguments
+  # - js/missing-rate-limiting (60, across 22 route files): false positive.
+  #   backend/src/app.ts registers globalRateLimiter and mutationRateLimiter
+  #   app-wide before any router mounts, so every route *is* rate limited. The
+  #   query models per-route limiter registration and cannot see app-level
+  #   middleware, so it fires on all 60 handlers.
+  - exclude:
+      id:
+        - js/missing-rate-limiting
+  # - js/call-to-non-callable (10) and js/property-access-on-non-object (2):
+  #   misreads Express 5 `Request`/`Response` types. Reported `res.json(...)`
+  #   and `next(error)` as calls to non-callables, which is not possible for
+  #   those methods. Requires type information to resolve correctly.
+  - exclude:
+      id:
+        - js/call-to-non-callable
+        - js/property-access-on-non-object
+  # js/syntax-error is deliberately NOT excluded. It looks like extractor noise,
+  # but it is a true signal: it flagged an unclosed <ErrorBoundary> in
+  # frontend-scaffold/src/App.tsx that `tsc --noEmit` also rejects. Excluding it
+  # would hide files that fail to parse, and therefore everything CodeQL would
+  # otherwise have to say about them.
+  # - js/react/unused-or-undefined-state-property (1) and
+  #   js/file-system-race (3): the latter only in build scripts (vite.config.ts,
+  #   scripts/analyze-bundle.mjs) where a TOCTOU window is not attacker
+  #   reachable; the former is a React correctness nit, not a vulnerability.
+  - exclude:
+      id:
+        - js/react/unused-or-undefined-state-property
+        - js/file-system-race
+
+# Queries deliberately left enabled, because each one found something real or
+# is a genuine security signal that a maintainer should judge for themselves:
+#   js/missing-origin-check              -> real bug, fixed in sw.js
+#   js/incomplete-multi-character-sanitization -> reviewed, DOM allowlist walk
+#   js/missing-await, js/regex/missing-regexp-anchor -> low volume, kept

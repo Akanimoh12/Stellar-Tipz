@@ -1,8 +1,9 @@
-import React, { useEffect, useRef } from "react";
+import React from "react";
 import { Search, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import type { Profile } from "@/types";
 import CreatorSearch from "./CreatorSearch";
+import Modal from "../ui/Modal";
 
 interface QuickSearchModalProps {
   isOpen: boolean;
@@ -14,64 +15,29 @@ const QuickSearchModal: React.FC<QuickSearchModalProps> = ({
   onClose,
 }) => {
   const navigate = useNavigate();
-  const backdropRef = useRef<HTMLDivElement>(null);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
-
-  // Lock body scroll
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [isOpen]);
 
   const handleSelect = (profile: Profile) => {
     onClose();
     navigate(`/@${profile.username}`);
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] px-4">
-      {/* Backdrop */}
-      <div
-        ref={backdropRef}
-        className="absolute inset-0 bg-black bg-opacity-50"
-        onClick={onClose}
-        role="presentation"
-        aria-hidden="true"
-      />
-
-      {/* Panel */}
-      <div
-        className="relative z-10 w-full max-w-lg border-[3px] border-black bg-white"
-        style={{ boxShadow: "6px 6px 0px 0px rgba(0,0,0,1)" }}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Quick search"
-      >
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      ariaLabelledBy="quick-search-title"
+      closeOnBackdropClick={true}
+      className="items-start pt-[15vh]"
+      customContent={true}
+    >
+      <div className="w-full max-w-lg border-[3px] border-black bg-white" style={{ boxShadow: "6px 6px 0px 0px rgba(0,0,0,1)" }}>
         {/* Header */}
         <div className="flex items-center justify-between border-b-[3px] border-black px-4 py-3">
           <div className="flex items-center gap-2">
             <Search size={16} className="text-gray-800 dark:text-gray-200" />
-            <span className="text-xs font-black uppercase tracking-[0.2em] text-gray-800 dark:text-gray-200">
+            <h2 id="quick-search-title" className="text-xs font-black uppercase tracking-[0.2em] text-gray-800 dark:text-gray-200">
               Quick search
-            </span>
+            </h2>
           </div>
           <button
             onClick={onClose}
@@ -101,7 +67,7 @@ const QuickSearchModal: React.FC<QuickSearchModalProps> = ({
           </p>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 

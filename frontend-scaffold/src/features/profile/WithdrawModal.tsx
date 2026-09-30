@@ -5,12 +5,13 @@ import Button from "@/components/ui/Button";
 import AmountDisplay from "@/components/shared/AmountDisplay";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import { stroopToXlmBigNumber, xlmToStroop } from "@/helpers/format";
-import { useTipz, useProfile } from "@/hooks";
+import { useTipz, useProfile, useFeeBreakdown } from "@/hooks";
 import Input from "@/components/ui/Input";
 import TransactionStatus from "@/components/shared/TransactionStatus";
 import { useToastStore } from "@/store/toastStore";
 import { ERRORS, categorizeError } from "@/helpers/error";
 import { logger } from '../../services/logger';
+import { AlertCircle, RefreshCw } from "lucide-react";
 
 interface WithdrawModalProps {
   isOpen: boolean;
@@ -95,8 +96,21 @@ const WithdrawModal: React.FC<WithdrawModalProps> = ({
     return (rawAmount - rawFee).toString();
   }, [fee, requestedStroops]);
 
-  const canWithdraw = !amountError;
   const isWithdrawingAll = parsedAmount?.eq(balanceXlm) ?? false;
+
+  const {
+    breakdown,
+    isEstimating,
+    estimationError,
+    canSign,
+    refresh,
+  } = useFeeBreakdown({
+    amount: parsedAmount ? parsedAmount.toFixed() : "0",
+    platformFeePercent: (feeBps || 200) / 10000,
+    isOpen,
+  });
+
+  const canWithdraw = !amountError && canSign;
 
   const handleWithdraw = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,6 +160,27 @@ const WithdrawModal: React.FC<WithdrawModalProps> = ({
           platform fee of {(feeBps / 100).toFixed(1)}% applies.
         </p>
 
+        {estimationError && (
+          <div
+            className="p-3 border-2 border-red-500 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-sm font-bold"
+            role="alert"
+          >
+            <div className="flex items-start gap-2">
+              <AlertCircle size={18} className="flex-shrink-0 mt-0.5" />
+              <div>
+                <p>{estimationError}</p>
+                <button
+                  type="button"
+                  onClick={() => void refresh()}
+                  className="mt-2 inline-flex items-center gap-1 text-xs font-black uppercase underline hover:text-black"
+                >
+                  <RefreshCw size={12} className={isEstimating ? "animate-spin" : ""} /> Retry Estimation
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-4">
           <div className="relative">
             <Input
@@ -171,29 +206,52 @@ const WithdrawModal: React.FC<WithdrawModalProps> = ({
             </button>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
             <div className="p-3 border-2 border-black bg-gray-50">
               <p className="text-[10px] font-black uppercase text-gray-700 dark:text-gray-300">
-                Requested
+                Amount
               </p>
               <AmountDisplay
                 amount={requestedStroops}
-                className="mt-2 block text-lg"
+                className="mt-2 block text-base"
               />
+              {breakdown.amountFiat && (
+                <span className="text-xs font-bold text-gray-500 block">
+                  ≈ {breakdown.amountFiat}
+                </span>
+              )}
             </div>
             <div className="p-3 border-2 border-black bg-gray-50">
               <p className="text-[10px] font-black uppercase text-gray-700 dark:text-gray-300">
-                Platform Fee
+                Platform Fee ({(feeBps / 100).toFixed(1)}%)
               </p>
-              <AmountDisplay amount={fee} className="mt-2 block text-lg" />
+              <AmountDisplay amount={fee} className="mt-2 block text-base" />
+              {breakdown.platformFeeFiat && (
+                <span className="text-xs font-bold text-gray-500 block">
+                  ≈ {breakdown.platformFeeFiat}
+                </span>
+              )}
+            </div>
+            <div className="p-3 border-2 border-black bg-gray-50">
+              <p className="text-[10px] font-black uppercase text-gray-700 dark:text-gray-300">
+                Network Fee
+              </p>
+              <span className="mt-2 block text-base font-black">
+                {isEstimating ? "..." : `${breakdown.networkFeeXLM} XLM`}
+              </span>
+              {breakdown.networkFeeFiat && !isEstimating && (
+                <span className="text-xs font-bold text-gray-500 block">
+                  ≈ {breakdown.networkFeeFiat}
+                </span>
+              )}
             </div>
             <div className="p-3 border-2 border-black bg-green-50">
-              <p className="text-[10px] font-black uppercase text-green-600">
+              <p className="text-[10px] font-black uppercase text-green-700 font-bold">
                 You'll Receive
               </p>
               <AmountDisplay
                 amount={netAmount}
-                className="mt-2 block text-lg text-green-700"
+                className="mt-2 block text-base text-green-700 font-black"
               />
             </div>
           </div>
