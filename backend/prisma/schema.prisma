@@ -282,20 +282,20 @@ enum WebhookSubscriptionStatus {
 /// Outbound webhook subscription owned by one authenticated user.
 model WebhookSubscription {
   id                      String                    @id @default(cuid())
-  ownerId                 String
-  owner                   User                      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId                 String?
+  owner                   User?                     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  apiKeyId                String?
+  apiKey                  ApiKey?                   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
   url                     String
   secret                  String
-  previousSecret          String?
-  previousSecretExpiresAt DateTime?
+  active                  Boolean                   @default(true)
   events                  String[]
-  status                  WebhookSubscriptionStatus @default(ACTIVE)
   createdAt               DateTime                  @default(now())
   updatedAt               DateTime                  @updatedAt
   deletedAt               DateTime?
   deliveries              WebhookDelivery[]
 
-  @@index([ownerId])
+  @@index([ownerId, apiKeyId])
 }
 
 /// Delivery state of a single webhook notification attempt.
