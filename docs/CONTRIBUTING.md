@@ -123,6 +123,71 @@ layout, module boundaries, data flow) and the decision records in
 
 ---
 
+## Technical Onboarding
+
+New contributors should treat [`ARCHITECTURE.md`](../ARCHITECTURE.md) as the map and this guide as the walk-through. The project is intentionally split into three moving parts that are easy to misunderstand when working in isolation:
+
+```text
+┌────────────────────────────────────┐
+│ frontend-scaffold/                 │
+│ React UI + Zustand state          │
+│ Reads contract + backend APIs     │
+│ Displays creator pages, tips, etc │
+└───────────────┬────────────────────┘
+                │ HTTPS / WebSocket / local RPC
+                ▼
+┌────────────────────────────────────┐
+│ backend/                           │
+│ Express API + Postgres + Redis     │
+│ indexer, auth, notifications, jobs │
+└───────────────┬────────────────────┘
+                │ Soroban RPC + contract events
+                ▼
+┌────────────────────────────────────┐
+│ contracts/tipz/                   │
+│ Soroban state machine             │
+│ source of truth for balances, fees, ownership, etc. │
+└────────────────────────────────────┘
+```
+
+- The smart contract is the authoritative ledger state. The frontend should never treat its local state as the source of truth for balances or ownership.
+- The backend is the read/write control plane: it exposes APIs, persists derived models, indexes on-chain events, exposes realtime rooms, and schedules background jobs.
+- The frontend is the presentation layer and wallet gateway. It signs transactions, reads data from the backend, and renders the creator experience.
+
+### A guided first contribution
+
+1. Read [`ARCHITECTURE.md`](../ARCHITECTURE.md) and the ADR index in [`docs/adr/README.md`](./adr/README.md).
+2. Pick a task that matches your comfort level and keep the change small.
+3. Run the smallest relevant verification command before opening a PR.
+4. For frontend work, start in `frontend-scaffold/src`, not the contract code.
+5. For backend work, read `backend/src/indexer/`, `backend/src/realtime/`, and `backend/src/jobs/` first so the service boundaries are clear.
+
+### Difficulty ladder
+
+| Level | Best start | Typical work |
+|---|---|---|
+| Beginner | docs, test coverage, small UX fixes | copy updates, accessibility polish, hook tests, basic API validation |
+| Intermediate | frontend features and API integration | profile forms, leaderboards, dashboard flows, image alt/accessibility fixes |
+| Advanced | backend, contract, indexer, realtime | queue workers, Soroban event projections, auth flows, real-time room logic |
+
+A good first contribution is a docs fix, a small accessibility regression, or a frontend test that exercises a real page without changing business logic.
+
+### Domain glossary
+
+- **Soroban** — the Stellar smart-contract environment. All core economic rules and balance transitions live in the contract, not in the backend.
+- **stroops** — the smallest unit of Stellar value. 1 XLM = 10,000,000 stroops.
+- **Credit score** — a derived reputation metric calculated on-chain and surfaced by the backend/indexer for creator ranking and trust decisions. See [`docs/CREDIT_SCORE.md`](./CREDIT_SCORE.md) and ADR-003.
+- **Indexer** — the backend component that polls the Soroban RPC stream, normalizes contract events, and writes durable read-model data into PostgreSQL.
+- **Realtime layer** — the Socket.IO gateway that pushes leaderboard, notification, and creator updates to connected clients using Redis-backed room fan-out.
+
+### Common pitfalls
+
+- Treating the frontend as the source of truth for balances or ownership.
+- Writing mutable profile or score data directly on-chain; keep chain state minimal and deterministic.
+- Assuming the indexer and API are the same layer. The indexer is event-driven bookkeeping; the API is the user-facing query layer.
+- Ignoring Redis-backed queue retries and idempotency. Jobs that can fail should be safe to re-run.
+- Changing contract code without reading the corresponding ADR and contract spec.
+
 ## Workflow
 
 We use a **fork-and-branch** workflow:

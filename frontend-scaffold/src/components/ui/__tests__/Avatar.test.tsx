@@ -1,7 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { axe, toHaveNoViolations } from "jest-axe";
 import { describe, expect, it } from "vitest";
 
 import Avatar from "../Avatar";
+
+expect.extend(toHaveNoViolations);
 
 describe("Avatar", () => {
   it("reserves intrinsic dimensions and lazy-loads by default", () => {
@@ -37,19 +40,49 @@ describe("Avatar", () => {
     expect(img).toHaveAttribute("decoding", "sync");
   });
 
+  it("passes axe checks with descriptive alt text and status announcements", async () => {
+    const { container } = render(
+      <Avatar
+        src="https://example.com/avatar.png"
+        alt="Jane Doe's profile picture"
+        fallback="Jane"
+        size="lg"
+      />,
+    );
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
   it("shows a skeleton placeholder until the avatar image loads", () => {
     const { queryByTestId } = render(
       <Avatar
         src="https://example.com/avatar.png"
-        alt="Creator avatar"
+        alt="Creator profile picture"
         fallback="Creator"
         size="md"
       />,
     );
 
     expect(queryByTestId("avatar-placeholder")).toBeInTheDocument();
-    fireEvent.load(screen.getByRole("img", { name: "Creator avatar" }));
+    expect(screen.getByRole("status", { name: /loading creator profile picture/i })).toBeInTheDocument();
+    fireEvent.load(screen.getByRole("img", { name: "Creator profile picture" }));
     expect(queryByTestId("avatar-placeholder")).not.toBeInTheDocument();
+  });
+
+  it("uses descriptive alt text for profile imagery and announces image failures", () => {
+    render(
+      <Avatar
+        src="https://example.com/broken.png"
+        alt="Jane Doe's profile picture"
+        fallback="Jane"
+        size="md"
+      />,
+    );
+
+    const img = screen.getByRole("img", { name: "Jane Doe's profile picture" });
+    expect(img).toHaveAttribute("alt", "Jane Doe's profile picture");
+    fireEvent.error(img);
+    expect(screen.getByRole("alert", { name: /failed to load jane doe's profile picture/i })).toBeInTheDocument();
   });
 
   it("adds IPFS-responsive srcset candidates for creator avatars", () => {

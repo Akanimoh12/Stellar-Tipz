@@ -35,6 +35,7 @@ const LazyImageContent: React.FC<LazyImageProps> = ({
   rootMargin = "200px",
   alt = "",
   onLoad,
+  onError,
   onVisible,
   style,
   className,
@@ -45,7 +46,15 @@ const LazyImageContent: React.FC<LazyImageProps> = ({
   const initialSrc = priority ? src : placeholder ?? FALLBACK_TRANSPARENT_PIXEL;
   const [currentSrc, setCurrentSrc] = useState<string>(initialSrc);
   const [loaded, setLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const altText = alt || "image";
+
+  useEffect(() => {
+    setImageError(false);
+    setLoaded(false);
+    setCurrentSrc(priority ? src : placeholder ?? FALLBACK_TRANSPARENT_PIXEL);
+  }, [priority, src, placeholder]);
 
   useEffect(() => {
     if (priority) {
@@ -91,25 +100,42 @@ const LazyImageContent: React.FC<LazyImageProps> = ({
       : { filter: "none", transition: "filter 200ms ease-out" };
 
   return (
-    <img
-      {...rest}
-      ref={imgRef}
-      src={currentSrc}
-      srcSet={isRealImage ? srcSet : undefined}
-      sizes={isRealImage ? sizes : undefined}
-      alt={alt}
-      loading={priority ? "eager" : "lazy"}
-      {...{ fetchpriority: priority ? "high" : "auto" }}
-      decoding="async"
-      className={className}
-      style={{ ...blurStyle, ...style }}
-      onLoad={(event) => {
-        if (isRealImage) {
-          setLoaded(true);
-        }
-        onLoad?.(event);
-      }}
-    />
+    <>
+      {!isRealImage && (
+        <span role="status" aria-live="polite" aria-label={`Loading ${altText}`} className="sr-only">
+          Loading {altText}
+        </span>
+      )}
+      {imageError && (
+        <span role="alert" aria-live="assertive" aria-label={`Failed to load ${altText}`} className="sr-only">
+          Failed to load {altText}
+        </span>
+      )}
+      <img
+        {...rest}
+        ref={imgRef}
+        src={currentSrc}
+        srcSet={isRealImage ? srcSet : undefined}
+        sizes={isRealImage ? sizes : undefined}
+        alt={alt}
+        loading={priority ? "eager" : "lazy"}
+        {...{ fetchpriority: priority ? "high" : "auto" }}
+        decoding="async"
+        className={className}
+        style={{ ...blurStyle, ...style }}
+        aria-busy={!isRealImage || !loaded}
+        onLoad={(event) => {
+          if (isRealImage) {
+            setLoaded(true);
+          }
+          onLoad?.(event);
+        }}
+        onError={(event) => {
+          setImageError(true);
+          onError?.(event);
+        }}
+      />
+    </>
   );
 };
 
