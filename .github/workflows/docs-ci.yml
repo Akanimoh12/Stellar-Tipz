@@ -1,0 +1,36 @@
+name: Documentation CI
+
+on:
+  push:
+    paths:
+      - '**.md'
+  pull_request:
+    paths:
+      - '**.md'
+  schedule:
+    - cron: '0 2 * * *'  # nightly at 02:00 UTC
+
+jobs:
+  docs-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install dependencies (if any)
+        run: |
+          npm ci || true
+
+      - name: Set up Rust
+        uses: actions/setup-rust@v1
+        with:
+          rust-version: stable
+
+      - name: Run documentation code example verification
+        run: |
+          node ./scripts/verify-doc-code-examples.ts
