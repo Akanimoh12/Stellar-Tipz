@@ -1,7 +1,10 @@
 import { render, screen, act, fireEvent } from "@testing-library/react";
+import { axe, toHaveNoViolations } from "jest-axe";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import LazyImage from "../LazyImage";
+
+expect.extend(toHaveNoViolations);
 
 type ObserverCallback = (entries: IntersectionObserverEntry[]) => void;
 
@@ -129,6 +132,36 @@ describe("LazyImage", () => {
     expect(screen.getByRole("img")).toHaveStyle({ filter: "blur(8px)" });
     triggerIntersect(true);
     expect(screen.getByRole("img")).toHaveAttribute("src", "/two.jpg");
+  });
+
+  it("passes axe checks with descriptive alternative text", async () => {
+    const { container } = render(
+      <LazyImage
+        width={640}
+        height={320}
+        src="/img/hero.jpg"
+        placeholder="/img/hero-blur.jpg"
+        alt="A sunset over the coast"
+      />,
+    );
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("announces loading and error states for assistive tech", () => {
+    render(
+      <LazyImage
+        src="/error.jpg"
+        width={640}
+        height={320}
+        alt="A sunset over the coast"
+        placeholder="/placeholder.jpg"
+      />,
+    );
+
+    expect(screen.getByRole("status", { name: /loading a sunset over the coast/i })).toBeInTheDocument();
+    fireEvent.error(screen.getByRole("img", { name: "A sunset over the coast" }));
+    expect(screen.getByRole("alert", { name: /failed to load a sunset over the coast/i })).toBeInTheDocument();
   });
 
   it("loads without IntersectionObserver support", () => {

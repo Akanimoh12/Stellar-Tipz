@@ -76,7 +76,11 @@ const Avatar: React.FC<AvatarProps> = ({
   const [imageError, setImageError] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [useOptimizedSrcSet, setUseOptimizedSrcSet] = useState(true);
-  
+
+  const altText = alt || (fallback ? `${fallback}'s profile picture` : address ? `${address.slice(-4)} profile picture` : 'Profile picture');
+  const loadingMessage = `Loading ${altText}`;
+  const errorMessage = `Failed to load ${altText}`;
+
   const bgColorClass = useMemo(() => {
     if (address) {
       return generateColorFromAddress(address);
@@ -106,14 +110,17 @@ const Avatar: React.FC<AvatarProps> = ({
   return (
     <div
       className={`${sizeClasses[size]} relative border-2 border-black overflow-hidden flex items-center justify-center font-bold text-white bg-gray-100 ${className || ''}`}
-      title={alt}
+      title={altText}
       style={{ aspectRatio: '1 / 1' }}
+      aria-busy={showImage && !imageLoaded}
     >
       {showImage ? (
         <>
           {!imageLoaded && (
             <span
-              aria-hidden="true"
+              role="status"
+              aria-live="polite"
+              aria-label={loadingMessage}
               data-testid="avatar-placeholder"
               className="absolute inset-0 z-10 bg-gray-200 animate-pulse"
             />
@@ -124,7 +131,7 @@ const Avatar: React.FC<AvatarProps> = ({
             )}
             <img
               src={normalizedSrc}
-              alt={alt}
+              alt={altText}
               width={displaySize}
               height={displaySize}
               srcSet={useOptimizedSrcSet ? fallbackSrcSet : undefined}
@@ -159,6 +166,11 @@ const Avatar: React.FC<AvatarProps> = ({
         <div className={`w-full h-full ${bgColorClass} flex items-center justify-center`}>
           ?
         </div>
+      )}
+      {imageError && (
+        <span role="alert" aria-live="assertive" aria-label={errorMessage} className="sr-only">
+          {errorMessage}
+        </span>
       )}
     </div>
   );

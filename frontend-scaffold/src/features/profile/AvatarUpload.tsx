@@ -92,7 +92,7 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({ onUploadSuccess, defaultIma
         {preview ? (
           <img
             src={preview}
-            alt="Avatar preview"
+            alt="Profile picture preview"
             width={128}
             height={128}
             loading="lazy"
@@ -100,7 +100,7 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({ onUploadSuccess, defaultIma
             className="w-full h-full object-cover"
           />
         ) : (
-          <div className="text-gray-700 dark:text-gray-300 flex flex-col items-center">
+          <div className="text-gray-700 dark:text-gray-300 flex flex-col items-center" aria-hidden="true">
             <svg className="w-8 h-8 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
             </svg>
