@@ -20,7 +20,7 @@ import {
   numberToI128,
   BASE_FEE,
 } from "../services";
-import { NetworkDetails } from "../helpers/network";
+import { getNetworkDetails, NetworkDetails } from "../helpers/network";
 import { useWalletStore } from "../store/walletStore";
 import {
   Profile,
@@ -65,18 +65,7 @@ export const useContract = () => {
   const { network } = useWalletStore();
   const [loading, setLoading] = useState(false);
 
-  const networkDetails: NetworkDetails = useMemo(
-    () => ({
-      network,
-      networkUrl:
-        network === "TESTNET" ? env.horizonUrl : "https://horizon.stellar.org",
-      networkPassphrase:
-        network === "TESTNET"
-          ? "Test SDF Network ; September 2015"
-          : "Public Global Stellar Network ; September 2015",
-    }),
-    [network],
-  );
+  const networkDetails: NetworkDetails = useMemo(() => getNetworkDetails(network), [network]);
 
   const server = useMemo(() => getServer(networkDetails), [networkDetails]);
   const contractId = env.contractId;
