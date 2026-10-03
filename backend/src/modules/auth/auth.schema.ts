@@ -8,14 +8,14 @@ import { z } from "zod";
 
 export const challengeSchema = z.object({
   stellarAddress: z.string().min(1, "Stellar address is required"),
-  network: z.enum(["TESTNET", "FUTURENET", "MAINNET"]).optional(),
+  network: z.enum(["LOCAL", "TESTNET", "FUTURENET", "MAINNET"]).optional(),
 }).strict();
 
 export const verifySchema = z.object({
   stellarAddress: z.string().min(1, "Stellar address is required"),
   signature: z.string().min(1, "Signature is required"),
   challenge: z.string().min(1, "Challenge is required"),
-  network: z.enum(["TESTNET", "FUTURENET", "MAINNET"]).optional(),
+  network: z.enum(["LOCAL", "TESTNET", "FUTURENET", "MAINNET"]).optional(),
 }).strict();
 
 export const refreshSchema = z.object({

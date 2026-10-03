@@ -8,8 +8,8 @@ CACHE := ./scripts/run-cached-task.sh
 
 help:
 	@printf '%s\n' 'Stellar Tipz monorepo tasks' '' \
-	  '  make setup       Install frontend and backend dependencies' \
-	  '  make dev         Start the frontend dev server' \
+	  '  make setup       Install root, backend, and frontend dependencies' \
+	  '  make dev         Start the full local development environment' \
 	  '  make build       Build contracts, backend, and frontend (cached)' \
 	  '  make test        Run tests in all three components' \
 	  '  make lint        Lint contracts, backend, and frontend' \
@@ -17,10 +17,12 @@ help:
 	  'Run one component with make <component>-<task>, e.g. make backend-test.'
 
 setup:
+	npm ci
 	npm ci --prefix backend
 	npm ci --prefix frontend-scaffold --legacy-peer-deps
 
-dev: frontend-dev
+dev:
+	./scripts/dev-environment.sh up
 
 build: contracts-build backend-build frontend-build
 
@@ -78,4 +80,4 @@ frontend-typecheck: contracts-build
 
 clean:
 	cd contracts && cargo clean
-	rm -rf backend/dist frontend-scaffold/dist .cache/task-runner
+	rm -rf backend/dist frontend-scaffold/build .cache/task-runner

@@ -45,6 +45,21 @@ describe('env helper', () => {
       useMockData: true,
     });
   });
+
+  it('accepts the local Quickstart network configuration', () => {
+    expect(
+      getEnv({
+        VITE_SOROBAN_RPC_URL: 'http://localhost:8000/rpc',
+        VITE_HORIZON_URL: 'http://localhost:8000',
+        VITE_NETWORK_PASSPHRASE: 'Standalone Network ; February 2017',
+        VITE_CONTRACT_ID: 'C'.padEnd(56, 'A'),
+        VITE_NETWORK: 'LOCAL',
+      }),
+    ).toMatchObject({
+      network: 'LOCAL',
+      networkPassphrase: 'Standalone Network ; February 2017',
+    });
+  });
 });
 
 describe('validateEnv', () => {

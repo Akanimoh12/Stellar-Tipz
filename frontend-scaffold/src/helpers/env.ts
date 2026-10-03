@@ -1,4 +1,4 @@
-type NetworkType = "TESTNET" | "FUTURENET" | "MAINNET";
+type NetworkType = "LOCAL" | "TESTNET" | "FUTURENET" | "MAINNET";
 
 interface EnvConfig {
   sorobanRpcUrl: string;

@@ -16,7 +16,7 @@ export const TESTNET_DETAILS = {
 /**
  * Returns the Stellar Expert explorer URL for a transaction based on the current network
  * @param hash - Transaction hash
- * @param network - Network type (TESTNET, FUTURENET, MAINNET). Defaults to env.network
+ * @param network - Network type (LOCAL, TESTNET, FUTURENET, MAINNET). Defaults to env.network
  * @returns Full URL to the explorer
  */
 export const getExplorerTxUrl = (
@@ -26,6 +26,8 @@ export const getExplorerTxUrl = (
   const baseUrl = "https://stellar.expert/explorer";
   
   switch (network.toUpperCase()) {
+    case "LOCAL":
+      return `${env.horizonUrl.replace(/\/+$/, "")}/transactions/${hash}`;
     case "TESTNET":
       return `${baseUrl}/testnet/tx/${hash}`;
     case "FUTURENET":

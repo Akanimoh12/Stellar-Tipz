@@ -25,6 +25,7 @@ dist/
 # Ignore any environment variant files but keep example files
 .env.*
 !.env.example
+.dev/
 
 # IDE
 .idea/

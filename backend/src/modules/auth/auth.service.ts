@@ -53,10 +53,11 @@ const AUTH_DOMAIN = "tipz.app";
 /**
  * Each supported network maps to its real, distinct passphrase so the
  * "Network:" line in the signed message actually varies between
- * TESTNET/FUTURENET/MAINNET — this is what makes cross-network replay
+ * LOCAL/TESTNET/FUTURENET/MAINNET — this is what makes cross-network replay
  * protection real rather than cosmetic.
  */
 const NETWORK_PASSPHRASES: Record<string, string> = {
+  LOCAL: 'Standalone Network ; February 2017',
   TESTNET: Networks.TESTNET,
   FUTURENET: Networks.FUTURENET,
   MAINNET: Networks.PUBLIC,
