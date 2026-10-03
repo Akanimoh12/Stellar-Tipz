@@ -477,5 +477,9 @@ describe("Auth security hardening", () => {
     it("returns the configured network passphrase", () => {
       expect(resolveNetworkPassphrase("TESTNET")).toBe(TEST_NETWORK_PASSPHRASE);
     });
+
+    it("resolves the local Quickstart passphrase", () => {
+      expect(resolveNetworkPassphrase("LOCAL")).toBe("Standalone Network ; February 2017");
+    });
   });
 });

@@ -1,4 +1,8 @@
-.PHONY: build test fmt clippy wasm clean size check-size
+.PHONY: dev build test fmt clippy lint typecheck wasm clean size check-size
+
+# Match the shared component task names used by the root Makefile.
+dev:
+	cargo watch -x test -x build
 
 # Build the contract
 build:
@@ -15,6 +19,10 @@ fmt:
 # Run clippy linter
 clippy:
 	cargo clippy -- -D warnings
+
+lint: fmt clippy
+
+typecheck: wasm
 
 # Build optimized Wasm binary
 wasm:

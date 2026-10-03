@@ -8,13 +8,60 @@ Complete guide to setting up Stellar Tipz for local development.
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| **Node.js** | 18+ | Frontend build tooling |
+| **Node.js** | 20+ | Frontend and backend tooling |
 | **npm** | 9+ | Package management |
 | **Rust** | 1.88+ | Smart contract development |
 | **Cargo** | 1.88+ | Rust package manager |
-| **Soroban CLI** | 21.0+ | Contract build, deploy, invoke |
+| **Stellar CLI** | Current | Start Quickstart, deploy, and invoke contracts |
 | **Git** | 2.30+ | Version control |
+| **Docker** | Current with Compose v2 | Local Postgres, Redis, and app services |
+| **curl** | Current | Local RPC readiness and account funding |
 | **Freighter** | Latest | Stellar wallet (browser extension) |
+
+## One-command local setup
+
+From the repository root, run:
+
+```bash
+./scripts/dev-environment.sh up
+```
+
+The script starts a local Stellar Quickstart network, builds and deploys the
+Soroban contract, initializes it with development accounts, and writes the
+generated contract ID into ignored files under `.dev/`. Docker Compose starts
+PostgreSQL and Redis, applies Prisma migrations, seeds repeatable sample users,
+tips, and leaderboard data, then starts the backend API, indexer, jobs, and
+frontend. It prints the local URLs only after Postgres, Redis, the migration and
+seed step, contract RPC, API readiness, indexer, jobs, and frontend pass health
+checks.
+
+Open the frontend at <http://localhost:3000> and API docs at
+<http://localhost:4000/api/v1/docs>. The local test network and signing keys
+are scoped to this checkout. Run `./scripts/dev-environment.sh down` to stop
+the app and local chain; database volumes remain available for the next run.
+Set `TIPZ_STELLAR_PORT`, `TIPZ_API_PORT`, `TIPZ_FRONTEND_PORT`,
+`TIPZ_POSTGRES_PORT`, or `TIPZ_REDIS_PORT` to use different host ports.
+
+For a clean database reset, run `docker compose down -v` before starting the
+script again. This deletes the local PostgreSQL and Redis data volumes.
+
+### Local environment troubleshooting
+
+- **Docker is unavailable:** start Docker Desktop or the Docker service, then
+  check `docker compose version` and `stellar doctor` before retrying.
+- **A port is already in use:** set one or more of `TIPZ_STELLAR_PORT`,
+  `TIPZ_POSTGRES_PORT`, `TIPZ_REDIS_PORT`, `TIPZ_API_PORT`, or
+  `TIPZ_FRONTEND_PORT`, then rerun the startup command.
+- **The contract cannot deploy:** inspect the local chain with
+  `stellar --config-dir .dev/stellar container logs tipz-local` and verify
+  that Rust 1.88 and the `wasm32-unknown-unknown` target are available.
+- **Migrations or seeding fail:** inspect `docker compose logs migrate`; after
+  fixing the reported problem, rerun `./scripts/dev-environment.sh up`.
+- **The API never becomes ready:** inspect `docker compose logs api indexer`
+  and `docker compose ps`. The readiness endpoint checks PostgreSQL, Redis,
+  local Soroban RPC, and indexer lag at `/health/ready`.
+- **Frontend build dependencies fail to install:** check the Docker build
+  output and confirm the checkout can reach npm's package registry.
 
 ---
 
@@ -43,8 +90,8 @@ source $HOME/.cargo/env
 # Add the Wasm target
 rustup target add wasm32-unknown-unknown
 
-# Install Soroban CLI
-cargo install --locked soroban-cli
+# Install Stellar CLI
+curl -fsSL https://github.com/stellar/stellar-cli/raw/main/install.sh | sh
 ```
 
 ### Build the Contract
@@ -72,15 +119,12 @@ cargo clippy -- -D warnings
 
 ```bash
 # Generate a testnet keypair (if needed)
-soroban keys generate tipz-dev --network testnet
-
-# Fund the account via Friendbot
-curl "https://friendbot.stellar.org?addr=$(soroban keys address tipz-dev)"
+stellar keys generate tipz-dev --network testnet --fund
 
 # Deploy the contract
-soroban contract deploy \
+stellar contract deploy \
   --wasm target/wasm32-unknown-unknown/release/tipz.wasm \
-  --source tipz-dev \
+  --source-account tipz-dev \
   --network testnet
 ```
 
@@ -177,11 +221,11 @@ npm install --legacy-peer-deps
 
 This is expected — the Stellar SDK has some peer dependency conflicts that are safe to ignore.
 
-### Soroban CLI not found after install
+### Stellar CLI not found after install
 
 ```bash
-source $HOME/.cargo/env
-# or restart your terminal
+stellar --version
+# Add the Stellar CLI install directory to PATH if the command is not found.
 ```
 
 ### Freighter not detected in the app

@@ -107,7 +107,7 @@ export const envSchema = z.object({
   /** Maximum rows processed by one retention batch. */
   RETENTION_BATCH_SIZE: z.coerce.number().int().positive().max(5000).default(500),
 
-  STELLAR_NETWORK: z.enum(['TESTNET', 'FUTURENET', 'MAINNET']).default('TESTNET'),
+  STELLAR_NETWORK: z.enum(['LOCAL', 'TESTNET', 'FUTURENET', 'MAINNET']).default('TESTNET'),
   SOROBAN_RPC_URL: z.string().url(),
   HORIZON_URL: z.string().url(),
   NETWORK_PASSPHRASE: z.string(),

@@ -1,37 +1,145 @@
+name: stellar-tipz
+
 services:
-  contract:
-    build:
-      context: .
-      dockerfile: Dockerfile.contract
-      target: dev
+  postgres:
+    image: postgres:16-alpine
+    env_file:
+      - .dev/postgres.env
+    ports:
+      - "${TIPZ_POSTGRES_PORT:-5432}:5432"
     volumes:
-      - ./contracts:/app
-      - contract-target:/app/target
-    environment:
-      - STELLAR_NETWORK=testnet
-      - SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
-    command: cargo watch -x test -x build
-    profiles:
-      - dev
+      - tipz_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tipz -d tipz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${TIPZ_REDIS_PORT:-6379}:6379"
+    volumes:
+      - tipz_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    working_dir: /app
+    command: ["sh", "-c", "npx prisma migrate deploy && npm run db:seed"]
+    env_file:
+      - .dev/backend.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    working_dir: /app
+    command: ["npm", "run", "dev"]
+    volumes:
+      - ./backend:/app
+      - backend_node_modules:/app/node_modules
+    env_file:
+      - .dev/backend.env
+    ports:
+      - "${TIPZ_API_PORT:-4000}:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health/live').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+
+  indexer:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    working_dir: /app
+    command: ["npm", "run", "indexer:dev"]
+    volumes:
+      - ./backend:/app
+      - backend_node_modules:/app/node_modules
+    env_file:
+      - .dev/backend.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9464/metrics').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+
+  jobs:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    working_dir: /app
+    command: ["npm", "run", "jobs:dev"]
+    volumes:
+      - ./backend:/app
+      - backend_node_modules:/app/node_modules
+    env_file:
+      - .dev/backend.env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9464/metrics').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
       target: dev
-    ports:
-      - "3000:3000"
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
     volumes:
-      - ./frontend-scaffold/src:/app/src
-      - ./frontend-scaffold/public:/app/public
-      - /app/node_modules
-    environment:
-      - VITE_SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
-      - VITE_STELLAR_NETWORK=testnet
+      - ./frontend-scaffold:/app
+      - frontend_node_modules:/app/node_modules
+    env_file:
+      - .dev/frontend.env
+    ports:
+      - "${TIPZ_FRONTEND_PORT:-3000}:3000"
     depends_on:
-      - contract
-    profiles:
-      - dev
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
 
 volumes:
-  contract-target:
+  tipz_pgdata:
+  tipz_redisdata:
+  backend_node_modules:
+  frontend_node_modules:
