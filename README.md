@@ -326,6 +326,29 @@ npm install
 npm run dev
 ```
 
+### Monorepo task commands
+
+Use the root Makefile for consistent task names across the frontend, backend,
+and Soroban contracts. Aggregate commands cover every component; prefixed
+commands such as `make backend-test` target one component.
+
+```bash
+make setup       # Install frontend and backend dependencies
+make dev         # Start the frontend dev server
+make build       # Build contracts, backend, and frontend
+make test        # Run all three test suites
+make lint        # Run contract, backend, and frontend linters
+make typecheck   # Build contract Wasm before checking backend and frontend types
+
+make contracts-test
+make backend-test
+make frontend-test
+```
+
+Build and type-check results are cached by tracked and untracked source files
+under `.cache/task-runner/`. `make clean` removes build products and this cache.
+Tests and linters always run so their results reflect the current environment.
+
 #### Option B: Docker development environment
 ```bash
 # Build and start all services

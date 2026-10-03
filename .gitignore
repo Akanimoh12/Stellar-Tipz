@@ -41,6 +41,7 @@ pr.md
 ...
 
 .npm_cache/
+.cache/task-runner/
 
 
 # Generated image audit fixtures and results

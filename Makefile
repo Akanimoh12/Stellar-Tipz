@@ -1,40 +1,81 @@
-.PHONY: help setup dev build test lint clean deploy-testnet
+.DEFAULT_GOAL := help
+.PHONY: help setup dev build test lint typecheck clean \
+	contracts-dev contracts-build contracts-test contracts-lint contracts-typecheck \
+	backend-dev backend-build backend-test backend-lint backend-typecheck \
+	frontend-dev frontend-build frontend-test frontend-lint frontend-typecheck
+
+CACHE := ./scripts/run-cached-task.sh
 
 help:
-	@echo "Stellar-Tipz Development Commands"
-	@echo "================================="
-	@echo ""
-	@echo "  make setup           Install all dependencies (contract + frontend)"
-	@echo "  make dev             Start development servers"
-	@echo "  make build           Build everything (contract + frontend)"
-	@echo "  make test            Run all tests (contract + frontend)"
-	@echo "  make lint            Run all linters"
-	@echo "  make clean           Clean build artifacts"
-	@echo "  make deploy-testnet  Deploy contract to testnet"
-	@echo ""
+	@printf '%s\n' 'Stellar Tipz monorepo tasks' '' \
+	  '  make setup       Install frontend and backend dependencies' \
+	  '  make dev         Start the frontend dev server' \
+	  '  make build       Build contracts, backend, and frontend (cached)' \
+	  '  make test        Run tests in all three components' \
+	  '  make lint        Lint contracts, backend, and frontend' \
+	  '  make typecheck   Check backend and frontend types (builds contract first)' '' \
+	  'Run one component with make <component>-<task>, e.g. make backend-test.'
 
 setup:
-	cd contracts && cargo build --target wasm32-unknown-unknown --release
-	cd frontend-scaffold && npm install --legacy-peer-deps
+	npm ci --prefix backend
+	npm ci --prefix frontend-scaffold --legacy-peer-deps
 
-dev:
-	cd frontend-scaffold && npm run dev
+dev: frontend-dev
 
-build:
-	cd contracts && cargo build --target wasm32-unknown-unknown --release
-	cd frontend-scaffold && npm run build
+build: contracts-build backend-build frontend-build
 
-test:
-	cd contracts && cargo test 2>/dev/null || echo "No contract tests found"
-	cd frontend-scaffold && npm run test -- --run
+test: contracts-test backend-test frontend-test
 
-lint:
-	cd frontend-scaffold && npm run lint
+lint: contracts-lint backend-lint frontend-lint
+
+# Contract Wasm is built first because frontend generation/type checks consume
+# the contract interface and must never run against stale contract artifacts.
+typecheck: contracts-build backend-typecheck frontend-typecheck
+
+contracts-dev:
+	cd contracts && cargo watch -x test -x build
+
+contracts-build:
+	$(CACHE) contracts-build contracts -- cargo build --target wasm32-unknown-unknown --release
+
+contracts-test:
+	cd contracts && cargo test
+
+contracts-lint:
+	cd contracts && cargo fmt -- --check && cargo clippy -- -D warnings
+
+contracts-typecheck: contracts-build
+
+backend-dev:
+	npm run dev --prefix backend
+
+backend-build:
+	$(CACHE) backend-build backend -- npm run build --prefix backend
+
+backend-test:
+	npm run test --prefix backend
+
+backend-lint:
+	npm run lint --prefix backend
+
+backend-typecheck:
+	$(CACHE) backend-typecheck backend -- npm run typecheck --prefix backend
+
+frontend-dev:
+	npm run dev --prefix frontend-scaffold
+
+frontend-build:
+	$(CACHE) frontend-build frontend-scaffold -- npm run build --prefix frontend-scaffold
+
+frontend-test:
+	npm run test --prefix frontend-scaffold
+
+frontend-lint:
+	npm run lint --prefix frontend-scaffold
+
+frontend-typecheck: contracts-build
+	$(CACHE) frontend-typecheck frontend-scaffold contracts -- npm run typecheck --prefix frontend-scaffold
 
 clean:
 	cd contracts && cargo clean
-	cd frontend-scaffold && rm -rf build node_modules
-	rm -rf frontend-scaffold/build
-
-deploy-testnet:
-	./scripts/deploy-testnet.sh --build
+	rm -rf backend/dist frontend-scaffold/dist .cache/task-runner
