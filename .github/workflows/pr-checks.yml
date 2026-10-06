@@ -3,13 +3,46 @@ name: PR Checks
 on:
   pull_request:
     branches: [main]
+    paths:
+      - 'backend/**'
+      - 'contracts/**'
+      - 'frontend-scaffold/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
   pull-requests: read
 
 jobs:
+  changes:
+    name: Detect changed stacks
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      contracts: ${{ steps.filter.outputs.contracts }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'scripts/check-migrations.mjs'
+            contracts:
+              - 'contracts/**'
+            frontend:
+              - 'frontend-scaffold/**'
+
   migration-safety:
+    if: needs.changes.outputs.backend == 'true'
+    needs: changes
     name: Migration Safety
     runs-on: ubuntu-latest
     permissions:
@@ -93,6 +126,8 @@ jobs:
           test "$before" != "$after"
 
   contract:
+    if: needs.changes.outputs.contracts == 'true'
+    needs: changes
     name: Contract Checks
     runs-on: ubuntu-latest
     env:
@@ -118,6 +153,8 @@ jobs:
             ~/.cargo/git
             contracts/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('contracts/**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: Formatting
         run: cargo fmt -- --check
@@ -159,6 +196,8 @@ jobs:
         run: npm run test:openapi
 
   frontend:
+    if: needs.changes.outputs.frontend == 'true'
+    needs: changes
     name: Frontend Checks
     runs-on: ubuntu-latest
     env:
