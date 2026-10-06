@@ -52,7 +52,7 @@ export const config = {
     horizonUrl: env.HORIZON_URL,
     networkPassphrase: env.NETWORK_PASSPHRASE,
     contractId: env.CONTRACT_ID,
-    explorerBaseUrl: `https://stellar.expert/explorer/${env.STELLAR_NETWORK === 'MAINNET' ? 'public' : env.STELLAR_NETWORK.toLowerCase()}`,
+    explorerBaseUrl: `https://stellar.expert/explorer/${env.STELLAR_NETWORK === 'MAINNET' ? 'public' : (env.STELLAR_NETWORK ?? 'TESTNET').toLowerCase()}`,
   },
 
   indexer: {

@@ -43,7 +43,11 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: Run E2E tests
-        run: npm run test:e2e
+        # PR CI runs chromium only for speed (5 projects -> 1, ~50m -> ~10m).
+        # Full cross-browser (chromium, firefox, webkit, Mobile Chrome/Safari)
+        # runs on main/nightly. Mobile viewport emulation in mobile.spec.ts
+        # already covers Pixel/iPhone viewports via setViewportSize.
+        run: npx playwright test --project=chromium
 
       - name: Upload test results
         if: always()

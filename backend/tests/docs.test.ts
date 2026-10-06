@@ -1,10 +1,17 @@
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../src/common/middleware/rateLimiter.js', () => ({
-  globalRateLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
-  createRateLimiter: () => (_req: unknown, _res: unknown, next: () => void) => next(),
-}));
+vi.mock('../src/common/middleware/rateLimiter.js', () => {
+  const passThrough = (_req: unknown, _res: unknown, next: () => void) => next();
+  return {
+    globalRateLimiter: passThrough,
+    createRateLimiter: () => passThrough,
+    mutationRateLimiter: passThrough,
+    authRateLimiter: passThrough,
+    ipfsUploadRateLimiter: passThrough,
+    searchRateLimiter: passThrough,
+  };
+});
 
 import { createApp } from '../src/app.js';
 import { openApiDocument } from '../src/docs/openapi.js';

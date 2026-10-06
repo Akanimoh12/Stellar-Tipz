@@ -1,15 +1,36 @@
 import { test, expect, devices } from '@playwright/test';
 
+const mobileDevices = [
+  { name: 'iPhone 12', device: devices['iPhone 12'] },
+  { name: 'Pixel 5', device: devices['Pixel 5'] },
+  { name: 'Small Mobile', device: { viewport: { width: 375, height: 667 } } },
+];
+
 test.describe('Mobile Responsive', () => {
-  const mobileDevices = [
-    { name: 'iPhone 12', device: devices['iPhone 12'] },
-    { name: 'Pixel 5', device: devices['Pixel 5'] },
-    { name: 'Small Mobile', device: { viewport: { width: 375, height: 667 } } },
-  ];
+  // This spec emulates mobile viewports manually via setViewportSize, so it
+  // only needs to run once (chromium). Running it on all 5 projects
+  // (chromium, firefox, webkit, Mobile Chrome, Mobile Safari) would execute
+  // 3 devices x 13 tests x 5 projects = 195 runs. Skip non-chromium projects.
+  test.beforeEach(async ({ page }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== 'chromium',
+      'Mobile viewport emulation only runs on chromium',
+    );
+  });
 
   mobileDevices.forEach(({ name, device }) => {
     test.describe(`${name}`, () => {
-      test.use(device);
+      // Playwright forbids test.use({ defaultBrowserType }) inside a describe
+      // group because it forces a new worker. Device descriptors for iPhone /
+      // Pixel include defaultBrowserType plus viewport/userAgent/etc. Emulate
+      // the device via viewport (and user agent header where available) in a
+      // beforeEach instead, which works across all projects (chromium,
+      // firefox, webkit, Mobile Chrome, Mobile Safari).
+      test.beforeEach(async ({ page }) => {
+        if (device.viewport) {
+          await page.setViewportSize(device.viewport);
+        }
+      });
 
       test('landing page is responsive', async ({ page }) => {
         await page.goto('/');

@@ -24,10 +24,17 @@ vi.mock('@stellar/stellar-sdk', async (importOriginal) => {
 });
 
 // If this middleware runs, the liveness tests fail. Health routes must be mounted before it.
-vi.mock('../src/common/middleware/rateLimiter.js', () => ({
-  createRateLimiter: () => (_req: unknown, _res: unknown, next: () => void) => next(),
-  globalRateLimiter: (_req: unknown, res: { status: (code: number) => unknown }) => res.status(500),
-}));
+vi.mock('../src/common/middleware/rateLimiter.js', () => {
+  const passThrough = (_req: unknown, _res: unknown, next: () => void) => next();
+  return {
+    createRateLimiter: () => passThrough,
+    globalRateLimiter: (_req: unknown, res: { status: (code: number) => unknown }) => res.status(500),
+    mutationRateLimiter: passThrough,
+    authRateLimiter: passThrough,
+    ipfsUploadRateLimiter: passThrough,
+    searchRateLimiter: passThrough,
+  };
+});
 
 import { createApp } from '../src/app.js';
 import { SorobanRpc } from '@stellar/stellar-sdk';

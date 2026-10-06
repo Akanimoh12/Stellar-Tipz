@@ -17,8 +17,21 @@ import { logger } from "../utils/logger.js";
 export function requestTimeoutAndSignal(req: Request, res: Response, next: NextFunction): void {
   const timeoutMs = (config as unknown as { timeouts?: { requestMs: number } })?.timeouts?.requestMs ?? 30_000;
   const controller = new AbortController();
-  // Expose signal on request for downstream handlers
-  (req as unknown as { signal: AbortSignal }).signal = controller.signal;
+  // Expose signal on request for downstream handlers. In Node 20+,
+  // IncomingMessage has a getter-only `signal` (fetch integration), so plain
+  // assignment throws "Cannot set property signal which has only a getter"
+  // (breaks supertest + all tests/*.test.ts with 500s). Define as own
+  // property instead, which shadows the prototype getter.
+  try {
+    (req as unknown as { signal: AbortSignal }).signal = controller.signal;
+  } catch {
+    Object.defineProperty(req, 'signal', {
+      value: controller.signal,
+      writable: true,
+      configurable: true,
+      enumerable: true,
+    });
+  }
 
   let timedOut = false;
   const timeout = setTimeout(() => {

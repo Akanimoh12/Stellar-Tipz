@@ -153,6 +153,7 @@ const AppLayout: React.FC = () => {
         onComplete={completeTour}
         onSkip={skipTour}
       />
+      </ErrorBoundary>
     </MotionConfig>
   );
 };

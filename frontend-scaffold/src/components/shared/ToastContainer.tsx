@@ -2,6 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToastStore, Toast } from '@/store/toastStore';
 import { X, CheckCircle, AlertCircle, Info } from 'lucide-react';
+import { announce } from '@/lib/liveRegion';
 
 const ToastItem = React.forwardRef<HTMLDivElement, { toast: Toast }>(({ toast }, ref) => {
   const { removeToast } = useToastStore();
@@ -10,7 +11,13 @@ const ToastItem = React.forwardRef<HTMLDivElement, { toast: Toast }>(({ toast },
     success: <CheckCircle className="h-5 w-5 text-green-500" />,
     error: <AlertCircle className="h-5 w-5 text-red-500" />,
     info: <Info className="h-5 w-5 text-blue-500" />,
+    warning: <AlertCircle className="h-5 w-5 text-yellow-500" />,
   };
+
+  // Announce toast message on mount
+  React.useEffect(() => {
+    announce(toast.message, toast.type === "error" ? "assertive" : "polite");
+  }, [toast.message, toast.type]);
 
   return (
     <motion.div

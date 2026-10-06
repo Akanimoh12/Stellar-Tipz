@@ -30,6 +30,11 @@ vi.mock('../config/index.js', () => ({
     subscriptions: { chargeCron: '0 * * * *' },
     leaderboard: { snapshotCron: '15 0 * * *' },
     twitter: { metricsRefreshCron: '30 0 * * *' },
+    discovery: { scheduleCron: '*/15 * * * *' },
+    platformStats: { scheduleCron: '*/10 * * * *' },
+    payouts: { scheduleCron: '*/30 * * * *' },
+    retention: { pruneCron: '0 3 * * *', batchSize: 500 },
+    auth: { challengeCleanupCron: '*/5 * * * *' },
   },
 }));
 
@@ -85,12 +90,18 @@ describe('bootstrapJobs', () => {
     expect(closableNames).toContain('SubscriptionChargeWorker');
     expect(closableNames).toContain('LeaderboardSnapshotWorker');
     expect(closableNames).toContain('XMetricsRefreshWorker');
+    expect(closableNames).toContain('DiscoveryWorker');
+    expect(closableNames).toContain('PlatformStatsWorker');
+    expect(closableNames).toContain('PayoutWorker');
   });
 
   it('schedules credit recompute, analytics daily, subscription-charge, leaderboard-snapshot, and x-metrics-refresh jobs', async () => {
     const { bootstrapJobs } = await import('./main.js');
     await bootstrapJobs();
 
-    expect(mockScheduleRepeatable).toHaveBeenCalledTimes(5);
+    // 10 repeatable schedules: credit, analytics, subscription-charge,
+    // leaderboard-snapshot, x-metrics-refresh, discovery, platform-stats,
+    // payouts, auth-challenge-cleanup, retention-prune
+    expect(mockScheduleRepeatable).toHaveBeenCalledTimes(10);
   });
 });

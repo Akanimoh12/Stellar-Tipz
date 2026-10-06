@@ -1,12 +1,42 @@
 version: 2
 secret:
-  ignored-matches:
+  ignored_matches:
     - name: stellar-test-fixture-address
       match: GBZXN7PIRZGNMHGA7MUUUF4GTDYMLY433Y5IVRA5OVZVIVX4VQE256HG
     - name: ci-test-postgres-password
       match: postgres
+    - name: ci-test-tipz-password
+      match: tipz
+    - name: ci-test-tipz-test-password
+      match: tipz_test
+    - name: ci-test-jwt-secret
+      match: test-secret-key-for-ci
+    - name: ci-test-jwt-secret-testing
+      match: test-secret-key-for-testing
+    - name: ci-test-jwt-secret-vitest
+      match: test-secret-key-for-vitest
+  ignored_paths:
+    - backend/docker-compose.test.yml
+    - .github/workflows/backup-verify.yml
+    - .github/workflows/pr-checks.yml
+    - .github/workflows/coverage.yml
+    - .github/workflows/failure-injection.yml
+    - backend/src/modules/auth/auth.security.test.ts
+  ignored-matches:
+    - name: stellar-test-fixture-address-compat
+      match: GBZXN7PIRZGNMHGA7MUUUF4GTDYMLY433Y5IVRA5OVZVIVX4VQE256HG
+    - name: ci-test-postgres-password-compat
+      match: postgres
+    - name: ci-test-tipz-password-compat
+      match: tipz
+    - name: ci-test-tipz-test-password-compat
+      match: tipz_test
+    - name: ci-test-jwt-secret-compat
+      match: test-secret-key-for-ci
   ignored-paths:
     - backend/docker-compose.test.yml
     - .github/workflows/backup-verify.yml
     - .github/workflows/pr-checks.yml
+    - .github/workflows/coverage.yml
+    - .github/workflows/failure-injection.yml
     - backend/src/modules/auth/auth.security.test.ts
