@@ -3,10 +3,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { env } from '../src/config/env.js';
 
 // Mock rate limiter to avoid Redis
-vi.mock('../src/common/middleware/rateLimiter.js', () => ({
-  globalRateLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
-  createRateLimiter: () => (_req: unknown, _res: unknown, next: () => void) => next(),
-}));
+vi.mock('../src/common/middleware/rateLimiter.js', () => {
+  const passThrough = (_req: unknown, _res: unknown, next: () => void) => next();
+  return {
+    globalRateLimiter: passThrough,
+    createRateLimiter: () => passThrough,
+    mutationRateLimiter: passThrough,
+    authRateLimiter: passThrough,
+    ipfsUploadRateLimiter: passThrough,
+    searchRateLimiter: passThrough,
+  };
+});
 
 // Mock prisma and redis for OG embed route so it doesn't need DB
 vi.mock('../src/db/prisma.js', () => ({

@@ -9,7 +9,32 @@
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { computeCreditScore } from '../src/credit/credit.formula';
+import { computeCreditScore, type CreditScoreFormula } from '../src/modules/credit/credit.formula';
+
+// Default formula config matching credit.formula.test.ts and Rust contract defaults.
+const defaultConfig: CreditScoreFormula = {
+  weights: { base: 40, tip: 20, x: 30, age: 10 },
+  divisors: { tip: 10_000_000, follower: 50, engagement: 10, age: 10 },
+  caps: { base: 40, max: 100, xSub: 50, ageSub: 100, tipSub: 100, streakBonus: 10 },
+};
+
+const tiers = [
+  { min: 80, max: 100, label: 'Diamond' },
+  { min: 60, max: 79, label: 'Gold' },
+  { min: 40, max: 59, label: 'Silver' },
+  { min: 20, max: 39, label: 'Bronze' },
+  { min: 0, max: 19, label: 'New' },
+];
+
+function computeScore(input: {
+  totalTipsReceived: bigint;
+  xFollowers: number;
+  xEngagementAvg: number;
+  accountAgeDays: number;
+  streakBonus: number;
+}): number {
+  return computeCreditScore(input, defaultConfig, tiers).score;
+}
 
 // ── Vector file structures ────────────────────────────────────────────
 
@@ -85,7 +110,7 @@ describe('Credit Score Vectors', () => {
       };
 
       // Call the TypeScript implementation
-      const calculatedScore = computeCreditScore(input);
+      const calculatedScore = computeScore(input);
       const calculatedTier = getTier(calculatedScore);
 
       const matches =
@@ -144,7 +169,7 @@ describe('Credit Score Vectors', () => {
         streakBonus: vector.inputs.streak_bonus,
       };
 
-      const score = computeCreditScore(input);
+      const score = computeScore(input);
       expect(score).toBe(vector.expected_score);
     }
   });
@@ -168,7 +193,7 @@ describe('Credit Score Vectors', () => {
         streakBonus: vector.inputs.streak_bonus,
       };
 
-      const score = computeCreditScore(input);
+      const score = computeScore(input);
       const tier = getTier(score);
 
       expect(score).toBe(vector.expected_score);
@@ -193,7 +218,7 @@ describe('Credit Score Vectors', () => {
         streakBonus: vector.inputs.streak_bonus,
       };
 
-      const score = computeCreditScore(input);
+      const score = computeScore(input);
       expect(score).toBe(vector.expected_score);
     });
   });
@@ -217,7 +242,7 @@ describe('Credit Score Vectors', () => {
         streakBonus: vector.inputs.streak_bonus,
       };
 
-      const score = computeCreditScore(input);
+      const score = computeScore(input);
       expect(score).toBe(vector.expected_score);
     });
   });
@@ -239,7 +264,7 @@ describe('Credit Score Vectors', () => {
         streakBonus: vector.inputs.streak_bonus,
       };
 
-      const score = computeCreditScore(input);
+      const score = computeScore(input);
       expect(score).toBe(vector.expected_score);
     });
   });
@@ -263,7 +288,7 @@ describe('Credit Score Vectors', () => {
         streakBonus: vector.inputs.streak_bonus,
       };
 
-      const score = computeCreditScore(input);
+      const score = computeScore(input);
       expect(score).toBe(vector.expected_score);
     });
   });
@@ -287,7 +312,7 @@ describe('Credit Score Vectors', () => {
         streakBonus: vector.inputs.streak_bonus,
       };
 
-      const score = computeCreditScore(input);
+      const score = computeScore(input);
       const tier = getTier(score);
 
       expect(score).toBe(vector.expected_score);
@@ -314,7 +339,7 @@ describe('Credit Score Vectors', () => {
         streakBonus: vector.inputs.streak_bonus,
       };
 
-      const score = computeCreditScore(input);
+      const score = computeScore(input);
       expect(score).toBe(vector.expected_score);
     });
   });

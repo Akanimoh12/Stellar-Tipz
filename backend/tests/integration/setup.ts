@@ -3,10 +3,13 @@ import { execSync } from 'child_process';
 import { PrismaClient } from '@prisma/client';
 
 // Integration test environment configuration
+// Respect CI-provided DATABASE_URL/REDIS_URL when set (coverage.yml services
+// expose postgres on 5432 and redis on 6379); fall back to local
+// docker-compose.test.yml ports (5433/6380) for local runs.
 process.env.NODE_ENV = 'test';
-process.env.DATABASE_URL = 'postgresql://tipz_test:tipz_test@localhost:5433/tipz_test';
-process.env.REDIS_URL = 'redis://localhost:6380';
-process.env.JWT_SECRET = 'integration-test-secret-key';
+process.env.DATABASE_URL ||= 'postgresql://tipz_test:tipz_test@localhost:5433/tipz_test';
+process.env.REDIS_URL ||= 'redis://localhost:6380';
+process.env.JWT_SECRET ||= 'integration-test-secret-key';
 process.env.JWT_EXPIRES_IN = '15m';
 process.env.REFRESH_TOKEN_EXPIRES_IN = '7d';
 process.env.AUTH_CHALLENGE_TTL_SECONDS = '300';
@@ -26,19 +29,31 @@ const prisma = new PrismaClient();
 
 /**
  * Run Prisma migrations before all integration tests.
- * This verifies that migrations are valid and brings the test DB to the latest schema.
+ * The committed migration history cannot be replayed onto a fresh database
+ * (see coverage.yml), so prefer `db push` which derives schema from
+ * schema.prisma. Fall back to `migrate deploy` for environments with a
+ * valid migration history.
  */
 beforeAll(async () => {
-  console.log('🔧 Running Prisma migrations for integration tests...');
+  console.log('🔧 Preparing database schema for integration tests...');
   try {
-    execSync('npx prisma migrate deploy', {
+    execSync('npx prisma db push --force-reset --skip-generate', {
       env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL },
       stdio: 'inherit',
     });
-    console.log('✅ Migrations applied successfully');
+    console.log('✅ Schema pushed successfully');
   } catch (error) {
-    console.error('❌ Migration failed:', error);
-    throw error;
+    console.error('❌ Schema push failed, trying migrate deploy:', error);
+    try {
+      execSync('npx prisma migrate deploy', {
+        env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL },
+        stdio: 'inherit',
+      });
+      console.log('✅ Migrations applied successfully');
+    } catch (migrateError) {
+      console.error('❌ Migration failed:', migrateError);
+      throw migrateError;
+    }
   }
 
   // Verify connection

@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { runWithRequestContext } from './requestContext.js';
-import { getTraceId } from '../../observability/tracing.js';
+import { getTraceId } from '../observability/tracing.js';
 
 /** Header used to carry the correlation id in and out of the service. */
 export const REQUEST_ID_HEADER = 'x-request-id';

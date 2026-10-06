@@ -96,13 +96,46 @@ export function getSpanId(): string | undefined {
 /**
  * Run a function within a new span.
  */
+/**
+ * No-op span used when tracing is not initialized (tests, disabled tracing).
+ * Provides all Span methods as no-ops so callers like httpTracing can safely
+ * call setAttributes/setStatus/recordException without null checks.
+ */
+function noopSpan(): Span {
+  const noop = () => {};
+  return {
+    setAttributes: noop,
+    setAttribute: noop,
+    setStatus: noop,
+    recordException: noop,
+    end: noop,
+    updateName: noop,
+    addEvent: noop,
+    addLink: noop,
+    addLinks: noop,
+    setSpanContext: noop,
+    spanContext: () => ({ traceId: '', spanId: '', traceFlags: 0 }),
+    status: { code: 0 },
+    attributes: {},
+    links: [],
+    events: [],
+    duration: [0, 0],
+    ended: true,
+    kind: 0,
+    name: '',
+    startTime: [0, 0],
+    endTime: [0, 0],
+    isRecording: () => false,
+  } as unknown as Span;
+}
+
 export async function withSpan<T>(
   name: string,
   fn: (span: Span) => Promise<T>,
   options: SpanOptions = {},
 ): Promise<T> {
   if (!tracer) {
-    return fn({} as Span);
+    return fn(noopSpan());
   }
 
   return tracer.startActiveSpan(name, options, async (span) => {
@@ -132,7 +165,7 @@ export function withSpanSync<T>(
   options: SpanOptions = {},
 ): T {
   if (!tracer) {
-    return fn({} as Span);
+    return fn(noopSpan());
   }
 
   const span = tracer.startSpan(name, options);

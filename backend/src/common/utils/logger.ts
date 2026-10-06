@@ -1,6 +1,6 @@
 import pino from 'pino';
 import { env } from '../../config/env.js';
-import { getTraceId, getSpanId, isTracingActive } from '../../observability/tracing.js';
+import { getTraceId, getSpanId, isTracingActive } from '../observability/tracing.js';
 
 /** Shared structured logger. Import this everywhere instead of console.log. */
 export const logger = pino({

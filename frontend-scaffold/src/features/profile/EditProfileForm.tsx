@@ -9,6 +9,7 @@ import Button from "@/components/ui/Button";
 import TransactionStatus from "@/components/shared/TransactionStatus";
 import ImageCropper from "@/components/shared/ImageCropper";
 import DraftRestoreBanner from "@/components/shared/DraftRestoreBanner";
+import type { ErrorSummaryItem } from "@/components/shared/ErrorSummary";
 import { useToastStore } from "@/store/toastStore";
 import { useProfileStore } from "@/store/profileStore";
 import { useProfileUpdate } from "@/hooks/useProfileUpdate";
@@ -18,6 +19,7 @@ import ProfilePreview from "./ProfilePreview";
 import { THEME_COLORS } from "./profileThemes";
 import { renderMarkdown } from "@/helpers/markdown";
 import { useFormAutosave } from "@/hooks/useFormAutosave";
+import { useLiveRegion } from "@/lib/liveRegion";
 import {
   MAX_BIO_LENGTH,
   validateBio,
@@ -266,7 +268,13 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
     },
   });
 
-  // ── Dirty tracking ────────────────────────────────────────────────────────
+  const { announce } = useLiveRegion();
+
+  useEffect(() => {
+    if (hasDraft) {
+      announce("Restored saved form draft");
+    }
+  }, [hasDraft, announce]);
 
   useEffect(() => {
     const isDirty =

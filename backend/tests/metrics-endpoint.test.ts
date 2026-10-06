@@ -17,6 +17,9 @@ vi.mock('../src/common/middleware/rateLimiter.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/common/middleware/rateLimiter.js')>()),
   globalRateLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
   mutationRateLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
+  authRateLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
+  ipfsUploadRateLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
+  searchRateLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
 import { createApp } from '../src/app.js';
