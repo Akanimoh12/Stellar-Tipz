@@ -106,7 +106,10 @@ proptest! {
         let message = s(&env, &message);
         let result = validate_message(&message);
 
-        prop_assert!(matches!(result, Ok(()) | Err(ContractError::MessageTooLong)));
+        prop_assert!(matches!(
+            result,
+            Ok(()) | Err(ContractError::MessageTooLong) | Err(ContractError::InvalidMessage)
+        ));
     }
 
     #[test]
@@ -114,8 +117,13 @@ proptest! {
         let env = Env::default();
         let result = validate_message(&bytes(&env, &message));
 
+        let has_control_bytes = message
+            .iter()
+            .any(|&b| b < 0x20 && b != b'\n' && b != b'\t' && b != b'\r');
         if message.len() > 280 {
             prop_assert_eq!(result, Err(ContractError::MessageTooLong));
+        } else if has_control_bytes {
+            prop_assert_eq!(result, Err(ContractError::InvalidMessage));
         } else {
             prop_assert_eq!(result, Ok(()));
         }
@@ -201,7 +209,7 @@ fn regression_unicode_emoji_control_and_null_inputs_are_classified() {
     assert_eq!(validate_message(&s(&env, "thanks 🙂")), Ok(()));
     assert_eq!(
         validate_message(&bytes(&env, b"thanks\0control\nchars")),
-        Ok(())
+        Err(ContractError::InvalidMessage)
     );
 }
 

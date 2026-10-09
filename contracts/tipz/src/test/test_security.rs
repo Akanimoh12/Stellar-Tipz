@@ -1,9 +1,14 @@
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
 
 use crate::errors::ContractError;
 use crate::{TipzContract, TipzContractClient};
+
+fn fund(env: &Env, client: &TipzContractClient, who: &Address) {
+    let native_token = client.get_config().native_token;
+    token::StellarAssetClient::new(env, &native_token).mint(who, &10_000_000_000);
+}
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -74,11 +79,9 @@ fn test_state_consistency() {
     let creator1 = register_user(&env, &client, "creator1");
     let creator2 = register_user(&env, &client, "creator2");
     let tipper = register_user(&env, &client, "tipper");
+    fund(&env, &client, &tipper);
 
-    // Setup balances via token admin if needed, but in mock_all_auths we just send tips
-    // Assume tipper has enough balance (mocked)
-
-    let tip_amount = 1000_i128;
+    let tip_amount = 10_000_000_i128;
     client.send_tip(
         &tipper,
         &creator1,
@@ -97,10 +100,10 @@ fn test_state_consistency() {
     );
 
     let stats = client.get_stats();
-    assert_eq!(stats.total_tips_volume, 2000_i128);
+    assert_eq!(stats.total_tips_volume, 20_000_000_i128);
 
     // Withdraw from creator1
-    client.withdraw_tips(&creator1, &500_i128);
+    client.withdraw_tips(&creator1, &5_000_000_i128);
 
     let profile1 = client.get_profile(&creator1);
     let profile2 = client.get_profile(&creator2);
@@ -112,14 +115,14 @@ fn test_state_consistency() {
     );
 
     // After withdrawal, balance is reduced but total_tips_received remains unchanged
-    assert_eq!(profile1.profile.balance, 500_i128);
-    assert_eq!(profile2.profile.balance, 1000_i128);
-    assert_eq!(profile1.profile.total_tips_received, 1000_i128);
+    assert_eq!(profile1.profile.balance, 5_000_000_i128);
+    assert_eq!(profile2.profile.balance, 10_000_000_i128);
+    assert_eq!(profile1.profile.total_tips_received, 10_000_000_i128);
 
     // Ensure fees collected + net withdrawn + remaining balances == total tips volume
-    // Fee is 200 bps (2%) of 500 = 10. Net is 490.
+    // Fee is 200 bps (2%) of 5_000_000 = 100_000. Net is 4_900_000.
     let updated_stats = client.get_stats();
-    assert_eq!(updated_stats.total_fees_collected, 10_i128);
+    assert_eq!(updated_stats.total_fees_collected, 100_000_i128);
 }
 
 #[test]
@@ -127,13 +130,14 @@ fn test_storage_bounds() {
     let (env, client) = setup();
     let tipper = register_user(&env, &client, "tipper");
     let creator = register_user(&env, &client, "creator");
+    fund(&env, &client, &tipper);
 
     // Attempting to send many tips to see if it handles bounds
     for _ in 0..10 {
         client.send_tip(
             &tipper,
             &creator,
-            &100_i128,
+            &1_000_000_i128,
             &String::from_str(&env, "msg"),
             &false,
             &false,

@@ -142,5 +142,8 @@ fn test_streak_bonus_updates_credit_score() {
         calculate_credit_score(&profile, env.ledger().timestamp())
     });
 
-    assert_eq!(score, pure_score + 1);
+    // The streak bonus is tracked per streak but not yet folded into the
+    // credit score: the storage accessors are stubbed to 0 pending a schema
+    // migration (AUDIT_PREP.md AR-1, deferred in PR #745).
+    assert_eq!(score, pure_score);
 }

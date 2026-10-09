@@ -163,6 +163,18 @@ pub enum ExtendedDataKey {
     RefundRequest(u32),
     /// Refund configuration
     RefundConfig,
+    /// Scheduled tip by ID
+    ScheduledTip(u32),
+    /// Next scheduled tip ID counter
+    NextScheduledTipId,
+    /// Number of scheduled tips for a sender
+    SenderScheduledTipCount(Address),
+    /// Index: (sender, index) -> scheduled tip ID
+    SenderScheduledTip(Address, u32),
+    /// Number of scheduled tips for a creator
+    CreatorScheduledTipCount(Address),
+    /// Index: (creator, index) -> scheduled tip ID
+    CreatorScheduledTip(Address, u32),
 }
 
 /// Storage keys for compact performance caches.
@@ -855,6 +867,7 @@ pub fn get_creator_streak_bonus(_env: &Env, _creator: &Address) -> u32 {
 ///
 /// No-op until `streak_bonus` is introduced to `Profile` during a planned
 /// storage-schema migration. See [`get_creator_streak_bonus`] for details.
+#[allow(dead_code)] // kept for tests and pending features
 pub fn add_creator_streak_bonus(_env: &Env, _creator: &Address, _bonus: u32) {}
 
 /// Adjust a creator's streak bonus by a signed delta.
@@ -1051,6 +1064,7 @@ pub fn set_rate_limit_status(env: &Env, address: &Address, status: &RateLimitSta
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// Returns the tip volume received by a creator during a specific period.
+#[allow(dead_code)] // kept for tests and pending features
 pub fn get_creator_period_volume(env: &Env, creator: &Address, period: LeaderboardPeriod) -> i128 {
     let start_at = get_last_leaderboard_reset(env, period);
     env.storage()
@@ -1064,6 +1078,7 @@ pub fn get_creator_period_volume(env: &Env, creator: &Address, period: Leaderboa
 }
 
 /// Adds `amount` to a creator's tip volume for a specific period.
+#[allow(dead_code)] // kept for tests and pending features
 pub fn add_creator_period_volume(
     env: &Env,
     creator: &Address,
@@ -1142,6 +1157,7 @@ pub fn add_creator_period_volumes(
 
 /// Resets a creator's period volume (e.g. after a leaderboard reset).
 /// Note: With timestamp-based keys, we don't strictly need this, but it can be used for cleanup.
+#[allow(dead_code)] // kept for tests and pending features
 pub fn reset_creator_period_volume(env: &Env, creator: &Address, period: LeaderboardPeriod) {
     let start_at = get_last_leaderboard_reset(env, period);
     env.storage()
@@ -1284,10 +1300,130 @@ pub fn set_refund_request(env: &Env, request: &crate::types::RefundRequest) {
 }
 
 /// Remove refund request
+#[allow(dead_code)] // kept for tests and pending features
 pub fn remove_refund_request(env: &Env, tip_id: u32) {
     env.storage()
         .temporary()
         .remove(&ExtendedDataKey::RefundRequest(tip_id));
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Scheduled Tip storage functions
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the current scheduled tip count (also the index of the *next* scheduled tip).
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
+pub fn get_scheduled_tip_count(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::NextScheduledTipId)
+        .unwrap_or(0)
+}
+
+/// Atomically reads the current scheduled tip count, increments it in storage, and
+/// returns the **pre-increment** value (the index to assign to the new scheduled tip).
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
+pub fn increment_scheduled_tip_count(env: &Env) -> u32 {
+    let count = get_scheduled_tip_count(env);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::NextScheduledTipId, &(count + 1));
+    count
+}
+
+/// Returns a scheduled tip by ID.
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
+pub fn get_scheduled_tip(env: &Env, scheduled_tip_id: u32) -> Option<crate::types::ScheduledTip> {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::ScheduledTip(scheduled_tip_id))
+}
+
+/// Sets a scheduled tip by ID.
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
+pub fn set_scheduled_tip(
+    env: &Env,
+    scheduled_tip_id: u32,
+    scheduled_tip: &crate::types::ScheduledTip,
+) {
+    env.storage().instance().set(
+        &ExtendedDataKey::ScheduledTip(scheduled_tip_id),
+        scheduled_tip,
+    );
+}
+
+/// Returns the number of scheduled tips for a sender.
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
+pub fn get_sender_scheduled_tip_count(env: &Env, sender: &Address) -> u32 {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::SenderScheduledTipCount(sender.clone()))
+        .unwrap_or(0)
+}
+
+/// Records a new scheduled tip ID for `sender` and bumps the per-sender count.
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
+pub fn add_sender_scheduled_tip(env: &Env, sender: &Address, scheduled_tip_id: u32) {
+    let local_index = get_sender_scheduled_tip_count(env, sender);
+
+    let idx_key = ExtendedDataKey::SenderScheduledTip(sender.clone(), local_index);
+    env.storage().instance().set(&idx_key, &scheduled_tip_id);
+
+    let count_key = ExtendedDataKey::SenderScheduledTipCount(sender.clone());
+    env.storage().instance().set(&count_key, &(local_index + 1));
+}
+
+/// Returns scheduled tip IDs for a sender.
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
+pub fn get_sender_scheduled_tip_ids(env: &Env, sender: &Address) -> soroban_sdk::Vec<u32> {
+    let count = get_sender_scheduled_tip_count(env, sender);
+    let mut ids = soroban_sdk::Vec::new(env);
+    let mut i: u32 = 0;
+    while i < count {
+        let idx_key = ExtendedDataKey::SenderScheduledTip(sender.clone(), i);
+        if let Some(tip_id) = env.storage().instance().get(&idx_key) {
+            ids.push_back(tip_id);
+        }
+        i += 1;
+    }
+    ids
+}
+
+/// Returns the number of scheduled tips for a creator.
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
+pub fn get_creator_scheduled_tip_count(env: &Env, creator: &Address) -> u32 {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::CreatorScheduledTipCount(creator.clone()))
+        .unwrap_or(0)
+}
+
+/// Records a new scheduled tip ID for `creator` and bumps the per-creator count.
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
+pub fn add_creator_scheduled_tip(env: &Env, creator: &Address, scheduled_tip_id: u32) {
+    let local_index = get_creator_scheduled_tip_count(env, creator);
+
+    let idx_key = ExtendedDataKey::CreatorScheduledTip(creator.clone(), local_index);
+    env.storage().instance().set(&idx_key, &scheduled_tip_id);
+
+    let count_key = ExtendedDataKey::CreatorScheduledTipCount(creator.clone());
+    env.storage().instance().set(&count_key, &(local_index + 1));
+}
+
+/// Returns scheduled tip IDs for a creator.
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
+pub fn get_creator_scheduled_tip_ids(env: &Env, creator: &Address) -> soroban_sdk::Vec<u32> {
+    let count = get_creator_scheduled_tip_count(env, creator);
+    let mut ids = soroban_sdk::Vec::new(env);
+    let mut i: u32 = 0;
+    while i < count {
+        let idx_key = ExtendedDataKey::CreatorScheduledTip(creator.clone(), i);
+        if let Some(tip_id) = env.storage().instance().get(&idx_key) {
+            ids.push_back(tip_id);
+        }
+        i += 1;
+    }
+    ids
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1762,7 +1898,11 @@ pub fn get_archived_goals(env: &Env, creator: &Address) -> soroban_sdk::Vec<crat
         .unwrap_or(soroban_sdk::Vec::new(env))
 }
 
-pub fn set_archived_goals(env: &Env, creator: &Address, goals: &soroban_sdk::Vec<crate::types::Goal>) {
+pub fn set_archived_goals(
+    env: &Env,
+    creator: &Address,
+    goals: &soroban_sdk::Vec<crate::types::Goal>,
+) {
     env.storage()
         .persistent()
         .set(&ExtendedDataKey::ArchivedGoals(creator.clone()), goals);
@@ -1800,19 +1940,30 @@ pub fn set_accepted_token_list(env: &Env, tokens: &soroban_sdk::Vec<Address>) {
 pub fn get_token_balance(env: &Env, creator: &Address, token: &Address) -> i128 {
     env.storage()
         .persistent()
-        .get(&ExtendedDataKey::TokenBalance(creator.clone(), token.clone()))
+        .get(&ExtendedDataKey::TokenBalance(
+            creator.clone(),
+            token.clone(),
+        ))
         .unwrap_or(0)
 }
 
 pub fn set_token_balance(env: &Env, creator: &Address, token: &Address, amount: i128) {
-    env.storage()
-        .persistent()
-        .set(&ExtendedDataKey::TokenBalance(creator.clone(), token.clone()), &amount);
+    env.storage().persistent().set(
+        &ExtendedDataKey::TokenBalance(creator.clone(), token.clone()),
+        &amount,
+    );
 }
 
-pub fn add_token_balance(env: &Env, creator: &Address, token: &Address, amount: i128) -> Result<i128, ContractError> {
+pub fn add_token_balance(
+    env: &Env,
+    creator: &Address,
+    token: &Address,
+    amount: i128,
+) -> Result<i128, ContractError> {
     let current = get_token_balance(env, creator, token);
-    let new_balance = current.checked_add(amount).ok_or(ContractError::OverflowError)?;
+    let new_balance = current
+        .checked_add(amount)
+        .ok_or(ContractError::OverflowError)?;
     set_token_balance(env, creator, token, new_balance);
     Ok(new_balance)
 }

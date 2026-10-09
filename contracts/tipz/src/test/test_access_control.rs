@@ -161,10 +161,7 @@ fn test_non_admin_cannot_propose_admin_change() {
 fn test_non_admin_cannot_update_x_metrics() {
     let ctx = setup();
     let non_admin = Address::generate(&ctx.env);
-    let updates = soroban_sdk::vec![
-        &ctx.env,
-        (ctx.creator.clone(), 1000_u32, 100_u32)
-    ];
+    let updates = soroban_sdk::vec![&ctx.env, (ctx.creator.clone(), 1000_u32, 100_u32)];
     let result = ctx.client.try_batch_update_x_metrics(&non_admin, &updates);
     assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
 }
@@ -175,7 +172,9 @@ fn test_non_admin_cannot_update_x_metrics() {
 fn test_non_admin_cannot_set_min_tip_amount() {
     let ctx = setup();
     let non_admin = Address::generate(&ctx.env);
-    let result = ctx.client.try_set_min_tip_amount(&non_admin, &5_000_000_i128);
+    let result = ctx
+        .client
+        .try_set_min_tip_amount(&non_admin, &5_000_000_i128);
     assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
 }
 
@@ -287,7 +286,8 @@ fn test_admin_access_control_matrix() {
 
     // set_min_tip_amount
     assert_eq!(
-        ctx.client.try_set_min_tip_amount(&non_admin, &1_000_000_i128),
+        ctx.client
+            .try_set_min_tip_amount(&non_admin, &1_000_000_i128),
         Err(Ok(ContractError::NotAuthorized)),
         "set_min_tip_amount must reject non-admin"
     );

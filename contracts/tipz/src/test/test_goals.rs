@@ -2,20 +2,25 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
 
-use crate::test::test_init::setup_test_contract;
+use crate::test::test_init::setup_initialized_contract;
 use crate::TipzContractClient;
+
+fn fund(env: &Env, native_token: &Address, who: &Address) {
+    token::StellarAssetClient::new(env, native_token).mint(who, &10_000_000_000);
+}
 
 #[test]
 fn test_set_and_track_goal() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, _admin, _fee_collector, native_token) = setup_initialized_contract(&env);
 
     let creator = Address::generate(&env);
     let tipper = Address::generate(&env);
+    fund(&env, &native_token, &tipper);
 
     // Register creator
     client.register_profile(
@@ -30,15 +35,22 @@ fn test_set_and_track_goal() {
     // Set goal
     let desc = String::from_str(&env, "Raise funds for new equipment");
     let deadline = env.ledger().timestamp() + 86400; // 1 day from now
-    client.set_goal(&creator, &1000, &desc, &deadline);
+    client.set_goal(&creator, &10_000_000, &desc, &deadline);
 
     // Send tip
-    client.send_tip(&tipper, &creator, &500, &String::from_str(&env, "Good luck!"), &false, &false);
+    client.send_tip(
+        &tipper,
+        &creator,
+        &5_000_000,
+        &String::from_str(&env, "Good luck!"),
+        &false,
+        &false,
+    );
 
     // Check goal progress
     let goal = client.get_goal(&creator);
-    assert_eq!(goal.raised, 500);
-    assert_eq!(goal.target, 1000);
+    assert_eq!(goal.raised, 5_000_000);
+    assert_eq!(goal.target, 10_000_000);
     assert!(goal.active);
     assert!(goal.reached_at.is_none());
 }
@@ -48,10 +60,11 @@ fn test_goal_reached_event() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, _admin, _fee_collector, native_token) = setup_initialized_contract(&env);
 
     let creator = Address::generate(&env);
     let tipper = Address::generate(&env);
+    fund(&env, &native_token, &tipper);
 
     // Register creator
     client.register_profile(
@@ -65,14 +78,21 @@ fn test_goal_reached_event() {
 
     // Set goal
     let desc = String::from_str(&env, "Small goal");
-    client.set_goal(&creator, &100, &desc, &0);
+    client.set_goal(&creator, &1_000_000, &desc, &0);
 
     // Send tip that reaches goal
-    client.send_tip(&tipper, &creator, &100, &String::from_str(&env, "Here you go!"), &false, &false);
+    client.send_tip(
+        &tipper,
+        &creator,
+        &1_000_000,
+        &String::from_str(&env, "Here you go!"),
+        &false,
+        &false,
+    );
 
     // Check goal is reached
     let goal = client.get_goal(&creator);
-    assert_eq!(goal.raised, 100);
+    assert_eq!(goal.raised, 1_000_000);
     assert!(goal.reached_at.is_some());
 }
 
@@ -81,7 +101,7 @@ fn test_cancel_goal() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, _admin, _fee_collector, _native_token) = setup_initialized_contract(&env);
 
     let creator = Address::generate(&env);
 
@@ -108,12 +128,12 @@ fn test_cancel_goal() {
 }
 
 #[test]
-#[should_panic(expected = "NotFound")]
+#[should_panic(expected = "Error(Contract, #17)")]
 fn test_get_goal_when_none_exists() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, _admin, _fee_collector, _native_token) = setup_initialized_contract(&env);
 
     let creator = Address::generate(&env);
 
@@ -136,7 +156,7 @@ fn test_multiple_sequential_goals() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, _admin, _fee_collector, _native_token) = setup_initialized_contract(&env);
 
     let creator = Address::generate(&env);
 

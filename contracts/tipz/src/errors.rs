@@ -53,9 +53,9 @@ pub enum ContractError {
     /// Profile is inactive beyond the cleanup threshold
     ProfileInactive = 39,
     /// Refund request window has expired
-    RefundWindowExpired = 38,
+    RefundWindowExpired = 44,
     /// Refund has already been requested for this tip
-    RefundAlreadyRequested = 39,
+    RefundAlreadyRequested = 45,
     /// Refund has already been processed
     RefundAlreadyProcessed = 40,
     /// No refund request exists for this tip

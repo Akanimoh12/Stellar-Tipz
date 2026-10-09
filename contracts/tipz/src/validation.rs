@@ -16,7 +16,7 @@ use soroban_sdk::{Address, Env, String};
 /// - cannot end with an underscore
 pub fn validate_username(username: &String) -> Result<(), ContractError> {
     let len = username.len();
-    if len < 3 || len > types::MAX_USERNAME_LENGTH {
+    if !(3..=types::MAX_USERNAME_LENGTH).contains(&len) {
         return Err(ContractError::InvalidUsername);
     }
 
@@ -36,9 +36,8 @@ pub fn validate_username(username: &String) -> Result<(), ContractError> {
     let mut prev_is_underscore = false;
     let mut has_letter = false;
 
-    for i in 0..len as usize {
-        let c = buf[i];
-        if (c >= b'a' && c <= b'z') || (c >= b'0' && c <= b'9') || c == b'_' {
+    for &c in buf[..len as usize].iter() {
+        if c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_' {
             if c == b'_' {
                 if prev_is_underscore {
                     return Err(ContractError::InvalidUsername);
@@ -46,7 +45,7 @@ pub fn validate_username(username: &String) -> Result<(), ContractError> {
                 prev_is_underscore = true;
             } else {
                 prev_is_underscore = false;
-                if c >= b'a' && c <= b'z' {
+                if c.is_ascii_lowercase() {
                     has_letter = true;
                 }
             }
@@ -73,8 +72,8 @@ pub fn validate_display_name(display_name: &String) -> Result<(), ContractError>
     let mut buf = [0u8; types::MAX_DISPLAY_NAME_LENGTH as usize];
     display_name.copy_into_slice(&mut buf[..len as usize]);
     let mut only_whitespace = true;
-    for i in 0..len as usize {
-        if buf[i] != b' ' && buf[i] != b'\t' && buf[i] != b'\n' && buf[i] != b'\r' {
+    for &b in buf[..len as usize].iter() {
+        if b != b' ' && b != b'\t' && b != b'\n' && b != b'\r' {
             only_whitespace = false;
             break;
         }
@@ -101,7 +100,7 @@ pub fn validate_message(message: &String) -> Result<(), ContractError> {
         return Err(ContractError::MessageTooLong);
     }
 
-    if message.len() > 0 {
+    if !message.is_empty() {
         let mut buf = [0u8; types::MAX_MESSAGE_LENGTH as usize];
         let n = message.len() as usize;
         message.copy_into_slice(&mut buf[..n]);
@@ -124,7 +123,14 @@ pub fn validate_image_url(url: &String) -> Result<(), ContractError> {
 }
 
 /// Validate a tip amount against a single minimum threshold.
+///
+/// A non-positive amount is always invalid, even when the configured minimum
+/// is zero.
+#[allow(dead_code)] // exercised directly by property and fuzz tests
 pub fn validate_tip_amount(amount: i128, min_amount: i128) -> Result<(), ContractError> {
+    if amount <= 0 {
+        return Err(ContractError::InvalidAmount);
+    }
     if amount < min_amount {
         return Err(ContractError::TipBelowMinimum);
     }
@@ -141,6 +147,9 @@ pub fn validate_tip_for_creator(
     creator: &Address,
     amount: i128,
 ) -> Result<(), ContractError> {
+    if amount <= 0 {
+        return Err(ContractError::InvalidAmount);
+    }
     let effective_min = storage::get_effective_creator_min_tip(env, creator);
     if amount >= effective_min {
         return Ok(());
@@ -165,13 +174,12 @@ pub fn validate_domain(domain: &String) -> Result<(), ContractError> {
 
     // Must contain at least one dot and valid hostname characters.
     let mut has_dot = false;
-    for i in 0..len as usize {
-        let c = buf[i];
+    for &c in buf[..len as usize].iter() {
         if c == b'.' {
             has_dot = true;
-        } else if !((c >= b'a' && c <= b'z')
-            || (c >= b'A' && c <= b'Z')
-            || (c >= b'0' && c <= b'9')
+        } else if !(c.is_ascii_lowercase()
+            || c.is_ascii_uppercase()
+            || c.is_ascii_digit()
             || c == b'-')
         {
             return Err(ContractError::InvalidDomain);
@@ -189,12 +197,12 @@ pub fn validate_domain(domain: &String) -> Result<(), ContractError> {
 pub fn validate_x_handle(handle: &String) -> Result<(), ContractError> {
     let len = handle.len();
     if len == 0 {
-        return Err(ContractError::InvalidUsername);
+        return Err(ContractError::InvalidXHandle);
     }
 
     let mut buf = [0u8; 17]; // max 1 + 15
     if len > 16 {
-        return Err(ContractError::InvalidUsername);
+        return Err(ContractError::InvalidXHandle);
     }
     handle.copy_into_slice(&mut buf[..len as usize]);
 
@@ -202,17 +210,12 @@ pub fn validate_x_handle(handle: &String) -> Result<(), ContractError> {
     let handle_len = len as usize - start;
 
     if handle_len == 0 || handle_len > 15 {
-        return Err(ContractError::InvalidUsername);
+        return Err(ContractError::InvalidXHandle);
     }
 
-    for i in start..len as usize {
-        let c = buf[i];
-        if !((c >= b'a' && c <= b'z')
-            || (c >= b'A' && c <= b'Z')
-            || (c >= b'0' && c <= b'9')
-            || c == b'_')
-        {
-            return Err(ContractError::InvalidUsername);
+    for &c in buf[start..len as usize].iter() {
+        if !(c.is_ascii_lowercase() || c.is_ascii_uppercase() || c.is_ascii_digit() || c == b'_') {
+            return Err(ContractError::InvalidXHandle);
         }
     }
 
@@ -294,10 +297,7 @@ pub fn validate_profile_count(env: &Env) -> Result<(), ContractError> {
 /// Uses a separate counter from the general-purpose rate limiter
 /// to prevent an attacker from exhausting the registration budget
 /// with cheap non-registration operations.
-pub fn validate_registration_rate_limit(
-    env: &Env,
-    address: &Address,
-) -> Result<(), ContractError> {
+pub fn validate_registration_rate_limit(env: &Env, address: &Address) -> Result<(), ContractError> {
     let mut status =
         storage::get_rate_limit_status(env, address).unwrap_or(crate::types::RateLimitStatus {
             count: 0,

@@ -52,7 +52,10 @@ fn get_profile_success() {
 
     assert_eq!(profile.profile.owner, address);
     assert_eq!(profile.profile.username, String::from_str(&env, "alice"));
-    assert_eq!(profile.profile.display_name, String::from_str(&env, "Test User"));
+    assert_eq!(
+        profile.profile.display_name,
+        String::from_str(&env, "Test User")
+    );
     assert_eq!(profile.profile.bio, String::from_str(&env, "Test bio"));
     assert_eq!(
         profile.profile.image_url,
@@ -103,7 +106,10 @@ fn get_profile_returns_all_fields() {
     assert_eq!(retrieved.profile.x_followers, profile.x_followers);
     assert_eq!(retrieved.profile.x_engagement_avg, profile.x_engagement_avg);
     assert_eq!(retrieved.profile.credit_score, profile.credit_score);
-    assert_eq!(retrieved.profile.total_tips_received, profile.total_tips_received);
+    assert_eq!(
+        retrieved.profile.total_tips_received,
+        profile.total_tips_received
+    );
     assert_eq!(retrieved.profile.total_tips_count, profile.total_tips_count);
     assert_eq!(retrieved.profile.balance, profile.balance);
     assert_eq!(retrieved.profile.registered_at, profile.registered_at);
@@ -121,7 +127,10 @@ fn get_profile_by_username_success() {
 
     assert_eq!(profile.profile.owner, address);
     assert_eq!(profile.profile.username, String::from_str(&env, "charlie"));
-    assert_eq!(profile.profile.display_name, String::from_str(&env, "Test User"));
+    assert_eq!(
+        profile.profile.display_name,
+        String::from_str(&env, "Test User")
+    );
 }
 
 #[test]
@@ -161,7 +170,10 @@ fn get_profile_by_username_returns_all_fields() {
     assert_eq!(retrieved.profile.x_followers, profile.x_followers);
     assert_eq!(retrieved.profile.x_engagement_avg, profile.x_engagement_avg);
     assert_eq!(retrieved.profile.credit_score, profile.credit_score);
-    assert_eq!(retrieved.profile.total_tips_received, profile.total_tips_received);
+    assert_eq!(
+        retrieved.profile.total_tips_received,
+        profile.total_tips_received
+    );
     assert_eq!(retrieved.profile.total_tips_count, profile.total_tips_count);
     assert_eq!(retrieved.profile.balance, profile.balance);
     assert_eq!(retrieved.profile.registered_at, profile.registered_at);
@@ -201,10 +213,16 @@ fn get_profile_and_get_profile_by_username_return_same_data() {
     // Both methods should return identical profiles
     assert_eq!(by_address.profile.owner, by_username.profile.owner);
     assert_eq!(by_address.profile.username, by_username.profile.username);
-    assert_eq!(by_address.profile.display_name, by_username.profile.display_name);
+    assert_eq!(
+        by_address.profile.display_name,
+        by_username.profile.display_name
+    );
     assert_eq!(by_address.profile.bio, by_username.profile.bio);
     assert_eq!(by_address.profile.image_url, by_username.profile.image_url);
     assert_eq!(by_address.profile.x_handle, by_username.profile.x_handle);
-    assert_eq!(by_address.profile.credit_score, by_username.profile.credit_score);
+    assert_eq!(
+        by_address.profile.credit_score,
+        by_username.profile.credit_score
+    );
     assert_eq!(by_address.profile.balance, by_username.profile.balance);
 }

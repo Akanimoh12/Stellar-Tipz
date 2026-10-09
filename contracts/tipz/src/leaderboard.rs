@@ -89,8 +89,10 @@ fn update_entries(entries: &mut Vec<LeaderboardEntry>, profile: &Profile, amount
         };
         entries.insert(insert_pos, new_entry);
 
-        // Step 4 — trim the tail so the list never exceeds the cap.
-        if entries.len() > MAX_LEADERBOARD_SIZE {
+        // Step 4 — trim the tail so the list never exceeds the cap. A loop
+        // (rather than a single pop) also restores the invariant for a list
+        // that was already oversized in storage.
+        while entries.len() > MAX_LEADERBOARD_SIZE {
             entries.pop_back();
         }
     }
@@ -183,6 +185,7 @@ pub fn remove_from_all_leaderboards(env: &Env, address: &Address) {
 /// Refresh a single `period` leaderboard for `profile`. The all-time board
 /// ranks by lifetime tips; period boards rank by the rolling per-period volume
 /// returned from storage. No-op for deactivated profiles.
+#[allow(dead_code)] // single-period variant kept for tests and future use
 pub fn update_leaderboard(
     env: &Env,
     profile: &Profile,
@@ -249,12 +252,10 @@ pub fn get_leaderboard_rank(
     address: &Address,
 ) -> Option<u32> {
     let entries = load_entries(env, period);
-    let mut i: u32 = 0;
-    for e in entries.iter() {
+    for (i, e) in entries.iter().enumerate() {
         if e.address == *address {
-            return Some(i + 1);
+            return Some(i as u32 + 1);
         }
-        i += 1;
     }
     None
 }
@@ -309,7 +310,7 @@ mod tests {
             domain: String::from_str(env, ""),
             domain_verified: false,
             domain_verified_at: None,
-        custom_min_tip: None,
+            custom_min_tip: None,
         }
     }
 
@@ -366,10 +367,11 @@ mod tests {
         env.as_contract(&contract_id, || {
             let mut entries = Vec::new(&env);
             for i in 0..50 {
+                // Descending amounts (500 down to 10): the module's invariant.
                 entries.push_back(LeaderboardEntry {
                     address: Address::generate(&env),
                     username: String::from_str(&env, "user"),
-                    amount: (i as i128 + 1) * 10,
+                    amount: (50 - i as i128) * 10,
                     credit_score: 50,
                 });
             }

@@ -135,6 +135,7 @@ pub fn emit_admin_changed(env: &Env, old_admin: &Address, new_admin: &Address) {
 /// Emit an `AdminProposed` event when the current admin proposes a new admin.
 ///
 /// Topic: ("admin", "proposed")
+#[allow(dead_code)] // legacy emitters kept for ABI documentation
 pub fn emit_admin_proposed(env: &Env, current_admin: &Address, proposed_admin: &Address) {
     env.events().publish(
         (symbol_short!("admin"), symbol_short!("proposed")),
@@ -145,6 +146,7 @@ pub fn emit_admin_proposed(env: &Env, current_admin: &Address, proposed_admin: &
 /// Emit an `AdminAccepted` event when the proposed admin accepts the role.
 ///
 /// Topic: ("admin", "accepted")
+#[allow(dead_code)] // legacy emitters kept for ABI documentation
 pub fn emit_admin_accepted(env: &Env, new_admin: &Address) {
     env.events().publish(
         (symbol_short!("admin"), symbol_short!("accepted")),
@@ -470,7 +472,13 @@ pub fn emit_domain_verification_expired(env: &Env, creator: &Address) {
 // ── Goal events ───────────────────────────────────────────────────────────────
 
 /// Topics : `("goal", "set")`
-pub fn emit_goal_set(env: &Env, creator: &Address, target: i128, description: &String, deadline: u64) {
+pub fn emit_goal_set(
+    env: &Env,
+    creator: &Address,
+    target: i128,
+    description: &String,
+    deadline: u64,
+) {
     env.events().publish(
         (Symbol::new(env, "goal"), symbol_short!("set")),
         (creator.clone(), target, description.clone(), deadline),
@@ -512,6 +520,7 @@ pub fn emit_token_removed(env: &Env, token: &Address) {
 }
 
 /// Topics : `("tip", "token")`
+#[allow(clippy::too_many_arguments)]
 pub fn emit_tip_sent_token(
     env: &Env,
     tip_id: u32,
@@ -592,5 +601,62 @@ pub fn emit_refund_auto_approved(env: &Env, tip_id: u32, tipper: &Address, refun
     env.events().publish(
         (Symbol::new(env, "refund"), symbol_short!("auto")),
         (tip_id, tipper.clone(), refund_amount),
+    );
+}
+
+// ── Scheduled Tip events ─────────────────────────────────────────────────────
+
+/// Topics : `("schedtip", "create", scheduled_tip_id)`
+/// Data   : `(sender: Address, creator: Address, amount: i128, deliver_at: u64)`
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
+pub fn emit_scheduled_tip_created(
+    env: &Env,
+    scheduled_tip_id: u32,
+    sender: &Address,
+    creator: &Address,
+    amount: i128,
+    deliver_at: u64,
+) {
+    env.events().publish(
+        (
+            symbol_short!("schedtip"),
+            symbol_short!("create"),
+            scheduled_tip_id,
+        ),
+        (sender.clone(), creator.clone(), amount, deliver_at),
+    );
+}
+
+/// Topics : `("schedtip", "deliver", scheduled_tip_id)`
+/// Data   : `(creator: Address)`
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
+pub fn emit_scheduled_tip_delivered(env: &Env, scheduled_tip_id: u32, creator: &Address) {
+    env.events().publish(
+        (
+            symbol_short!("schedtip"),
+            symbol_short!("deliver"),
+            scheduled_tip_id,
+        ),
+        (creator.clone(),),
+    );
+}
+
+/// Topics : `("schedtip", "cancel", scheduled_tip_id)`
+/// Data   : `(sender: Address, refund_amount: i128, cancellation_fee: i128)`
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
+pub fn emit_scheduled_tip_cancelled(
+    env: &Env,
+    scheduled_tip_id: u32,
+    sender: &Address,
+    refund_amount: i128,
+    cancellation_fee: i128,
+) {
+    env.events().publish(
+        (
+            symbol_short!("schedtip"),
+            symbol_short!("cancel"),
+            scheduled_tip_id,
+        ),
+        (sender.clone(), refund_amount, cancellation_fee),
     );
 }

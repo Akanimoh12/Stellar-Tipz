@@ -28,8 +28,7 @@ use crate::TipzContractClient;
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 /// Deploy v1 of the contract, initialise it, and return the full environment.
-fn deploy_v1(
-) -> (
+fn deploy_v1() -> (
     Env,
     Address, // contract_id
     Address, // admin
@@ -113,9 +112,9 @@ fn test_upgrade_preserves_leaderboard() {
         credit_score: 40,
     });
     env.as_contract(&contract_id, || {
-        env.storage()
-            .instance()
-            .set(&DataKey::Leaderboard(LeaderboardPeriod::AllTime), &board);
+        // Seed through the storage module so the entry lands where the
+        // leaderboard actually reads from (the cached LeaderboardSet).
+        crate::storage::set_leaderboard(&env, LeaderboardPeriod::AllTime, &board);
     });
 
     let client_v2 = upgrade_to_v2(&env, &contract_id);
@@ -147,10 +146,7 @@ fn test_upgrade_preserves_fee_config() {
     let (env, contract_id, _admin, fee_collector, _token) = deploy_v1();
 
     let fee_before: u32 = env.as_contract(&contract_id, || {
-        env.storage()
-            .instance()
-            .get(&DataKey::FeePercent)
-            .unwrap()
+        env.storage().instance().get(&DataKey::FeePercent).unwrap()
     });
     let collector_before: Address = env.as_contract(&contract_id, || {
         env.storage()
@@ -162,10 +158,7 @@ fn test_upgrade_preserves_fee_config() {
     upgrade_to_v2(&env, &contract_id);
 
     let fee_after: u32 = env.as_contract(&contract_id, || {
-        env.storage()
-            .instance()
-            .get(&DataKey::FeePercent)
-            .unwrap()
+        env.storage().instance().get(&DataKey::FeePercent).unwrap()
     });
     let collector_after: Address = env.as_contract(&contract_id, || {
         env.storage()
@@ -196,7 +189,10 @@ fn test_upgrade_preserves_stats() {
     let stats_after = client_v2.get_stats();
     assert_eq!(stats_before.total_creators, stats_after.total_creators);
     assert_eq!(stats_before.total_tips_count, stats_after.total_tips_count);
-    assert_eq!(stats_before.total_tips_volume, stats_after.total_tips_volume);
+    assert_eq!(
+        stats_before.total_tips_volume,
+        stats_after.total_tips_volume
+    );
     assert_eq!(
         stats_before.total_fees_collected,
         stats_after.total_fees_collected
@@ -276,10 +272,7 @@ fn test_upgrade_storage_key_compatibility() {
             .has(&DataKey::UsernameToAddress(String::from_str(&env, "alice")))
     });
     let initialized_before: bool = env.as_contract(&contract_id, || {
-        env.storage()
-            .instance()
-            .get(&DataKey::Initialized)
-            .unwrap()
+        env.storage().instance().get(&DataKey::Initialized).unwrap()
     });
 
     upgrade_to_v2(&env, &contract_id);
@@ -295,10 +288,7 @@ fn test_upgrade_storage_key_compatibility() {
             .has(&DataKey::UsernameToAddress(String::from_str(&env, "alice")))
     });
     let initialized_after: bool = env.as_contract(&contract_id, || {
-        env.storage()
-            .instance()
-            .get(&DataKey::Initialized)
-            .unwrap()
+        env.storage().instance().get(&DataKey::Initialized).unwrap()
     });
 
     assert_eq!(profile_key_before, profile_key_after);

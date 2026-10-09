@@ -381,8 +381,14 @@ fn test_update_partial() {
     );
 
     let updated = client.get_profile(&caller);
-    assert_eq!(updated.profile.display_name, String::from_str(&env, "Alice"));
-    assert_eq!(updated.profile.bio, String::from_str(&env, "updated bio only"));
+    assert_eq!(
+        updated.profile.display_name,
+        String::from_str(&env, "Alice")
+    );
+    assert_eq!(
+        updated.profile.bio,
+        String::from_str(&env, "updated bio only")
+    );
 }
 
 #[test]

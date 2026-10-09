@@ -176,7 +176,11 @@ fn snapshot_storage(env: &Env, contract_id: &Address, ctx: &AddrCtx) -> StorageS
             env.storage().instance().has(&CacheKey::SendTipState),
         );
 
-        if let Some(v) = env.storage().instance().get::<_, bool>(&DataKey::Initialized) {
+        if let Some(v) = env
+            .storage()
+            .instance()
+            .get::<_, bool>(&DataKey::Initialized)
+        {
             put_bool(&mut instance_values, "Initialized", v);
         }
         if let Some(v) = env.storage().instance().get::<_, u32>(&DataKey::FeePercent) {
@@ -185,19 +189,35 @@ fn snapshot_storage(env: &Env, contract_id: &Address, ctx: &AddrCtx) -> StorageS
         if let Some(v) = env.storage().instance().get::<_, bool>(&DataKey::Paused) {
             put_bool(&mut instance_values, "Paused", v);
         }
-        if let Some(v) = env.storage().instance().get::<_, i128>(&DataKey::MinTipAmount) {
+        if let Some(v) = env
+            .storage()
+            .instance()
+            .get::<_, i128>(&DataKey::MinTipAmount)
+        {
             put_i128(&mut instance_values, "MinTipAmount", v);
         }
-        if let Some(v) = env.storage().instance().get::<_, u32>(&DataKey::ContractVersion) {
+        if let Some(v) = env
+            .storage()
+            .instance()
+            .get::<_, u32>(&DataKey::ContractVersion)
+        {
             put_u32(&mut instance_values, "ContractVersion", v);
         }
-        if let Some(v) = env.storage().instance().get::<_, u32>(&DataKey::TotalCreators) {
+        if let Some(v) = env
+            .storage()
+            .instance()
+            .get::<_, u32>(&DataKey::TotalCreators)
+        {
             put_u32(&mut instance_values, "TotalCreators", v);
         }
         if let Some(v) = env.storage().instance().get::<_, u32>(&DataKey::TipCount) {
             put_u32(&mut instance_values, "TipCount", v);
         }
-        if let Some(v) = env.storage().instance().get::<_, i128>(&DataKey::TotalTipsVolume) {
+        if let Some(v) = env
+            .storage()
+            .instance()
+            .get::<_, i128>(&DataKey::TotalTipsVolume)
+        {
             put_i128(&mut instance_values, "TotalTipsVolume", v);
         }
 
@@ -354,4 +374,3 @@ fn snapshot_storage_after_update_credit() {
     let snap = snapshot_storage(&env, &client.address, &ctx);
     insta::assert_debug_snapshot!(snap);
 }
-

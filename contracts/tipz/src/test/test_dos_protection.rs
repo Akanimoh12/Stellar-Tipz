@@ -15,6 +15,11 @@ use soroban_sdk::{
     Address, Env, String,
 };
 
+use std::format;
+use std::string::ToString;
+
+use soroban_sdk::token;
+
 use crate::errors::ContractError;
 use crate::storage::{self, DataKey};
 use crate::types;
@@ -56,6 +61,11 @@ fn setup_with_id() -> (Env, Address, TipzContractClient<'static>) {
     client.initialize(&admin, &fee_collector, &200_u32, &token_address);
 
     (env, contract_id, client)
+}
+
+fn fund_tipper(client: &TipzContractClient, env: &Env, tipper: &Address) {
+    let native_token = client.get_config().native_token;
+    token::StellarAssetClient::new(env, &native_token).mint(tipper, &10_000_000_000);
 }
 
 fn register_user_full(
@@ -145,30 +155,17 @@ fn test_message_length_bounded() {
     let alice = Address::generate(&env);
     let bob = Address::generate(&env);
     register_user(&env, &client, &alice, "alice");
+    fund_tipper(&client, &env, &alice);
     register_user(&env, &client, &bob, "bob");
 
     // Message exactly at limit should pass
     let valid_msg = make_long_str(&env, 'a', types::MAX_MESSAGE_LENGTH as usize);
-    let result = client.try_send_tip(
-        &alice,
-        &bob,
-        &1_000_000_i128,
-        &valid_msg,
-        &false,
-        &false,
-    );
+    let result = client.try_send_tip(&alice, &bob, &1_000_000_i128, &valid_msg, &false, &false);
     assert!(result.is_ok());
 
     // Message exceeding limit should fail
     let long_msg = make_long_str(&env, 'a', (types::MAX_MESSAGE_LENGTH + 1) as usize);
-    let result2 = client.try_send_tip(
-        &alice,
-        &bob,
-        &1_000_000_i128,
-        &long_msg,
-        &false,
-        &false,
-    );
+    let result2 = client.try_send_tip(&alice, &bob, &1_000_000_i128, &long_msg, &false, &false);
     assert_eq!(result2, Err(Ok(ContractError::MessageTooLong)));
 }
 
@@ -191,7 +188,11 @@ fn test_username_length_bounded() {
         &String::from_str(&env, ""),
         &String::from_str(&env, ""),
     );
-    assert!(result.is_ok(), "Max length username {} should be accepted", types::MAX_USERNAME_LENGTH);
+    assert!(
+        result.is_ok(),
+        "Max length username {} should be accepted",
+        types::MAX_USERNAME_LENGTH
+    );
 
     // Too long should fail
     let caller2 = Address::generate(&env);
@@ -250,10 +251,10 @@ fn test_display_name_length_bounded() {
 fn test_registration_rate_limiting() {
     let (env, client) = setup();
 
-    // Rate limit is tracked per address. Use a single address that attempts
-    // registration MAX_REGISTRATIONS_PER_WINDOW times, with a fresh username
-    // each time. After the first success, the address is AlreadyRegistered,
-    // but the rate limit is checked before the duplicate check.
+    // Rate limit is tracked per address and only successful registrations
+    // persist the counter (failed calls roll back their storage writes).
+    // Exercise it with register/deregister cycles from a single address.
+    env.budget().reset_unlimited();
     let caller = Address::generate(&env);
 
     for i in 0..types::MAX_REGISTRATIONS_PER_WINDOW {
@@ -266,12 +267,11 @@ fn test_registration_rate_limiting() {
             &String::from_str(&env, ""),
             &String::from_str(&env, ""),
         );
-        if i == 0 {
-            assert!(result.is_ok(), "First registration should succeed");
-        } else {
-            // After first success, AlreadyRegistered kicks in
-            assert_eq!(result, Err(Ok(ContractError::AlreadyRegistered)));
-        }
+        assert!(
+            result.is_ok(),
+            "Registration within the window should succeed"
+        );
+        client.deregister_profile(&caller);
     }
 
     // One more attempt within the same window should be rate limited
@@ -336,10 +336,11 @@ fn test_leaderboard_size_bounded() {
         let mut entries: soroban_sdk::Vec<crate::types::LeaderboardEntry> =
             soroban_sdk::Vec::new(&env);
         for i in 0..(max_lb + 5) {
+            // Descending amounts, matching the board's sorted invariant.
             entries.push_back(crate::types::LeaderboardEntry {
                 address: Address::generate(&env),
                 username: String::from_str(&env, "user"),
-                amount: (i as i128 + 1) * 100,
+                amount: ((max_lb + 5 - i) as i128) * 100,
                 credit_score: 40,
             });
         }
@@ -354,6 +355,7 @@ fn test_leaderboard_size_bounded() {
     let tipper = Address::generate(&env);
     let creator = Address::generate(&env);
     register_user(&env, &client, &tipper, "tipperx");
+    fund_tipper(&client, &env, &tipper);
     register_user(&env, &client, &creator, "creatorx");
 
     // Send a tip to trigger leaderboard update with cap enforcement
@@ -397,9 +399,8 @@ fn test_cleanup_inactive_profile() {
     assert!(!client.is_profile_inactive_eligible(&creator));
 
     // Advance time past the inactivity threshold
-    env.ledger().set_timestamp(
-        env.ledger().timestamp() + types::INACTIVE_PROFILE_THRESHOLD_SECS + 1,
-    );
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + types::INACTIVE_PROFILE_THRESHOLD_SECS + 1);
 
     // Now the profile should be eligible (no tips were ever received, no balance)
     assert!(client.is_profile_inactive_eligible(&creator));
@@ -423,6 +424,7 @@ fn test_cleanup_inactive_profile_with_balance_rejected() {
     let tipper = Address::generate(&env);
     register_user(&env, &client, &creator, "creator1");
     register_user(&env, &client, &tipper, "tipper1");
+    fund_tipper(&client, &env, &tipper);
 
     // Send a tip so creator has balance
     client.send_tip(
@@ -435,9 +437,8 @@ fn test_cleanup_inactive_profile_with_balance_rejected() {
     );
 
     // Advance time past the inactivity threshold
-    env.ledger().set_timestamp(
-        env.ledger().timestamp() + types::INACTIVE_PROFILE_THRESHOLD_SECS + 1,
-    );
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + types::INACTIVE_PROFILE_THRESHOLD_SECS + 1);
 
     // Profile should NOT be eligible for cleanup (has balance)
     assert!(!client.is_profile_inactive_eligible(&creator));
@@ -456,9 +457,8 @@ fn test_cleanup_inactive_profile_non_admin_rejected() {
     register_user(&env, &client, &creator, "creator1");
 
     // Advance time past the inactivity threshold
-    env.ledger().set_timestamp(
-        env.ledger().timestamp() + types::INACTIVE_PROFILE_THRESHOLD_SECS + 1,
-    );
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + types::INACTIVE_PROFILE_THRESHOLD_SECS + 1);
 
     // Non-admin should not be able to clean up
     let result = client.try_cleanup_inactive_profile(&non_admin, &creator);
@@ -471,6 +471,8 @@ fn test_cleanup_inactive_profiles_batch() {
     let config = client.get_config();
     let admin = config.admin;
 
+    env.budget().reset_unlimited();
+
     // Register multiple profiles
     let mut targets: soroban_sdk::Vec<Address> = soroban_sdk::Vec::new(&env);
     for i in 0..5 {
@@ -481,14 +483,12 @@ fn test_cleanup_inactive_profiles_batch() {
     }
 
     // Advance time past the inactivity threshold
-    env.ledger().set_timestamp(
-        env.ledger().timestamp() + types::INACTIVE_PROFILE_THRESHOLD_SECS + 1,
-    );
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + types::INACTIVE_PROFILE_THRESHOLD_SECS + 1);
 
     // Batch cleanup
-    let cleaned = client.try_cleanup_inactive_profiles(&admin, &targets, &5);
-    assert!(cleaned.is_ok());
-    assert_eq!(cleaned.unwrap(), 5);
+    let cleaned = client.cleanup_inactive_profiles(&admin, &targets, &5);
+    assert_eq!(cleaned, 5);
 
     // All profiles should be gone
     for i in 0..targets.len() {

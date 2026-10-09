@@ -28,6 +28,7 @@ pub const REGISTRATION_RATE_WINDOW_SECS: u64 = 3600;
 pub const MAX_REGISTRATIONS_PER_WINDOW: u32 = 20;
 
 /// Storage cost ceiling per operation in stroops (for analysis).
+#[allow(dead_code)] // documented bound, referenced by tests
 pub const STORAGE_COST_CEILING: i128 = 100_000_000;
 
 /// Verification type for creator profiles.

@@ -5,7 +5,10 @@ use soroban_sdk::{Address, Env, String, Vec};
 use crate::errors::ContractError;
 use crate::events;
 use crate::storage;
-use crate::types::{Profile, ProfileWithDeactivation, MAX_DISPLAY_NAME_LENGTH, MAX_BIO_LENGTH, INACTIVE_PROFILE_THRESHOLD_SECS};
+use crate::types::{
+    Profile, ProfileWithDeactivation, INACTIVE_PROFILE_THRESHOLD_SECS, MAX_BIO_LENGTH,
+    MAX_DISPLAY_NAME_LENGTH,
+};
 use crate::validation;
 
 /// Register a new creator profile.
@@ -438,11 +441,7 @@ pub fn get_donation_page(
 /// Set a custom minimum tip amount for the caller's profile.
 ///
 /// Pass `0` to reset to the global minimum.
-pub fn set_min_tip(
-    env: &Env,
-    creator: Address,
-    min_amount: i128,
-) -> Result<(), ContractError> {
+pub fn set_min_tip(env: &Env, creator: Address, min_amount: i128) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     crate::admin::require_not_paused(env)?;
     creator.require_auth();
@@ -555,9 +554,14 @@ pub fn is_profile_inactive_eligible(env: &Env, address: &Address) -> bool {
     // Profile must never have been active (registered but no tips received)
     // or inactive beyond the threshold
     if last_active == 0 {
-        // Check registration time instead
+        // Check registration time instead; the balance must still be zero so
+        // cleanup can never delete a profile holding funds.
         if let Some(profile) = storage::get_profile_opt(env, address) {
-            return now >= profile.registered_at.saturating_add(INACTIVE_PROFILE_THRESHOLD_SECS);
+            return profile.balance == 0
+                && now
+                    >= profile
+                        .registered_at
+                        .saturating_add(INACTIVE_PROFILE_THRESHOLD_SECS);
         }
         return false;
     }
@@ -599,7 +603,13 @@ pub fn cleanup_inactive_profile(
 ) -> Result<String, ContractError> {
     storage::extend_instance_ttl(env);
     crate::admin::require_admin(env, &admin)?;
+    cleanup_inactive_profile_unchecked(env, target)
+}
 
+/// Cleanup logic shared by the single and batch entrypoints. The caller must
+/// have performed the admin check already; `require_auth` cannot be repeated
+/// for the same address within one invocation frame.
+fn cleanup_inactive_profile_unchecked(env: &Env, target: Address) -> Result<String, ContractError> {
     if !storage::has_profile(env, &target) {
         return Err(ContractError::NotRegistered);
     }
@@ -654,7 +664,7 @@ pub fn cleanup_inactive_profiles(
             break;
         }
         let target = targets.get(i).unwrap();
-        if cleanup_inactive_profile(env, admin.clone(), target).is_ok() {
+        if cleanup_inactive_profile_unchecked(env, target).is_ok() {
             cleaned += 1;
         }
     }
