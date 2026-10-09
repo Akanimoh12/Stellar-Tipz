@@ -40,6 +40,7 @@ mod test_ttl_desync;
 mod test_update_profile;
 mod test_upgrade;
 mod test_validation;
+mod test_verification_auth;
 mod test_versioning;
 mod test_withdraw;
 mod test_x_handle;

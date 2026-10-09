@@ -591,7 +591,7 @@ impl TipzContract {
         creator: Address,
         verification_type: crate::types::VerificationType,
     ) -> Result<(), ContractError> {
-        caller.require_auth();
+        admin::require_admin(&env, &caller)?;
         verification::approve_verification(&env, creator, verification_type)
     }
 
@@ -600,7 +600,7 @@ impl TipzContract {
         caller: Address,
         creator: Address,
     ) -> Result<(), ContractError> {
-        caller.require_auth();
+        admin::require_admin(&env, &caller)?;
         verification::revoke_verification(&env, creator)
     }
 
