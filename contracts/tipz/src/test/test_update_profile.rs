@@ -93,7 +93,10 @@ fn test_update_profile_x_handle() {
     client.update_profile(&caller, &None, &None, &None, &Some(new_handle.clone()));
 
     let profile = client.get_profile(&caller);
-    assert_eq!(profile.profile.x_handle, String::from_str(&env, "@new_x_handle"));
+    assert_eq!(
+        profile.profile.x_handle,
+        String::from_str(&env, "@new_x_handle")
+    );
 }
 
 #[test]
@@ -120,7 +123,10 @@ fn test_update_profile_multiple_fields() {
     assert_eq!(profile.profile.display_name, new_name);
     assert_eq!(profile.profile.bio, new_bio);
     assert_eq!(profile.profile.image_url, new_url);
-    assert_eq!(profile.profile.x_handle, String::from_str(&env, "@alice_new"));
+    assert_eq!(
+        profile.profile.x_handle,
+        String::from_str(&env, "@alice_new")
+    );
 }
 
 #[test]

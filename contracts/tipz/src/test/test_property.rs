@@ -10,9 +10,7 @@
 #![cfg(test)]
 
 use proptest::prelude::*;
-use soroban_sdk::{
-    testutils::Address as _, Address, Env, Map, String as SorobanString, Symbol,
-};
+use soroban_sdk::{testutils::Address as _, Address, Env, Map, String as SorobanString, Symbol};
 
 use crate::credit::{calculate_credit_score, BASE_SCORE, MAX_SCORE};
 use crate::errors::ContractError;
@@ -77,7 +75,9 @@ proptest! {
         min in 2_i128..=1_000_000_000_i128,
         amount in 0_i128..=1_i128,
     ) {
-        let strictly_below = (min - 1).min(amount.max(0));
+        // Keep the probe positive: a non-positive amount is InvalidAmount,
+        // not TipBelowMinimum.
+        let strictly_below = (min - 1).min(amount.max(1));
         prop_assert_eq!(
             validate_tip_amount(strictly_below, min),
             Err(ContractError::TipBelowMinimum)

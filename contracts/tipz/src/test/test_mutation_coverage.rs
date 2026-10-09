@@ -84,7 +84,7 @@ fn new_contract(env: &Env) -> Address {
 #[test]
 fn fee_tuple_order_fee_first_net_second() {
     let (fee, net) = calculate_fee(10_000, 200).unwrap();
-    assert_eq!(fee, 200);   // 10 000 × 200 / 10 000 = 200
+    assert_eq!(fee, 200); // 10 000 × 200 / 10 000 = 200
     assert_eq!(net, 9_800);
     assert_eq!(fee + net, 10_000);
 }
@@ -126,7 +126,10 @@ fn net_equals_amount_minus_fee_not_plus() {
     assert_eq!(fee, 15_000);
     assert_eq!(net, 485_000);
     // If checked_add were used: net would be 515 000, not 485 000.
-    assert!(net < amount, "net must be strictly less than amount for non-zero fee");
+    assert!(
+        net < amount,
+        "net must be strictly less than amount for non-zero fee"
+    );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -380,7 +383,11 @@ fn leaderboard_reset_all_time_is_noop() {
         reset_leaderboard(&env, LeaderboardPeriod::AllTime);
 
         let after = get_leaderboard(&env, LeaderboardPeriod::AllTime, 10);
-        assert_eq!(after.len(), 1, "AllTime leaderboard must not be cleared on reset");
+        assert_eq!(
+            after.len(),
+            1,
+            "AllTime leaderboard must not be cleared on reset"
+        );
     });
 }
 
@@ -397,7 +404,11 @@ fn leaderboard_reset_monthly_clears_entries_and_stamps_time() {
         reset_leaderboard(&env, LeaderboardPeriod::Monthly);
 
         let after = get_leaderboard(&env, LeaderboardPeriod::Monthly, 10);
-        assert_eq!(after.len(), 0, "Monthly leaderboard must be cleared on reset");
+        assert_eq!(
+            after.len(),
+            0,
+            "Monthly leaderboard must be cleared on reset"
+        );
         assert_eq!(get_leaderboard_size(&env, LeaderboardPeriod::Monthly), 0);
     });
 }
@@ -423,7 +434,11 @@ fn leaderboard_remove_eliminates_exactly_one_entry() {
         remove_from_leaderboard(&env, LeaderboardPeriod::AllTime, &to_remove);
 
         assert_eq!(get_leaderboard_size(&env, LeaderboardPeriod::AllTime), 1);
-        assert!(!is_on_leaderboard(&env, LeaderboardPeriod::AllTime, &to_remove));
+        assert!(!is_on_leaderboard(
+            &env,
+            LeaderboardPeriod::AllTime,
+            &to_remove
+        ));
     });
 }
 
@@ -454,7 +469,11 @@ fn leaderboard_remove_keeps_other_addresses_intact() {
         remove_from_leaderboard(&env, LeaderboardPeriod::AllTime, &remove);
 
         assert!(is_on_leaderboard(&env, LeaderboardPeriod::AllTime, &keep));
-        assert!(!is_on_leaderboard(&env, LeaderboardPeriod::AllTime, &remove));
+        assert!(!is_on_leaderboard(
+            &env,
+            LeaderboardPeriod::AllTime,
+            &remove
+        ));
     });
 }
 
@@ -476,8 +495,16 @@ fn leaderboard_is_on_leaderboard_true_and_false_cases() {
         });
         crate::storage::set_leaderboard(&env, LeaderboardPeriod::AllTime, &entries);
 
-        assert!(is_on_leaderboard(&env, LeaderboardPeriod::AllTime, &present));
-        assert!(!is_on_leaderboard(&env, LeaderboardPeriod::AllTime, &absent));
+        assert!(is_on_leaderboard(
+            &env,
+            LeaderboardPeriod::AllTime,
+            &present
+        ));
+        assert!(!is_on_leaderboard(
+            &env,
+            LeaderboardPeriod::AllTime,
+            &absent
+        ));
     });
 }
 
@@ -502,12 +529,24 @@ fn leaderboard_rank_returns_one_based_position() {
         }
         crate::storage::set_leaderboard(&env, LeaderboardPeriod::AllTime, &entries);
 
-        assert_eq!(get_leaderboard_rank(&env, LeaderboardPeriod::AllTime, &first), Some(1));
-        assert_eq!(get_leaderboard_rank(&env, LeaderboardPeriod::AllTime, &second), Some(2));
-        assert_eq!(get_leaderboard_rank(&env, LeaderboardPeriod::AllTime, &third), Some(3));
+        assert_eq!(
+            get_leaderboard_rank(&env, LeaderboardPeriod::AllTime, &first),
+            Some(1)
+        );
+        assert_eq!(
+            get_leaderboard_rank(&env, LeaderboardPeriod::AllTime, &second),
+            Some(2)
+        );
+        assert_eq!(
+            get_leaderboard_rank(&env, LeaderboardPeriod::AllTime, &third),
+            Some(3)
+        );
 
         let absent = Address::generate(&env);
-        assert_eq!(get_leaderboard_rank(&env, LeaderboardPeriod::AllTime, &absent), None);
+        assert_eq!(
+            get_leaderboard_rank(&env, LeaderboardPeriod::AllTime, &absent),
+            None
+        );
     });
 }
 
@@ -527,8 +566,10 @@ fn leaderboard_update_skips_deactivated_profile() {
 
         update_leaderboard(&env, &p, LeaderboardPeriod::AllTime, 1_000_000);
 
-        assert!(!is_on_leaderboard(&env, LeaderboardPeriod::AllTime, &addr),
-            "deactivated profile must not appear on leaderboard");
+        assert!(
+            !is_on_leaderboard(&env, LeaderboardPeriod::AllTime, &addr),
+            "deactivated profile must not appear on leaderboard"
+        );
     });
 }
 
@@ -552,10 +593,14 @@ fn tips_anonymous_flag_true_sets_benefactor_to_none() {
             &creator,
             10_000_000,
             String::from_str(&env, ""),
-            true, // is_anonymous = true
+            true,  // is_anonymous = true
+            false, // is_encrypted
         );
         let tip = get_tip(&env, tip_id).expect("tip should be stored");
-        assert!(tip.benefactor.is_none(), "anonymous tip must have no benefactor");
+        assert!(
+            tip.benefactor.is_none(),
+            "anonymous tip must have no benefactor"
+        );
         assert!(tip.is_anonymous);
     });
 }
@@ -577,10 +622,14 @@ fn tips_anonymous_flag_false_sets_benefactor_to_sender() {
             10_000_000,
             String::from_str(&env, ""),
             false, // is_anonymous = false
+            false, // is_encrypted
         );
         let tip = get_tip(&env, tip_id).expect("tip should be stored");
-        assert_eq!(tip.benefactor, Some(sender.clone()),
-            "non-anonymous tip must set benefactor to sender when no explicit benefactor");
+        assert_eq!(
+            tip.benefactor,
+            Some(sender.clone()),
+            "non-anonymous tip must set benefactor to sender when no explicit benefactor"
+        );
         assert!(!tip.is_anonymous);
     });
 }
@@ -602,11 +651,15 @@ fn tips_explicit_benefactor_takes_precedence_over_sender() {
             &creator,
             10_000_000,
             String::from_str(&env, ""),
-            false,
+            false, // is_anonymous
+            false, // is_encrypted
         );
         let tip = get_tip(&env, tip_id).expect("tip should be stored");
-        assert_eq!(tip.benefactor, Some(explicit_benefactor),
-            "explicit benefactor must be preserved");
+        assert_eq!(
+            tip.benefactor,
+            Some(explicit_benefactor),
+            "explicit benefactor must be preserved"
+        );
     });
 }
 
@@ -616,7 +669,10 @@ fn tips_get_tip_returns_none_for_missing_id() {
     let env = Env::default();
     let contract_id = new_contract(&env);
     env.as_contract(&contract_id, || {
-        assert!(get_tip(&env, 9_999).is_none(), "non-existent tip ID must return None");
+        assert!(
+            get_tip(&env, 9_999).is_none(),
+            "non-existent tip ID must return None"
+        );
     });
 }
 
@@ -630,9 +686,36 @@ fn tips_store_tip_ids_are_sequential_starting_at_zero() {
     let msg = String::from_str(&env, "");
 
     env.as_contract(&contract_id, || {
-        let id0 = store_tip(&env, &sender, None, &creator, 1_000, msg.clone(), false);
-        let id1 = store_tip(&env, &sender, None, &creator, 2_000, msg.clone(), false);
-        let id2 = store_tip(&env, &sender, None, &creator, 3_000, msg.clone(), false);
+        let id0 = store_tip(
+            &env,
+            &sender,
+            None,
+            &creator,
+            1_000,
+            msg.clone(),
+            false,
+            false,
+        );
+        let id1 = store_tip(
+            &env,
+            &sender,
+            None,
+            &creator,
+            2_000,
+            msg.clone(),
+            false,
+            false,
+        );
+        let id2 = store_tip(
+            &env,
+            &sender,
+            None,
+            &creator,
+            3_000,
+            msg.clone(),
+            false,
+            false,
+        );
 
         assert_eq!(id1, id0 + 1);
         assert_eq!(id2, id0 + 2);
@@ -657,12 +740,25 @@ fn tips_get_recent_tips_caps_limit_above_50() {
     env.as_contract(&contract_id, || {
         // Store exactly 3 tips.
         for i in 0..3_i128 {
-            let tip_id = store_tip(&env, &sender, None, &creator, i + 1, msg.clone(), false);
+            let tip_id = store_tip(
+                &env,
+                &sender,
+                None,
+                &creator,
+                i + 1,
+                msg.clone(),
+                false,
+                false,
+            );
             crate::storage::add_creator_tip(&env, &creator, tip_id);
         }
 
         // Requesting limit=60 (> MAX_PAGE_LIMIT) must return at most 50; here only 3 exist.
         let result = get_recent_tips(&env, &creator, 60, 0);
-        assert_eq!(result.len(), 3, "result bounded by available tips, not inflated limit");
+        assert_eq!(
+            result.len(),
+            3,
+            "result bounded by available tips, not inflated limit"
+        );
     });
 }

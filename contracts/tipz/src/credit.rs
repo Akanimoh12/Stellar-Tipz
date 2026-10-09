@@ -81,6 +81,7 @@ pub const X_SUB_CAP: u32 = 50;
 pub const AGE_CAP: u32 = 100;
 
 /// Bonus score awarded for each 7-tip streak milestone.
+#[allow(dead_code)] // documented cap, referenced by tests
 pub const STREAK_BONUS_SCORE: u32 = 1;
 
 /// Tip volume (in stroops) that yields the maximum tip sub-score.
@@ -92,6 +93,7 @@ const SECONDS_PER_DAY: u64 = 86_400;
 
 /// Hard upper bound on the credit score stored in a profile. Scores computed
 /// above this value are clamped here to prevent unbounded growth.
+#[allow(dead_code)] // documented cap, referenced by tests
 pub const MAX_CREDIT_SCORE: u32 = MAX_SCORE;
 
 /// Build the weighted credit component breakdown for `profile` at `now`.

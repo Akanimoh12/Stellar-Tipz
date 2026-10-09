@@ -11,7 +11,7 @@ use crate::events;
 use crate::goals;
 use crate::leaderboard;
 use crate::storage;
-use crate::types::{AcceptedToken, Tip};
+use crate::types::AcceptedToken;
 use crate::validation::{validate_message, validate_tip_for_creator};
 
 /// Add a token to the whitelist of accepted tokens (admin only)
@@ -112,7 +112,8 @@ pub fn send_tip_token(
     amount: i128,
     token: &Address,
     message: &String,
-    is_anonymous: bool,
+    // TODO: token tips do not record anonymity yet; kept for ABI stability.
+    _is_anonymous: bool,
 ) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     let config = storage::get_runtime_config(env).ok_or(ContractError::NotInitialized)?;
@@ -146,7 +147,7 @@ pub fn send_tip_token(
     validate_message(message)?;
 
     let contract_address = env.current_contract_address();
-    
+
     // Transfer tokens from tipper to contract
     let token_client = token::TokenClient::new(env, token);
     if token_client.balance(tipper) < amount {
@@ -198,16 +199,7 @@ pub fn send_tip_token(
     storage::apply_send_tip_state(env, &tip_state);
     storage::set_creator_last_active(env, creator, now);
 
-    events::emit_tip_sent_token(
-        env,
-        tip_id,
-        tipper,
-        creator,
-        amount,
-        token,
-        message,
-        now,
-    );
+    events::emit_tip_sent_token(env, tip_id, tipper, creator, amount, token, message, now);
 
     Ok(())
 }

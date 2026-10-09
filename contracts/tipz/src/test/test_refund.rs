@@ -28,19 +28,20 @@ fn initialize_contract(
     let token_admin = Address::generate(env);
     let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
     let native_token = token_contract.address();
-    
+
     // Mint some tokens for testing
     let token_admin_client = token::StellarAssetClient::new(env, &native_token);
     token_admin_client.mint(admin, &10_000_000_000);
-    
+
     client.initialize(admin, fee_collector, &200, &native_token);
 }
 
-fn register_profile(
-    client: &TipzContractClient,
-    user: &Address,
-    username: &str,
-) {
+fn fund_tipper(client: &TipzContractClient, env: &Env, tipper: &Address) {
+    let token = client.get_config().native_token;
+    token::StellarAssetClient::new(env, &token).mint(tipper, &10_000_000_000);
+}
+
+fn register_profile(client: &TipzContractClient, user: &Address, username: &str) {
     let env = &client.env;
     client.register_profile(
         user,
@@ -61,6 +62,7 @@ fn test_refund_within_window() {
     let creator = Address::generate(&env);
 
     initialize_contract(&env, &client, &admin, &fee_collector);
+    fund_tipper(&client, &env, &tipper);
     register_profile(&client, &creator, "creator");
 
     // Send a tip
@@ -117,6 +119,7 @@ fn test_refund_after_window_fails() {
     let creator = Address::generate(&env);
 
     initialize_contract(&env, &client, &admin, &fee_collector);
+    fund_tipper(&client, &env, &tipper);
     register_profile(&client, &creator, "creator");
 
     // Send a tip
@@ -158,6 +161,7 @@ fn test_auto_approve_after_timeout() {
     let creator = Address::generate(&env);
 
     initialize_contract(&env, &client, &admin, &fee_collector);
+    fund_tipper(&client, &env, &tipper);
     register_profile(&client, &creator, "creator");
 
     // Send a tip
@@ -212,6 +216,7 @@ fn test_creator_rejects_refund() {
     let creator = Address::generate(&env);
 
     initialize_contract(&env, &client, &admin, &fee_collector);
+    fund_tipper(&client, &env, &tipper);
     register_profile(&client, &creator, "creator");
 
     // Send a tip
@@ -252,6 +257,7 @@ fn test_refund_already_requested() {
     let creator = Address::generate(&env);
 
     initialize_contract(&env, &client, &admin, &fee_collector);
+    fund_tipper(&client, &env, &tipper);
     register_profile(&client, &creator, "creator");
 
     // Send a tip
@@ -285,6 +291,7 @@ fn test_refund_not_tipper() {
     let other_user = Address::generate(&env);
 
     initialize_contract(&env, &client, &admin, &fee_collector);
+    fund_tipper(&client, &env, &tipper);
     register_profile(&client, &creator, "creator");
 
     // Send a tip
@@ -315,6 +322,7 @@ fn test_refund_not_creator_approve() {
     let other_user = Address::generate(&env);
 
     initialize_contract(&env, &client, &admin, &fee_collector);
+    fund_tipper(&client, &env, &tipper);
     register_profile(&client, &creator, "creator");
 
     // Send a tip
@@ -347,6 +355,7 @@ fn test_refund_already_processed() {
     let creator = Address::generate(&env);
 
     initialize_contract(&env, &client, &admin, &fee_collector);
+    fund_tipper(&client, &env, &tipper);
     register_profile(&client, &creator, "creator");
 
     // Send a tip
@@ -385,6 +394,7 @@ fn test_refund_tip_not_found() {
     let tipper = Address::generate(&env);
 
     initialize_contract(&env, &client, &admin, &fee_collector);
+    fund_tipper(&client, &env, &tipper);
 
     // Try to request refund for non-existent tip
     let result = client.try_request_refund(&tipper, &999_u32);
@@ -408,7 +418,7 @@ fn test_refund_config_admin_only() {
 
     // Admin can update config
     let new_config = RefundConfig {
-        request_window_secs: 43200, // 12 hours
+        request_window_secs: 43200,  // 12 hours
         response_window_secs: 86400, // 24 hours
         non_refundable_fee_bps: 300, // 3%
     };
@@ -433,6 +443,7 @@ fn test_refund_updates_credit_score() {
     let creator = Address::generate(&env);
 
     initialize_contract(&env, &client, &admin, &fee_collector);
+    fund_tipper(&client, &env, &tipper);
     register_profile(&client, &creator, "creator");
 
     // Send a tip
@@ -470,6 +481,7 @@ fn test_refund_multiple_tips() {
     let creator = Address::generate(&env);
 
     initialize_contract(&env, &client, &admin, &fee_collector);
+    fund_tipper(&client, &env, &tipper);
     register_profile(&client, &creator, "creator");
 
     // Send multiple tips
@@ -505,6 +517,7 @@ fn test_process_pending_refunds_multiple() {
     let creator = Address::generate(&env);
 
     initialize_contract(&env, &client, &admin, &fee_collector);
+    fund_tipper(&client, &env, &tipper);
     register_profile(&client, &creator, "creator");
 
     // Send multiple tips
@@ -561,6 +574,7 @@ fn test_refund_no_request_exists() {
     let creator = Address::generate(&env);
 
     initialize_contract(&env, &client, &admin, &fee_collector);
+    fund_tipper(&client, &env, &tipper);
     register_profile(&client, &creator, "creator");
 
     // Send a tip

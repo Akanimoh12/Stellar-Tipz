@@ -4,7 +4,7 @@
 
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
-use crate::test::test_init::setup_test_contract;
+use crate::test::test_init::setup_initialized_contract;
 use crate::TipzContractClient;
 
 #[test]
@@ -12,7 +12,7 @@ fn test_add_accepted_token() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, admin, _fee_collector, _native_token) = setup_initialized_contract(&env);
 
     let usdc_token = Address::generate(&env);
     let oracle = Address::generate(&env);
@@ -31,7 +31,7 @@ fn test_reject_non_whitelisted_token() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, _admin, _fee_collector, _native_token) = setup_initialized_contract(&env);
 
     let creator = Address::generate(&env);
     let tipper = Address::generate(&env);
@@ -65,15 +65,17 @@ fn test_tip_with_usdc() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, admin, _fee_collector, native_token) = setup_test_contract(&env);
+    let (client, admin, _fee_collector, native_token) = setup_initialized_contract(&env);
 
     let creator = Address::generate(&env);
     let tipper = Address::generate(&env);
 
     // Register USDC token
-    let usdc_token = env.register_stellar_asset_contract_v2(admin.clone());
+    let usdc_token = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     let usdc_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &usdc_token);
-    usdc_admin_client.mint(&tipper, &10000);
+    usdc_admin_client.mint(&tipper, &10_000_000_000);
 
     // Add USDC to whitelist
     client.add_accepted_token(&admin, &usdc_token, &None);
@@ -92,7 +94,7 @@ fn test_tip_with_usdc() {
     client.send_tip_token(
         &tipper,
         &creator,
-        &1000,
+        &10_000_000,
         &usdc_token,
         &String::from_str(&env, "Here's some USDC!"),
         &false,
@@ -101,7 +103,7 @@ fn test_tip_with_usdc() {
     // Check token balance
     let balances = client.get_token_balances(&creator);
     assert_eq!(balances.len(), 1);
-    assert_eq!(balances.get(0).unwrap().amount, 1000);
+    assert_eq!(balances.get(0).unwrap().amount, 10_000_000);
 }
 
 #[test]
@@ -109,15 +111,17 @@ fn test_withdraw_specific_token() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, admin, _fee_collector, _native_token) = setup_initialized_contract(&env);
 
     let creator = Address::generate(&env);
     let tipper = Address::generate(&env);
 
     // Register USDC token
-    let usdc_token = env.register_stellar_asset_contract_v2(admin.clone());
+    let usdc_token = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     let usdc_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &usdc_token);
-    usdc_admin_client.mint(&tipper, &10000);
+    usdc_admin_client.mint(&tipper, &10_000_000_000);
 
     // Add USDC to whitelist
     client.add_accepted_token(&admin, &usdc_token, &None);
@@ -136,19 +140,20 @@ fn test_withdraw_specific_token() {
     client.send_tip_token(
         &tipper,
         &creator,
-        &1000,
+        &10_000_000,
         &usdc_token,
         &String::from_str(&env, "Tip"),
         &false,
     );
 
     // Withdraw USDC
-    client.withdraw_token(&creator, &usdc_token, &500);
+    client.withdraw_token(&creator, &usdc_token, &5_000_000);
 
     // Check remaining balance
     let balances = client.get_token_balances(&creator);
-    // Balance should be less than 500 due to fees
-    assert!(balances.get(0).unwrap().amount < 500);
+    // The withdrawal fee comes out of the withdrawn amount, so the remaining
+    // recorded balance is exactly the un-withdrawn half.
+    assert_eq!(balances.get(0).unwrap().amount, 5_000_000);
 }
 
 #[test]
@@ -156,7 +161,7 @@ fn test_remove_accepted_token() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, admin, _fee_collector, _native_token) = setup_initialized_contract(&env);
 
     let usdc_token = Address::generate(&env);
 

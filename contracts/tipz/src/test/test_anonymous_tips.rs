@@ -50,7 +50,7 @@ fn test_anonymous_tip() {
 
     let tip = history.get(0).unwrap();
     assert!(tip.is_anonymous);
-    assert!(tip.tipper.is_none()); // Tipper address is hidden
+    assert!(tip.benefactor.is_none()); // Tipper address is hidden
 }
 
 #[test]
@@ -114,8 +114,8 @@ fn test_non_anonymous_tip() {
 
     let tip = history.get(0).unwrap();
     assert!(!tip.is_anonymous);
-    assert!(tip.tipper.is_some());
-    assert_eq!(tip.tipper.unwrap(), tipper);
+    assert!(tip.benefactor.is_some());
+    assert_eq!(tip.benefactor.unwrap(), tipper);
 }
 
 #[test]
@@ -160,10 +160,10 @@ fn test_mixed_anonymous_and_public_tips() {
     // Verify first tip is public
     let tip1 = history.get(0).unwrap();
     assert!(!tip1.is_anonymous);
-    assert_eq!(tip1.tipper.unwrap(), tipper2);
+    assert_eq!(tip1.benefactor.unwrap(), tipper2);
 
     // Verify second tip is anonymous
     let tip2 = history.get(1).unwrap();
     assert!(tip2.is_anonymous);
-    assert!(tip2.tipper.is_none());
+    assert!(tip2.benefactor.is_none());
 }

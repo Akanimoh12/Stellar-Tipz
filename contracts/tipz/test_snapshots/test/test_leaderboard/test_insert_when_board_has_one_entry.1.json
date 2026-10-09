@@ -76,6 +76,9 @@
                 },
                 {
                   "bool": false
+                },
+                {
+                  "bool": false
                 }
               ]
             }
@@ -133,6 +136,9 @@
                 },
                 {
                   "string": ""
+                },
+                {
+                  "bool": false
                 },
                 {
                   "bool": false
@@ -589,11 +595,39 @@
                     },
                     {
                       "key": {
+                        "symbol": "custom_min_tip"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "display_name"
                       },
                       "val": {
                         "string": "alice"
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "domain"
+                      },
+                      "val": {
+                        "string": ""
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "domain_verified"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "domain_verified_at"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
@@ -810,11 +844,39 @@
                     },
                     {
                       "key": {
+                        "symbol": "custom_min_tip"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "display_name"
                       },
                       "val": {
                         "string": "bob"
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "domain"
+                      },
+                      "val": {
+                        "string": ""
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "domain_verified"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "domain_verified_at"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
@@ -1215,6 +1277,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "benefactor"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "creator"
                       },
                       "val": {
@@ -1239,6 +1309,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "is_encrypted"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "message"
                       },
                       "val": {
@@ -1247,18 +1325,18 @@
                     },
                     {
                       "key": {
-                        "symbol": "timestamp"
+                        "symbol": "sender"
                       },
                       "val": {
-                        "u64": 0
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
                       }
                     },
                     {
                       "key": {
-                        "symbol": "tipper"
+                        "symbol": "timestamp"
                       },
                       "val": {
-                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                        "u64": 0
                       }
                     }
                   ]
@@ -1320,6 +1398,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "benefactor"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "creator"
                       },
                       "val": {
@@ -1344,6 +1430,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "is_encrypted"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "message"
                       },
                       "val": {
@@ -1352,18 +1446,18 @@
                     },
                     {
                       "key": {
-                        "symbol": "timestamp"
+                        "symbol": "sender"
                       },
                       "val": {
-                        "u64": 0
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
                       }
                     },
                     {
                       "key": {
-                        "symbol": "tipper"
+                        "symbol": "timestamp"
                       },
                       "val": {
-                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                        "u64": 0
                       }
                     }
                   ]
@@ -1578,7 +1672,227 @@
                           ]
                         },
                         "val": {
-                          "u32": 1
+                          "u32": 3
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "CreatorPeriodVolume"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                            },
+                            {
+                              "vec": [
+                                {
+                                  "symbol": "Monthly"
+                                }
+                              ]
+                            },
+                            {
+                              "u64": 0
+                            }
+                          ]
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 30000000
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "CreatorPeriodVolume"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                            },
+                            {
+                              "vec": [
+                                {
+                                  "symbol": "Weekly"
+                                }
+                              ]
+                            },
+                            {
+                              "u64": 0
+                            }
+                          ]
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 30000000
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "CreatorPeriodVolume"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+                            },
+                            {
+                              "vec": [
+                                {
+                                  "symbol": "Monthly"
+                                }
+                              ]
+                            },
+                            {
+                              "u64": 0
+                            }
+                          ]
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 10000000
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "CreatorPeriodVolume"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+                            },
+                            {
+                              "vec": [
+                                {
+                                  "symbol": "Weekly"
+                                }
+                              ]
+                            },
+                            {
+                              "u64": 0
+                            }
+                          ]
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 10000000
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "CreatorPeriodVolumes"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "monthly"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 30000000
+                                }
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "monthly_start_at"
+                              },
+                              "val": {
+                                "u64": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "weekly"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 30000000
+                                }
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "weekly_start_at"
+                              },
+                              "val": {
+                                "u64": 0
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "CreatorPeriodVolumes"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "monthly"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 10000000
+                                }
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "monthly_start_at"
+                              },
+                              "val": {
+                                "u64": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "weekly"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 10000000
+                                }
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "weekly_start_at"
+                              },
+                              "val": {
+                                "u64": 0
+                              }
+                            }
+                          ]
                         }
                       },
                       {
@@ -1621,7 +1935,52 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "LastLeaderboardReset"
+                            },
+                            {
+                              "vec": [
+                                {
+                                  "symbol": "Monthly"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u64": 0
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "LastLeaderboardReset"
+                            },
+                            {
+                              "vec": [
+                                {
+                                  "symbol": "Weekly"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u64": 0
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Leaderboard"
+                            },
+                            {
+                              "vec": [
+                                {
+                                  "symbol": "AllTime"
+                                }
+                              ]
                             }
                           ]
                         },
@@ -1639,21 +1998,21 @@
                                 },
                                 {
                                   "key": {
-                                    "symbol": "credit_score"
-                                  },
-                                  "val": {
-                                    "u32": 40
-                                  }
-                                },
-                                {
-                                  "key": {
-                                    "symbol": "total_tips_received"
+                                    "symbol": "amount"
                                   },
                                   "val": {
                                     "i128": {
                                       "hi": 0,
                                       "lo": 30000000
                                     }
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "credit_score"
+                                  },
+                                  "val": {
+                                    "u32": 40
                                   }
                                 },
                                 {
@@ -1678,21 +2037,21 @@
                                 },
                                 {
                                   "key": {
-                                    "symbol": "credit_score"
-                                  },
-                                  "val": {
-                                    "u32": 40
-                                  }
-                                },
-                                {
-                                  "key": {
-                                    "symbol": "total_tips_received"
+                                    "symbol": "amount"
                                   },
                                   "val": {
                                     "i128": {
                                       "hi": 0,
                                       "lo": 10000000
                                     }
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "credit_score"
+                                  },
+                                  "val": {
+                                    "u32": 40
                                   }
                                 },
                                 {
@@ -1704,6 +2063,492 @@
                                   }
                                 }
                               ]
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "Leaderboard"
+                            },
+                            {
+                              "vec": [
+                                {
+                                  "symbol": "Monthly"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "map": [
+                                {
+                                  "key": {
+                                    "symbol": "address"
+                                  },
+                                  "val": {
+                                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "amount"
+                                  },
+                                  "val": {
+                                    "i128": {
+                                      "hi": 0,
+                                      "lo": 30000000
+                                    }
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "credit_score"
+                                  },
+                                  "val": {
+                                    "u32": 40
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "username"
+                                  },
+                                  "val": {
+                                    "string": "alice"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "map": [
+                                {
+                                  "key": {
+                                    "symbol": "address"
+                                  },
+                                  "val": {
+                                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "amount"
+                                  },
+                                  "val": {
+                                    "i128": {
+                                      "hi": 0,
+                                      "lo": 10000000
+                                    }
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "credit_score"
+                                  },
+                                  "val": {
+                                    "u32": 40
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "username"
+                                  },
+                                  "val": {
+                                    "string": "bob"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "Leaderboard"
+                            },
+                            {
+                              "vec": [
+                                {
+                                  "symbol": "Weekly"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "map": [
+                                {
+                                  "key": {
+                                    "symbol": "address"
+                                  },
+                                  "val": {
+                                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "amount"
+                                  },
+                                  "val": {
+                                    "i128": {
+                                      "hi": 0,
+                                      "lo": 30000000
+                                    }
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "credit_score"
+                                  },
+                                  "val": {
+                                    "u32": 40
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "username"
+                                  },
+                                  "val": {
+                                    "string": "alice"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "map": [
+                                {
+                                  "key": {
+                                    "symbol": "address"
+                                  },
+                                  "val": {
+                                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "amount"
+                                  },
+                                  "val": {
+                                    "i128": {
+                                      "hi": 0,
+                                      "lo": 10000000
+                                    }
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "credit_score"
+                                  },
+                                  "val": {
+                                    "u32": 40
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "username"
+                                  },
+                                  "val": {
+                                    "string": "bob"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "LeaderboardSet"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "all_time"
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "map": [
+                                      {
+                                        "key": {
+                                          "symbol": "address"
+                                        },
+                                        "val": {
+                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "amount"
+                                        },
+                                        "val": {
+                                          "i128": {
+                                            "hi": 0,
+                                            "lo": 30000000
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "credit_score"
+                                        },
+                                        "val": {
+                                          "u32": 40
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "username"
+                                        },
+                                        "val": {
+                                          "string": "alice"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "map": [
+                                      {
+                                        "key": {
+                                          "symbol": "address"
+                                        },
+                                        "val": {
+                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "amount"
+                                        },
+                                        "val": {
+                                          "i128": {
+                                            "hi": 0,
+                                            "lo": 10000000
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "credit_score"
+                                        },
+                                        "val": {
+                                          "u32": 40
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "username"
+                                        },
+                                        "val": {
+                                          "string": "bob"
+                                        }
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "monthly"
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "map": [
+                                      {
+                                        "key": {
+                                          "symbol": "address"
+                                        },
+                                        "val": {
+                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "amount"
+                                        },
+                                        "val": {
+                                          "i128": {
+                                            "hi": 0,
+                                            "lo": 30000000
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "credit_score"
+                                        },
+                                        "val": {
+                                          "u32": 40
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "username"
+                                        },
+                                        "val": {
+                                          "string": "alice"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "map": [
+                                      {
+                                        "key": {
+                                          "symbol": "address"
+                                        },
+                                        "val": {
+                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "amount"
+                                        },
+                                        "val": {
+                                          "i128": {
+                                            "hi": 0,
+                                            "lo": 10000000
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "credit_score"
+                                        },
+                                        "val": {
+                                          "u32": 40
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "username"
+                                        },
+                                        "val": {
+                                          "string": "bob"
+                                        }
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "monthly_reset_at"
+                              },
+                              "val": {
+                                "u64": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "weekly"
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "map": [
+                                      {
+                                        "key": {
+                                          "symbol": "address"
+                                        },
+                                        "val": {
+                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "amount"
+                                        },
+                                        "val": {
+                                          "i128": {
+                                            "hi": 0,
+                                            "lo": 30000000
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "credit_score"
+                                        },
+                                        "val": {
+                                          "u32": 40
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "username"
+                                        },
+                                        "val": {
+                                          "string": "alice"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "map": [
+                                      {
+                                        "key": {
+                                          "symbol": "address"
+                                        },
+                                        "val": {
+                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "amount"
+                                        },
+                                        "val": {
+                                          "i128": {
+                                            "hi": 0,
+                                            "lo": 10000000
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "credit_score"
+                                        },
+                                        "val": {
+                                          "u32": 40
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "username"
+                                        },
+                                        "val": {
+                                          "string": "bob"
+                                        }
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "weekly_reset_at"
+                              },
+                              "val": {
+                                "u64": 0
+                              }
                             }
                           ]
                         }
@@ -1745,6 +2590,214 @@
                         },
                         "val": {
                           "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "RateLimit"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "count"
+                              },
+                              "val": {
+                                "u32": 2
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "last_op_time"
+                              },
+                              "val": {
+                                "u64": 0
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "RuntimeConfig"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "admin"
+                              },
+                              "val": {
+                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "domain_reverify_secs"
+                              },
+                              "val": {
+                                "u64": 2592000
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "fee_bps"
+                              },
+                              "val": {
+                                "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "fee_collector"
+                              },
+                              "val": {
+                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "min_tip_amount"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 1000000
+                                }
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "native_token"
+                              },
+                              "val": {
+                                "address": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "paused"
+                              },
+                              "val": {
+                                "bool": false
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "rate_limit"
+                              },
+                              "val": {
+                                "map": [
+                                  {
+                                    "key": {
+                                      "symbol": "max_ops"
+                                    },
+                                    "val": {
+                                      "u32": 50
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "window_secs"
+                                    },
+                                    "val": {
+                                      "u64": 3600
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "SendTipState"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "active_creators_30d"
+                              },
+                              "val": {
+                                "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "stats_window_start"
+                              },
+                              "val": {
+                                "u64": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "tip_count"
+                              },
+                              "val": {
+                                "u32": 2
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "tips_last_24h"
+                              },
+                              "val": {
+                                "u32": 2
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "total_tips_volume"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 40000000
+                                }
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "volume_last_24h"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 40000000
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "StatsWindowStart"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u64": 0
                         }
                       },
                       {
@@ -2525,6 +3578,9 @@
                 },
                 {
                   "bool": false
+                },
+                {
+                  "bool": false
                 }
               ]
             }
@@ -2717,6 +3773,9 @@
                 },
                 {
                   "bool": false
+                },
+                {
+                  "bool": false
                 }
               ]
             }
@@ -2765,7 +3824,18 @@
               }
             ],
             "data": {
-              "u32": 50
+              "vec": [
+                {
+                  "vec": [
+                    {
+                      "symbol": "AllTime"
+                    }
+                  ]
+                },
+                {
+                  "u32": 50
+                }
+              ]
             }
           }
         }
@@ -2801,21 +3871,21 @@
                     },
                     {
                       "key": {
-                        "symbol": "credit_score"
-                      },
-                      "val": {
-                        "u32": 40
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "total_tips_received"
+                        "symbol": "amount"
                       },
                       "val": {
                         "i128": {
                           "hi": 0,
                           "lo": 30000000
                         }
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "credit_score"
+                      },
+                      "val": {
+                        "u32": 40
                       }
                     },
                     {
@@ -2869,6 +3939,9 @@
                 },
                 {
                   "string": ""
+                },
+                {
+                  "bool": false
                 },
                 {
                   "bool": false
@@ -3064,6 +4137,9 @@
                 },
                 {
                   "bool": false
+                },
+                {
+                  "bool": false
                 }
               ]
             }
@@ -3112,7 +4188,18 @@
               }
             ],
             "data": {
-              "u32": 50
+              "vec": [
+                {
+                  "vec": [
+                    {
+                      "symbol": "AllTime"
+                    }
+                  ]
+                },
+                {
+                  "u32": 50
+                }
+              ]
             }
           }
         }
@@ -3148,21 +4235,21 @@
                     },
                     {
                       "key": {
-                        "symbol": "credit_score"
-                      },
-                      "val": {
-                        "u32": 40
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "total_tips_received"
+                        "symbol": "amount"
                       },
                       "val": {
                         "i128": {
                           "hi": 0,
                           "lo": 30000000
                         }
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "credit_score"
+                      },
+                      "val": {
+                        "u32": 40
                       }
                     },
                     {
@@ -3187,21 +4274,21 @@
                     },
                     {
                       "key": {
-                        "symbol": "credit_score"
-                      },
-                      "val": {
-                        "u32": 40
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "total_tips_received"
+                        "symbol": "amount"
                       },
                       "val": {
                         "i128": {
                           "hi": 0,
                           "lo": 10000000
                         }
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "credit_score"
+                      },
+                      "val": {
+                        "u32": 40
                       }
                     },
                     {

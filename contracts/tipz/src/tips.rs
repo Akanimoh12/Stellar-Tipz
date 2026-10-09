@@ -13,10 +13,11 @@ use crate::leaderboard;
 use crate::storage::{self, DataKey};
 use crate::streaks;
 use crate::token;
-use crate::types::Tip;
+use crate::types::{ScheduledTip, Tip};
 use crate::validation::{validate_message, validate_tip_for_creator};
 
 /// Create a new [`Tip`] record and store it in temporary storage.
+#[allow(clippy::too_many_arguments)]
 pub fn store_tip(
     env: &Env,
     sender: &Address,
@@ -42,6 +43,7 @@ pub fn store_tip(
     tip_id
 }
 
+#[allow(clippy::too_many_arguments)]
 fn store_tip_with_id(
     env: &Env,
     tip_id: u32,
@@ -147,9 +149,11 @@ pub fn get_tips_by_tipper(env: &Env, tipper: &Address, limit: u32) -> Vec<Tip> {
 }
 
 /// Maximum tip amount accepted per single call (100 000 XLM in stroops).
+#[allow(dead_code)] // documented bounds, referenced by tests
 pub const MAX_TIP_AMOUNT: i128 = 1_000_000_000_000_i128;
 
 /// Maximum per-creator tip count stored in the profile.
+#[allow(dead_code)] // documented bounds, referenced by tests
 pub const MAX_TIP_COUNT: u32 = u32::MAX;
 
 /// Send an XLM tip from `tipper` to a registered `creator`.
@@ -441,6 +445,7 @@ pub fn withdraw_tips(env: &Env, caller: &Address, amount: i128) -> Result<(), Co
 /// - [`ContractError::CannotTipSelf`] if sender == creator
 /// - [`ContractError::InvalidAmount`] if amount <= 0
 /// - [`ContractError::InvalidInput`] if deliver_at is in the past
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
 pub fn send_scheduled_tip(
     env: &Env,
     sender: &Address,
@@ -534,15 +539,13 @@ pub fn send_scheduled_tip(
 /// - [`ContractError::NotFound`] if scheduled tip doesn't exist
 /// - [`ContractError::InvalidInput`] if tip already delivered or cancelled
 /// - [`ContractError::InvalidInput`] if delivery time hasn't passed yet
-pub fn deliver_scheduled_tip(
-    env: &Env,
-    scheduled_tip_id: u32,
-) -> Result<(), ContractError> {
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
+pub fn deliver_scheduled_tip(env: &Env, scheduled_tip_id: u32) -> Result<(), ContractError> {
     storage::extend_instance_ttl(env);
     crate::admin::require_not_paused(env)?;
 
-    let mut scheduled_tip = storage::get_scheduled_tip(env, scheduled_tip_id)
-        .ok_or(ContractError::NotFound)?;
+    let mut scheduled_tip =
+        storage::get_scheduled_tip(env, scheduled_tip_id).ok_or(ContractError::NotFound)?;
 
     if scheduled_tip.delivered {
         return Err(ContractError::InvalidInput);
@@ -581,8 +584,7 @@ pub fn deliver_scheduled_tip(
     streaks::record_tip_streak(env, &scheduled_tip.sender, &scheduled_tip.creator);
 
     // Update credit score
-    profile.credit_score =
-        credit::calculate_credit_score_with_streak(env, &profile, now);
+    profile.credit_score = credit::calculate_credit_score_with_streak(env, &profile, now);
 
     storage::set_profile(env, &profile);
     leaderboard::update_all_leaderboards_for_active(env, &profile, scheduled_tip.amount);
@@ -644,6 +646,7 @@ pub fn deliver_scheduled_tip(
 /// - [`ContractError::InvalidInput`] if tip already delivered or cancelled
 /// - [`ContractError::InvalidInput`] if delivery time has already passed
 /// - [`ContractError::Unauthorized`] if caller is not the sender
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
 pub fn cancel_scheduled_tip(
     env: &Env,
     caller: &Address,
@@ -653,8 +656,8 @@ pub fn cancel_scheduled_tip(
     crate::admin::require_not_paused(env)?;
     caller.require_auth();
 
-    let mut scheduled_tip = storage::get_scheduled_tip(env, scheduled_tip_id)
-        .ok_or(ContractError::NotFound)?;
+    let mut scheduled_tip =
+        storage::get_scheduled_tip(env, scheduled_tip_id).ok_or(ContractError::NotFound)?;
 
     if scheduled_tip.sender != *caller {
         return Err(ContractError::Unauthorized);
@@ -706,11 +709,13 @@ pub fn cancel_scheduled_tip(
 }
 
 /// Get a scheduled tip by ID.
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
 pub fn get_scheduled_tip(env: &Env, scheduled_tip_id: u32) -> Option<ScheduledTip> {
     storage::get_scheduled_tip(env, scheduled_tip_id)
 }
 
 /// Get scheduled tips for a sender.
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
 pub fn get_scheduled_tips_by_sender(
     env: &Env,
     sender: &Address,
@@ -743,6 +748,7 @@ pub fn get_scheduled_tips_by_sender(
 }
 
 /// Get scheduled tips for a creator.
+#[allow(dead_code)] // scheduled-tips: not yet exposed via lib.rs entrypoints
 pub fn get_scheduled_tips_by_creator(
     env: &Env,
     creator: &Address,

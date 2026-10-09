@@ -1,6 +1,9 @@
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger as _},
+    Address, Env, String,
+};
 
 use crate::{TipzContract, TipzContractClient};
 
@@ -67,7 +70,8 @@ fn test_domain_reverification_expires_stale_verification() {
     client.set_domain(&creator, &domain);
     client.verify_domain(&admin, &creator);
 
-    env.ledger().set_timestamp(env.ledger().timestamp() + 86_401);
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 86_401);
 
     let profile = client.get_profile(&creator).profile;
     assert!(!profile.domain_verified);

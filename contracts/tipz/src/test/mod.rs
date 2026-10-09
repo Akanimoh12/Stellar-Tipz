@@ -1,14 +1,13 @@
 //! Test module for the Tipz contract.
 
 mod test_access_control;
-mod test_mutation_coverage;
 mod test_admin;
 mod test_anonymous_tips;
 mod test_benchmark;
 mod test_budget;
 mod test_config;
-mod test_credit;
 mod test_creator_min_tip;
+mod test_credit;
 mod test_deregister;
 mod test_domain_verification;
 mod test_donation_page;
@@ -21,8 +20,9 @@ mod test_integration;
 mod test_integration_advanced;
 mod test_leaderboard;
 mod test_min_tip;
-mod test_multitoken;
 mod test_multisig;
+mod test_multitoken;
+mod test_mutation_coverage;
 mod test_pause;
 mod test_profile_query;
 mod test_profiles;
@@ -30,8 +30,8 @@ mod test_property;
 mod test_refund;
 mod test_register;
 mod test_security;
-mod test_stats;
 mod test_snapshots;
+mod test_stats;
 mod test_storage;
 mod test_streaks;
 mod test_subscriptions;

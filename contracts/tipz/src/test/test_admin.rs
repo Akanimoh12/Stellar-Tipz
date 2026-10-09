@@ -3,9 +3,11 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::{Address as _, Events},
+    testutils::{Address as _, Events, Ledger as _},
     vec, Address, Env, Map, String, Symbol,
 };
+
+use crate::admin::ADMIN_CHANGE_TIMELOCK_SECS;
 
 use crate::errors::ContractError;
 use crate::storage::{self, DataKey};
@@ -598,16 +600,26 @@ fn setup_initialized() -> (Env, TipzContractClient<'static>, Address) {
     (ctx.env, ctx.client, ctx.admin)
 }
 
+/// Helper: advance the ledger clock past the admin-change timelock.
+fn advance_past_timelock(env: &Env) {
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + ADMIN_CHANGE_TIMELOCK_SECS + 1);
+}
+
 #[test]
-fn test_propose_admin_stores_pending_and_emits_event() {
+fn test_propose_admin_stores_pending_proposal() {
     let (env, client, admin) = setup_initialized();
     let new_admin = Address::generate(&env);
 
-    client.propose_admin(&admin, &new_admin);
+    client.propose_admin_change(&admin, &new_admin);
 
-    // Pending admin should now be set
-    let pending = client.get_pending_admin();
-    assert_eq!(pending, Some(new_admin));
+    // Pending proposal should now be set
+    let proposal = client.get_admin_change_proposal().unwrap();
+    assert_eq!(proposal.new_admin, new_admin);
+    assert_eq!(
+        proposal.confirmable_after,
+        env.ledger().timestamp() + ADMIN_CHANGE_TIMELOCK_SECS
+    );
 }
 
 #[test]
@@ -616,103 +628,131 @@ fn test_propose_admin_non_admin_fails() {
     let stranger = Address::generate(&env);
     let new_admin = Address::generate(&env);
 
-    let result = client.try_propose_admin(&stranger, &new_admin);
+    let result = client.try_propose_admin_change(&stranger, &new_admin);
     assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
 }
 
 #[test]
-fn test_accept_admin_full_flow() {
+fn test_confirm_admin_full_flow() {
     let (env, client, admin) = setup_initialized();
     let new_admin = Address::generate(&env);
 
-    client.propose_admin(&admin, &new_admin);
+    client.propose_admin_change(&admin, &new_admin);
+    assert_eq!(
+        client.get_admin_change_proposal().map(|p| p.new_admin),
+        Some(new_admin.clone())
+    );
 
-    // No pending admin before acceptance
-    assert_eq!(client.get_pending_admin(), Some(new_admin.clone()));
-
-    client.accept_admin(&new_admin);
+    advance_past_timelock(&env);
+    client.confirm_admin_change(&new_admin);
 
     // Pending proposal is cleared
-    assert_eq!(client.get_pending_admin(), None);
+    assert_eq!(client.get_admin_change_proposal(), None);
 
     // New admin can now perform admin-only actions (e.g., propose again)
     let next_admin = Address::generate(&env);
-    client.propose_admin(&new_admin, &next_admin);
-    assert_eq!(client.get_pending_admin(), Some(next_admin));
+    client.propose_admin_change(&new_admin, &next_admin);
+    assert_eq!(
+        client.get_admin_change_proposal().map(|p| p.new_admin),
+        Some(next_admin)
+    );
 }
 
 #[test]
-fn test_accept_admin_non_pending_fails() {
+fn test_confirm_admin_before_timelock_fails() {
+    let (env, client, admin) = setup_initialized();
+    let new_admin = Address::generate(&env);
+
+    client.propose_admin_change(&admin, &new_admin);
+
+    let result = client.try_confirm_admin_change(&new_admin);
+    assert_eq!(result, Err(Ok(ContractError::AdminChangeTimelockNotMet)));
+}
+
+#[test]
+fn test_confirm_admin_non_pending_fails() {
     let (env, client, admin) = setup_initialized();
     let new_admin = Address::generate(&env);
     let impostor = Address::generate(&env);
 
-    client.propose_admin(&admin, &new_admin);
+    client.propose_admin_change(&admin, &new_admin);
+    advance_past_timelock(&env);
 
-    let result = client.try_accept_admin(&impostor);
+    let result = client.try_confirm_admin_change(&impostor);
     assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
 }
 
 #[test]
-fn test_accept_admin_no_proposal_fails() {
+fn test_confirm_admin_no_proposal_fails() {
     let (env, client, _admin) = setup_initialized();
     let anyone = Address::generate(&env);
 
-    let result = client.try_accept_admin(&anyone);
+    let result = client.try_confirm_admin_change(&anyone);
     assert_eq!(result, Err(Ok(ContractError::NoPendingAdmin)));
 }
 
 #[test]
-fn test_cancel_admin_proposal_clears_pending() {
+fn test_cancel_admin_change_clears_pending() {
     let (env, client, admin) = setup_initialized();
     let new_admin = Address::generate(&env);
 
-    client.propose_admin(&admin, &new_admin);
-    assert_eq!(client.get_pending_admin(), Some(new_admin));
+    client.propose_admin_change(&admin, &new_admin);
+    assert_eq!(
+        client.get_admin_change_proposal().map(|p| p.new_admin),
+        Some(new_admin)
+    );
 
-    client.cancel_admin_proposal(&admin);
+    client.cancel_admin_change(&admin);
 
-    assert_eq!(client.get_pending_admin(), None);
+    assert_eq!(client.get_admin_change_proposal(), None);
 }
 
 #[test]
-fn test_cancel_admin_proposal_non_admin_fails() {
+fn test_cancel_admin_change_non_admin_fails() {
     let (env, client, admin) = setup_initialized();
     let new_admin = Address::generate(&env);
     let stranger = Address::generate(&env);
 
-    client.propose_admin(&admin, &new_admin);
+    client.propose_admin_change(&admin, &new_admin);
 
-    let result = client.try_cancel_admin_proposal(&stranger);
+    let result = client.try_cancel_admin_change(&stranger);
     assert_eq!(result, Err(Ok(ContractError::NotAuthorized)));
 }
 
 #[test]
-fn test_cancel_admin_proposal_no_proposal_fails() {
+fn test_cancel_admin_change_no_proposal_fails() {
     let (_env, client, admin) = setup_initialized();
 
-    let result = client.try_cancel_admin_proposal(&admin);
+    let result = client.try_cancel_admin_change(&admin);
     assert_eq!(result, Err(Ok(ContractError::NoPendingAdmin)));
 }
 
 #[test]
-fn test_get_pending_admin_none_when_no_proposal() {
+fn test_admin_change_proposal_none_when_no_proposal() {
     let (_, client, _) = setup_initialized();
 
-    assert_eq!(client.get_pending_admin(), None);
+    assert_eq!(client.get_admin_change_proposal(), None);
 }
 
 #[test]
-fn test_propose_overwrites_existing_proposal() {
+fn test_propose_while_pending_fails() {
     let (env, client, admin) = setup_initialized();
     let candidate_a = Address::generate(&env);
     let candidate_b = Address::generate(&env);
 
-    client.propose_admin(&admin, &candidate_a);
-    client.propose_admin(&admin, &candidate_b);
+    client.propose_admin_change(&admin, &candidate_a);
 
-    // Latest proposal wins
-    assert_eq!(client.get_pending_admin(), Some(candidate_b));
+    // A second proposal is rejected while one is pending; the admin must
+    // cancel the pending proposal first.
+    let result = client.try_propose_admin_change(&admin, &candidate_b);
+    assert_eq!(result, Err(Ok(ContractError::AdminChangeAlreadyPending)));
+
+    client.cancel_admin_change(&admin);
+    client.propose_admin_change(&admin, &candidate_b);
+    assert_eq!(
+        client.get_admin_change_proposal().map(|p| p.new_admin),
+        Some(candidate_b)
+    );
 }
 
 // ── pause/unpause authorization ──────────────────────────────────────────────

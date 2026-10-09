@@ -112,6 +112,9 @@
                 },
                 {
                   "bool": false
+                },
+                {
+                  "bool": false
                 }
               ]
             }

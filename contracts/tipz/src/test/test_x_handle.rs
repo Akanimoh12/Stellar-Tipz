@@ -73,5 +73,8 @@ fn test_x_handle_normalization_update() {
     );
 
     let updated = client.get_profile(&caller);
-    assert_eq!(updated.profile.x_handle, String::from_str(&env, "@new_handle"));
+    assert_eq!(
+        updated.profile.x_handle,
+        String::from_str(&env, "@new_handle")
+    );
 }

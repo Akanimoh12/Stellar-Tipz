@@ -1,9 +1,6 @@
 #![cfg(test)]
 
-use soroban_sdk::{
-    testutils::Address as _,
-    token, Address, Env, String,
-};
+use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
 
 use crate::errors::ContractError;
 use crate::{TipzContract, TipzContractClient};
@@ -64,7 +61,7 @@ fn test_fallback_to_global_min() {
 
 #[test]
 fn test_reset_creator_min_tip_to_global() {
-    let (_env, client, creator, _tipper, _admin) = setup_env();
+    let (_env, client, _tipper, creator, _admin) = setup_env();
     let global_min = client.get_min_tip_amount();
 
     client.set_min_tip(&creator, &500_i128);

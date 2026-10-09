@@ -108,29 +108,23 @@ fn test_full_happy_path() {
     let profile_bob = client.get_profile(&bob);
     let profile_charlie = client.get_profile(&charlie);
 
-    assert_eq!(profile_alice.balance, amount_alice);
-    assert_eq!(profile_bob.balance, amount_bob);
-    assert_eq!(profile_charlie.balance, amount_charlie);
+    assert_eq!(profile_alice.profile.balance, amount_alice);
+    assert_eq!(profile_bob.profile.balance, amount_bob);
+    assert_eq!(profile_charlie.profile.balance, amount_charlie);
 
     // ──────────────────────────────────────────────────────────────────────────
     // Step 4: Verify leaderboard: alice > bob > charlie
     // ──────────────────────────────────────────────────────────────────────────
 
-    let leaderboard = client.get_leaderboard(&10); // Get top 10
+    let leaderboard = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &10); // Get top 10
 
     assert_eq!(leaderboard.len(), 3);
     assert_eq!(leaderboard.get(0).unwrap().address, alice);
-    assert_eq!(
-        leaderboard.get(0).unwrap().total_tips_received,
-        amount_alice
-    );
+    assert_eq!(leaderboard.get(0).unwrap().amount, amount_alice);
     assert_eq!(leaderboard.get(1).unwrap().address, bob);
-    assert_eq!(leaderboard.get(1).unwrap().total_tips_received, amount_bob);
+    assert_eq!(leaderboard.get(1).unwrap().amount, amount_bob);
     assert_eq!(leaderboard.get(2).unwrap().address, charlie);
-    assert_eq!(
-        leaderboard.get(2).unwrap().total_tips_received,
-        amount_charlie
-    );
+    assert_eq!(leaderboard.get(2).unwrap().amount, amount_charlie);
 
     // ──────────────────────────────────────────────────────────────────────────
     // Step 5: Verify credit scores: alice > bob > charlie
@@ -173,7 +167,10 @@ fn test_full_happy_path() {
 
     // Verify alice's contract balance is updated
     let profile_alice_after = client.get_profile(&alice);
-    assert_eq!(profile_alice_after.balance, amount_alice - withdraw_amount);
+    assert_eq!(
+        profile_alice_after.profile.balance,
+        amount_alice - withdraw_amount
+    );
 
     // ──────────────────────────────────────────────────────────────────────────
     // Step 8: Verify stats: get_stats returns correct aggregate numbers

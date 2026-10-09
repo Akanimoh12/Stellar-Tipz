@@ -1,0 +1,59 @@
+---
+source: tipz/src/test/test_snapshots.rs
+expression: snap
+---
+StorageSnapshot {
+    instance_has: {
+        "Admin": true,
+        "Cache.LeaderboardSet": true,
+        "Cache.RuntimeConfig": true,
+        "Cache.SendTipState": true,
+        "ContractVersion": true,
+        "FeeCollector": true,
+        "FeePercent": true,
+        "Initialized": true,
+        "MinTipAmount": true,
+        "NativeToken": true,
+        "Paused": true,
+        "TipCount": true,
+        "TotalCreators": true,
+        "TotalTipsVolume": true,
+    },
+    persistent_has: {
+        "Profile(<creator>)": true,
+        "UsernameToAddress(alice)": true,
+    },
+    temporary_has: {
+        "Tip(0)": false,
+    },
+    instance_values: {
+        "ContractVersion": "3",
+        "FeePercent": "200",
+        "Initialized": "true",
+        "MinTipAmount": "1000000",
+        "Paused": "false",
+        "TipCount": "0",
+        "TotalCreators": "1",
+        "TotalTipsVolume": "0",
+    },
+    profile: Some(
+        ProfileRedacted {
+            owner: "<creator>",
+            username: "alice",
+            display_name: "Alice",
+            bio: "",
+            image_url: "",
+            x_handle: "@alice_x",
+            x_followers: 0,
+            x_engagement_avg: 0,
+            credit_score: 40,
+            total_tips_received: 0,
+            total_tips_count: 0,
+            balance: 0,
+            registered_at: 0,
+            updated_at: 0,
+            verification_is_verified: false,
+        },
+    ),
+    tip0: None,
+}

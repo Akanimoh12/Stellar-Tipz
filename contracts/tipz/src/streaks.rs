@@ -49,10 +49,7 @@ pub fn record_tip_streak(env: &Env, supporter: &Address, creator: &Address) -> S
 
     storage::adjust_creator_streak_bonus(env, creator, streak.bonus_points as i32 - previous_bonus);
 
-    if STREAK_MILESTONES
-        .iter()
-        .any(|milestone| *milestone == streak.current)
-    {
+    if STREAK_MILESTONES.contains(&streak.current) {
         emit_streak_milestone(env, supporter, creator, streak.current);
     }
 

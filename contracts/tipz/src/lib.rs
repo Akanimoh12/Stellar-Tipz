@@ -13,6 +13,9 @@
 
 #![no_std]
 
+#[cfg(test)]
+extern crate std;
+
 mod admin;
 mod credit;
 mod errors;
@@ -20,8 +23,8 @@ mod events;
 mod fees;
 mod goals;
 mod leaderboard;
-mod multitoken;
 mod multisig;
+mod multitoken;
 mod profile;
 mod refund;
 mod stats;
@@ -42,7 +45,7 @@ use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
 use crate::errors::ContractError;
 use crate::types::{
     AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip, ContractConfig, ContractStats,
-    CreditBreakdown, CreditTier, LeaderboardEntry, Profile, ProfileWithDeactivation, Tip,
+    CreditBreakdown, CreditTier, Profile, ProfileWithDeactivation, Tip,
 };
 
 /// The current contract interface version, stored on-chain during initialization.
@@ -227,7 +230,15 @@ impl TipzContract {
         is_anonymous: bool,
         is_encrypted: bool,
     ) -> Result<(), ContractError> {
-        tips::send_tip(&env, &tipper, &creator, amount, &message, is_anonymous, is_encrypted)
+        tips::send_tip(
+            &env,
+            &tipper,
+            &creator,
+            amount,
+            &message,
+            is_anonymous,
+            is_encrypted,
+        )
     }
 
     /// Send a tip on behalf of someone else.
@@ -719,11 +730,7 @@ impl TipzContract {
     /// Set a custom minimum tip amount for a creator profile.
     ///
     /// Pass `0` to reset to the global minimum.
-    pub fn set_min_tip(
-        env: Env,
-        creator: Address,
-        min_amount: i128,
-    ) -> Result<(), ContractError> {
+    pub fn set_min_tip(env: Env, creator: Address, min_amount: i128) -> Result<(), ContractError> {
         profile::set_min_tip(&env, creator, min_amount)
     }
 
@@ -733,11 +740,7 @@ impl TipzContract {
     }
 
     /// Set the domain to verify via stellar.toml (marks verification as pending).
-    pub fn set_domain(
-        env: Env,
-        creator: Address,
-        domain: String,
-    ) -> Result<(), ContractError> {
+    pub fn set_domain(env: Env, creator: Address, domain: String) -> Result<(), ContractError> {
         profile::set_domain(&env, creator, domain)
     }
 
@@ -783,11 +786,7 @@ impl TipzContract {
     }
 
     /// Admin confirms domain verification after off-chain stellar.toml check.
-    pub fn verify_domain(
-        env: Env,
-        caller: Address,
-        creator: Address,
-    ) -> Result<(), ContractError> {
+    pub fn verify_domain(env: Env, caller: Address, creator: Address) -> Result<(), ContractError> {
         admin::verify_domain(&env, &caller, &creator)
     }
 
@@ -890,7 +889,15 @@ impl TipzContract {
         message: String,
         is_anonymous: bool,
     ) -> Result<(), ContractError> {
-        multitoken::send_tip_token(&env, &tipper, &creator, amount, &token, &message, is_anonymous)
+        multitoken::send_tip_token(
+            &env,
+            &tipper,
+            &creator,
+            amount,
+            &token,
+            &message,
+            is_anonymous,
+        )
     }
 
     /// Withdraw accumulated tips in a specific token
@@ -926,11 +933,7 @@ impl TipzContract {
     /// - [`ContractError::NotTipper`] - Caller is not the tipper
     /// - [`ContractError::RefundWindowExpired`] - Request window has passed
     /// - [`ContractError::RefundAlreadyRequested`] - Refund already requested
-    pub fn request_refund(
-        env: Env,
-        tipper: Address,
-        tip_id: u32,
-    ) -> Result<(), ContractError> {
+    pub fn request_refund(env: Env, tipper: Address, tip_id: u32) -> Result<(), ContractError> {
         refund::request_refund(&env, &tipper, tip_id)
     }
 
@@ -947,11 +950,7 @@ impl TipzContract {
     /// - [`ContractError::NoRefundRequest`] - No refund request exists
     /// - [`ContractError::NotCreator`] - Caller is not the creator
     /// - [`ContractError::RefundAlreadyProcessed`] - Refund already processed
-    pub fn approve_refund(
-        env: Env,
-        creator: Address,
-        tip_id: u32,
-    ) -> Result<(), ContractError> {
+    pub fn approve_refund(env: Env, creator: Address, tip_id: u32) -> Result<(), ContractError> {
         refund::approve_refund(&env, &creator, tip_id)
     }
 
@@ -968,11 +967,7 @@ impl TipzContract {
     /// - [`ContractError::NoRefundRequest`] - No refund request exists
     /// - [`ContractError::NotCreator`] - Caller is not the creator
     /// - [`ContractError::RefundAlreadyProcessed`] - Refund already processed
-    pub fn reject_refund(
-        env: Env,
-        creator: Address,
-        tip_id: u32,
-    ) -> Result<(), ContractError> {
+    pub fn reject_refund(env: Env, creator: Address, tip_id: u32) -> Result<(), ContractError> {
         refund::reject_refund(&env, &creator, tip_id)
     }
 
@@ -1002,10 +997,7 @@ impl TipzContract {
     ///
     /// # Returns
     /// The refund request if it exists, None otherwise
-    pub fn get_refund_request(
-        env: Env,
-        tip_id: u32,
-    ) -> Option<types::RefundRequest> {
+    pub fn get_refund_request(env: Env, tip_id: u32) -> Option<types::RefundRequest> {
         refund::get_refund_request(&env, tip_id)
     }
 

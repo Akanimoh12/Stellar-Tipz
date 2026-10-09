@@ -199,17 +199,26 @@ fn test_deregister_profile_removes_from_leaderboard() {
         storage::set_profile(&env, &profile);
 
         // Manually add to leaderboard
-        crate::leaderboard::update_leaderboard(&env, &profile);
+        crate::leaderboard::update_leaderboard(
+            &env,
+            &profile,
+            crate::types::LeaderboardPeriod::AllTime,
+            profile.total_tips_received,
+        );
     });
 
     // Verify profile is on leaderboard before deregistration
     let is_on_leaderboard_before = env.as_contract(&contract_id, || {
-        crate::leaderboard::is_on_leaderboard(&env, &caller)
+        crate::leaderboard::is_on_leaderboard(
+            &env,
+            crate::types::LeaderboardPeriod::AllTime,
+            &caller,
+        )
     });
     assert!(is_on_leaderboard_before);
 
     // Get leaderboard size before deregistration
-    let leaderboard_before = client.get_leaderboard(&0);
+    let leaderboard_before = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &0);
     let size_before = leaderboard_before.len();
 
     // Deregister the profile
@@ -217,12 +226,16 @@ fn test_deregister_profile_removes_from_leaderboard() {
 
     // Verify profile is not on leaderboard after deregistration
     let is_on_leaderboard_after = env.as_contract(&contract_id, || {
-        crate::leaderboard::is_on_leaderboard(&env, &caller)
+        crate::leaderboard::is_on_leaderboard(
+            &env,
+            crate::types::LeaderboardPeriod::AllTime,
+            &caller,
+        )
     });
     assert!(!is_on_leaderboard_after);
 
     // Verify leaderboard size decreased by one
-    let leaderboard_after = client.get_leaderboard(&0);
+    let leaderboard_after = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &0);
     let size_after = leaderboard_after.len();
     assert_eq!(size_after, size_before - 1);
 }
