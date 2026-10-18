@@ -105,6 +105,48 @@ groups:
             Neither wallet sign-ins nor on-chain profile registrations created a
             user in six hours, although the same window yesterday did.
 
+  - name: stellar-tipz-contract-event-security
+    rules:
+      - alert: ContractEventRateAnomaly
+        expr: increase(tipz_contract_event_anomalies_total{kind="rate_deviation"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          area: security
+        annotations:
+          summary: Contract event rate deviated from its rolling baseline
+          description: >-
+            The indexer observed a contract event type several standard deviations
+            above its rolling baseline. Inspect the structured anomaly log for the
+            event type, observed count, baseline and affected ledger.
+          runbook: backend/docs/METRICS.md#contract-event-anomalies
+
+      - alert: HighValueContractTransaction
+        expr: increase(tipz_contract_event_anomalies_total{kind="high_value"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          area: security
+        annotations:
+          summary: High-value contract transaction detected
+          description: >-
+            A contract event met the configured high-value threshold. Inspect the
+            anomaly log for its transaction hash, ledger, amount and account.
+          runbook: backend/docs/METRICS.md#contract-event-anomalies
+
+      - alert: RepeatedWithdrawalPattern
+        expr: increase(tipz_contract_event_anomalies_total{kind="withdrawal_burst"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          area: security
+        annotations:
+          summary: Repeated withdrawals detected from one account
+          description: >-
+            One account reached the configured withdrawal burst threshold. Inspect
+            the anomaly log and consider pausing withdrawals if activity is malicious.
+          runbook: backend/docs/METRICS.md#contract-event-anomalies
+
   - name: stellar-tipz-http
     rules:
       - alert: HttpServerErrorRateHigh
