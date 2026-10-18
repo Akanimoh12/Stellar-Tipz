@@ -68,6 +68,7 @@ vi.mock('../db/prisma.js', () => ({
 
 vi.mock('../realtime/index.js', () => ({ emitNotificationCreated: vi.fn() }));
 vi.mock('../common/observability/metrics.js', () => ({ recordUnknownEvent: vi.fn(), recordIndexerLedgerProcessed: vi.fn() }));
+vi.mock('./anomalyDetection.js', () => ({ observeContractEvent: vi.fn() }));
 
 vi.mock('./realtime-publisher.js', () => ({
   publishProjection: mockPublishProjection,
