@@ -133,6 +133,18 @@ export const envSchema = z.object({
    * (issue #1257). Must comfortably exceed `INDEXER_FINALITY_DEPTH`.
    */
   INDEXER_REORG_LOOKBACK: z.coerce.number().int().positive().default(64),
+  /** Width of each in-process event-rate baseline window. */
+  INDEXER_ANOMALY_WINDOW_MS: z.coerce.number().int().min(1_000).default(60_000),
+  /** Number of completed windows retained to calculate the rolling baseline. */
+  INDEXER_ANOMALY_BASELINE_WINDOWS: z.coerce.number().int().min(3).max(60).default(10),
+  /** Standard deviations above the rolling mean that constitutes a rate anomaly. */
+  INDEXER_ANOMALY_STDDEV_THRESHOLD: z.coerce.number().min(1).max(10).default(3),
+  /** A single on-chain value at or above this number of stroops produces a high-value alert. */
+  INDEXER_HIGH_VALUE_STROOPS: z.coerce.number().int().positive().default(10_000_000_000),
+  /** Repeated withdrawals by one account within this window are suspicious. */
+  INDEXER_WITHDRAWAL_BURST_WINDOW_MS: z.coerce.number().int().min(1_000).default(300_000),
+  /** Number of withdrawals from one account in the burst window that triggers an alert. */
+  INDEXER_WITHDRAWAL_BURST_COUNT: z.coerce.number().int().min(2).max(100).default(3),
   /**
    * Leader election for running several indexer instances (issue #1263). Only
    * the instance holding the Redis lease indexes; the others stand by and take
