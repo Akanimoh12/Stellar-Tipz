@@ -10,6 +10,7 @@ import { invalidateCreatorSearch } from '../modules/search/search.cache.js';
 import { invalidateCreatorAnalytics } from '../modules/analytics/analytics.cache.js';
 import { recordUnknownEvent, recordIndexerLedgerProcessed } from '../common/observability/metrics.js';
 import { observeRegistration, observeSubscriptionCharge, observeTip } from '../common/observability/businessMetrics.js';
+import { observeContractEvent } from './anomalyDetection.js';
 
 /** Event topics that represent an on-chain tip. */
 const TIP_TOPICS = new Set(['tip', 'tip_sent']);
@@ -46,6 +47,7 @@ const PROJECTIONS: Record<string, (event: DecodedEvent, isNewEvent: boolean) => 
  */
 export async function projectEvent(event: DecodedEvent): Promise<void> {
   const isNewEvent = await persistEventLog(event);
+  if (isNewEvent) observeContractEvent(event);
 
   if (TIP_TOPICS.has(event.topic)) {
     await projectTip(event);
