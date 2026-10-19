@@ -1,0 +1,67 @@
+name: Canary Promotion
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_url:
+        description: "Existing Vercel production deployment URL (release candidate)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      PROMETHEUS_URL: ${{ vars.PROMETHEUS_URL }}
+      PROMETHEUS_TOKEN: ${{ secrets.PROMETHEUS_TOKEN }}
+      BASELINE_ERROR_QUERY: ${{ vars.BASELINE_ERROR_QUERY }}
+      CANARY_ERROR_QUERY: ${{ vars.CANARY_ERROR_QUERY }}
+      BASELINE_LATENCY_QUERY: ${{ vars.BASELINE_LATENCY_QUERY }}
+      CANARY_LATENCY_QUERY: ${{ vars.CANARY_LATENCY_QUERY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verify required credentials and monitoring
+        run: |
+          test -n "$VERCEL_TOKEN" && test -n "$VERCEL_ORG_ID" && test -n "$VERCEL_PROJECT_ID"
+          node --check scripts/check-canary-metrics.mjs
+          test -n "$PROMETHEUS_URL" && test -n "$BASELINE_ERROR_QUERY" && test -n "$CANARY_ERROR_QUERY"
+          test -n "$BASELINE_LATENCY_QUERY" && test -n "$CANARY_LATENCY_QUERY"
+      - name: Start canary release (configured 10/50/100 stages)
+        id: start
+        env:
+          DEPLOYMENT_URL: ${{ inputs.deployment_url }}
+        run: |
+          npx --yes vercel@latest rolling-release start --dpl="$DEPLOYMENT_URL" --yes --token="$VERCEL_TOKEN"
+      - name: Validate at 10 percent
+        run: node scripts/check-canary-metrics.mjs
+      - name: Promote to 50 percent
+        env:
+          DEPLOYMENT_URL: ${{ inputs.deployment_url }}
+        run: npx --yes vercel@latest rolling-release approve --dpl="$DEPLOYMENT_URL" --currentStageIndex=0 --token="$VERCEL_TOKEN"
+      - name: Validate at 50 percent
+        run: node scripts/check-canary-metrics.mjs
+      - name: Promote to 100 percent
+        env:
+          DEPLOYMENT_URL: ${{ inputs.deployment_url }}
+        run: npx --yes vercel@latest rolling-release approve --dpl="$DEPLOYMENT_URL" --currentStageIndex=1 --token="$VERCEL_TOKEN"
+      - name: Verify after full promotion
+        run: node scripts/check-canary-metrics.mjs
+      - name: Abort canary release on failure
+        if: failure() && steps.start.outcome == 'success'
+        env:
+          DEPLOYMENT_URL: ${{ inputs.deployment_url }}
+        run: npx --yes vercel@latest rolling-release abort --dpl="$DEPLOYMENT_URL" --token="$VERCEL_TOKEN"

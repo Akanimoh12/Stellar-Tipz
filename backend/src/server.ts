@@ -9,6 +9,9 @@ import { initializeQueues, closeAllQueues } from './modules/jobs/queue.factory.j
 import { initRealtime } from './realtime/gateway.js';
 import { initTracing, shutdownTracing } from './common/observability/tracing.js';
 
+import { startProcessMetrics } from './common/observability/metricsServer.js';
+import { assertContractVersion } from './common/stellar/verifyContractVersion.js';
+
 /** Process entry point: starts the HTTP server (and, later, the WebSocket + indexer). */
 async function bootstrap(): Promise<void> {
   // Initialize OpenTelemetry tracing (issue #1349)
@@ -17,10 +20,10 @@ async function bootstrap(): Promise<void> {
     name: 'OpenTelemetry',
     close: shutdownTracing,
   });
-import { startProcessMetrics } from './common/observability/metricsServer.js';
-
-/** Process entry point: starts the HTTP server (and, later, the WebSocket + indexer). */
-async function bootstrap(): Promise<void> {
+  // Do not serve production requests against a wrong or incompatible contract.
+  if (env.NODE_ENV === 'production') {
+    await assertContractVersion(env.CONTRACT_ID, env.NETWORK_PASSPHRASE, env.EXPECTED_CONTRACT_VERSION);
+  }
   // Prometheus registry + internal /metrics listener (issue #1346)
   await startProcessMetrics('api');
 
