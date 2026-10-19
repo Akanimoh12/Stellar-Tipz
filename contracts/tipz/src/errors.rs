@@ -55,33 +55,17 @@ pub enum ContractError {
     SubLimitReached = 49,
     RefundReqExpired = 50,
     /// Profile is inactive beyond the cleanup threshold
-    ProfileInactive = 51,
-    /// Storage limit exceeded for variable-size entry
-    StorageLimitExceeded = 52,
-}
-
-impl ContractError {
-    pub const AlreadyInitialized: Self = Self::AlreadyInit;
-    pub const AdminChangeAlreadyPending: Self = Self::AdminChangePending;
-    pub const AdminChangeTimelockNotMet: Self = Self::AdminTimelockNotMet;
-    pub const InsufficientBalance: Self = Self::LowBalance;
-    pub const ProfileDeactivated: Self = Self::Deactivated;
-    pub const ProfileNotDeactivated: Self = Self::NotDeactivated;
-    pub const BelowCreatorMinimum: Self = Self::BelowCreatorMin;
-    pub const MaxProfilesReached: Self = Self::MaxProfiles;
-    pub const RefundWindowExpired: Self = Self::RefundExpired;
-    pub const RefundAlreadyRequested: Self = Self::RefundRequested;
-    pub const RefundAlreadyProcessed: Self = Self::RefundProcessed;
-    pub const BlocklistLimitReached: Self = Self::BlocklistLimit;
-    pub const EmergencyWithdrawalNotAllowed: Self = Self::EmergencyNotAllowed;
-    pub const AdminProposalExpired: Self = Self::ProposalExpired;
-    pub const MigrationAlreadyCompleted: Self = Self::MigrationCompleted;
-    pub const MigrationDowngradeRejected: Self = Self::MigrationDowngrade;
-    pub const InvalidMigrationVersion: Self = Self::InvalidMigration;
-    pub const SubscriptionLimitReached: Self = Self::SubLimitReached;
-    pub const RefundRequestExpired: Self = Self::InvalidInput;
-    pub const MultisigRequired: Self = Self::InvalidInput;
-    pub const WdrBelowMin: Self = Self::ProposalExpired;
-    pub const WithdrawalBelowMinimum: Self = Self::WdrBelowMin;
-    pub const ProposalEpochMismatch: Self = Self::ProposalExpired;
+    ProfileInactive = 39,
+    /// Refund request window has expired
+    RefundWindowExpired = 40,
+    /// Refund has already been requested for this tip
+    RefundAlreadyRequested = 41,
+    /// Refund has already been processed
+    RefundAlreadyProcessed = 42,
+    /// No refund request exists for this tip
+    NoRefundRequest = 43,
+    /// Only the tipper can request a refund
+    NotTipper = 44,
+    /// Only the creator can approve/reject a refund
+    NotCreator = 45,
 }

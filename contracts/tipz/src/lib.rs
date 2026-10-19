@@ -1061,6 +1061,11 @@ impl TipzContract {
         multisig::get_pending_proposals(&env)
     }
 
+    /// Remove proposals whose expiry has passed. Returns the number purged.
+    pub fn purge_expired_proposals(env: Env) -> u32 {
+        multisig::purge_expired_proposals(&env)
+    }
+
     /// Get a specific proposal by ID
     pub fn get_proposal(env: Env, proposal_id: u32) -> Option<multisig::Proposal> {
         multisig::get_proposal(&env, proposal_id)

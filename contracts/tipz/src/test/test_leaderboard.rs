@@ -18,10 +18,13 @@
 
 #![cfg(test)]
 
+extern crate alloc;
+use alloc::format;
+
 use soroban_sdk::{testutils::Address as _, token, Address, Env, Map, String, Symbol};
 
 use crate::leaderboard::MAX_LEADERBOARD_SIZE;
-use crate::storage::DataKey;
+use crate::storage::{DataKey, ExtendedDataKey};
 use crate::types::{Profile, VerificationStatus, VerificationType};
 use crate::TipzContract;
 use crate::TipzContractClient;
@@ -208,8 +211,6 @@ fn test_leaderboard_max_size() {
     let client = TipzContractClient::new(&env, &contract_id);
     let now = env.ledger().timestamp();
 
-    // Generate 51 addresses outside the contract context so they can be
-    // referenced both inside the closure and in the assertions below.
     let mut addresses: soroban_sdk::Vec<Address> = soroban_sdk::Vec::new(&env);
     let mut i: u32 = 0;
     while i < 51 {
@@ -217,9 +218,6 @@ fn test_leaderboard_max_size() {
         i += 1;
     }
 
-    // Populate the leaderboard directly via the internal function.
-    // Creator 0 receives the most tips (51 × 10 M stroops); creator 50
-    // receives the least (1 × 10 M stroops) and should be pruned.
     env.as_contract(&contract_id, || {
         let mut i: u32 = 0;
         while i < 51 {
@@ -251,9 +249,14 @@ fn test_leaderboard_max_size() {
                 domain: String::from_str(&env, ""),
                 domain_verified: false,
                 domain_verified_at: None,
-        custom_min_tip: None,
+                custom_min_tip: None,
             };
-            crate::leaderboard::update_leaderboard(&env, &profile, crate::types::LeaderboardPeriod::AllTime, profile.total_tips_received);
+            crate::leaderboard::update_leaderboard(
+                &env,
+                &profile,
+                crate::types::LeaderboardPeriod::AllTime,
+                tips,
+            );
             i += 1;
         }
     });
@@ -265,7 +268,6 @@ fn test_leaderboard_max_size() {
         "leaderboard must retain at most {MAX_LEADERBOARD_SIZE} entries"
     );
 
-    // The creator at index 50 (1 × 10 M stroops) must have been pruned.
     let lowest = addresses.get(50).unwrap();
     let mut found = false;
     let mut j: u32 = 0;
@@ -282,13 +284,63 @@ fn test_leaderboard_max_size() {
     );
 
     env.as_contract(&contract_id, || {
-        assert!(!crate::leaderboard::is_on_leaderboard(&env, crate::types::LeaderboardPeriod::AllTime, &lowest));
+        assert!(!crate::leaderboard::is_on_leaderboard(
+            &env,
+            &crate::types::LeaderboardPeriod::AllTime,
+            &lowest
+        ));
         assert!(crate::leaderboard::is_on_leaderboard(
             &env,
-            crate::types::LeaderboardPeriod::AllTime,
+            &crate::types::LeaderboardPeriod::AllTime,
             &addresses.get(0).unwrap()
         ));
     });
+}
+
+#[test]
+fn test_leaderboard_equal_amounts_stay_in_creation_order_and_cap() {
+    let (env, client, contract_id, tipper, _) = setup();
+
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    let carol = Address::generate(&env);
+    insert_profile(&env, &contract_id, &alice, "alice");
+    insert_profile(&env, &contract_id, &bob, "bob");
+    insert_profile(&env, &contract_id, &carol, "carol");
+
+    let msg = String::from_str(&env, "");
+    client.send_tip(&tipper, &alice, &10_000_000, &msg, &false, &false);
+    client.send_tip(&tipper, &bob, &10_000_000, &msg, &false, &false);
+    client.send_tip(&tipper, &carol, &10_000_000, &msg, &false, &false);
+
+    let board = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &50);
+    assert_eq!(board.len(), 3);
+    assert_eq!(board.get(0).unwrap().address, alice);
+    assert_eq!(board.get(1).unwrap().address, bob);
+    assert_eq!(board.get(2).unwrap().address, carol);
+
+    let cap = MAX_LEADERBOARD_SIZE;
+    let mut addresses: soroban_sdk::Vec<Address> = soroban_sdk::Vec::new(&env);
+    let mut idx: u32 = 0;
+    while idx < cap + 1 {
+        let addr = Address::generate(&env);
+        addresses.push_back(addr.clone());
+        insert_profile(&env, &contract_id, &addr, &format!("user{idx}"));
+        client.send_tip(&tipper, &addr, &10_000_000, &msg, &false, &false);
+        idx += 1;
+    }
+
+    let board_after = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &50);
+    assert_eq!(board_after.len(), cap as usize);
+    assert!(
+        board_after.iter().all(|entry| entry.amount == 10_000_000),
+        "all entries at the cap should remain equal"
+    );
+    assert_eq!(
+        board_after.get(0).unwrap().address,
+        alice,
+        "earlier entries keep priority when amounts tie"
+    );
 }
 
 /// A creator who overtakes another must appear at a higher rank after the

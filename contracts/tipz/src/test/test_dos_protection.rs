@@ -10,15 +10,16 @@
 
 #![cfg(test)]
 
+extern crate alloc;
+use alloc::format;
+
 use soroban_sdk::{
     testutils::{Address as _, Ledger as _},
     token, Address, Env, String, Vec,
 };
 
 use crate::errors::ContractError;
-#[allow(unused_imports)]
-use std::format;
-use crate::storage::{self, DataKey};
+use crate::storage::{self, DataKey, ExtendedDataKey};
 use crate::types;
 use crate::{TipzContract, TipzContractClient};
 

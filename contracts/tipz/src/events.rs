@@ -116,6 +116,46 @@ pub fn emit_tips_withdrawn(env: &Env, creator: &Address, amount: i128, fee: i128
     );
 }
 
+/// Topics : `("scheduled", "created")`
+/// Data   : `(id: u32, sender: Address, creator: Address, amount: i128, deliver_at: u64)`
+pub fn emit_scheduled_tip_created(
+    env: &Env,
+    id: u32,
+    sender: &Address,
+    creator: &Address,
+    amount: i128,
+    deliver_at: u64,
+) {
+    env.events().publish(
+        (symbol_short!("scheduled"), symbol_short!("created")),
+        (id, sender.clone(), creator.clone(), amount, deliver_at),
+    );
+}
+
+/// Topics : `("scheduled", "delivered")`
+/// Data   : `(id: u32, creator: Address)`
+pub fn emit_scheduled_tip_delivered(env: &Env, id: u32, creator: &Address) {
+    env.events().publish(
+        (symbol_short!("scheduled"), symbol_short!("delivered")),
+        (id, creator.clone()),
+    );
+}
+
+/// Topics : `("scheduled", "cancelled")`
+/// Data   : `(id: u32, sender: Address, amount: i128, refund_amount: i128)`
+pub fn emit_scheduled_tip_cancelled(
+    env: &Env,
+    id: u32,
+    sender: &Address,
+    amount: i128,
+    refund_amount: i128,
+) {
+    env.events().publish(
+        (symbol_short!("scheduled"), symbol_short!("cancelled")),
+        (id, sender.clone(), amount, refund_amount),
+    );
+}
+
 // ── Credit score events ───────────────────────────────────────────────────────
 
 /// Topics : `("credit", "updated")`
