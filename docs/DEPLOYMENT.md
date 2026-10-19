@@ -549,3 +549,10 @@ first, and work the redeploy path. See runbook §5c.
 - [ ] Root cause documented (consider a new `docs/adr/` entry if architectural)
 - [ ] Regression test added under `contracts/tipz/src/test`
 - [ ] Fix deployed and verified against the post-deployment checklist above
+
+
+## Progressive releases and secret custody (issues #1363–#1365)
+
+The repository includes `.github/workflows/canary-release.yml` and `scripts/check-canary-metrics.mjs` for fail-closed metric-based release promotion, plus `.github/workflows/secrets-scan.yml` for Git-history credential scanning. Refer to [CANARY_RUNBOOK.md](CANARY_RUNBOOK.md) and [SECRETS_MANAGEMENT.md](SECRETS_MANAGEMENT.md) for configuration, rollback drills, secret rotation, and incident response.
+
+**Important:** Canary traffic splitting requires Vercel Rolling Releases to be enabled and correctly staged by the production owner; the workflow does not create a Vercel plan or a monitoring backend. Do not promote a release without validated production telemetry or assume provider rollback is guaranteed. Existing `deploy.yml` retains its legacy rollback job until a dedicated rollback drill is successfully rehearsed.

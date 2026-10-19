@@ -1,0 +1,30 @@
+name: Deployment Guard Tests
+
+on:
+  push:
+    branches: [feat/1363-1366-deployment-hardening]
+  pull_request:
+    paths:
+      - 'scripts/check-canary-metrics*'
+      - 'scripts/verify-contract-deployment.sh'
+      - '.github/workflows/canary-release.yml'
+      - '.github/workflows/deployment-guard-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Static shell and JavaScript syntax validation
+        run: |
+          bash -n scripts/verify-contract-deployment.sh
+          node --check scripts/check-canary-metrics.mjs
+          node --check scripts/check-canary-metrics.test.mjs
+      - name: Canary regression tests
+        run: node --test scripts/check-canary-metrics.test.mjs

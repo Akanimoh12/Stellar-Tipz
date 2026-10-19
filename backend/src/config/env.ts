@@ -115,6 +115,7 @@ export const envSchema = z.object({
   HORIZON_FALLBACK_URLS: z.string().default(''),
   NETWORK_PASSPHRASE: z.string(),
   CONTRACT_ID: z.string().optional(),
+  EXPECTED_CONTRACT_VERSION: z.coerce.number().int().positive().default(4),
 
   INDEXER_POLL_INTERVAL_MS: z.coerce.number().default(5000),
   INDEXER_START_LEDGER: z.coerce.number().optional(),
