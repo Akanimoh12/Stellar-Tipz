@@ -45,6 +45,56 @@ pub const STORAGE_COST_CEILING: i128 = 100_000_000;
 /// Maximum social links per profile.
 pub const MAX_SOCIAL_LINKS: u32 = 5;
 
+/// Usernames that are reserved and may not be registered by any user.
+///
+/// These names are blocked to prevent impersonation of platform roles,
+/// confusion with official accounts, or abuse of well-known identifiers.
+/// All entries are lowercase; the check in [`crate::validation::is_reserved_username`]
+/// compares against the lowercased candidate.
+pub const RESERVED_USERNAMES: &[&str] = &[
+    "admin",
+    "administrator",
+    "support",
+    "tipz",
+    "tipzapp",
+    "api",
+    "www",
+    "mail",
+    "help",
+    "info",
+    "contact",
+    "about",
+    "terms",
+    "privacy",
+    "legal",
+    "root",
+    "sys",
+    "system",
+    "moderator",
+    "mod",
+    "official",
+    "staff",
+    "team",
+    "security",
+    "abuse",
+    "billing",
+    "login",
+    "register",
+    "signup",
+    "logout",
+    "me",
+    "home",
+    "dashboard",
+    "explore",
+    "search",
+    "notifications",
+    "settings",
+    "profile",
+    "null",
+    "undefined",
+    "anonymous",
+];
+
 /// Maximum subscriptions per subscriber.
 pub const MAX_SUBSCRIPTIONS_PER_SUBSCRIBER: u32 = 20;
 

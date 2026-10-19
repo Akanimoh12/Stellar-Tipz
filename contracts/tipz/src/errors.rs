@@ -58,6 +58,8 @@ pub enum ContractError {
     ProfileInactive = 51,
     /// Storage limit exceeded for variable-size entry
     StorageLimitExceeded = 52,
+    /// Username is reserved and cannot be registered
+    ReservedUsername = 53,
 }
 
 impl ContractError {

@@ -62,6 +62,7 @@ pub fn register_profile(
     // --- Input validation (centralized in validation module) ---
 
     validation::validate_username(&username)?;
+    validation::is_reserved_username(&username)?;
     validation::validate_display_name(&display_name)?;
     validation::validate_bio(&bio)?;
     validation::validate_image_url(&image_url)?;

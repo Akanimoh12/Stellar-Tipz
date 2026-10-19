@@ -35,3 +35,4 @@ mod test_credit_staleness;
 mod test_credit_recompute;
 mod test_oracle;
 mod test_budget_regression;
+mod test_reserved_usernames;
