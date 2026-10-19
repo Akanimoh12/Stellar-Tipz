@@ -723,12 +723,11 @@ pub fn cleanup_inactive_profiles(
     let cap = if max_cleanup > 20 { 20 } else { max_cleanup };
     let mut cleaned: u32 = 0;
 
-    for i in 0..targets.len() {
+    for target in targets.iter() {
         if cleaned >= cap {
             break;
         }
-        let target = targets.get(i).unwrap();
-        if cleanup_inactive_profile(env, admin.clone(), target).is_ok() {
+        if cleanup_inactive_profile(env, admin.clone(), &target).is_ok() {
             cleaned += 1;
         }
     }
