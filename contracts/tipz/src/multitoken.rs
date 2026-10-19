@@ -171,9 +171,18 @@ pub fn send_tip_token(
         storage::set_reentrancy_guard(env, false);
         return Err(ContractError::InsufficientBalance);
     }
+    // Measure what the contract actually received. Tokens that charge a transfer fee,
+    // rebase, or otherwise credit a different amount would leave the creator's
+    // ledger balance out of step with the contract's real holdings (#1593).
+    let balance_before = token_client.balance(&contract_address);
     token_client.transfer(tipper, &contract_address, &amount);
+    let balance_after = token_client.balance(&contract_address);
     // Clear reentrancy guard after the transfer completes
     storage::set_reentrancy_guard(env, false);
+
+    if balance_after.checked_sub(balance_before) != Some(amount) {
+        return Err(ContractError::NonStandardToken);
+    }
 
     // Update creator's token balance
     storage::add_token_balance(env, creator, token, amount)?;

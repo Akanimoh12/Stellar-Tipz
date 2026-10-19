@@ -23,56 +23,74 @@ export const ERRORS = {
 };
 
 /**
- * Mapping of contract error codes to human-readable messages.
+ * Single table mapping every contract error code to a human-readable message.
  * Each message explains what happened and what to do next.
- * Source: contracts/tipz/src/errors.rs
+ *
+ * Source: contracts/tipz/src/errors.rs. The name on each line matches the Rust
+ * variant with that discriminant. `helpers/__tests__/error.test.ts` parses errors.rs
+ * and fails if a variant is added, removed or renumbered without updating this table.
  */
 export const CONTRACT_ERROR_CODES: Record<number, string> = {
-  1: "The contract has not been initialized yet. Please contact support.",
-  2: "The contract is already initialized. No further initialization is needed.",
-  3: "You are not authorized to perform this action. Please check your permissions.",
-  4: "An admin change is already pending. Please wait for the current change to complete.",
-  5: "The admin change timelock has not been met yet. Please wait for the required time period.",
-  6: "There is no pending admin change to complete. Start an admin change first.",
-  7: "The contract is currently paused. Please try again later.",
-  8: "This profile is not registered. Please register your profile first.",
-  9: "This profile is already registered. You cannot register again.",
-  10: "This username is already taken. Please choose a different username.",
-  11: "The username format is invalid. Please use a valid username format.",
-  12: "The display name format is invalid. Please use a valid display name format.",
-  13: "The amount provided is invalid. Please check and try again.",
-  14: "Insufficient balance. Please add funds to your wallet and try again.",
-  15: "Your balance must be zero to perform this action. Please withdraw your remaining balance first.",
-  16: "A mathematical overflow occurred. Please try with a smaller amount.",
-  17: "The requested resource was not found. Please check your input and try again.",
-  18: "This profile is already deactivated. No further deactivation is needed.",
-  19: "This profile has been deactivated. Please activate it to perform this action.",
-  20: "This profile is active. Deactivate it first, then try again.",
-  21: "Your message is too long. Please shorten it and try again.",
-  22: "The image URL provided is invalid. Please use a valid image URL.",
-  23: "The batch size is too large. Please reduce the number of items and try again.",
-  24: "The fee provided is invalid. Please check the fee amount and try again.",
-  25: "You cannot tip yourself. Please send tips to other users.",
-  26: "Your profile is not verified. Please complete verification to perform this action.",
-  27: "Your profile is already verified. No further verification is needed.",
-  28: "You are not authorized to perform this action. Please check your permissions.",
-  29: "You have exceeded the rate limit. Please wait a moment and try again.",
-  30: "The X (Twitter) handle format is invalid. Please provide a valid handle.",
-  31: "The tip amount is below the minimum required. Please increase the amount.",
-  32: "This profile is not active. Please activate your profile to perform this action.",
-  33: "Your tip message contains invalid characters. Please remove any special characters and try again.",
-  34: "The tip amount is below this creator's minimum requirement. Please increase the amount.",
-  35: "The domain format is invalid. Please provide a valid domain.",
-  36: "The input provided is invalid. Please check your input and try again.",
-  37: "This token is not accepted. Please use an accepted token.",
-  // Note: Error codes 38-39 are duplicated in the contract for different error types
-  // Using refund-specific messages as they are more critical for user experience
-  38: "The refund request window has expired. You can no longer request a refund for this tip.",
-  39: "A refund has already been requested for this tip. Please wait for it to be processed.",
-  40: "A refund has already been processed for this tip. Check the transaction history for its status.",
-  41: "No refund request exists for this tip. Please check and try again.",
-  42: "Only the tipper can request a refund. Connect the wallet that sent the tip, then try again.",
-  43: "Only the creator can approve or reject a refund. Connect the creator wallet, then try again.",
+  1: "The contract has not been initialized yet. Please contact support.", // NotInitialized
+  2: "The contract is already initialized. No further initialization is needed.", // AlreadyInitialized
+  3: "You are not authorized to perform this action. Please check your permissions.", // NotAuthorized
+  4: "An admin change is already pending. Please wait for the current change to complete.", // AdminChangePending
+  5: "The admin change timelock has not been met yet. Please wait for the required time period.", // AdminTimelockNotMet
+  6: "There is no pending admin change to complete. Start an admin change first.", // NoPendingAdmin
+  7: "The contract is currently paused. Please try again later.", // ContractPaused
+  8: "This profile is not registered. Please register your profile first.", // NotRegistered
+  9: "This profile is already registered. You cannot register again.", // AlreadyRegistered
+  10: "This username is already taken. Please choose a different username.", // UsernameTaken
+  11: "The username format is invalid. Please use a valid username format.", // InvalidUsername
+  12: "The display name format is invalid. Please use a valid display name format.", // InvalidDisplayName
+  13: "The amount provided is invalid. Please check and try again.", // InvalidAmount
+  14: "Insufficient balance. Please add funds to your wallet and try again.", // InsufficientBalance
+  15: "Your balance must be zero to perform this action. Please withdraw your remaining balance first.", // BalanceNotZero
+  16: "A mathematical overflow occurred. Please try with a smaller amount.", // OverflowError
+  17: "The requested resource was not found. Please check your input and try again.", // NotFound
+  18: "This profile is deactivated. Please activate it to perform this action.", // ProfileDeactivated
+  19: "This profile is not deactivated. No deactivation change is needed.", // ProfileNotDeactivated
+  20: "Your message is too long. Please shorten it and try again.", // MessageTooLong
+  21: "The image URL provided is invalid. Please use a valid image URL.", // InvalidImageUrl
+  22: "The batch size is too large. Please reduce the number of items and try again.", // BatchTooLarge
+  23: "The fee provided is invalid. Please check the fee amount and try again.", // InvalidFee
+  24: "You cannot tip yourself. Please send tips to other users.", // CannotTipSelf
+  25: "Your profile is not verified. Please complete verification to perform this action.", // NotVerified
+  26: "Your profile is already verified. No further verification is needed.", // AlreadyVerified
+  27: "You have exceeded the rate limit. Please wait a moment and try again.", // RateLimitExceeded
+  28: "The tip amount is below the minimum required. Please increase the amount.", // TipBelowMinimum
+  29: "The tip amount is below this creator's minimum requirement. Please increase the amount.", // BelowCreatorMinimum
+  30: "The domain format is invalid. Please provide a valid domain.", // InvalidDomain
+  31: "The input provided is invalid. Please check your input and try again.", // InvalidInput
+  32: "This token is not accepted. Please use an accepted token.", // TokenNotAccepted
+  33: "The maximum number of profiles has been reached. Please try again later.", // MaxProfilesReached
+  34: "The refund request window has expired. You can no longer request a refund for this tip.", // RefundWindowExpired
+  35: "A refund has already been requested for this tip. Please wait for it to be processed.", // RefundAlreadyRequested
+  36: "A refund has already been processed for this tip. Check the transaction history for its status.", // RefundAlreadyProcessed
+  37: "Only the tipper can request a refund. Connect the wallet that sent the tip, then try again.", // NotTipper
+  38: "Only the creator can approve or reject a refund. Connect the creator wallet, then try again.", // NotCreator
+  39: "This creator has blocked your account, so you cannot send them tips.", // TipperBlocked
+  40: "The blocklist for this creator is full. Please try again later.", // BlocklistLimitReached
+  41: "The contract is not paused, so this action is not needed.", // ContractNotPaused
+  42: "An emergency withdrawal is not allowed right now. Please contact support if this is urgent.", // EmergencyNotAllowed
+  43: "This proposal has expired. Please start a new proposal.", // ProposalExpired
+  44: "This migration has already been completed. No further action is needed.", // MigrationCompleted
+  45: "The contract cannot be downgraded to an older version. Please contact support.", // MigrationDowngradeRejected
+  46: "The migration target version does not match the migration in progress. Please contact support.", // InvalidMigrationVersion
+  47: "No refund request exists for this tip. Please check and try again.", // NoRefundRequest
+  48: "Your tip message contains invalid characters. Please remove any special characters and try again.", // InvalidMessage
+  49: "The subscription limit has been reached. Please cancel an existing subscription first.", // SubscriptionLimitReached
+  50: "The refund request window for this tip has expired. You can no longer request a refund.", // RefundRequestExpired
+  51: "This profile has been inactive for too long. Please reactivate it to perform this action.", // ProfileInactive
+  52: "The admin change proposal has expired. Please start a new admin change.", // AdminProposalExpired
+  53: "An emergency withdrawal is not allowed in the current state. Please contact support.", // EmergencyWithdrawalNotAllowed
+  54: "You are not authorized to perform this action. Please check your permissions.", // Unauthorized
+  55: "The withdrawal amount is below the minimum required. Please increase the amount.", // WdrBelowMin
+  56: "This action must be approved through the multisig process. Please submit it as a proposal.", // MultisigRequired
+  57: "The contract configuration is inconsistent. Please contact support.", // ConfigMismatch
+  58: "This multisig proposal was created under a different configuration and can no longer be approved. Please create a new proposal.", // ProposalEpochMismatch
+  59: "A storage limit has been reached. Please try again later or contact support.", // StorageLimitExceeded
+  60: "This token charges a transfer fee or does not transfer the exact amount, so it cannot be used for tips. Please use a standard token.", // NonStandardToken
 };
 
 /**

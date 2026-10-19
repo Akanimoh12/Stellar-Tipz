@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { 
@@ -161,12 +164,40 @@ describe('extractApiErrorCode', () => {
 });
 
 describe('CONTRACT_ERROR_CODES mapping', () => {
-  it('has mappings for all contract error codes', () => {
-    for (let code = 1; code <= 43; code += 1) {
-      expect(CONTRACT_ERROR_CODES[code], `contract error #${code}`).toBeTruthy();
+  // Parse the Rust enum so this table cannot drift from contracts/tipz/src/errors.rs (#1595).
+  const errorsRs = readFileSync(
+    fileURLToPath(new URL('../../../../contracts/tipz/src/errors.rs', import.meta.url)),
+    'utf8',
+  );
+  const variants = new Map<number, string>();
+  for (const match of errorsRs.matchAll(/^\s+([A-Za-z]+)\s*=\s*(\d+),/gm)) {
+    variants.set(Number(match[2]), match[1]);
+  }
+
+  it('maps every errors.rs variant to a message, and nothing else', () => {
+    expect(variants.size).toBeGreaterThan(0);
+    expect(Object.keys(CONTRACT_ERROR_CODES).map(Number).sort((a, b) => a - b))
+      .toEqual([...variants.keys()].sort((a, b) => a - b));
+    for (const [code, name] of variants) {
+      expect(CONTRACT_ERROR_CODES[code], `contract error #${code} (${name})`).toBeTruthy();
     }
+  });
+
+  it('labels each message with the variant name it belongs to', () => {
+    const tableSource = readFileSync(
+      fileURLToPath(new URL('../error.ts', import.meta.url)),
+      'utf8',
+    );
+    for (const [code, name] of variants) {
+      expect(tableSource, `contract error #${code} (${name})`).toMatch(
+        new RegExp(`^\\s+${code}: .*// ${name}$`, 'm'),
+      );
+    }
+  });
+
+  it('has the expected messages for common errors', () => {
     expect(CONTRACT_ERROR_CODES[14]).toContain('Insufficient balance');
-    expect(CONTRACT_ERROR_CODES[25]).toContain('cannot tip yourself');
+    expect(CONTRACT_ERROR_CODES[24]).toContain('cannot tip yourself');
   });
 
   it('provides actionable messages with what happened and what to do', () => {

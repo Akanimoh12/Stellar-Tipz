@@ -8,7 +8,7 @@ use soroban_sdk::{Env, String};
 
 use crate::errors::ContractError;
 use crate::storage::{self, MAX_CIRCUIT_BREAKER_BUCKETS};
-use crate::types::{CircuitBreakerConfig, CircuitBreakerStatus};
+use crate::types::{CircuitBreakerConfig, CircuitBreakerStatus, PauseFlag};
 
 pub fn configure(
     env: &Env,
@@ -59,8 +59,8 @@ pub fn reset(env: &Env, caller: &soroban_sdk::Address) -> Result<(), ContractErr
     let status = storage::get_circuit_breaker_status(env);
     storage::reset_circuit_breaker_status(env, config.bucket_count);
     if status.tripped {
-        storage::set_paused(env, false);
-        crate::events::emit_contract_unpaused(env, caller);
+        storage::set_pause_flag(env, PauseFlag::All, false);
+        crate::events::emit_contract_unpaused(env, caller, PauseFlag::All);
     }
     crate::admin::log_admin_action(
         env,
@@ -114,7 +114,7 @@ pub fn record_withdrawal_or_trip(env: &Env, amount: i128) -> Result<(), Contract
         status.tripped = true;
         status.tripped_at = Some(now);
         storage::set_circuit_breaker_status(env, &status);
-        storage::set_paused(env, true);
+        storage::set_pause_flag(env, PauseFlag::All, true);
         crate::events::emit_circuit_breaker_tripped(env, amount, rolling_total, config.threshold);
         return Err(ContractError::ContractPaused);
     }

@@ -126,6 +126,52 @@ fn admin_can_reset_tripped_breaker() {
     ctx.client.withdraw_tips(&ctx.creator, &10_000_000_i128);
 }
 
+fn advance_time(env: &Env, secs: u64) {
+    env.ledger().with_mut(|li| {
+        li.timestamp += secs;
+    });
+}
+
+#[test]
+fn rolling_window_recovers_capacity_without_admin_action() {
+    // #1594: once volume ages out of the rolling window, withdrawals of the same
+    // size succeed again with no reset and the breaker never trips a second time.
+    let ctx = setup();
+    ctx.client
+        .set_circuit_breaker_config(&ctx.admin, &true, &60_000_000_i128, &3600_u64, &12_u32);
+
+    ctx.client.withdraw_tips(&ctx.creator, &50_000_000_i128);
+    advance_time(&ctx.env, 7200);
+
+    ctx.client.withdraw_tips(&ctx.creator, &50_000_000_i128);
+
+    assert!(!ctx.client.is_paused());
+    assert!(!ctx.client.get_circuit_breaker_status().tripped);
+}
+
+#[test]
+fn tripped_breaker_stays_paused_until_admin_reset() {
+    // #1594: the breaker has no cooldown. A trip is not cleared by the passage of
+    // time, so tips stay blocked until an admin resets it, and then they resume.
+    let ctx = setup();
+    ctx.client
+        .set_circuit_breaker_config(&ctx.admin, &true, &60_000_000_i128, &3600_u64, &12_u32);
+
+    ctx.client.withdraw_tips(&ctx.creator, &50_000_000_i128);
+    let tripped = ctx.client.try_withdraw_tips(&ctx.creator, &20_000_000_i128);
+    assert_eq!(tripped, Err(Ok(ContractError::ContractPaused)));
+
+    advance_time(&ctx.env, 7200);
+    assert!(ctx.client.is_paused());
+    let still_blocked = ctx.client.try_withdraw_tips(&ctx.creator, &1_000_000_i128);
+    assert_eq!(still_blocked, Err(Ok(ContractError::ContractPaused)));
+
+    ctx.client.reset_circuit_breaker(&ctx.admin);
+
+    assert!(!ctx.client.is_paused());
+    ctx.client.withdraw_tips(&ctx.creator, &1_000_000_i128);
+}
+
 #[test]
 fn disabled_breaker_does_not_pause_withdrawals() {
     let ctx = setup();
