@@ -6,7 +6,7 @@
 use soroban_sdk::{contracttype, Address, Env, Vec};
 
 use crate::errors::ContractError;
-use crate::storage::{self, DataKey};
+use crate::storage::{self, DataKey, ExtendedDataKey};
 
 /// Default proposal expiry time in seconds (7 days)
 pub const DEFAULT_PROPOSAL_EXPIRY: u64 = 7 * 24 * 3600;
@@ -76,14 +76,14 @@ pub fn set_multisig_config(
 
     env.storage()
         .instance()
-        .set(&DataKey::MultisigConfig, &config);
+        .set(&ExtendedDataKey::MultisigConfig, &config);
 
     Ok(())
 }
 
 /// Get the current multi-signature configuration
 pub fn get_multisig_config(env: &Env) -> Option<MultisigConfig> {
-    env.storage().instance().get(&DataKey::MultisigConfig)
+    env.storage().instance().get(&ExtendedDataKey::MultisigConfig)
 }
 
 /// Check if multi-sig is enabled
@@ -108,7 +108,7 @@ pub fn propose_action(env: &Env, signer: &Address, action: Action) -> Result<u32
     let proposal_id: u32 = env
         .storage()
         .instance()
-        .get(&DataKey::NextProposalId)
+        .get(&ExtendedDataKey::NextProposalId)
         .unwrap_or(0);
 
     let now = env.ledger().timestamp();
@@ -127,12 +127,12 @@ pub fn propose_action(env: &Env, signer: &Address, action: Action) -> Result<u32
     // Store proposal
     env.storage()
         .instance()
-        .set(&DataKey::Proposal(proposal_id), &proposal);
+        .set(&ExtendedDataKey::Proposal(proposal_id), &proposal);
 
     // Increment proposal ID counter
     env.storage()
         .instance()
-        .set(&DataKey::NextProposalId, &(proposal_id + 1));
+        .set(&ExtendedDataKey::NextProposalId, &(proposal_id + 1));
 
     // Emit event
     crate::events::emit_proposal_created(env, proposal_id, signer, &action);
@@ -161,7 +161,7 @@ pub fn approve_action(env: &Env, signer: &Address, proposal_id: u32) -> Result<(
     let mut proposal: Proposal = env
         .storage()
         .instance()
-        .get(&DataKey::Proposal(proposal_id))
+        .get(&ExtendedDataKey::Proposal(proposal_id))
         .ok_or(ContractError::NotFound)?;
 
     // Check if already executed
@@ -186,7 +186,7 @@ pub fn approve_action(env: &Env, signer: &Address, proposal_id: u32) -> Result<(
     // Update proposal
     env.storage()
         .instance()
-        .set(&DataKey::Proposal(proposal_id), &proposal);
+        .set(&ExtendedDataKey::Proposal(proposal_id), &proposal);
 
     // Emit event
     crate::events::emit_proposal_approved(env, proposal_id, signer);
@@ -208,7 +208,7 @@ fn execute_proposal_internal(
     let mut proposal: Proposal = env
         .storage()
         .instance()
-        .get(&DataKey::Proposal(proposal_id))
+        .get(&ExtendedDataKey::Proposal(proposal_id))
         .ok_or(ContractError::NotFound)?;
 
     // Verify we have enough approvals
@@ -220,7 +220,7 @@ fn execute_proposal_internal(
     proposal.executed = true;
     env.storage()
         .instance()
-        .set(&DataKey::Proposal(proposal_id), &proposal);
+        .set(&ExtendedDataKey::Proposal(proposal_id), &proposal);
 
     // Execute the action
     match proposal.action {
@@ -263,7 +263,7 @@ pub fn get_pending_proposals(env: &Env) -> Vec<Proposal> {
     let next_id: u32 = env
         .storage()
         .instance()
-        .get(&DataKey::NextProposalId)
+        .get(&ExtendedDataKey::NextProposalId)
         .unwrap_or(0);
 
     let mut pending = Vec::new(env);
@@ -273,7 +273,7 @@ pub fn get_pending_proposals(env: &Env) -> Vec<Proposal> {
         if let Some(proposal) = env
             .storage()
             .instance()
-            .get::<DataKey, Proposal>(&DataKey::Proposal(id))
+            .get::<ExtendedDataKey, Proposal>(&ExtendedDataKey::Proposal(id))
         {
             if !proposal.executed && now <= proposal.expires_at {
                 pending.push_back(proposal);
@@ -284,9 +284,40 @@ pub fn get_pending_proposals(env: &Env) -> Vec<Proposal> {
     pending
 }
 
+/// Remove all proposals that have already expired to keep storage bounded.
+///
+/// Expired proposals are deleted from instance storage and not returned again by
+/// [`get_pending_proposals`]. Calls are intentionally idempotent: the function
+/// returns the count of purged records and leaves active proposals untouched.
+pub fn purge_expired_proposals(env: &Env) -> u32 {
+    let next_id: u32 = env
+        .storage()
+        .instance()
+        .get(&ExtendedDataKey::NextProposalId)
+        .unwrap_or(0);
+
+    let now = env.ledger().timestamp();
+    let mut purged = 0_u32;
+
+    for id in 0..next_id {
+        if let Some(proposal) = env
+            .storage()
+            .instance()
+            .get::<ExtendedDataKey, Proposal>(&ExtendedDataKey::Proposal(id))
+        {
+            if !proposal.executed && now > proposal.expires_at {
+                env.storage().instance().remove(&ExtendedDataKey::Proposal(id));
+                purged += 1;
+            }
+        }
+    }
+
+    purged
+}
+
 /// Get a specific proposal by ID
 pub fn get_proposal(env: &Env, proposal_id: u32) -> Option<Proposal> {
     env.storage()
         .instance()
-        .get(&DataKey::Proposal(proposal_id))
+        .get(&ExtendedDataKey::Proposal(proposal_id))
 }

@@ -17,7 +17,7 @@
 use soroban_sdk::{testutils::Address as _, token, Address, Env, Map, String, Symbol};
 
 use crate::errors::ContractError;
-use crate::storage::DataKey;
+use crate::storage::{DataKey, ExtendedDataKey};
 use crate::token as xlm;
 use crate::types::{Profile, Tip, VerificationStatus, VerificationType};
 use crate::TipzContract;

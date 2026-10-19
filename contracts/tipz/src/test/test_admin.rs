@@ -8,7 +8,7 @@ use soroban_sdk::{
 };
 
 use crate::errors::ContractError;
-use crate::storage::{self, DataKey};
+use crate::storage::{self, DataKey, ExtendedDataKey};
 use crate::types::{BatchSkip, Profile, VerificationStatus, VerificationType};
 use crate::TipzContract;
 use crate::TipzContractClient;

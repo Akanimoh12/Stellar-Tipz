@@ -41,7 +41,7 @@ pub const PROFILE_TTL_MAX_LEDGERS: u32 = 535_680;
 // DataKey
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Storage key enum for all contract data.
+/// Storage key enum for the hot path and frequently-used values.
 #[contracttype]
 pub enum DataKey {
     /// Contract admin address
@@ -86,6 +86,34 @@ pub enum DataKey {
     CreatorTipCount(Address),
     /// Reverse index: (creator, local_index) → global tip ID
     CreatorTip(Address, u32),
+    /// Withdrawal cooldown in seconds
+    WithdrawalCooldown,
+    /// Large withdrawal threshold in stroops
+    WithdrawalThreshold,
+    /// Percentage of fees going to operations
+    OpsFeePct,
+    /// Percentage of fees going to staking pool
+    PoolFeePct,
+    /// Current pool balance
+    PoolBalance,
+}
+
+/// Extended storage keys for additional state to keep the main key enum under the
+/// Soroban contracttype size limit.
+#[contracttype]
+pub enum ExtendedDataKey {
+    /// Global scheduled-tip counter.
+    ScheduledTipCount,
+    /// Optional scheduled tip by ID.
+    ScheduledTip(u32),
+    /// Scheduled tip IDs for a sender.
+    SenderScheduledTip(Address, u32),
+    /// Scheduled tip IDs for a creator.
+    CreatorScheduledTip(Address, u32),
+    /// Total scheduled tips for a sender.
+    SenderScheduledTipCount(Address),
+    /// Total scheduled tips for a creator.
+    CreatorScheduledTipCount(Address),
     /// Pending two-step admin change proposal (full transition record).
     PendingAdminChange,
     /// Admin change history list (newest entries appended last).
@@ -106,16 +134,6 @@ pub enum DataKey {
     PendingWithdrawal(Address, u32),
     /// Next withdrawal ID for a creator
     NextWithdrawalId(Address),
-    /// Withdrawal cooldown in seconds
-    WithdrawalCooldown,
-    /// Large withdrawal threshold in stroops
-    WithdrawalThreshold,
-    /// Percentage of fees going to operations
-    OpsFeePct,
-    /// Percentage of fees going to staking pool
-    PoolFeePct,
-    /// Current pool balance
-    PoolBalance,
     /// Multi-signature configuration
     MultisigConfig,
     /// Multi-sig proposal by ID
@@ -144,11 +162,6 @@ pub enum DataKey {
     RateLimitConfig,
     /// Tips received by a creator during a specific period (Address, Period, StartTimestamp)
     CreatorPeriodVolume(Address, crate::types::LeaderboardPeriod, u64),
-}
-
-/// Extended storage keys for new features (separate enum to avoid size limits)
-#[contracttype]
-pub enum ExtendedDataKey {
     /// Active goal for a creator
     ActiveGoal(Address),
     /// Archived goals for a creator
@@ -388,19 +401,19 @@ pub fn set_admin(env: &Env, admin: &Address) {
 
 /// Pending admin change proposal, if any.
 pub fn get_pending_admin_change(env: &Env) -> Option<crate::types::AdminChangeProposal> {
-    env.storage().instance().get(&DataKey::PendingAdminChange)
+    env.storage().instance().get(&ExtendedDataKey::PendingAdminChange)
 }
 
 pub fn set_pending_admin_change(env: &Env, proposal: &crate::types::AdminChangeProposal) {
     env.storage()
         .instance()
-        .set(&DataKey::PendingAdminChange, proposal);
+        .set(&ExtendedDataKey::PendingAdminChange, proposal);
 }
 
 pub fn remove_pending_admin_change(env: &Env) {
     env.storage()
         .instance()
-        .remove(&DataKey::PendingAdminChange);
+        .remove(&ExtendedDataKey::PendingAdminChange);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -411,24 +424,24 @@ pub fn remove_pending_admin_change(env: &Env) {
 pub fn is_profile_deactivated(env: &Env, address: &Address) -> bool {
     env.storage()
         .persistent()
-        .has(&DataKey::ProfileDeactivatedAt(address.clone()))
+        .has(&ExtendedDataKey::ProfileDeactivatedAt(address.clone()))
 }
 
 /// Ledger timestamp when the profile was deactivated, if deactivated.
 pub fn get_profile_deactivated_at(env: &Env, address: &Address) -> Option<u64> {
     env.storage()
         .persistent()
-        .get(&DataKey::ProfileDeactivatedAt(address.clone()))
+        .get(&ExtendedDataKey::ProfileDeactivatedAt(address.clone()))
 }
 
 pub fn set_profile_deactivated_at(env: &Env, address: &Address, at: u64) {
     env.storage()
         .persistent()
-        .set(&DataKey::ProfileDeactivatedAt(address.clone()), &at);
+        .set(&ExtendedDataKey::ProfileDeactivatedAt(address.clone()), &at);
 }
 
 pub fn clear_profile_deactivation(env: &Env, address: &Address) {
-    let key = DataKey::ProfileDeactivatedAt(address.clone());
+    let key = ExtendedDataKey::ProfileDeactivatedAt(address.clone());
     if env.storage().persistent().has(&key) {
         env.storage().persistent().remove(&key);
     }
@@ -441,7 +454,7 @@ pub fn clear_profile_deactivation(env: &Env, address: &Address) {
 fn load_admin_change_history(env: &Env) -> soroban_sdk::Vec<crate::types::AdminChangeHistoryEntry> {
     env.storage()
         .instance()
-        .get(&DataKey::AdminChangeHistory)
+        .get(&ExtendedDataKey::AdminChangeHistory)
         .unwrap_or(soroban_sdk::Vec::new(env))
 }
 
@@ -455,7 +468,7 @@ pub fn append_admin_change_history(env: &Env, entry: &crate::types::AdminChangeH
     history.push_back(entry.clone());
     env.storage()
         .instance()
-        .set(&DataKey::AdminChangeHistory, &history);
+        .set(&ExtendedDataKey::AdminChangeHistory, &history);
 }
 
 pub fn get_admin_change_history_entry(
@@ -685,6 +698,108 @@ pub fn get_tip_count(env: &Env) -> u32 {
         .unwrap_or(0)
 }
 
+/// Returns the current scheduled-tip count (next scheduled tip ID).
+pub fn get_scheduled_tip_count(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::ScheduledTipCount)
+        .unwrap_or(0)
+}
+
+/// Atomically reads the current scheduled-tip count, increments it in storage,
+/// and returns the **pre-increment** value for the next scheduled tip.
+pub fn increment_scheduled_tip_count(env: &Env) -> u32 {
+    let count = get_scheduled_tip_count(env);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::ScheduledTipCount, &(count + 1));
+    count
+}
+
+/// Returns the stored scheduled tip for a given ID, if any.
+pub fn get_scheduled_tip(env: &Env, scheduled_tip_id: u32) -> Option<crate::types::ScheduledTip> {
+    env.storage()
+        .instance()
+        .get(&ExtendedDataKey::ScheduledTip(scheduled_tip_id))
+}
+
+/// Stores a scheduled tip by ID.
+pub fn set_scheduled_tip(env: &Env, scheduled_tip_id: u32, scheduled_tip: &crate::types::ScheduledTip) {
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::ScheduledTip(scheduled_tip_id), scheduled_tip);
+}
+
+/// Appends a scheduled tip ID to the sender's list and bumps the count.
+pub fn add_sender_scheduled_tip(env: &Env, sender: &Address, scheduled_tip_id: u32) {
+    let current = env
+        .storage()
+        .instance()
+        .get(&ExtendedDataKey::SenderScheduledTipCount(sender.clone()))
+        .unwrap_or(0);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::SenderScheduledTip(sender.clone(), current), &scheduled_tip_id);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::SenderScheduledTipCount(sender.clone()), &(current + 1));
+}
+
+/// Appends a scheduled tip ID to the creator's list and bumps the count.
+pub fn add_creator_scheduled_tip(env: &Env, creator: &Address, scheduled_tip_id: u32) {
+    let current = env
+        .storage()
+        .instance()
+        .get(&ExtendedDataKey::CreatorScheduledTipCount(creator.clone()))
+        .unwrap_or(0);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::CreatorScheduledTip(creator.clone(), current), &scheduled_tip_id);
+    env.storage()
+        .instance()
+        .set(&ExtendedDataKey::CreatorScheduledTipCount(creator.clone()), &(current + 1));
+}
+
+/// Returns all scheduled tip IDs for a sender.
+pub fn get_sender_scheduled_tip_ids(env: &Env, sender: &Address) -> soroban_sdk::Vec<u32> {
+    let count = env
+        .storage()
+        .instance()
+        .get(&ExtendedDataKey::SenderScheduledTipCount(sender.clone()))
+        .unwrap_or(0);
+    let mut ids = soroban_sdk::Vec::new(env);
+    for i in 0..count {
+        if let Some(id) = env
+            .storage()
+            .instance()
+            .get(&ExtendedDataKey::SenderScheduledTip(sender.clone(), i))
+        {
+            ids.push_back(id);
+        }
+    }
+    ids
+}
+
+/// Returns all scheduled tip IDs for a creator.
+pub fn get_creator_scheduled_tip_ids(env: &Env, creator: &Address) -> soroban_sdk::Vec<u32> {
+    let count = env
+        .storage()
+        .instance()
+        .get(&ExtendedDataKey::CreatorScheduledTipCount(creator.clone()))
+        .unwrap_or(0);
+    let mut ids = soroban_sdk::Vec::new(env);
+    for i in 0..count {
+        if let Some(id) = env
+            .storage()
+            .instance()
+            .get(&ExtendedDataKey::CreatorScheduledTip(creator.clone(), i))
+        {
+            ids.push_back(id);
+        }
+    }
+    ids
+}
+
 /// Atomically reads the current tip count, increments it in storage, and
 /// returns the **pre-increment** value (the index to assign to the new tip).
 pub fn increment_tip_count(env: &Env) -> u32 {
@@ -728,16 +843,16 @@ pub fn apply_send_tip_state(env: &Env, state: &SendTipState) {
         .set(&DataKey::TotalTipsVolume, &state.total_tips_volume);
     env.storage()
         .instance()
-        .set(&DataKey::StatsWindowStart, &state.stats_window_start);
+        .set(&ExtendedDataKey::StatsWindowStart, &state.stats_window_start);
     env.storage()
         .instance()
-        .set(&DataKey::TipsLast24h, &state.tips_last_24h);
+        .set(&ExtendedDataKey::TipsLast24h, &state.tips_last_24h);
     env.storage()
         .instance()
-        .set(&DataKey::VolumeLast24h, &state.volume_last_24h);
+        .set(&ExtendedDataKey::VolumeLast24h, &state.volume_last_24h);
     env.storage()
         .instance()
-        .set(&DataKey::ActiveCreators30d, &state.active_creators_30d);
+        .set(&ExtendedDataKey::ActiveCreators30d, &state.active_creators_30d);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -828,13 +943,13 @@ pub fn get_streak(
 ) -> Option<crate::types::Streak> {
     env.storage()
         .persistent()
-        .get(&DataKey::Streak(supporter.clone(), creator.clone()))
+        .get(&ExtendedDataKey::Streak(supporter.clone(), creator.clone()))
 }
 
 /// Persist a streak record for a supporter/creator pair.
 pub fn set_streak(env: &Env, streak: &crate::types::Streak) {
     env.storage().persistent().set(
-        &DataKey::Streak(streak.supporter.clone(), streak.creator.clone()),
+        &ExtendedDataKey::Streak(streak.supporter.clone(), streak.creator.clone()),
         streak,
     );
 }
@@ -1007,7 +1122,7 @@ pub fn get_rate_limit_config(env: &Env) -> RateLimitConfig {
     }
     env.storage()
         .instance()
-        .get(&DataKey::RateLimitConfig)
+        .get(&ExtendedDataKey::RateLimitConfig)
         .unwrap_or(RateLimitConfig {
             max_ops: 50,
             window_secs: 3600, // 1 hour default
@@ -1018,7 +1133,7 @@ pub fn get_rate_limit_config(env: &Env) -> RateLimitConfig {
 pub fn set_rate_limit_config(env: &Env, config: &RateLimitConfig) {
     env.storage()
         .instance()
-        .set(&DataKey::RateLimitConfig, config);
+        .set(&ExtendedDataKey::RateLimitConfig, config);
     update_runtime_config(env, |runtime_config| {
         runtime_config.rate_limit = config.clone();
     });
@@ -1036,14 +1151,14 @@ pub fn bump_existing_profile_ttl(env: &Env, address: &Address) {
 pub fn get_rate_limit_status(env: &Env, address: &Address) -> Option<RateLimitStatus> {
     env.storage()
         .instance()
-        .get(&DataKey::RateLimit(address.clone()))
+        .get(&ExtendedDataKey::RateLimit(address.clone()))
 }
 
 /// Sets the rate limit status for an address.
 pub fn set_rate_limit_status(env: &Env, address: &Address, status: &RateLimitStatus) {
     env.storage()
         .instance()
-        .set(&DataKey::RateLimit(address.clone()), status);
+        .set(&ExtendedDataKey::RateLimit(address.clone()), status);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1055,7 +1170,7 @@ pub fn get_creator_period_volume(env: &Env, creator: &Address, period: Leaderboa
     let start_at = get_last_leaderboard_reset(env, period);
     env.storage()
         .instance()
-        .get(&DataKey::CreatorPeriodVolume(
+        .get(&ExtendedDataKey::CreatorPeriodVolume(
             creator.clone(),
             period,
             start_at,
@@ -1074,7 +1189,7 @@ pub fn add_creator_period_volume(
     let current = get_creator_period_volume(env, creator, period);
     let next = current.saturating_add(amount);
     env.storage().instance().set(
-        &DataKey::CreatorPeriodVolume(creator.clone(), period, start_at),
+        &ExtendedDataKey::CreatorPeriodVolume(creator.clone(), period, start_at),
         &next,
     );
     next
@@ -1091,7 +1206,7 @@ pub fn set_creator_period_volumes(env: &Env, creator: &Address, volumes: &Creato
         .instance()
         .set(&CacheKey::CreatorPeriodVolumes(creator.clone()), volumes);
     env.storage().instance().set(
-        &DataKey::CreatorPeriodVolume(
+        &ExtendedDataKey::CreatorPeriodVolume(
             creator.clone(),
             LeaderboardPeriod::Monthly,
             volumes.monthly_start_at,
@@ -1099,7 +1214,7 @@ pub fn set_creator_period_volumes(env: &Env, creator: &Address, volumes: &Creato
         &volumes.monthly,
     );
     env.storage().instance().set(
-        &DataKey::CreatorPeriodVolume(
+        &ExtendedDataKey::CreatorPeriodVolume(
             creator.clone(),
             LeaderboardPeriod::Weekly,
             volumes.weekly_start_at,
@@ -1146,7 +1261,7 @@ pub fn reset_creator_period_volume(env: &Env, creator: &Address, period: Leaderb
     let start_at = get_last_leaderboard_reset(env, period);
     env.storage()
         .instance()
-        .remove(&DataKey::CreatorPeriodVolume(
+        .remove(&ExtendedDataKey::CreatorPeriodVolume(
             creator.clone(),
             period,
             start_at,
@@ -1627,7 +1742,7 @@ pub fn set_verification_request(
     verification_type: &crate::types::VerificationType,
 ) {
     env.storage().persistent().set(
-        &DataKey::VerificationRequest(address.clone()),
+        &ExtendedDataKey::VerificationRequest(address.clone()),
         verification_type,
     );
     bump_profile_ttl(env, address);
@@ -1636,7 +1751,7 @@ pub fn set_verification_request(
 pub fn remove_verification_request(env: &Env, address: &Address) {
     env.storage()
         .persistent()
-        .remove(&DataKey::VerificationRequest(address.clone()));
+        .remove(&ExtendedDataKey::VerificationRequest(address.clone()));
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1646,13 +1761,13 @@ pub fn remove_verification_request(env: &Env, address: &Address) {
 pub fn get_donation_page(env: &Env, creator: &Address) -> Option<crate::types::DonationPageConfig> {
     env.storage()
         .persistent()
-        .get(&DataKey::DonationPage(creator.clone()))
+        .get(&ExtendedDataKey::DonationPage(creator.clone()))
 }
 
 pub fn set_donation_page(env: &Env, creator: &Address, config: &crate::types::DonationPageConfig) {
     env.storage()
         .persistent()
-        .set(&DataKey::DonationPage(creator.clone()), config);
+        .set(&ExtendedDataKey::DonationPage(creator.clone()), config);
     bump_profile_ttl(env, creator);
 }
 
@@ -1663,14 +1778,14 @@ pub fn set_donation_page(env: &Env, creator: &Address, config: &crate::types::Do
 pub fn get_stats_window_start(env: &Env) -> u64 {
     env.storage()
         .instance()
-        .get(&DataKey::StatsWindowStart)
+        .get(&ExtendedDataKey::StatsWindowStart)
         .unwrap_or(0)
 }
 
 pub fn set_stats_window_start(env: &Env, timestamp: u64) {
     env.storage()
         .instance()
-        .set(&DataKey::StatsWindowStart, &timestamp);
+        .set(&ExtendedDataKey::StatsWindowStart, &timestamp);
     if let Some(mut state) = get_send_tip_state(env) {
         state.stats_window_start = timestamp;
         set_send_tip_state(env, &state);
@@ -1680,12 +1795,12 @@ pub fn set_stats_window_start(env: &Env, timestamp: u64) {
 pub fn get_tips_last_24h(env: &Env) -> u32 {
     env.storage()
         .instance()
-        .get(&DataKey::TipsLast24h)
+        .get(&ExtendedDataKey::TipsLast24h)
         .unwrap_or(0)
 }
 
 pub fn set_tips_last_24h(env: &Env, count: u32) {
-    env.storage().instance().set(&DataKey::TipsLast24h, &count);
+    env.storage().instance().set(&ExtendedDataKey::TipsLast24h, &count);
     if let Some(mut state) = get_send_tip_state(env) {
         state.tips_last_24h = count;
         set_send_tip_state(env, &state);
@@ -1695,14 +1810,14 @@ pub fn set_tips_last_24h(env: &Env, count: u32) {
 pub fn get_volume_last_24h(env: &Env) -> i128 {
     env.storage()
         .instance()
-        .get(&DataKey::VolumeLast24h)
+        .get(&ExtendedDataKey::VolumeLast24h)
         .unwrap_or(0)
 }
 
 pub fn set_volume_last_24h(env: &Env, volume: i128) {
     env.storage()
         .instance()
-        .set(&DataKey::VolumeLast24h, &volume);
+        .set(&ExtendedDataKey::VolumeLast24h, &volume);
     if let Some(mut state) = get_send_tip_state(env) {
         state.volume_last_24h = volume;
         set_send_tip_state(env, &state);
@@ -1712,14 +1827,14 @@ pub fn set_volume_last_24h(env: &Env, volume: i128) {
 pub fn get_active_creators_30d(env: &Env) -> u32 {
     env.storage()
         .instance()
-        .get(&DataKey::ActiveCreators30d)
+        .get(&ExtendedDataKey::ActiveCreators30d)
         .unwrap_or(0)
 }
 
 pub fn set_active_creators_30d(env: &Env, count: u32) {
     env.storage()
         .instance()
-        .set(&DataKey::ActiveCreators30d, &count);
+        .set(&ExtendedDataKey::ActiveCreators30d, &count);
     if let Some(mut state) = get_send_tip_state(env) {
         state.active_creators_30d = count;
         set_send_tip_state(env, &state);
@@ -1729,14 +1844,14 @@ pub fn set_active_creators_30d(env: &Env, count: u32) {
 pub fn get_creator_last_active(env: &Env, creator: &Address) -> u64 {
     env.storage()
         .persistent()
-        .get(&DataKey::CreatorLastActive(creator.clone()))
+        .get(&ExtendedDataKey::CreatorLastActive(creator.clone()))
         .unwrap_or(0)
 }
 
 pub fn set_creator_last_active(env: &Env, creator: &Address, timestamp: u64) {
     env.storage()
         .persistent()
-        .set(&DataKey::CreatorLastActive(creator.clone()), &timestamp);
+        .set(&ExtendedDataKey::CreatorLastActive(creator.clone()), &timestamp);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

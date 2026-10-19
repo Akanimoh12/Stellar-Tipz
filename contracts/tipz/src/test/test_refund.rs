@@ -553,6 +553,38 @@ fn test_process_pending_refunds_multiple() {
 }
 
 #[test]
+fn test_refund_partial_withdrawal_does_not_over_refund() {
+    let (env, _contract_id, client) = setup_test_env();
+    let admin = Address::generate(&env);
+    let fee_collector = Address::generate(&env);
+    let tipper = Address::generate(&env);
+    let creator = Address::generate(&env);
+
+    initialize_contract(&env, &client, &admin, &fee_collector);
+    register_profile(&client, &creator, "creator");
+
+    let tip_amount = 1_000_000_i128;
+    client.send_tip(
+        &tipper,
+        &creator,
+        &tip_amount,
+        &String::from_str(&env, "Great work!"),
+        &false,
+        &false,
+    );
+
+    client.withdraw_tips(&creator, &400_000_i128);
+
+    let tip_id = 0_u32;
+    client.request_refund(&tipper, &tip_id);
+    client.approve_refund(&creator, &tip_id);
+
+    let profile = client.get_profile(&creator);
+    assert_eq!(profile.profile.balance, 0);
+    assert_eq!(profile.profile.total_tips_received, 0);
+}
+
+#[test]
 fn test_refund_no_request_exists() {
     let (env, _contract_id, client) = setup_test_env();
     let admin = Address::generate(&env);

@@ -20,7 +20,7 @@
 
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
-use crate::storage::DataKey;
+use crate::storage::{DataKey, ExtendedDataKey};
 use crate::types::{LeaderboardEntry, LeaderboardPeriod};
 use crate::TipzContract;
 use crate::TipzContractClient;

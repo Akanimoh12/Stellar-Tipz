@@ -9,7 +9,7 @@ use soroban_sdk::{Address, Env, Vec};
 use crate::credit;
 use crate::errors::ContractError;
 use crate::events;
-use crate::storage::{self, DataKey};
+use crate::storage::{self, DataKey, ExtendedDataKey};
 use crate::types::{AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip};
 
 pub fn require_admin(env: &Env, caller: &Address) -> Result<(), ContractError> {

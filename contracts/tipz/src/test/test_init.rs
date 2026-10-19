@@ -12,7 +12,7 @@
 use soroban_sdk::{testutils::Address as _, Address, Env};
 
 use crate::errors::ContractError;
-use crate::storage::DataKey;
+use crate::storage::{DataKey, ExtendedDataKey};
 use crate::TipzContract;
 use crate::TipzContractClient;
 
@@ -32,7 +32,10 @@ fn setup() -> (Env, TipzContractClient<'static>, Address, Address, Address) {
     (env, client, admin, fee_collector, native_token)
 }
 
-pub fn setup_test_contract<'a>(env: &'a Env, admin: &'a Address) -> TipzContractClient<'a> {
+pub fn setup_test_contract_with_admin<'a>(
+    env: &'a Env,
+    admin: &'a Address,
+) -> TipzContractClient<'a> {
     let contract_id = env.register_contract(None, TipzContract);
     let client = TipzContractClient::new(env, &contract_id);
     let fee_collector = Address::generate(env);
@@ -44,7 +47,7 @@ pub fn setup_test_contract<'a>(env: &'a Env, admin: &'a Address) -> TipzContract
     client
 }
 
-/// Setup test contract with all necessary components for testing
+/// Setup test contract with all necessary components for testing.
 pub fn setup_test_contract(env: &Env) -> (TipzContractClient, Address, Address, Address) {
     let contract_id = env.register_contract(None, TipzContract);
     let client = TipzContractClient::new(env, &contract_id);

@@ -10,10 +10,10 @@ use crate::credit;
 use crate::errors::ContractError;
 use crate::events::emit_tip_sent;
 use crate::leaderboard;
-use crate::storage::{self, DataKey};
+use crate::storage::{self, DataKey, ExtendedDataKey};
 use crate::streaks;
 use crate::token;
-use crate::types::Tip;
+use crate::types::{ScheduledTip, Tip};
 use crate::validation::{validate_message, validate_tip_for_creator};
 
 /// Create a new [`Tip`] record and store it in temporary storage.
