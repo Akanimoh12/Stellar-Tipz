@@ -12,6 +12,80 @@ use crate::events;
 use crate::storage::{self, DataKey, ExtendedDataKey};
 use crate::types::{AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip};
 
+pub fn u32_to_string(env: &Env, val: u32) -> String {
+    let mut buf = [0u8; 10];
+    let mut i = buf.len();
+    let mut num = val;
+    if num == 0 {
+        return String::from_str(env, "0");
+    }
+    while num > 0 {
+        i -= 1;
+        buf[i] = b'0' + (num % 10) as u8;
+        num /= 10;
+    }
+    let s = core::str::from_utf8(&buf[i..]).unwrap_or("0");
+    String::from_str(env, s)
+}
+
+pub fn u64_to_string(env: &Env, val: u64) -> String {
+    let mut buf = [0u8; 20];
+    let mut i = buf.len();
+    let mut num = val;
+    if num == 0 {
+        return String::from_str(env, "0");
+    }
+    while num > 0 {
+        i -= 1;
+        buf[i] = b'0' + (num % 10) as u8;
+        num /= 10;
+    }
+    let s = core::str::from_utf8(&buf[i..]).unwrap_or("0");
+    String::from_str(env, s)
+}
+
+pub fn i128_to_string(env: &Env, val: i128) -> String {
+    let mut buf = [0u8; 40];
+    let mut i = buf.len();
+    let is_neg = val < 0;
+    let mut num = if is_neg { -val } else { val };
+    if num == 0 {
+        return String::from_str(env, "0");
+    }
+    while num > 0 {
+        i -= 1;
+        buf[i] = b'0' + (num % 10) as u8;
+        num /= 10;
+    }
+    if is_neg {
+        i -= 1;
+        buf[i] = b'-';
+    }
+    let s = core::str::from_utf8(&buf[i..]).unwrap_or("0");
+    String::from_str(env, s)
+}
+
+pub fn bool_to_string(env: &Env, val: bool) -> String {
+    if val {
+        String::from_str(env, "true")
+    } else {
+        String::from_str(env, "false")
+    }
+}
+
+/// Record a privileged admin action in the ring-buffered audit log and emit an audit event.
+pub fn log_admin_action(
+    env: &Env,
+    actor: &Address,
+    action_kind: Symbol,
+    before_value: String,
+    after_value: String,
+) {
+    let entry =
+        storage::append_admin_audit_entry(env, actor, action_kind, &before_value, &after_value);
+    events::emit_admin_audit_log(env, &entry);
+}
+
 pub fn require_admin(env: &Env, caller: &Address) -> Result<(), ContractError> {
     if !storage::is_initialized(env) {
         return Err(ContractError::NotInitialized);
@@ -37,7 +111,7 @@ pub fn require_not_paused(env: &Env) -> Result<(), ContractError> {
 /// enabled these entrypoints error instead of executing directly; callers must instead
 /// go through `propose_action`/`approve_action` in `multisig.rs`. With multisig disabled,
 /// this is a no-op and behaviour is unchanged.
-fn require_no_multisig(env: &Env) -> Result<(), ContractError> {
+pub fn require_no_multisig(env: &Env) -> Result<(), ContractError> {
     if crate::multisig::is_multisig_enabled(env) {
         return Err(ContractError::MultisigRequired);
     }

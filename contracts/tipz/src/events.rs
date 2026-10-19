@@ -474,6 +474,20 @@ pub fn emit_x_metrics_batch_skipped(env: &Env, creator: &Address, reason: u32) {
     );
 }
 
+/// Topics : `("batch", "done")`
+/// Data   : `(processed: u32, skipped_count: u32, skipped_entries: Vec<BatchSkip>)`
+pub fn emit_x_metrics_batch_completed(
+    env: &Env,
+    processed: u32,
+    skipped_count: u32,
+    skipped_entries: Vec<BatchSkip>,
+) {
+    env.events().publish(
+        (symbol_short!("batch"), symbol_short!("done")),
+        (processed, skipped_count, skipped_entries),
+    );
+}
+
 // ── Verification events ───────────────────────────────────────────────────────
 
 /// Topics : `("verify", "requested")`
