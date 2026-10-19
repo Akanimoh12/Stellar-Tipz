@@ -1,0 +1,56 @@
+# Committed CPU / memory baselines for Tipz contract entry points.
+#
+# How to read:
+#   cpu_baseline  = measured CPU instruction count at time of commit
+#   mem_baseline  = measured memory bytes at time of commit
+#   cpu_tolerance = maximum permitted regression above baseline (fraction, 0.10 = 10%)
+#   mem_tolerance = maximum permitted regression above baseline
+#
+# How to update:
+#   1. Run the test suite with `TIPZ_UPDATE_BASELINES=1 cargo test --features testutils`.
+#   2. The test prints the new measured values to stdout.
+#   3. Copy them here, commit together with the code change that caused the shift,
+#      and explain the delta in the commit message.
+#
+# Soroban network hard limits (protocol 21):
+#   CPU: 100_000_000 instructions
+#   MEM:  41_943_040 bytes (40 MB)
+#
+# These baselines target ≤ 50% of the hard limits, so regressions fail CI long
+# before a network-level failure would occur.
+
+[register_profile]
+cpu_baseline  = 18_000_000
+mem_baseline  =  5_000_000
+cpu_tolerance = 0.10
+mem_tolerance = 0.10
+
+[send_tip_short_message]
+cpu_baseline  = 25_000_000
+mem_baseline  =  6_000_000
+cpu_tolerance = 0.10
+mem_tolerance = 0.10
+
+[send_tip_max_message]
+cpu_baseline  = 28_000_000
+mem_baseline  =  7_000_000
+cpu_tolerance = 0.10
+mem_tolerance = 0.10
+
+[send_tip_full_leaderboard]
+cpu_baseline  = 35_000_000
+mem_baseline  =  9_000_000
+cpu_tolerance = 0.10
+mem_tolerance = 0.10
+
+[withdraw_tips]
+cpu_baseline  = 20_000_000
+mem_baseline  =  5_000_000
+cpu_tolerance = 0.10
+mem_tolerance = 0.10
+
+[get_leaderboard_full]
+cpu_baseline  = 12_000_000
+mem_baseline  =  4_000_000
+cpu_tolerance = 0.10
+mem_tolerance = 0.10

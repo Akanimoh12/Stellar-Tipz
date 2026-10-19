@@ -77,6 +77,7 @@ const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose }) => {
                 <ShortcutRow
                   key={s.description}
                   keys={s.keys}
+                  joiner={s.joiner}
                   description={s.description}
                 />
               ))}

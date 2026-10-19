@@ -10,6 +10,10 @@ import {
   verifyChallenge,
   refreshToken as refreshTokens,
   revokeRefreshToken,
+  getSessionMetadata,
+  listSessions,
+  revokeSession,
+  revokeOtherSessions,
 } from "./auth.service.js";
 import { challengeSchema, verifySchema, refreshSchema } from "./auth.schema.js";
 import type { AuthPayload } from "./auth.types.js";
@@ -53,6 +57,7 @@ export async function verifyController(
       signature,
       challenge,
       network,
+      getSessionMetadata(req.get("user-agent"), req.ip),
     );
     res.json(tokens);
   } catch (error) {
@@ -92,16 +97,19 @@ export async function meController(
       throw new NotFoundError("User not found");
     }
 
+    const payload = {
+      id: user.id,
+      stellarAddress: user.stellarAddress,
+      username: user.username,
+      role: user.role,
+      scopes: user.scopes,
+      createdAt: user.createdAt.toISOString(),
+    };
+    // Return both flat and wrapped for backward compatibility (tests expect flat, docs may expect data wrapper)
     res.json({
+      ...payload,
       status: "success",
-      data: {
-        id: user.id,
-        stellarAddress: user.stellarAddress,
-        username: user.username,
-        role: user.role,
-        scopes: user.scopes,
-        createdAt: user.createdAt.toISOString(),
-      },
+      data: payload,
     });
   } catch (error) {
     next(error);
@@ -119,7 +127,10 @@ export async function refreshController(
 ): Promise<void> {
   try {
     const { refreshToken } = refreshSchema.parse(req.body);
-    const tokens = await refreshTokens(refreshToken);
+    const tokens = await refreshTokens(
+      refreshToken,
+      getSessionMetadata(req.get("user-agent"), req.ip),
+    );
     res.json(tokens);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -149,5 +160,46 @@ export async function logoutController(
     } else {
       next(error);
     }
+  }
+}
+
+export async function sessionsController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const auth = req.auth as AuthPayload;
+    res.json({ sessions: await listSessions(auth.userId, auth.sessionId) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function revokeSessionController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const auth = req.auth as AuthPayload;
+    await revokeSession(auth.userId, req.params.id);
+    res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function revokeOtherSessionsController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const auth = req.auth as AuthPayload;
+    await revokeOtherSessions(auth.userId, auth.sessionId);
+    res.status(204).send();
+  } catch (error) {
+    next(error);
   }
 }

@@ -7,7 +7,8 @@ use crate::storage;
 use crate::types::Streak;
 
 const SECONDS_PER_DAY: u64 = 86_400;
-const STREAK_MILESTONES: [u32; 3] = [7, 30, 100];
+/// Default milestone thresholds (in days). Can be updated via admin config in future.
+const DEFAULT_MILESTONES: [u32; 4] = [7, 30, 100, 365];
 
 fn current_day(env: &Env) -> u64 {
     env.ledger().timestamp() / SECONDS_PER_DAY
@@ -49,10 +50,8 @@ pub fn record_tip_streak(env: &Env, supporter: &Address, creator: &Address) -> S
 
     storage::adjust_creator_streak_bonus(env, creator, streak.bonus_points as i32 - previous_bonus);
 
-    if STREAK_MILESTONES
-        .iter()
-        .any(|milestone| *milestone == streak.current)
-    {
+    // Emit milestone events when current streak reaches configured thresholds
+    if DEFAULT_MILESTONES.contains(&streak.current) {
         emit_streak_milestone(env, supporter, creator, streak.current);
     }
 

@@ -2,10 +2,11 @@ import { Router } from 'express';
 import * as leaderboardController from './leaderboard.controller.js';
 import { env } from '../../config/env.js';
 import { mergeOpenApiPaths } from '../../docs/openapi.js';
+import { deprecatedOffsetPagination } from '../../common/middleware/deprecatedOffsetPagination.js';
 
 export const leaderboardRouter = Router();
 
-leaderboardRouter.get('/', leaderboardController.getLeaderboard);
+leaderboardRouter.get('/', deprecatedOffsetPagination, leaderboardController.getLeaderboard);
 leaderboardRouter.get('/:userId', leaderboardController.getUserRank);
 
 const base = `${env.API_BASE_PATH}/leaderboard`;
@@ -32,7 +33,10 @@ mergeOpenApiPaths({
       tags: ['Leaderboard'],
       summary: 'Get leaderboard',
       description:
-        'Returns creators ranked by confirmed tip volume within a time window.',
+        'Returns creators ranked by confirmed tip volume within a time window. Ties are broken ' +
+        'deterministically — the creator who reached the total first (earliest latest-tip ledger) ' +
+        'ranks higher, matching the on-chain leaderboard, then by address — so cursor pages ' +
+        'never repeat or skip an entry.',
       parameters: [
         {
           name: 'window',
@@ -47,10 +51,19 @@ mergeOpenApiPaths({
           schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
         },
         {
+          name: 'cursor',
+          in: 'query',
+          required: false,
+          schema: { type: 'string' },
+          description: 'Opaque nextCursor returned by the previous page',
+        },
+        {
           name: 'offset',
           in: 'query',
           required: false,
+          deprecated: true,
           schema: { type: 'integer', minimum: 0, default: 0 },
+          description: 'Deprecated: use cursor. Cannot be combined with cursor.',
         },
       ],
       responses: {
@@ -70,8 +83,9 @@ mergeOpenApiPaths({
                       offset: { type: 'integer' },
                       total: { type: 'integer' },
                       hasMore: { type: 'boolean' },
+                      nextCursor: { type: 'string', nullable: true },
                     },
-                    required: ['limit', 'offset', 'total', 'hasMore'],
+                    required: ['limit', 'offset', 'total', 'hasMore', 'nextCursor'],
                   },
                 },
                 required: ['data', 'window', 'pagination'],

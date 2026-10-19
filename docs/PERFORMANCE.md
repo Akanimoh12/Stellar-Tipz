@@ -1,71 +1,75 @@
-# Performance Baselines
+# Continuous load testing and performance regression detection
 
-This document tracks backend performance baselines for Soroban RPC operations used by Stellar Tipz.
+Stellar Tipz runs a mixed-traffic k6 workload against **staging every Monday**
+at 03:00 UTC, plus on manual dispatch. It intentionally does not run on each
+pull request: the workload takes several minutes, consumes a shared staging
+RPC quota, and must use signed staging-only transactions. The scheduled
+workflow is [`.github/workflows/load-test.yml`](../.github/workflows/load-test.yml).
 
-## Scope
+## Realistic workload
 
-- Concurrent tip submissions (`sendTransaction`)
-- Leaderboard reads (`getLedgerEntries`)
-- Profile queries (`getLedgerEntries`)
+[`scripts/load-test.js`](../scripts/load-test.js) concurrently exercises the
+three production RPC journeys instead of hammering a single endpoint:
 
-## Load Test Script
+| Journey | RPC call | Load shape | Purpose |
+|---|---|---|---|
+| Tip submission | `sendTransaction` with an approved signed staging XDR | 10 → 50 → 100 VUs | captures writes, transaction admission, and queueing |
+| Leaderboard read | `getLedgerEntries` | ramps to 60 VUs | captures shared read/storage contention |
+| Profile read | `getLedgerEntries` | ramps to 60 VUs | captures the profile lookup path |
 
-Path: `scripts/load-test.js`
-
-Tooling: [k6](https://k6.io/)
-
-### Prerequisites
-
-```bash
-# macOS
-brew install k6
-```
-
-Optional environment variables for realistic traffic:
-
-- `RPC_URL`: Soroban RPC endpoint (defaults to `https://soroban-testnet.stellar.org`)
-- `SIGNED_TIP_XDRS`: Comma-separated signed transaction XDRs for tip submission load
-- `LEADERBOARD_KEY_XDR`: Ledger key XDR for leaderboard storage
-- `PROFILE_KEY_XDR`: Ledger key XDR for profile storage
-
-### Run
+When no transaction or ledger-key test fixture is supplied, the script sends
+`getLatestLedger` health traffic rather than manufacturing a transaction.
+Scheduled staging runs must provide the named staging-only variables below, so
+the regression guard uses the actual paths.
 
 ```bash
-k6 run scripts/load-test.js
+RPC_URL=https://staging-rpc.example \
+SIGNED_TIP_XDRS='...' LEADERBOARD_KEY_XDR='...' PROFILE_KEY_XDR='...' \
+k6 run --summary-export=load-summary.json scripts/load-test.js
+npm run load:compare -- load-summary.json scripts/load-test-baselines/staging.json
 ```
 
-### Scenarios
+Use only funded, disposable staging accounts. Never place a production secret,
+account, or signed production transaction in GitHub variables or in the output
+artifact.
 
-- Tip submissions: `10`, `50`, and `100` concurrent users
-- Leaderboard reads: ramp to `60` concurrent users
-- Profile queries: ramp to `60` concurrent users
+## Approved baseline and regression policy
 
-## Baseline Capture Template
+[`scripts/load-test-baselines/staging.json`](../scripts/load-test-baselines/staging.json)
+is the committed, approved baseline envelope. The comparator fails when a
+summary exceeds any limit:
 
-Record one row per test run.
+- HTTP and RPC failure rate: 2% maximum;
+- p50: 350 ms maximum;
+- p95: 1,200 ms maximum; and
+- p99: 2,500 ms maximum.
 
-| Date (UTC) | Network | Scenario | VUs | p50 (ms) | p95 (ms) | Error Rate | Notes |
-|---|---|---|---:|---:|---:|---:|---|
-| _YYYY-MM-DD_ | testnet/mainnet | tip_submissions_10 | 10 | - | - | - | |
-| _YYYY-MM-DD_ | testnet/mainnet | tip_submissions_50 | 50 | - | - | - | |
-| _YYYY-MM-DD_ | testnet/mainnet | tip_submissions_100 | 100 | - | - | - | |
-| _YYYY-MM-DD_ | testnet/mainnet | leaderboard_reads | 60 | - | - | - | |
-| _YYYY-MM-DD_ | testnet/mainnet | profile_queries | 60 | - | - | - | |
+These values leave headroom above the API SLO’s 300 ms / 1 s / 2.5 s user
+experience targets while still detecting a staging regression before it reaches
+production. Update the baseline only after reviewing several successful runs,
+recording the reason in the pull request, and obtaining performance-owner
+approval; never update it merely to turn a failed job green.
 
-## Bottleneck and Breaking Point Checklist
+## Tracking over time
 
-Capture findings from each run:
+Each scheduled run publishes the p50, p95, p99, and error rate in the GitHub
+Actions job summary and retains the full `load-summary.json` artifact for 90
+days. Compare these artifacts by run date to detect gradual degradation, not
+only a threshold crossing. The current baseline’s `capturedAt`, workload, and
+commit fields document its provenance; refresh them when an approved new
+baseline replaces it.
 
-- RPC throughput saturation point
-- Latency inflection point (where p95 grows rapidly)
-- Error-type distribution (rate limits, validation failures, timeouts)
-- Transaction queueing/finality lag for `sendTransaction`
-- Any scenario where `http_req_failed` or `rpc_failures` exceeds 5%
+## Running and investigating
 
-## Initial Expectations
+Install [k6](https://k6.io/docs/get-started/installation/) locally, then run
+`npm run load:test` for an exploratory run or the two commands above for the
+same regression check used by CI. A failure is actionable only after checking:
 
-- `10` VUs: stable, low error rate
-- `50` VUs: acceptable latency increase
-- `100` VUs: likely to expose rate limits or queueing delays
+1. the staging endpoint and fixtures were valid;
+2. the scenario mix completed (not merely fallback health traffic);
+3. `http_req_failed` and `rpc_failures` failure modes; and
+4. latency by operation and any corresponding Stellar RPC rate limit.
 
-Mark the first scenario that violates thresholds as the current breaking point.
+Record the result, endpoint version, fixture type, and any bottleneck in the
+PR or performance log. Do not treat a one-off public-network outage as a new
+application baseline.

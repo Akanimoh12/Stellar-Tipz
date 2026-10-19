@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { secureStorage } from '../secureStorage';
+import { secureStorage, clearClientStorageOnLogout } from '../secureStorage';
 
 describe('SecureStorage', () => {
   beforeEach(() => {
@@ -45,5 +45,27 @@ describe('SecureStorage', () => {
     
     const retrieved = await secureStorage.get('temp');
     expect(retrieved).toBeNull();
+  });
+
+  it('discards stale unversioned or mismatched shapes', async () => {
+    // Unversioned payload
+    localStorage.setItem('tipz_stale', JSON.stringify({ iv: 'abc', data: 'def', expiry: null }));
+    const result = await secureStorage.get('stale');
+    expect(result).toBeNull();
+    expect(localStorage.getItem('tipz_stale')).toBeNull();
+  });
+
+  it('clears all sensitive client storage on logout', () => {
+    localStorage.setItem('tipz_auth_tokens', '{"accessToken":"abc","refreshToken":"def"}');
+    localStorage.setItem('tipz_notifications', '[]');
+    localStorage.setItem('tipz_draft_form', '{"username":"bob"}');
+    sessionStorage.setItem('tipz_recent_searches', '["stellar"]');
+
+    clearClientStorageOnLogout();
+
+    expect(localStorage.getItem('tipz_auth_tokens')).toBeNull();
+    expect(localStorage.getItem('tipz_notifications')).toBeNull();
+    expect(localStorage.getItem('tipz_draft_form')).toBeNull();
+    expect(sessionStorage.getItem('tipz_recent_searches')).toBeNull();
   });
 });

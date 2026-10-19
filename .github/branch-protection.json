@@ -1,13 +1,16 @@
 {
-  "_comment": "Documents the intended branch protection settings for the main branch. Apply via GitHub Settings → Branches or the GitHub API (PATCH /repos/{owner}/{repo}/branches/main/protection).",
-  "branch": "main",
+  "_comment": "Documents the intended branch protection settings. Apply via GitHub Settings -> Branches or the GitHub API (PATCH /repos/{owner}/{repo}/branches/{branch}/protection). This is a record of intent, not an applied setting: branch protection cannot be set from a pull request, so a maintainer must enable it.",
+  "_note": "The branch is test-implement-drips, the repository's current default. If the default branch is ever renamed, update this and the workflow triggers together.",
+  "branch": "test-implement-drips",
   "required_status_checks": {
     "strict": true,
     "contexts": [
       "frontend-ci",
       "contract-ci",
       "pr-checks",
-      "security-audit"
+      "security-audit",
+      "SAST (TypeScript)",
+      "SAST (Rust)"
     ]
   },
   "enforce_admins": true,

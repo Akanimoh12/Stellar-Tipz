@@ -5,6 +5,9 @@ import PageContainer from "@/components/layout/PageContainer";
 import EmptyState from "@/components/ui/EmptyState";
 import Loader from "@/components/ui/Loader";
 import Button from "@/components/ui/Button";
+import SkeletonWrapper from "@/components/ui/SkeletonWrapper";
+import TransactionsPageSkeleton from "./TransactionsPageSkeleton";
+import VirtualizedList from "@/components/ui/VirtualizedList";
 import WalletConnect from "@/components/shared/WalletConnect";
 import ErrorState from "@/components/shared/ErrorState";
 import { categorizeError } from "@/helpers/error";
@@ -93,28 +96,17 @@ const TransactionsPage: React.FC = () => {
     );
   }
 
-  // ── Initial loading ────────────────────────────────────────────────────
-  if (loading && filtered.length === 0) {
-    return (
-      <PageContainer
-        maxWidth="xl"
-        className="flex min-h-[60vh] flex-col items-center justify-center gap-4 py-10"
-      >
-        <Loader size="lg" text="Loading transaction history…" />
-      </PageContainer>
-    );
-  }
-
   // ── Error (no data at all) ─────────────────────────────────────────────
   if (error && filtered.length === 0) {
     return (
       <PageContainer maxWidth="xl" className="py-20">
-        <ErrorState category={categorizeError(error).category} onRetry={refetch} />
+        <ErrorState errorData={categorizeError(error)} onRetry={refetch} />
       </PageContainer>
     );
   }
 
   return (
+    <SkeletonWrapper loading={loading && filtered.length === 0} skeleton={<PageContainer maxWidth="xl" className="space-y-8 py-10"><TransactionsPageSkeleton /></PageContainer>}>
     <PageContainer maxWidth="xl" className="space-y-8 py-10">
       {/* ── Header ── */}
       <section aria-labelledby="transactions-heading" className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -200,23 +192,37 @@ const TransactionsPage: React.FC = () => {
 
         {/* Transaction list */}
         {filtered.length === 0 && !loading ? (
-          <EmptyState
-            icon={<History />}
-            title="No transactions found"
-            description={
-              dateRange.start || dateRange.end
-                ? "Try adjusting the date range."
-                : activeTab === "all"
-                ? "You haven't made or received any transactions yet."
-                : `No ${activeTab} transactions yet.`
-            }
-          />
+          (dateRange.start || dateRange.end) ? (
+            <EmptyState
+              icon={<History />}
+              title="No transactions match your filters"
+              description="Try adjusting the date range."
+              variant="filtered"
+              onClearFilters={() => setDateRange({ start: "", end: "" })}
+            />
+          ) : (
+            <EmptyState
+              icon={<History />}
+              title="No transactions found"
+              description={
+                activeTab === "all"
+                  ? "You haven't made or received any transactions yet."
+                  : `No ${activeTab} transactions yet.`
+              }
+              action={{ label: "Send your first tip", to: "/" }}
+            />
+          )
         ) : (
-          <div className="space-y-3">
-            {filtered.map((tx) => (
-              <TransactionRow key={tx.id} tx={tx} />
-            ))}
-          </div>
+          <VirtualizedList
+            items={filtered}
+            ariaLabel="Transactions"
+            estimatedItemHeight={88}
+            height={600}
+            scrollRestoreKey={`transactions-${activeTab}`}
+            getItemKey={(tx) => tx.id}
+            itemClassName="pb-3"
+            renderItem={(tx) => <TransactionRow tx={tx} />}
+          />
         )}
 
         {/* Infinite scroll sentinel */}
@@ -246,6 +252,7 @@ const TransactionsPage: React.FC = () => {
         )}
       </div>
     </PageContainer>
+    </SkeletonWrapper>
   );
 };
 

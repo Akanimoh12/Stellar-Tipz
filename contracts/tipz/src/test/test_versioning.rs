@@ -141,5 +141,5 @@ fn test_non_admin_upgrade_does_not_change_version() {
 
 #[test]
 fn test_contract_version_constant_is_2() {
-    assert_eq!(CONTRACT_VERSION, 2);
+    assert_eq!(CONTRACT_VERSION, 3);
 }

@@ -19,6 +19,13 @@ ADR that `Supersedes` the old one and mark the old one `Superseded`.
 | [005](./ADR-005-frontend-state-management.md) | Frontend state management (Zustand) | Accepted |
 | [006](./ADR-006-fee-structure.md) | Fee structure design | Accepted |
 | [007](./ADR-007-profile-user-boundary.md) | Profile vs User off-chain data model boundary | Accepted |
+| [008](./ADR-008-scheduled-action-signing.md) | Non-custodial signing for scheduled on-chain actions | Accepted |
+| [009](./ADR-009-soft-delete.md) | Soft-delete convention | Accepted |
+| [010](./ADR-010-off-chain-backend-rationale.md) | Off-chain backend rationale | Accepted |
+| [011](./ADR-011-indexer-design.md) | Indexer design for Soroban event processing | Accepted |
+| [012](./ADR-012-realtime-architecture.md) | Realtime architecture and room model | Accepted |
+| [013](./ADR-013-queue-selection.md) | Background job queue selection | Accepted |
+| [014](./ADR-014-on-chain-off-chain-data-boundary.md) | On-chain vs off-chain data boundary | Accepted |
 
 ## Adding a new ADR
 

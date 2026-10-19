@@ -8,7 +8,10 @@ interface StorageOptions {
   ttl?: number; // Time to live in milliseconds
 }
 
+export const SECURE_STORAGE_VERSION = 1;
+
 interface EncryptedPayload {
+  version: number;
   iv: string;
   data: string;
   expiry: number | null;
@@ -149,6 +152,7 @@ class SecureStorage {
       );
 
       const payload: EncryptedPayload = {
+        version: SECURE_STORAGE_VERSION,
         iv: this.arrayBufferToBase64(iv),
         data: this.arrayBufferToBase64(encryptedData),
         expiry,
@@ -164,13 +168,15 @@ class SecureStorage {
 
   /**
    * Retrieves and decrypts data from localStorage.
+   * Stale or mismatched version shapes are safely discarded.
    */
   async get<T = unknown>(key: string): Promise<T | null> {
     const fullKey = this.prefix + key;
 
     // Check memory storage first (fallback)
     if (this.memoryStorage.has(fullKey)) {
-      const entry = this.memoryStorage.get(fullKey);
+      const entry = this.memoryStorage.get(fullKey) as { value: T; expiry?: number | null } | undefined;
+      if (!entry) return null;
       if (entry.expiry && entry.expiry < Date.now()) {
         this.memoryStorage.delete(fullKey);
         return null;
@@ -185,6 +191,12 @@ class SecureStorage {
 
     try {
       const payload: EncryptedPayload = JSON.parse(raw);
+
+      // Check version: discard stale or unversioned shapes
+      if (!payload || typeof payload !== 'object' || payload.version !== SECURE_STORAGE_VERSION) {
+        this.remove(key);
+        return null;
+      }
 
       // Check TTL
       if (payload.expiry && payload.expiry < Date.now()) {
@@ -206,6 +218,8 @@ class SecureStorage {
       return JSON.parse(decoder.decode(decryptedData));
     } catch (error) {
       logger.error('services/secureStorage', 'Decryption failed or data tampered', undefined, error instanceof Error ? error : new Error(String(error)));
+      // Remove tampered or corrupted entry to avoid poison pill
+      this.remove(key);
       return null;
     }
   }
@@ -236,3 +250,56 @@ class SecureStorage {
 }
 
 export const secureStorage = new SecureStorage();
+
+/**
+ * Hardened cleanup utility for sign-out / logout.
+ * Clears all sensitive user-specific data from localStorage, sessionStorage, and memory,
+ * while leaving benign global display preferences (e.g. theme, language) intact.
+ */
+export function clearClientStorageOnLogout(): void {
+  // 1. Clear all secureStorage managed entries
+  secureStorage.clear();
+
+  // 2. Clear known sensitive/session keys explicitly from localStorage
+  const sensitiveKeys = [
+    'tipz_auth_tokens',
+    'tipz-wallet',
+    'tipz_wallet',
+    'tipz_favorites',
+    'tipz_goals',
+    'tipz_notifications',
+    'tipz_unseen_tips',
+    'tipz_last_notified_tip_id',
+    'tipz_tx_pending',
+    'tipz_profile_completion_dismissed',
+    'tipz_skip_confirmation',
+    'tipz_last_amount',
+  ];
+  for (const k of sensitiveKeys) {
+    try {
+      localStorage.removeItem(k);
+    } catch {
+      // ignore
+    }
+  }
+
+  // 3. Clear any saved form drafts (autosave)
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('tipz_draft_') || k === 'tipz_register_form')) {
+        localStorage.removeItem(k);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // 4. Clear sessionStorage (recent searches, tx guards, scroll caches)
+  try {
+    sessionStorage.clear();
+  } catch {
+    // ignore
+  }
+}
+

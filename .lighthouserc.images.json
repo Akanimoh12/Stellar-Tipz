@@ -1,0 +1,19 @@
+{
+  "ci": {
+    "collect": {
+      "staticDistDir": "./frontend-scaffold/dist-images",
+      "numberOfRuns": 1,
+      "settings": { "chromeFlags": "--no-sandbox", "onlyCategories": ["performance"] }
+    },
+    "assert": {
+      "assertions": {
+        "uses-responsive-images": ["error", { "minScore": 1 }],
+        "modern-image-formats": ["error", { "minScore": 1 }],
+        "offscreen-images": ["error", { "minScore": 1 }],
+        "unsized-images": ["error", { "minScore": 1 }],
+        "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1 }]
+      }
+    },
+    "upload": { "target": "filesystem", "outputDir": "./image-audit-results" }
+  }
+}

@@ -58,13 +58,18 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ value, onChange, error, disab
         <div className="relative pt-2">
           <Avatar
             src={previewUrl}
-            alt="Profile Preview"
+            alt={value ? 'Profile picture preview' : 'Profile picture placeholder'}
             size="xl"
             fallback="?"
           />
           {loadError && (
-            <div className="absolute -bottom-1 -right-1 bg-red-600 text-white p-1 rounded-full border-2 border-black" title={loadError}>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div
+              className="absolute -bottom-1 -right-1 bg-red-600 text-white p-1 rounded-full border-2 border-black"
+              title={loadError}
+              role="img"
+              aria-label={loadError}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </div>

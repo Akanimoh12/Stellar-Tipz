@@ -8,8 +8,8 @@ export async function getLeaderboard(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { window, limit, offset } = leaderboardQuerySchema.parse(req.query);
-    const result = await leaderboardService.getLeaderboard(window, limit, offset);
+    const { window, limit, offset, cursor } = leaderboardQuerySchema.parse(req.query);
+    const result = await leaderboardService.getLeaderboard(window, limit, offset ?? 0, cursor);
     res.status(200).json(result);
   } catch (err) {
     next(err);

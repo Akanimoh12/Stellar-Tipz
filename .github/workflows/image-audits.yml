@@ -1,0 +1,37 @@
+﻿name: Image delivery audits
+on:
+  pull_request:
+    paths: ['frontend-scaffold/**', '.lighthouserc.images.json', '.github/workflows/image-audits.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend-scaffold/package-lock.json
+      - run: npm ci --legacy-peer-deps
+        working-directory: frontend-scaffold
+      - run: npx vitest run --config vitest.images.config.ts
+        working-directory: frontend-scaffold
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend-scaffold
+      - run: node tests/images/generate-fixtures.mjs && npx vite build --config tests/images/vite.config.ts
+        working-directory: frontend-scaffold
+      - run: node tests/images/check-browser.mjs
+        working-directory: frontend-scaffold
+      - name: Lighthouse image assertions
+        run: npx --yes @lhci/cli@0.14.0 autorun --config=.lighthouserc.images.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: image-audit-results
+          path: |
+            image-audit-results/
+            frontend-scaffold/dist-images/*.png

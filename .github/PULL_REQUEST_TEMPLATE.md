@@ -4,6 +4,11 @@
 
 Closes #<!-- Specify the issue number this PR resolves, e.g. Closes #123 -->
 
+## Linked Issue
+
+- [ ] This PR is linked to an issue and references it above.
+- [ ] The issue number is included in the PR title or description.
+
 ## Type of Change
 
 Please mark the options that are relevant:
@@ -27,9 +32,14 @@ Please mark the options that are relevant:
 
 <!-- Describe the steps needed to verify your changes. Include details of your testing environment if relevant. -->
 
-1. 
-2. 
-3. 
+1. `cd frontend-scaffold && npm run typecheck && npm run lint && npm test`
+2. `cd backend && npm run typecheck && npm run lint && npm test`
+3. Manual verification steps (if applicable):
+
+### Testing Notes
+
+- [ ] I described the commands used to verify the change.
+- [ ] I noted any environment or browser setup required for manual testing.
 
 ## Checklist
 

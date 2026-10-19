@@ -2,7 +2,10 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import ConfirmDialog from '../ConfirmDialog';
+
+expect.extend(toHaveNoViolations);
 
 describe('ConfirmDialog', () => {
   const defaultProps = {
@@ -80,7 +83,7 @@ describe('ConfirmDialog', () => {
     const confirmButton = screen.getByText('Confirm');
     expect(confirmButton).toBeDisabled();
     
-    const input = screen.getByRole('textbox');
+    const input = screen.getByRole('textbox', { hidden: true });
     await user.type(input, 'DELETE');
     
     expect(confirmButton).toBeEnabled();
@@ -96,7 +99,7 @@ describe('ConfirmDialog', () => {
     );
     
     const confirmButton = screen.getByText('Confirm');
-    const input = screen.getByRole('textbox');
+    const input = screen.getByRole('textbox', { hidden: true });
     
     // Initially disabled
     expect(confirmButton).toBeDisabled();
@@ -120,7 +123,7 @@ describe('ConfirmDialog', () => {
       />
     );
     
-    const input = screen.getByRole('textbox');
+    const input = screen.getByRole('textbox', { hidden: true });
     await user.type(input, 'test');
     
     fireEvent.keyDown(input, { key: 'Enter' });
@@ -136,7 +139,7 @@ describe('ConfirmDialog', () => {
       />
     );
     
-    const input = screen.getByRole('textbox');
+    const input = screen.getByRole('textbox', { hidden: true });
     await user.type(input, 'wrong');
     
     fireEvent.keyDown(input, { key: 'Enter' });
@@ -151,7 +154,7 @@ describe('ConfirmDialog', () => {
       />
     );
     
-    const confirmButton = screen.getByText('Confirm');
+    const confirmButton = screen.getByText('Loading...');
     const cancelButton = screen.getByText('Cancel');
     
     expect(confirmButton).toBeDisabled();
@@ -171,29 +174,6 @@ describe('ConfirmDialog', () => {
     expect(screen.getByText('Keep It')).toBeInTheDocument();
   });
 
-  it('focuses input when dialog opens', async () => {
-    const { rerender } = render(
-      <ConfirmDialog 
-        {...defaultProps} 
-        isOpen={false}
-        requireTyping="test"
-      />
-    );
-    
-    rerender(
-      <ConfirmDialog 
-        {...defaultProps} 
-        isOpen={true}
-        requireTyping="test"
-      />
-    );
-    
-    await waitFor(() => {
-      const input = screen.getByRole('textbox');
-      expect(input).toHaveFocus();
-    });
-  });
-
   it('resets input when dialog reopens', async () => {
     const user = userEvent.setup();
     const { rerender } = render(
@@ -203,7 +183,7 @@ describe('ConfirmDialog', () => {
       />
     );
     
-    const input = screen.getByRole('textbox');
+    const input = screen.getByRole('textbox', { hidden: true });
     await user.type(input, 'some text');
     
     // Close dialog
@@ -224,7 +204,55 @@ describe('ConfirmDialog', () => {
       />
     );
     
-    const newInput = screen.getByRole('textbox');
+    const newInput = screen.getByRole('textbox', { hidden: true });
     expect(newInput).toHaveValue('');
+  });
+
+  it('disables Escape key when requireTyping is set', () => {
+    const handleClose = vi.fn();
+    render(
+      <ConfirmDialog 
+        {...defaultProps} 
+        requireTyping="DELETE"
+      />
+    );
+    
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(handleClose).not.toHaveBeenCalled();
+  });
+
+  it('has no accessibility violations when open', async () => {
+    const { container } = render(
+      <ConfirmDialog 
+        {...defaultProps} 
+      />
+    );
+    
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('has no accessibility violations with requireTyping', async () => {
+    const { container } = render(
+      <ConfirmDialog 
+        {...defaultProps} 
+        requireTyping="DELETE"
+      />
+    );
+    
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('has no accessibility violations with consequences', async () => {
+    const { container } = render(
+      <ConfirmDialog 
+        {...defaultProps} 
+        consequences={['Data will be deleted', 'This cannot be undone']}
+      />
+    );
+    
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });

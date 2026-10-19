@@ -20,7 +20,7 @@ import {
   numberToI128,
   BASE_FEE,
 } from "../services";
-import { NetworkDetails } from "../helpers/network";
+import { getNetworkDetails, NetworkDetails } from "../helpers/network";
 import { useWalletStore } from "../store/walletStore";
 import {
   Profile,
@@ -65,18 +65,7 @@ export const useContract = () => {
   const { network } = useWalletStore();
   const [loading, setLoading] = useState(false);
 
-  const networkDetails: NetworkDetails = useMemo(
-    () => ({
-      network,
-      networkUrl:
-        network === "TESTNET" ? env.horizonUrl : "https://horizon.stellar.org",
-      networkPassphrase:
-        network === "TESTNET"
-          ? "Test SDF Network ; September 2015"
-          : "Public Global Stellar Network ; September 2015",
-    }),
-    [network],
-  );
+  const networkDetails: NetworkDetails = useMemo(() => getNetworkDetails(network), [network]);
 
   const server = useMemo(() => getServer(networkDetails), [networkDetails]);
   const contractId = env.contractId;
@@ -698,6 +687,8 @@ export const useContract = () => {
       amount: string,
       message: string,
       isEncrypted = false,
+      expectedMinTip?: bigint,
+      expectedFeeBps?: number,
     ): Promise<string> => {
       const publicKey = wallet.publicKey;
       if (!publicKey) throw new Error("Wallet not connected");
@@ -714,6 +705,15 @@ export const useContract = () => {
         // Convert XLM amount to stroops before sending to contract
         const stroopAmount = xlmToStroop(amount).toString();
 
+        const optionalI128 = (value?: bigint): xdr.ScVal =>
+          value === undefined
+            ? nativeToScVal({ type: "none" })
+            : nativeToScVal({ type: "some", value });
+        const optionalU32 = (value?: number): xdr.ScVal =>
+          value === undefined
+            ? nativeToScVal({ type: "none" })
+            : nativeToScVal({ type: "some", value });
+
         const tx = txBuilder
           .addOperation(
             contract.call(
@@ -724,6 +724,8 @@ export const useContract = () => {
               nativeToScVal(message),
               nativeToScVal(false, { type: "bool" }),
               nativeToScVal(isEncrypted, { type: "bool" }),
+              optionalI128(expectedMinTip),
+              optionalU32(expectedFeeBps),
             ),
           )
           .setTimeout(TimeoutInfinite)

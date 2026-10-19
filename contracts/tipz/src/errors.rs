@@ -1,5 +1,3 @@
-//! Error types for the Tipz contract.
-
 use soroban_sdk::contracterror;
 
 #[contracterror]
@@ -7,10 +5,10 @@ use soroban_sdk::contracterror;
 #[repr(u32)]
 pub enum ContractError {
     NotInitialized = 1,
-    AlreadyInitialized = 2,
+    AlreadyInit = 2,
     NotAuthorized = 3,
-    AdminChangeAlreadyPending = 4,
-    AdminChangeTimelockNotMet = 5,
+    AdminChangePending = 4,
+    AdminTimelockNotMet = 5,
     NoPendingAdmin = 6,
     ContractPaused = 7,
     NotRegistered = 8,
@@ -19,37 +17,43 @@ pub enum ContractError {
     InvalidUsername = 11,
     InvalidDisplayName = 12,
     InvalidAmount = 13,
-    InsufficientBalance = 14,
+    LowBalance = 14,
     BalanceNotZero = 15,
     OverflowError = 16,
     NotFound = 17,
-    AlreadyDeactivated = 18,
-    ProfileDeactivated = 19,
-    ProfileNotDeactivated = 20,
-    MessageTooLong = 21,
-    InvalidImageUrl = 22,
-    BatchTooLarge = 23,
-    InvalidFee = 24,
-    CannotTipSelf = 25,
-    NotVerified = 26,
-    AlreadyVerified = 27,
-    Unauthorized = 28,
-    RateLimitExceeded = 29,
-    InvalidXHandle = 30,
-    TipBelowMinimum = 31,
-    ProfileNotActive = 32,
-    /// Tip message contains invalid control characters
-    InvalidMessage = 33,
-    /// Tip amount is below the creator's custom minimum
-    BelowCreatorMinimum = 34,
-    /// Domain format is invalid or empty when required
-    InvalidDomain = 35,
-    /// Generic invalid input error
-    InvalidInput = 36,
-    /// Token is not in the accepted whitelist
-    TokenNotAccepted = 37,
-    /// Maximum number of registered profiles reached (DoS protection)
-    MaxProfilesReached = 38,
+    Deactivated = 18,
+    NotDeactivated = 19,
+    MessageTooLong = 20,
+    InvalidImageUrl = 21,
+    BatchTooLarge = 22,
+    InvalidFee = 23,
+    CannotTipSelf = 24,
+    NotVerified = 25,
+    AlreadyVerified = 26,
+    RateLimitExceeded = 27,
+    TipBelowMinimum = 28,
+    BelowCreatorMin = 29,
+    InvalidDomain = 30,
+    InvalidInput = 31,
+    TokenNotAccepted = 32,
+    MaxProfiles = 33,
+    RefundExpired = 34,
+    RefundRequested = 35,
+    RefundProcessed = 36,
+    NotTipper = 37,
+    NotCreator = 38,
+    TipperBlocked = 39,
+    BlocklistLimit = 40,
+    ContractNotPaused = 41,
+    EmergencyNotAllowed = 42,
+    ProposalExpired = 43,
+    MigrationCompleted = 44,
+    MigrationDowngrade = 45,
+    InvalidMigration = 46,
+    NoRefundRequest = 47,
+    InvalidMessage = 48,
+    SubLimitReached = 49,
+    RefundReqExpired = 50,
     /// Profile is inactive beyond the cleanup threshold
     ProfileInactive = 39,
     /// Refund request window has expired

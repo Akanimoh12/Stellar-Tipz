@@ -18,6 +18,7 @@ import {
   profileUpdatedEvent,
   goalSetEvent,
   goalReachedEvent,
+  goalCompletedEvent,
   goalCancelEvent,
   subCreatedEvent,
   subExecEvent,
@@ -36,6 +37,7 @@ const {
   mockUserUpsert,
   mockGoalUpsert,
   mockGoalUpdateMany,
+  mockGoalFindUnique,
   mockSubUpsert,
   mockSubUpdateMany,
   mockTipUpsert,
@@ -44,10 +46,12 @@ const {
   mockCreditScoreUpsert,
   mockCreditScoreHistoryUpsert,
   mockPublishProjection,
+  mockCreateNotification,
 } = vi.hoisted(() => ({
   mockUserUpsert: vi.fn(),
   mockGoalUpsert: vi.fn(),
   mockGoalUpdateMany: vi.fn(),
+  mockGoalFindUnique: vi.fn(),
   mockSubUpsert: vi.fn(),
   mockSubUpdateMany: vi.fn(),
   mockTipUpsert: vi.fn(),
@@ -56,12 +60,13 @@ const {
   mockCreditScoreUpsert: vi.fn(),
   mockCreditScoreHistoryUpsert: vi.fn(),
   mockPublishProjection: vi.fn(),
+  mockCreateNotification: vi.fn(),
 }));
 
 vi.mock('../db/prisma.js', () => ({
   prisma: {
-    user: { upsert: mockUserUpsert },
-    goal: { upsert: mockGoalUpsert, updateMany: mockGoalUpdateMany },
+    user: { upsert: mockUserUpsert, findUnique: vi.fn(async () => null) },
+    goal: { upsert: mockGoalUpsert, updateMany: mockGoalUpdateMany, findUnique: mockGoalFindUnique },
     subscription: { upsert: mockSubUpsert, updateMany: mockSubUpdateMany },
     tip: { upsert: mockTipUpsert },
     eventLog: { findFirst: mockEventLogFindFirst, create: mockEventLogCreate },
@@ -72,6 +77,10 @@ vi.mock('../db/prisma.js', () => ({
 
 vi.mock('./realtime-publisher.js', () => ({
   publishProjection: mockPublishProjection,
+}));
+
+vi.mock('../modules/notifications/notifications.service.js', () => ({
+  createNotification: mockCreateNotification,
 }));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -105,11 +114,13 @@ beforeEach(() => {
   mockTipUpsert.mockResolvedValue({});
   mockGoalUpsert.mockResolvedValue({});
   mockGoalUpdateMany.mockResolvedValue({ count: 1 });
+  mockGoalFindUnique.mockResolvedValue(null);
   mockSubUpsert.mockResolvedValue({});
   mockSubUpdateMany.mockResolvedValue({ count: 1 });
   mockCreditScoreUpsert.mockResolvedValue({});
   mockCreditScoreHistoryUpsert.mockResolvedValue({});
   mockPublishProjection.mockResolvedValue(undefined);
+  mockCreateNotification.mockResolvedValue(null);
 });
 
 // ── Fixture event page ────────────────────────────────────────────────────────
@@ -330,6 +341,30 @@ describe('fixture: goal_reached', () => {
   });
 });
 
+// ── goal_completed projection ─────────────────────────────────────────────────
+
+describe('fixture: goal_completed', () => {
+  it('marks the goal COMPLETED with absolute raised amount', async () => {
+    await projectEvent(goalCompletedEvent);
+
+    expect(mockGoalUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'goal_u_' + ADDR_A },
+        update: { targetStroops: 5000000n, raisedStroops: 5000000n, status: 'COMPLETED' },
+      }),
+    );
+  });
+
+  it('is idempotent — replay sets the same absolute update', async () => {
+    await projectEvent(goalCompletedEvent);
+    await projectEvent(goalCompletedEvent);
+
+    expect(mockGoalUpsert.mock.calls[0][0].update).toEqual(
+      mockGoalUpsert.mock.calls[1][0].update,
+    );
+  });
+});
+
 // ── goal_cancel projection ────────────────────────────────────────────────────
 
 describe('fixture: goal_cancel', () => {
@@ -363,13 +398,18 @@ describe('fixture: sub_created', () => {
     );
   });
 
-  it('is idempotent — replay uses the same (tipper, creator) key', async () => {
+  it('is idempotent — replay uses the same key without mutating live billing state', async () => {
     await projectEvent(subCreatedEvent);
+    mockEventLogFindFirst.mockResolvedValue({ id: 'existing' });
     await projectEvent(subCreatedEvent);
 
     expect(mockSubUpsert.mock.calls[0][0].where).toEqual(
       mockSubUpsert.mock.calls[1][0].where,
     );
+    expect(mockSubUpsert.mock.calls[0][0].update).toEqual(
+      expect.objectContaining({ status: 'ACTIVE', nextChargeAt: expect.any(Date) }),
+    );
+    expect(mockSubUpsert.mock.calls[1][0].update).toEqual({});
   });
 });
 
@@ -382,18 +422,28 @@ describe('fixture: sub_exec', () => {
     expect(mockSubUpsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: `sub_u_${ADDR_A}_u_${ADDR_B}` },
-        update: { amountStroops: 500000n, status: 'ACTIVE' },
+        update: {
+          amountStroops: 500000n,
+          status: 'ACTIVE',
+          chargeFailureCount: 0,
+          dunningStartedAt: null,
+          nextChargeRetryAt: null,
+          lastChargeFailureReason: null,
+          chargeAttemptStartedAt: null,
+        },
       }),
     );
   });
 
-  it('is idempotent — replay produces the same update fields', async () => {
+  it('is idempotent — replay does not mutate current subscription state', async () => {
     await projectEvent(subExecEvent);
+    mockEventLogFindFirst.mockResolvedValue({ id: 'existing' });
     await projectEvent(subExecEvent);
 
     expect(mockSubUpsert.mock.calls[0][0].update).toEqual(
-      mockSubUpsert.mock.calls[1][0].update,
+      expect.objectContaining({ status: 'ACTIVE', chargeFailureCount: 0 }),
     );
+    expect(mockSubUpsert.mock.calls[1][0].update).toEqual({});
   });
 });
 
@@ -405,7 +455,7 @@ describe('fixture: sub_cancel', () => {
 
     expect(mockSubUpdateMany).toHaveBeenCalledWith({
       where: { id: `sub_u_${ADDR_A}_u_${ADDR_B}` },
-      data: { status: 'CANCELLED' },
+      data: { status: 'CANCELLED', nextChargeRetryAt: null, chargeAttemptStartedAt: null },
     });
   });
 });

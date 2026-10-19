@@ -17,6 +17,8 @@ process.env.HORIZON_URL ||= 'https://horizon-testnet.stellar.org';
 process.env.NETWORK_PASSPHRASE ||= 'Test SDF Network ; September 2015';
 process.env.INDEXER_POLL_INTERVAL_MS ||= '5000';
 process.env.LOG_LEVEL ||= 'error';
+// Tests never open the internal metrics listener; metricsServer.test.ts starts its own on an ephemeral port.
+process.env.METRICS_PORT ||= '0';
 
 beforeAll(() => {
   // Additional setup if needed

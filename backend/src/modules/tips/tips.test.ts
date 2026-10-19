@@ -1,7 +1,9 @@
 import request from 'supertest';
+import jwt from 'jsonwebtoken';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { createApp } from '../../app.js';
 import { openApiDocument } from '../../docs/openapi.js';
+import { createCursorScope, decodeCursor } from '../../common/pagination/cursor.js';
 
 const {
   mockGetAccount,
@@ -14,6 +16,12 @@ const {
   mockCreate,
   mockUpdate,
   mockGroupBy,
+  mockFindUniqueUser,
+  mockEmitBalanceUpdated,
+  mockGetWithdrawableBalance,
+  mockCreateNotification,
+  mockEmitLeaderboardUpdated,
+  mockGetUserRank,
 } = vi.hoisted(() => ({
   mockGetAccount: vi.fn(),
   mockSimulateTransaction: vi.fn(),
@@ -25,6 +33,37 @@ const {
   mockCreate: vi.fn(),
   mockUpdate: vi.fn(),
   mockGroupBy: vi.fn(),
+  mockFindUniqueUser: vi.fn(),
+  mockEmitBalanceUpdated: vi.fn(),
+  mockGetWithdrawableBalance: vi.fn(),
+  mockCreateNotification: vi.fn(),
+  mockEmitLeaderboardUpdated: vi.fn(),
+  mockGetUserRank: vi.fn(),
+}));
+
+vi.mock('../../realtime/index.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../realtime/index.js')>();
+  return {
+    ...actual,
+    emitBalanceUpdated: mockEmitBalanceUpdated,
+    emitLeaderboardUpdated: mockEmitLeaderboardUpdated,
+  };
+});
+
+vi.mock('../../db/redis.js', () => ({
+  redis: {
+    zcount: vi.fn().mockResolvedValue(0),
+    zadd: vi.fn().mockResolvedValue(1),
+    expire: vi.fn().mockResolvedValue(1),
+  },
+}));
+
+vi.mock('../withdrawals/withdrawals.service.js', () => ({
+  getWithdrawableBalance: mockGetWithdrawableBalance,
+}));
+
+vi.mock('../leaderboard/leaderboard.service.js', () => ({
+  getUserRank: mockGetUserRank,
 }));
 
 vi.mock('@stellar/stellar-sdk', () => {
@@ -96,8 +135,15 @@ vi.mock('../../db/prisma.js', () => ({
       update: mockUpdate,
       groupBy: mockGroupBy,
     },
+    user: {
+      findUnique: mockFindUniqueUser,
+    },
     $disconnect: vi.fn(),
   },
+}));
+
+vi.mock('../notifications/notifications.service.js', () => ({
+  createNotification: mockCreateNotification,
 }));
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -253,7 +299,8 @@ describe('GET /api/v1/tips', () => {
     const res = await request(app).get('/api/v1/tips?limit=20');
     expect(res.status).toBe(200);
     expect(res.body.data).toHaveLength(20);
-    expect(res.body.nextCursor).toBe('20');
+    expect(res.body.nextCursor).not.toBe('20');
+    expect(decodeCursor(res.body.nextCursor, createCursorScope('tips')).id).toBe('20');
   });
 
   it('returns empty array when no tips', async () => {
@@ -528,7 +575,11 @@ describe('GET /api/v1/tips — cursor-based pagination chain', () => {
     const page1 = await request(app).get('/api/v1/tips?limit=20');
     expect(page1.status).toBe(200);
     const cursor = page1.body.nextCursor as string;
-    expect(cursor).toBe('cuid-00020');
+    expect(cursor).not.toBe('cuid-00020');
+    expect(decodeCursor(cursor, createCursorScope('tips'))).toEqual({
+      sortValue: page1Rows[19].createdAt,
+      id: 'cuid-00020',
+    });
 
     mockFindMany.mockResolvedValueOnce([
       makeTipRow({ id: 'cuid-00021', txHash: 'hash-20', ledger: 120, amountStroops: BigInt(21) }),
@@ -541,8 +592,9 @@ describe('GET /api/v1/tips — cursor-based pagination chain', () => {
 
     expect(mockFindMany).toHaveBeenNthCalledWith(2,
       expect.objectContaining({
-        cursor: { id: cursor },
-        skip: 1,
+        where: expect.objectContaining({
+          AND: expect.objectContaining({ OR: expect.any(Array) }),
+        }),
       }),
     );
   });
@@ -605,6 +657,62 @@ describe('POST /api/v1/tips — dedupe by txHash', () => {
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
+  it('notifies the receiving creator when they have an off-chain account', async () => {
+    mockFindUnique.mockResolvedValue(null);
+    mockCreate.mockResolvedValue(tipRow);
+    mockFindUniqueUser.mockResolvedValue({ id: 'user-to' });
+
+    const app = createApp();
+    const res = await request(app).post('/api/v1/tips').send(validBody);
+
+    expect(res.status).toBe(200);
+    expect(mockFindUniqueUser).toHaveBeenCalledWith({ where: { stellarAddress: to } });
+    expect(mockCreateNotification).toHaveBeenCalledWith(
+      'user-to',
+      'tip_received',
+      expect.objectContaining({ tipId: tipRow.id, from, amountStroops: '1000000' }),
+    );
+  });
+
+  it('skips notifying when the recipient has no off-chain account', async () => {
+    mockFindUnique.mockResolvedValue(null);
+    mockCreate.mockResolvedValue(tipRow);
+    mockFindUniqueUser.mockResolvedValue(null);
+
+    const app = createApp();
+    const res = await request(app).post('/api/v1/tips').send(validBody);
+
+    expect(res.status).toBe(200);
+    expect(mockCreateNotification).not.toHaveBeenCalled();
+  });
+
+  it('skips notifying for a self-tip', async () => {
+    mockFindUnique.mockResolvedValue(null);
+    mockCreate.mockResolvedValue(makeTipRow({ fromAddress: to }));
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/tips')
+      .send({ ...validBody, fromAddress: to });
+
+    expect(res.status).toBe(200);
+    expect(mockFindUniqueUser).not.toHaveBeenCalled();
+    expect(mockCreateNotification).not.toHaveBeenCalled();
+  });
+
+  it('does not fail the request when notifying the creator throws', async () => {
+    mockFindUnique.mockResolvedValue(null);
+    mockCreate.mockResolvedValue(tipRow);
+    mockFindUniqueUser.mockResolvedValue({ id: 'user-to' });
+    mockCreateNotification.mockRejectedValue(new Error('boom'));
+
+    const app = createApp();
+    const res = await request(app).post('/api/v1/tips').send(validBody);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.txHash).toBe('abc123txhash');
+  });
+
   it('returns the existing tip without a duplicate insert when txHash already exists', async () => {
     mockFindUnique.mockResolvedValue(tipRow);
 
@@ -613,6 +721,7 @@ describe('POST /api/v1/tips — dedupe by txHash', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.txHash).toBe('abc123txhash');
     expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockCreateNotification).not.toHaveBeenCalled();
   });
 });
 
@@ -664,6 +773,229 @@ describe('PATCH /api/v1/tips/:txHash/confirm', () => {
     const res = await request(app).patch('/api/v1/tips//confirm');
     expect(res.status).toBe(404);
   });
+
+  it('emits balance.updated for the recipient after confirming (#951)', async () => {
+    mockFindUnique.mockResolvedValue(pendingRow);
+    mockUpdate.mockResolvedValue(confirmedRow);
+    mockFindUniqueUser.mockResolvedValue({ id: 'user-1', stellarAddress: to });
+    mockGetWithdrawableBalance.mockResolvedValue({
+      stellarAddress: to,
+      totalReceived: '1000000',
+      totalWithdrawn: '0',
+      withdrawableBalance: '1000000',
+    });
+
+    const app = createApp();
+    const res = await request(app).patch(`/api/v1/tips/${txHash}/confirm`);
+
+    expect(res.status).toBe(200);
+    expect(mockFindUniqueUser).toHaveBeenCalledWith({ where: { stellarAddress: to } });
+    expect(mockGetWithdrawableBalance).toHaveBeenCalledWith('user-1');
+    expect(mockEmitBalanceUpdated).toHaveBeenCalledWith({
+      userId: 'user-1',
+      stellarAddress: to,
+      totalReceived: '1000000',
+      totalWithdrawn: '0',
+      withdrawableBalance: '1000000',
+    });
+  });
+
+  it('does not emit balance.updated when the recipient has no account', async () => {
+    mockFindUnique.mockResolvedValue(pendingRow);
+    mockUpdate.mockResolvedValue(confirmedRow);
+    mockFindUniqueUser.mockResolvedValue(null);
+
+    const app = createApp();
+    const res = await request(app).patch(`/api/v1/tips/${txHash}/confirm`);
+
+    expect(res.status).toBe(200);
+    expect(mockGetWithdrawableBalance).not.toHaveBeenCalled();
+    expect(mockEmitBalanceUpdated).not.toHaveBeenCalled();
+  });
+
+  it('emits leaderboard.updated for the recipient after confirming (#952)', async () => {
+    mockFindUnique.mockResolvedValue(pendingRow);
+    mockUpdate.mockResolvedValue(confirmedRow);
+    mockFindUniqueUser.mockResolvedValue({ id: 'user-1', stellarAddress: to });
+    mockGetWithdrawableBalance.mockResolvedValue({
+      stellarAddress: to,
+      totalReceived: '1000000',
+      totalWithdrawn: '0',
+      withdrawableBalance: '1000000',
+    });
+    mockGetUserRank.mockResolvedValue({ rank: 3, totalTips: '1000000', window: 'all' });
+
+    const app = createApp();
+    const res = await request(app).patch(`/api/v1/tips/${txHash}/confirm`);
+
+    expect(res.status).toBe(200);
+    expect(mockGetUserRank).toHaveBeenCalledWith('user-1', 'all');
+    expect(mockEmitLeaderboardUpdated).toHaveBeenCalledWith({
+      window: 'all',
+      entry: {
+        rank: 3,
+        userId: 'user-1',
+        stellarAddress: to,
+        totalTips: '1000000',
+      },
+    });
+  });
+
+  it('does not fail the request when getUserRank throws', async () => {
+    mockFindUnique.mockResolvedValue(pendingRow);
+    mockUpdate.mockResolvedValue(confirmedRow);
+    mockFindUniqueUser.mockResolvedValue({ id: 'user-1', stellarAddress: to });
+    mockGetWithdrawableBalance.mockResolvedValue({
+      stellarAddress: to,
+      totalReceived: '1000000',
+      totalWithdrawn: '0',
+      withdrawableBalance: '1000000',
+    });
+    mockGetUserRank.mockRejectedValue(new Error('not ranked yet'));
+
+    const app = createApp();
+    const res = await request(app).patch(`/api/v1/tips/${txHash}/confirm`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('CONFIRMED');
+    expect(mockEmitLeaderboardUpdated).not.toHaveBeenCalled();
+    expect(mockEmitBalanceUpdated).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── GET /api/v1/tips/:txHash/receipt ───────────────────────────────────────
+
+describe('GET /api/v1/tips/:txHash/receipt', () => {
+  const txHash = 'abc123txhash';
+  const thirdParty = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA3';
+
+  function signToken(stellarAddress: string): string {
+    return jwt.sign({ sub: 'user-id', stellarAddress }, process.env.JWT_SECRET!);
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns a receipt when the sender requests it', async () => {
+    mockFindUnique.mockResolvedValue(makeTipRow());
+    const token = signToken(from);
+
+    const app = createApp();
+    const res = await request(app)
+      .get(`/api/v1/tips/${txHash}/receipt`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.txHash).toBe(txHash);
+    expect(res.body.data.amountStroops).toBe('1000000');
+    expect(res.body.data.feeStroops).toBe('0');
+    expect(res.body.data.tokenCode).toBe('XLM');
+    expect(res.body.data.fromAddress).toBe(from);
+    expect(res.body.data.toAddress).toBe(to);
+    expect(res.body.data.ledger).toBe(100);
+    expect(res.body.data.createdAt).toBe(now.toISOString());
+    expect(res.body.data.explorerUrl).toContain(txHash);
+    expect(res.body.data.explorerUrl).toMatch(/^https:\/\/stellar\.expert\/explorer\//);
+  });
+
+  it('returns a receipt when the recipient requests it', async () => {
+    mockFindUnique.mockResolvedValue(makeTipRow());
+    const token = signToken(to);
+
+    const app = createApp();
+    const res = await request(app)
+      .get(`/api/v1/tips/${txHash}/receipt`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.txHash).toBe(txHash);
+  });
+
+  it('returns 403 when a third party requests it', async () => {
+    mockFindUnique.mockResolvedValue(makeTipRow());
+    const token = signToken(thirdParty);
+
+    const app = createApp();
+    const res = await request(app)
+      .get(`/api/v1/tips/${txHash}/receipt`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('returns 404 when the tip does not exist', async () => {
+    mockFindUnique.mockResolvedValue(null);
+    const token = signToken(from);
+
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/v1/tips/nonexistent/receipt')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('returns 401 when no auth token is provided', async () => {
+    const app = createApp();
+    const res = await request(app).get(`/api/v1/tips/${txHash}/receipt`);
+
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 for anonymous tips when caller is not sender or recipient', async () => {
+    mockFindUnique.mockResolvedValue(makeTipRow({ isAnonymous: true }));
+    const token = signToken(thirdParty);
+
+    const app = createApp();
+    const res = await request(app)
+      .get(`/api/v1/tips/${txHash}/receipt`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('returns receipt for anonymous tip when caller is the sender', async () => {
+    mockFindUnique.mockResolvedValue(makeTipRow({ isAnonymous: true }));
+    const token = signToken(from);
+
+    const app = createApp();
+    const res = await request(app)
+      .get(`/api/v1/tips/${txHash}/receipt`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.txHash).toBe(txHash);
+  });
+
+  it('returns receipt for anonymous tip when caller is the recipient', async () => {
+    mockFindUnique.mockResolvedValue(makeTipRow({ isAnonymous: true }));
+    const token = signToken(to);
+
+    const app = createApp();
+    const res = await request(app)
+      .get(`/api/v1/tips/${txHash}/receipt`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.txHash).toBe(txHash);
+  });
+
+  it('includes explorer URL with correct network path', async () => {
+    mockFindUnique.mockResolvedValue(makeTipRow());
+    const token = signToken(from);
+
+    const app = createApp();
+    const res = await request(app)
+      .get(`/api/v1/tips/${txHash}/receipt`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.explorerUrl).toBe(`https://stellar.expert/explorer/testnet/tx/${txHash}`);
+  });
 });
 
 // ── OpenAPI docs registration ───────────────────────────────────────────────
@@ -702,6 +1034,14 @@ describe('OpenAPI docs - Tips module', () => {
     expect(patchOp).toBeDefined();
     expect((patchOp?.tags as string[]) ?? []).toContain('Tips');
     expect(patchOp?.summary).toBe('Confirm a pending tip');
+  });
+
+  it('registers GET /api/v1/tips/:txHash/receipt endpoint', () => {
+    const getOp = openApiDocument.paths['/api/v1/tips/{txHash}/receipt']?.get as Record<string, unknown> | undefined;
+    expect(getOp).toBeDefined();
+    expect((getOp?.tags as string[]) ?? []).toContain('Tips');
+    expect(getOp?.summary).toBe('Get a structured tip receipt');
+    expect((getOp?.security as Record<string, string[]>[]) ?? []).toEqual([{ bearerAuth: [] }]);
   });
 
   it('registers profile tips endpoint at /api/v1/profiles/:username/tips', () => {

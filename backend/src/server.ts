@@ -5,14 +5,25 @@ import { logger } from './common/utils/logger.js';
 import { prisma } from './db/prisma.js';
 import { redis } from './db/redis.js';
 import { registerClosable, closeAll } from './common/utils/lifecycle.js';
-import { startIndexer } from './indexer/index.js';
-import {
-  createCreditRecomputeWorker,
-  scheduleCreditRecompute,
-} from './jobs/index.js';
+import { initializeQueues, closeAllQueues } from './modules/jobs/queue.factory.js';
+import { initRealtime } from './realtime/gateway.js';
+import { initTracing, shutdownTracing } from './common/observability/tracing.js';
 
 /** Process entry point: starts the HTTP server (and, later, the WebSocket + indexer). */
 async function bootstrap(): Promise<void> {
+  // Initialize OpenTelemetry tracing (issue #1349)
+  initTracing();
+  registerClosable({
+    name: 'OpenTelemetry',
+    close: shutdownTracing,
+  });
+import { startProcessMetrics } from './common/observability/metricsServer.js';
+
+/** Process entry point: starts the HTTP server (and, later, the WebSocket + indexer). */
+async function bootstrap(): Promise<void> {
+  // Prometheus registry + internal /metrics listener (issue #1346)
+  await startProcessMetrics('api');
+
   const app = createApp();
   const httpServer = createServer(app);
 
@@ -28,27 +39,15 @@ async function bootstrap(): Promise<void> {
     },
   });
 
-  // Start the off-chain indexer poll loop and stop it on shutdown.
-  const indexer = startIndexer();
+  // Initialize job queues (issue #1288, #1289, #1287)
+  await initializeQueues();
   registerClosable({
-    name: 'Indexer',
-    close: async () => {
-      indexer.stop();
-    },
+    name: 'Job Queues',
+    close: closeAllQueues,
   });
 
-  // Start the credit score recompute worker and schedule the recurring job.
-  const creditWorker = createCreditRecomputeWorker();
-  registerClosable({
-    name: 'CreditRecomputeWorker',
-    close: async () => {
-      await creditWorker.close();
-    },
-  });
-  await scheduleCreditRecompute();
-
-  // The realtime gateway (Socket.IO) attaches to this httpServer — see the realtime issues.
-  // initRealtime(httpServer);
+  // Initialize realtime gateway (issue #1286)
+  initRealtime(httpServer);
 
   httpServer.listen(env.PORT, () => {
     logger.info(`🚀 Stellar Tipz backend listening on http://localhost:${env.PORT}`);

@@ -2,7 +2,7 @@
 
 extern crate alloc;
 use alloc::format;
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
 
 use crate::test::test_init::{setup_test_contract, setup_test_contract_with_admin};
 use crate::TipzContractClient;
@@ -16,6 +16,11 @@ fn register_creator(client: &TipzContractClient, env: &Env, creator: &Address, u
         &String::from_str(env, ""),
         &String::from_str(env, "@test"),
     );
+}
+
+fn fund_tipper(client: &TipzContractClient, env: &Env, tipper: &Address) {
+    let token = client.get_config().native_token;
+    token::StellarAssetClient::new(env, &token).mint(tipper, &100_000_000_000);
 }
 
 #[test]

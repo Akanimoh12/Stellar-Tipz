@@ -1,0 +1,34 @@
+# CODEOWNERS
+#
+# Each line maps a path pattern to one or more owners.
+# The last matching rule takes precedence.
+# Owners are notified and must approve PRs that touch their paths.
+#
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# ── Default owner for everything ────────────────────────────────────────────
+* @Akanimoh12
+
+# ── Lockfiles — any PR that changes a lockfile requires explicit review ──────
+# This enforces the supply-chain policy: no new dependency enters the project
+# without a maintainer explicitly approving the lockfile diff.
+/frontend-scaffold/package-lock.json   @Akanimoh12
+/frontend-scaffold/pnpm-lock.yaml      @Akanimoh12
+/backend/package-lock.json             @Akanimoh12
+/package-lock.json                     @Akanimoh12
+/contracts/Cargo.lock                  @Akanimoh12
+
+# ── Security-sensitive configuration ────────────────────────────────────────
+/SECURITY.md                           @Akanimoh12
+/.github/workflows/security*.yml       @Akanimoh12
+/.github/workflows/contract-ci.yml     @Akanimoh12
+/.github/workflows/pr-checks.yml       @Akanimoh12
+/.github/CODEOWNERS                    @Akanimoh12
+/contracts/deny.toml                   @Akanimoh12
+/.github/dependabot.yml                @Akanimoh12
+
+# ── CI / CD workflows ────────────────────────────────────────────────────────
+/.github/workflows/                    @Akanimoh12
+
+# ── Smart contracts ──────────────────────────────────────────────────────────
+/contracts/                            @Akanimoh12

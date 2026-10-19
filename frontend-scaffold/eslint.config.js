@@ -1,5 +1,6 @@
 // For more info, see https://github.com/storybookjs/eslint-plugin-storybook#configuration-flat-config-format
 import storybook from "eslint-plugin-storybook";
+import hardcodedStrings from "./src/i18n/lint-rules/hardcoded-strings";
 
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
@@ -25,5 +26,6 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "error",
     },
   },
-  storybook.configs["flat/recommended"]
+  storybook.configs["flat/recommended"],
+  { rules: { "i18n/hardcoded-strings": "error" } }
 );

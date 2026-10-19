@@ -16,6 +16,7 @@ import {
   updateProfileSchema,
   profileIdSchema,
   usernameSchema,
+  uploadProfileImageSchema,
 } from "./profiles.schema.js";
 import type { AuthPayload } from "../auth/auth.types.js";
 
@@ -188,9 +189,7 @@ export async function uploadImageController(
 ) {
   try {
     const auth = req.auth as AuthPayload;
-    const { dataUrl } = z.object({
-      dataUrl: z.string().startsWith("data:"),
-    }).parse(req.body);
+    const { dataUrl } = uploadProfileImageSchema.parse(req.body);
     const result = await uploadProfileImage(auth.userId, dataUrl);
     res.json({ data: result });
   } catch (error) {

@@ -53,11 +53,21 @@ export const openApiDocument: OpenApiDocument = {
       'Off-chain REST API for Stellar Tipz. Paths are added incrementally as feature modules land.',
   },
   tags: [
-    { name: 'Health', description: 'Service liveness' },
+    { name: 'Health', description: 'Service liveness and dependency readiness' },
     { name: 'Auth', description: 'Wallet authentication' },
     { name: 'Profiles', description: 'Creator profile management' },
     { name: 'Tips', description: 'On-chain tipping operations' },
     { name: 'Leaderboard', description: 'Creator tip leaderboard with time windows' },
+    { name: 'Withdrawals', description: 'Withdrawal operations and balance queries' },
+    { name: 'Notifications', description: 'In-app notifications for users' },
+    { name: 'Email', description: 'Email notification delivery' },
+    { name: 'Privacy', description: 'User privacy export and deletion workflows' },
+    { name: 'Moderation', description: 'User abuse reports and moderation intake' },
+    { name: 'Search', description: 'Search creators by name or username' },
+    { name: 'Analytics', description: 'Platform analytics and daily stats' },
+    { name: 'Goals', description: 'Creator funding goals' },
+    { name: 'Subscriptions', description: 'Recurring tip subscriptions' },
+    { name: 'Streaks', description: 'Tipping streaks' },
   ],
   components: {
     securitySchemes: {
@@ -73,23 +83,40 @@ export const openApiDocument: OpenApiDocument = {
       get: {
         tags: ['Health'],
         summary: 'Health check',
-        description: 'Returns service liveness status.',
+        description: 'Backwards-compatible alias for the dependency readiness probe.',
         responses: {
           '200': {
-            description: 'Service is healthy',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: {
-                    status: { type: 'string', example: 'ok' },
-                    service: { type: 'string', example: 'stellar-tipz-backend' },
-                    time: { type: 'string', format: 'date-time' },
-                  },
-                  required: ['status', 'service', 'time'],
-                },
-              },
-            },
+            description: 'All required dependencies are available',
+          },
+          '503': {
+            description: 'At least one required dependency is unavailable',
+          },
+        },
+      },
+    },
+    '/health/live': {
+      get: {
+        tags: ['Health'],
+        summary: 'Liveness probe',
+        description: 'Cheap process liveness probe that does not contact external dependencies.',
+        responses: {
+          '200': {
+            description: 'The process is alive',
+          },
+        },
+      },
+    },
+    '/health/ready': {
+      get: {
+        tags: ['Health'],
+        summary: 'Readiness probe',
+        description: 'Checks PostgreSQL, Redis, and Soroban RPC with bounded timeouts.',
+        responses: {
+          '200': {
+            description: 'All required dependencies are available',
+          },
+          '503': {
+            description: 'At least one required dependency is unavailable',
           },
         },
       },

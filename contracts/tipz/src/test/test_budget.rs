@@ -48,6 +48,9 @@ const MEM_SEND_TIP_FULL_BOARD: u64 = 15_000_000;
 const MEM_WITHDRAW: u64 = 10_000_000;
 const MEM_GET_LEADERBOARD_FULL: u64 = 8_000_000;
 
+const CPU_BATCH_TIP_MAX: u64 = 50_000_000;
+const MEM_BATCH_TIP_MAX: u64 = 15_000_000;
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 /// Names used for leaderboard-filling helpers (3–32 chars, [a-z0-9_]).
@@ -176,7 +179,7 @@ fn fill_leaderboard(env: &Env, contract_id: &Address) -> soroban_sdk::Vec<Addres
                 domain_verified_at: None,
         custom_min_tip: None,
             };
-            crate::leaderboard::update_leaderboard(env, &profile);
+            crate::leaderboard::update_leaderboard(env, &profile, crate::types::LeaderboardPeriod::AllTime, profile.total_tips_received);
             i += 1;
         }
     });
@@ -328,7 +331,7 @@ fn test_send_tip_budget_full_leaderboard_rebalance() {
     fill_leaderboard(&env, &contract_id);
 
     assert_eq!(
-        client.get_leaderboard_size(),
+        client.get_leaderboard_size(&crate::types::LeaderboardPeriod::AllTime),
         MAX_LEADERBOARD_SIZE,
         "leaderboard must be full before measuring rebalance cost"
     );
@@ -417,14 +420,14 @@ fn test_get_leaderboard_budget_full() {
     fill_leaderboard(&env, &contract_id);
 
     assert_eq!(
-        client.get_leaderboard_size(),
+        client.get_leaderboard_size(&crate::types::LeaderboardPeriod::AllTime),
         MAX_LEADERBOARD_SIZE,
         "leaderboard must be full before measuring read cost"
     );
 
     env.budget().reset_unlimited();
 
-    let board = client.get_leaderboard(&50);
+    let board = client.get_leaderboard(&crate::types::LeaderboardPeriod::AllTime, &50);
 
     let cpu = env.budget().cpu_instruction_cost();
     let mem = env.budget().memory_bytes_cost();
@@ -503,5 +506,47 @@ fn test_send_tip_message_length_overhead() {
     assert!(
         overhead <= MSG_CPU_OVERHEAD_MAX,
         "message-length CPU overhead {overhead} exceeds max {MSG_CPU_OVERHEAD_MAX}"
+    );
+}
+
+
+/// CPU and memory cost of `batch_tip` with max 5 recipients.
+///
+/// Worst-case batch: 5 recipients, each with full leaderboard (50 entries),
+/// all tips counted toward leaderboard (no concentration cap applied yet).
+#[test]
+fn test_batch_tip_max_recipients_budget() {
+    let (env, client, contract_id, tipper, _, _) = setup();
+
+    // Pre-fill the leaderboard to capacity once
+    let leaderboard_creators = fill_leaderboard(&env, &contract_id);
+
+    // Register 5 new creators
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    for i in 0..5 {
+        let new_creator = Address::generate(&env);
+        insert_profile(&env, &contract_id, &new_creator, &format!("creator{}", i));
+        recipients.push_back((new_creator, 10_000_000));
+    }
+
+    let message = String::from_str(&env, "batch tip");
+
+    env.budget().reset_unlimited();
+
+    let count = client.batch_tip(&tipper, &recipients, &message).unwrap();
+
+    let cpu = env.budget().cpu_instruction_cost();
+    let mem = env.budget().memory_bytes_cost();
+
+    soroban_sdk::log!(&env, "batch_tip (5 recipients): CPU={}, MEM={}", cpu, mem);
+
+    assert_eq!(count, 5);
+    assert!(
+        cpu <= CPU_BATCH_TIP_MAX,
+        "batch_tip CPU {cpu} exceeds threshold {CPU_BATCH_TIP_MAX}"
+    );
+    assert!(
+        mem <= MEM_BATCH_TIP_MAX,
+        "batch_tip MEM {mem} exceeds threshold {MEM_BATCH_TIP_MAX}"
     );
 }

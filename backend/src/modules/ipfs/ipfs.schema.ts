@@ -18,14 +18,14 @@ export const cidParamSchema = z.object({
     .trim()
     .min(1, "CID cannot be empty")
     .regex(cidRegex, "Invalid IPFS CID format"),
-});
+}).strict();
 
 /**
  * Zod schema for gateway query parameters.
  */
 export const gatewayQuerySchema = z.object({
   gateway: z.string().url("Invalid gateway URL format").optional(),
-});
+}).strict();
 
 export type CidParamInput = z.infer<typeof cidParamSchema>;
 export type GatewayQueryInput = z.infer<typeof gatewayQuerySchema>;

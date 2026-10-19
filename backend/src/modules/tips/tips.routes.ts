@@ -3,22 +3,29 @@ import * as tipsController from './tips.controller.js';
 import { requireAuth } from '../../common/middleware/requireAuth.js';
 import { env } from '../../config/env.js';
 import { mergeOpenApiPaths } from '../../docs/openapi.js';
+import { deprecatedOffsetPagination } from '../../common/middleware/deprecatedOffsetPagination.js';
 
 export const tipsRouter = Router();
 
-tipsRouter.get('/', tipsController.getTips);
+tipsRouter.get('/', deprecatedOffsetPagination, tipsController.getTips);
 tipsRouter.post('/', tipsController.record);
 tipsRouter.post('/prepare', tipsController.prepare);
 tipsRouter.get('/:id', tipsController.getById);
+tipsRouter.get('/:txHash/receipt', requireAuth, tipsController.getReceipt);
 tipsRouter.patch('/:txHash/confirm', tipsController.confirm);
 
 /** Mounted under `${API_BASE_PATH}/profiles` — tips received by a profile. */
 export const profileTipsRouter = Router();
-profileTipsRouter.get('/:username/tips', tipsController.getReceived);
+profileTipsRouter.get('/:username/tips', deprecatedOffsetPagination, tipsController.getReceived);
 
 /** Mounted under `${API_BASE_PATH}/users` — tips sent by the authenticated user. */
 export const userTipsRouter = Router();
-userTipsRouter.get('/me/tips/sent', requireAuth, tipsController.getSent);
+userTipsRouter.get(
+  '/me/tips/sent',
+  requireAuth,
+  deprecatedOffsetPagination,
+  tipsController.getSent,
+);
 
 const base = `${env.API_BASE_PATH}/tips`;
 
@@ -35,7 +42,15 @@ const paginationParameters = [
     in: 'query',
     required: false,
     schema: { type: 'string' },
-    description: 'Id of the last item from the previous page',
+    description: 'Opaque nextCursor returned by the previous page',
+  },
+  {
+    name: 'offset',
+    in: 'query',
+    required: false,
+    deprecated: true,
+    schema: { type: 'integer', minimum: 0 },
+    description: 'Deprecated; use cursor instead. Supported until 2027-02-28.',
   },
 ];
 
@@ -99,7 +114,7 @@ mergeOpenApiPaths({
                   },
                   nextCursor: { type: 'string', nullable: true },
                 },
-                required: ['data'],
+                required: ['data', 'nextCursor'],
               },
             },
           },
@@ -230,6 +245,58 @@ mergeOpenApiPaths({
         },
         '400': { description: 'Validation error' },
         '404': { description: 'Tip not found' },
+      },
+    },
+  },
+  [`${base}/{txHash}/receipt`]: {
+    get: {
+      tags: ['Tips'],
+      summary: 'Get a structured tip receipt',
+      description: 'Returns a structured receipt for the tip identified by txHash. Only the sender or recipient may fetch it. Anonymous tips return 404 to non-parties.',
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        {
+          name: 'txHash',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+          description: 'Transaction hash of the tip',
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'Receipt found',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: {
+                    type: 'object',
+                    properties: {
+                      txHash: { type: 'string' },
+                      ledger: { type: 'integer' },
+                      fromAddress: { type: 'string' },
+                      toAddress: { type: 'string' },
+                      amountStroops: { type: 'string', description: 'Tip amount in stroops' },
+                      feeStroops: { type: 'string', description: 'Network fee in stroops' },
+                      tokenCode: { type: 'string', description: 'Token code (e.g. XLM, USDC)' },
+                      status: { type: 'string', enum: ['PENDING', 'CONFIRMED', 'FAILED', 'REFUNDED'] },
+                      message: { type: 'string', nullable: true },
+                      createdAt: { type: 'string', format: 'date-time' },
+                      explorerUrl: { type: 'string', description: 'Stellar Expert explorer URL for independent verification' },
+                    },
+                    required: ['txHash', 'ledger', 'fromAddress', 'toAddress', 'amountStroops', 'feeStroops', 'tokenCode', 'status', 'createdAt', 'explorerUrl'],
+                  },
+                },
+                required: ['data'],
+              },
+            },
+          },
+        },
+        '401': { description: 'Unauthorized — missing or invalid token' },
+        '403': { description: 'Forbidden — caller is not the sender or recipient' },
+        '404': { description: 'Tip not found, or anonymous tip accessed by non-party' },
       },
     },
   },

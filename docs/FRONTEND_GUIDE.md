@@ -272,6 +272,29 @@ Defined in `tailwind.config.js`:
 - Keep the black/white brutalist palette — no random colors
 - All interactive elements need `:hover` and `:focus` states
 
+### Reduced Motion
+
+Every animation must honour the user's reduced-motion preference — both the
+OS-level `prefers-reduced-motion` media query and the in-app **Reduce motion**
+setting (`Settings → Accessibility`). Reduced motion means *reduced*, not
+removed: state changes still render, they simply stop moving.
+
+| Layer | Mechanism |
+|-------|-----------|
+| React components | `useReducedMotion()` from `hooks/useReducedMotion` — the single implementation; also mirrors the setting onto `<html>` |
+| CSS / Tailwind `animate-*` | `index.scss` suppresses animations and transitions under the media query **and** under `[data-reduced-motion="true"]` |
+| Framer Motion | `<MotionConfig>` in `App.tsx` disables transform animations and makes transitions instant when the preference is on |
+| Confetti | use the `celebrate()` helper from `helpers/confetti`; it is a no-op (returns `false`) when motion is reduced |
+
+Guidelines for new components:
+
+- Use the hook instead of reading `matchMedia` directly, and drive `duration: 0`
+  (instant) rather than skipping the render entirely.
+- Keep essential motion perceivable — mark it with
+  `data-essential-motion="loading"` so a spinner keeps a slow stepped animation.
+- Non-React helpers must use the synchronous `shouldReduceMotionNow()` check so
+  they stay in step with the hook.
+
 ---
 
 ## Routing
