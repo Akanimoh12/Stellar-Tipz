@@ -109,7 +109,7 @@ pub fn initialize(
 }
 
 /// Maximum number of creators in a single [`batch_update_x_metrics`] call.
-pub const MAX_X_METRICS_BATCH_LEN: u32 = 50;
+pub const MAX_X_METRICS_BATCH_LEN: u32 = storage::MAX_BATCH_SIZE;
 
 /// Waiting period before a proposed new admin may call [`confirm_admin_change`].
 pub const ADMIN_CHANGE_TIMELOCK_SECS: u64 = 48 * 3600;

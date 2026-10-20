@@ -6,7 +6,7 @@ use soroban_sdk::{
 };
 
 use crate::errors::ContractError;
-use crate::storage::DataKey;
+use crate::storage::{DataKey, SUBSCRIPTION_TTL_MAX_LEDGERS};
 use crate::types::{Profile, Subscription};
 use crate::TipzContract;
 use crate::TipzContractClient;
@@ -78,7 +78,7 @@ fn setup_env() -> (
 
 #[test]
 fn test_create_subscription() {
-    let (env, client, _contract_id, subscriber, creator, _sac) = setup_env();
+    let (env, client, contract_id, subscriber, creator, _sac) = setup_env();
 
     let sub = client.create_subscription(&subscriber, &creator, &100_000_000, &7);
     assert!(sub.active);
@@ -87,6 +87,65 @@ fn test_create_subscription() {
 
     let subs = client.get_subscriptions(&subscriber);
     assert_eq!(subs.len(), 1);
+
+    env.as_contract(&contract_id, || {
+        assert_eq!(
+            env.storage()
+                .persistent()
+                .get_ttl(&DataKey::Subscription(subscriber.clone(), creator.clone())),
+            SUBSCRIPTION_TTL_MAX_LEDGERS
+        );
+    });
+}
+
+#[test]
+fn test_charge_extends_subscription_ttl_past_ledger_window() {
+    let (env, client, contract_id, subscriber, creator, _sac) = setup_env();
+    client.create_subscription(&subscriber, &creator, &100_000_000, &7);
+
+    env.as_contract(&contract_id, || {
+        let key = DataKey::Subscription(subscriber.clone(), creator.clone());
+        env.storage().persistent().extend_ttl(&key, 1, 1);
+    });
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + (8 * 86400));
+
+    client.execute_due_subscription(&subscriber, &creator);
+
+    env.as_contract(&contract_id, || {
+        assert_eq!(
+            env.storage()
+                .persistent()
+                .get_ttl(&DataKey::Subscription(subscriber.clone(), creator.clone())),
+            SUBSCRIPTION_TTL_MAX_LEDGERS
+        );
+    });
+    assert_eq!(client.get_subscriptions(&subscriber).len(), 1);
+}
+
+#[test]
+fn test_cancel_extends_subscription_ttl_past_ledger_window() {
+    let (env, client, contract_id, subscriber, creator, _sac) = setup_env();
+    client.create_subscription(&subscriber, &creator, &100_000_000, &7);
+
+    env.as_contract(&contract_id, || {
+        let key = DataKey::Subscription(subscriber.clone(), creator.clone());
+        env.storage().persistent().extend_ttl(&key, 1, 1);
+    });
+
+    client.cancel_subscription(&subscriber, &creator);
+
+    env.as_contract(&contract_id, || {
+        assert_eq!(
+            env.storage()
+                .persistent()
+                .get_ttl(&DataKey::Subscription(subscriber.clone(), creator.clone())),
+            SUBSCRIPTION_TTL_MAX_LEDGERS
+        );
+    });
+    let subscription = client.get_subscriptions(&subscriber);
+    assert_eq!(subscription.len(), 1);
+    assert!(!subscription.get(0).unwrap().active);
 }
 
 #[test]

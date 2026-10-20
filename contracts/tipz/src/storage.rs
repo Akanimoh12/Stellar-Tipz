@@ -5,7 +5,7 @@
 //! | Tier | Usage |
 //! |------|-------|
 //! | `instance()` | Contract-wide config and counters (Admin, fee, TotalCreators, …) |
-//! | `persistent()` | Per-entry long-lived data (Profile, username reverse-lookup) |
+//! | `persistent()` | Per-entry long-lived data (profiles, subscriptions, indexes) |
 //! | `temporary()` | Short-lived tip records; TTL extended on write |
 //!
 //! All callers should go through the helpers in this module instead of
@@ -36,6 +36,14 @@ pub const PROFILE_TTL_MIN_LEDGERS: u32 = 120_960;
 
 /// Target TTL for profile entries after a bump (~31 days).
 pub const PROFILE_TTL_MAX_LEDGERS: u32 = 535_680;
+
+/// Maximum number of entries accepted by any batch operation.
+pub const MAX_BATCH_SIZE: u32 = 50;
+
+/// Subscription records and their indexes use the long-lived persistent TTL
+/// policy, matching profile storage.
+pub const SUBSCRIPTION_TTL_MIN_LEDGERS: u32 = PROFILE_TTL_MIN_LEDGERS;
+pub const SUBSCRIPTION_TTL_MAX_LEDGERS: u32 = PROFILE_TTL_MAX_LEDGERS;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // DataKey
@@ -650,6 +658,59 @@ pub fn bump_username_ttl(env: &Env, username: &soroban_sdk::String) {
             PROFILE_TTL_MIN_LEDGERS,
             PROFILE_TTL_MAX_LEDGERS,
         );
+    }
+}
+
+/// Bump a subscription and the index entries needed to enumerate it together.
+pub fn bump_subscription_ttl(env: &Env, subscriber: &Address, creator: &Address) {
+    let persistent = env.storage().persistent();
+    let subscription_key = DataKey::Subscription(subscriber.clone(), creator.clone());
+    if persistent.has(&subscription_key) {
+        persistent.extend_ttl(
+            &subscription_key,
+            SUBSCRIPTION_TTL_MIN_LEDGERS,
+            SUBSCRIPTION_TTL_MAX_LEDGERS,
+        );
+    }
+
+    if let Some(count) =
+        persistent.get::<_, u32>(&DataKey::SubscriberSubCount(subscriber.clone()))
+    {
+        persistent.extend_ttl(
+            &DataKey::SubscriberSubCount(subscriber.clone()),
+            SUBSCRIPTION_TTL_MIN_LEDGERS,
+            SUBSCRIPTION_TTL_MAX_LEDGERS,
+        );
+        for index in 0..count {
+            let key = DataKey::SubscriberSub(subscriber.clone(), index);
+            if persistent.get::<_, Address>(&key).as_ref() == Some(creator) {
+                persistent.extend_ttl(
+                    &key,
+                    SUBSCRIPTION_TTL_MIN_LEDGERS,
+                    SUBSCRIPTION_TTL_MAX_LEDGERS,
+                );
+                break;
+            }
+        }
+    }
+
+    if let Some(count) = persistent.get::<_, u32>(&DataKey::CreatorSubCount(creator.clone())) {
+        persistent.extend_ttl(
+            &DataKey::CreatorSubCount(creator.clone()),
+            SUBSCRIPTION_TTL_MIN_LEDGERS,
+            SUBSCRIPTION_TTL_MAX_LEDGERS,
+        );
+        for index in 0..count {
+            let key = DataKey::CreatorSub(creator.clone(), index);
+            if persistent.get::<_, Address>(&key).as_ref() == Some(subscriber) {
+                persistent.extend_ttl(
+                    &key,
+                    SUBSCRIPTION_TTL_MIN_LEDGERS,
+                    SUBSCRIPTION_TTL_MAX_LEDGERS,
+                );
+                break;
+            }
+        }
     }
 }
 

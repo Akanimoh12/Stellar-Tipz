@@ -49,6 +49,7 @@ pub fn create_subscription(
     // Update indices
     add_subscriber_to_creator(env, &creator, &subscriber);
     add_creator_to_subscriber(env, &subscriber, &creator);
+    storage::bump_subscription_ttl(env, &subscriber, &creator);
 
     events::emit_subscription_created(env, &subscriber, &creator, amount, interval_days);
 
@@ -75,6 +76,7 @@ pub fn cancel_subscription(
 
     sub.active = false;
     env.storage().persistent().set(&sub_key, &sub);
+    storage::bump_subscription_ttl(env, &subscriber, &creator);
 
     events::emit_subscription_cancelled(env, &subscriber, &creator);
 
@@ -130,11 +132,13 @@ pub fn execute_due_subscription(
             sub.amount,
             &String::from_str(env, "Recurring Tip"),
             false, // Subscriptions are not anonymous
+            false, // Subscription messages are not encrypted
         )?;
 
         // Update next_due
         sub.next_due = now + (sub.interval_days as u64 * 86400);
         env.storage().persistent().set(&sub_key, &sub);
+        storage::bump_subscription_ttl(env, &subscriber, &creator);
 
         events::emit_subscription_executed(env, &subscriber, &creator, sub.amount);
     }
@@ -158,8 +162,9 @@ pub fn get_subscriptions(env: &Env, subscriber: Address) -> Vec<Subscription> {
             if let Some(sub) = env
                 .storage()
                 .persistent()
-                .get(&DataKey::Subscription(subscriber.clone(), creator))
+                .get(&DataKey::Subscription(subscriber.clone(), creator.clone()))
             {
+                storage::bump_subscription_ttl(env, &subscriber, &creator);
                 result.push_back(sub);
             }
         }
@@ -183,8 +188,9 @@ pub fn get_subscribers(env: &Env, creator: Address) -> Vec<Subscription> {
             if let Some(sub) = env
                 .storage()
                 .persistent()
-                .get(&DataKey::Subscription(subscriber, creator.clone()))
+                .get(&DataKey::Subscription(subscriber.clone(), creator.clone()))
             {
+                storage::bump_subscription_ttl(env, &subscriber, &creator);
                 result.push_back(sub);
             }
         }
