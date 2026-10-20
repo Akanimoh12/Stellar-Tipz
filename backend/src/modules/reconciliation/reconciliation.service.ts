@@ -14,6 +14,7 @@
  * Issue #1271
  */
 
+import { Period } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
 import { logger } from "../../common/utils/logger.js";
 import type {
@@ -246,16 +247,16 @@ async function checkLeaderboardPositionDiscrepancies(
   const discrepancies: Discrepancy[] = [];
   let rpcCalls = 0;
 
-  const periods = ["WEEKLY", "MONTHLY", "ALL_TIME"];
+  const periods: Period[] = [Period.WEEKLY, Period.MONTHLY, Period.ALL_TIME];
 
   for (const period of periods) {
     // Sample leaderboard snapshots
     const totalSnapshots = await prisma.leaderboardSnapshot.count({
-      where: { period: period as any },
+      where: { period },
     });
     const sampleSize = Math.ceil(totalSnapshots * config.samplingRate);
     const sampledSnapshots = await prisma.leaderboardSnapshot.findMany({
-      where: { period: period as any },
+      where: { period },
       take: sampleSize,
       include: { user: true },
     });

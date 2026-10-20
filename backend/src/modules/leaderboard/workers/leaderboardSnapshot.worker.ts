@@ -8,6 +8,7 @@
  * Issue #1268
  */
 
+import { Period } from "@prisma/client";
 import { prisma } from "../../../db/prisma.js";
 import { logger } from "../../../common/utils/logger.js";
 
@@ -85,9 +86,9 @@ async function fetchOnChainLeaderboard(period: string): Promise<OnChainEntry[]> 
 /**
  * Fetches leaderboard snapshot data from off-chain database.
  */
-async function fetchOffChainSnapshot(period: string): Promise<OffChainEntry[]> {
+async function fetchOffChainSnapshot(period: Period): Promise<OffChainEntry[]> {
   const snapshots = await prisma.leaderboardSnapshot.findMany({
-    where: { period: period as any },
+    where: { period },
     orderBy: { rank: "asc" },
     include: {
       user: {
@@ -217,7 +218,7 @@ export async function verifyLeaderboardConsistency(): Promise<DivergenceReport> 
 
   try {
     // Verify all periods
-    const periods = ["WEEKLY", "MONTHLY", "ALL_TIME"];
+    const periods: Period[] = [Period.WEEKLY, Period.MONTHLY, Period.ALL_TIME];
     const reports: DivergenceReport[] = [];
 
     for (const period of periods) {
@@ -279,7 +280,7 @@ export async function verifyLeaderboardConsistency(): Promise<DivergenceReport> 
 export async function triggerManualVerification(): Promise<DivergenceReport[]> {
   logger.info("Manual leaderboard verification triggered");
   
-  const periods = ["WEEKLY", "MONTHLY", "ALL_TIME"];
+  const periods: Period[] = [Period.WEEKLY, Period.MONTHLY, Period.ALL_TIME];
   const reports: DivergenceReport[] = [];
 
   for (const period of periods) {
