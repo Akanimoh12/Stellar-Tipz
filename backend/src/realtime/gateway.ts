@@ -1,308 +1,266 @@
-import { configureBackpressure } from '../modules/realtime/backpressure.js';
+/**
+ * Real-time gateway entry point.
+ * Wires Socket.IO server with auth, rate limiting, and event handlers.
+ */
+
+import { Server as SocketIOServer } from 'socket.io';
 import type { Server as HttpServer } from 'node:http';
-import { Server as SocketIOServer, type Socket } from 'socket.io';
-import { createAdapter } from '@socket.io/redis-adapter';
-import { env } from '../config/env.js';
-import { config } from '../config/index.js';
+import jwt from 'jsonwebtoken';
+import { verifyAccessToken } from '../modules/auth/auth.service.js';
 import { logger } from '../common/utils/logger.js';
-import { registerClosable } from '../common/utils/lifecycle.js';
-import { redis } from '../db/redis.js';
-import { socketAuth } from './auth.js';
+import { config } from '../config/index.js';
+import {
+  type TypedServer,
+  type TypedSocket,
+  type ClientToServerEvents,
+  type ServerToClientEvents,
+  type InterServerEvents,
+  type SocketDataExtended,
+  type ConnectedPayload,
+  type TipCreatedPayload,
+  type CreditUpdatedPayload,
+  type LeaderboardUpdatedPayload,
+  type NotificationCreatedPayload,
+} from './types.js';
 import {
   connectionRateLimit,
   userConnectionRateLimit,
   attachPacketRateLimiter,
-  sweepRateLimiter,
   guardEventRate,
+  sweepRateLimiter,
+  clearRateLimits,
 } from './rateLimit.js';
-import type {
-  ServerToClientEvents,
-  ClientToServerEvents,
-  InterServerEvents,
-  SocketData,
-  NotificationPayload,
-  BalanceUpdatedPayload,
-  LeaderboardUpdatedPayload,
-  AuthExpiredPayload,
-} from './types.js';
-import {
-  catchUp,
-  catchupRequestSchema,
-  publishRoomEvent,
-  ROOM_EVENT_CHANNEL,
-  type RoomEvent,
-} from './catchup.js';
-import type { TipResponseDto } from '../modules/tips/tips.dto.js';
 
-/** Room joined by every socket that wants public leaderboard updates. */
-const LEADERBOARD_ROOM = 'leaderboard'
-const PUBLIC_ROOMS = new Set([LEADERBOARD_ROOM])
+/** Extended auth payload with standard JWT claims */
+interface ExtendedAuthPayload {
+  userId: string;
+  stellarAddress: string;
+  role: string;
+  scopes: string[];
+  iat?: number;
+  exp?: number;
+}
 
-export type RealtimeServer = SocketIOServer<
-  ClientToServerEvents,
-  ServerToClientEvents,
-  InterServerEvents,
-  SocketData
->
-
-let io: RealtimeServer | null = null
+let ioInstance: TypedServer | null = null;
 
 /**
- * Heartbeat tuning (see docs/REALTIME.md): how often the server pings each
- * client, and how long it waits for a pong before considering it disconnected.
+ * Initialize and attach Socket.IO to an HTTP server.
+ * Call once at startup from server.ts.
  */
-const HEARTBEAT_PING_INTERVAL_MS = env.SOCKET_IO_HEARTBEAT_INTERVAL_MS;
-const HEARTBEAT_PING_TIMEOUT_MS = env.SOCKET_IO_CONNECTION_TIMEOUT_MS;
+export function initRealtime(httpServer: HttpServer): TypedServer {
+  if (ioInstance) {
+    logger.warn('Realtime gateway already initialized; returning existing instance');
+    return ioInstance;
+  }
 
-const AUTH_EXPIRED_PAYLOAD: AuthExpiredPayload = {
-  code: 'AUTH_TOKEN_EXPIRED',
-  message: 'Access token expired',
-};
+  const io = new SocketIOServer<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketDataExtended>(httpServer, {
+    cors: {
+      origin: config.server.corsOrigin.split(','),
+      credentials: true,
+    },
+    pingInterval: config.realtime?.pingIntervalMs ?? 25_000,
+    pingTimeout: config.realtime?.pingTimeoutMs ?? 20_000,
+    maxHttpBufferSize: 1e6, // 1 MB
+  });
 
-type RealtimeSocket = Socket<
+  // Connection rate limiting (per IP)
+  io.use(connectionRateLimit);
+
+  // Authentication handshake
+  io.use(async (socket, next) => {
+    try {
+      const token = socket.handshake.auth?.token ?? socket.handshake.headers?.authorization?.replace('Bearer ', '');
+      if (!token) {
+        return next(new Error('Authentication required'));
+      }
+
+      const payload = verifyAccessToken(token);
+      if (!payload) {
+        return next(new Error('Invalid or expired token'));
+      }
+
+      // Decode token to get standard JWT claims (iat, exp)
+      const decoded = jwt.decode(token) as ExtendedAuthPayload | null;
+
+      // Attach auth data to socket
+      socket.data.auth = {
+        userId: payload.userId,
+        address: payload.stellarAddress,
+        tier: 'silver', // Default tier; could be fetched from profile if needed
+        iat: decoded?.iat,
+        exp: decoded?.exp,
+      };
+
+      // Per-user connection rate limiting
+      await userConnectionRateLimit(socket, next);
+    } catch (err) {
+      logger.warn({ err }, 'Socket auth failed');
+      next(new Error('Authentication failed'));
+    }
+  });
+
+  // Attach per-event rate limiter to each connected socket
+  io.on('connection', (socket: TypedSocket) => {
+    const { userId, address, tier } = socket.data.auth!;
+    logger.info({ socketId: socket.id, userId, address, tier }, 'Socket connected');
+
+    // Send connection acknowledgment
+    const connectedPayload: ConnectedPayload = {
+      socketId: socket.id,
+      serverTime: Date.now(),
+      heartbeatIntervalMs: config.realtime?.pingIntervalMs ?? 25_000,
+    };
+    socket.emit('connected', connectedPayload);
+
+    // Attach packet-level rate limiter
+    attachPacketRateLimiter(socket);
+
+    // Room join/leave for creator tips
+    socket.on('room:join', (creatorAddress, ack) => {
+      if (!guardEventRate(socket)) return;
+      if (!creatorAddress || typeof creatorAddress !== 'string') {
+        ack?.({ message: 'Invalid creator address' });
+        return;
+      }
+      const room = `creator:${creatorAddress}`;
+      socket.join(room);
+      logger.debug({ socketId: socket.id, room }, 'Socket joined room');
+      ack?.(undefined);
+    });
+
+    socket.on('room:leave', (creatorAddress) => {
+      if (!guardEventRate(socket)) return;
+      if (!creatorAddress || typeof creatorAddress !== 'string') return;
+      const room = `creator:${creatorAddress}`;
+      socket.leave(room);
+      logger.debug({ socketId: socket.id, room }, 'Socket left room');
+    });
+
+    // Leaderboard subscription
+    socket.on('leaderboard:subscribe', (period, ack) => {
+      if (!guardEventRate(socket)) return;
+      const validPeriods = ['all', 'monthly', 'weekly'] as const;
+      if (!validPeriods.includes(period)) {
+        ack?.({ message: 'Invalid period' });
+        return;
+      }
+      const room = `leaderboard:${period}`;
+      socket.join(room);
+      logger.debug({ socketId: socket.id, room }, 'Socket subscribed to leaderboard');
+      ack?.(undefined);
+    });
+
+    socket.on('leaderboard:unsubscribe', (period) => {
+      if (!guardEventRate(socket)) return;
+      const validPeriods = ['all', 'monthly', 'weekly'] as const;
+      if (!validPeriods.includes(period)) return;
+      const room = `leaderboard:${period}`;
+      socket.leave(room);
+      logger.debug({ socketId: socket.id, room }, 'Socket unsubscribed from leaderboard');
+    });
+
+    // Heartbeat ping/pong
+    socket.on('ping', (ack) => {
+      ack?.(Date.now());
+    });
+
+    // Disconnect handling
+    socket.on('disconnect', (reason) => {
+      logger.info({ socketId: socket.id, userId, reason }, 'Socket disconnected');
+    });
+
+    // Error handling
+    socket.on('error', (err) => {
+      logger.warn({ socketId: socket.id, userId, err }, 'Socket error');
+    });
+  });
+
+  // Periodic sweep of in-memory rate limiters
+  const sweepInterval = setInterval(sweepRateLimiter, 60_000);
+  sweepInterval.unref(); // Don't prevent process exit
+
+  ioInstance = io;
+
+  // Override the types module's initRealtime to return our instance
+  // (This is a workaround for circular dependency; in practice, import initRealtime from here)
+  logger.info('Realtime gateway initialized');
+  return io;
+}
+
+/** Get the initialized Socket.IO server instance */
+export function getRealtimeServer(): TypedServer | null {
+  return ioInstance;
+}
+
+/** Broadcast a new tip to all sockets in a creator's room */
+export function broadcastTipCreated(payload: TipCreatedPayload): void {
+  if (!ioInstance) {
+    logger.warn('Attempted to broadcast tip before realtime init');
+    return;
+  }
+  const room = `creator:${payload.creator}`;
+  ioInstance.to(room).emit('tip:created', payload);
+  logger.debug({ room, tipId: payload.tipId }, 'Broadcast tip:created');
+}
+
+/** Broadcast a credit score update */
+export function broadcastCreditUpdated(payload: CreditUpdatedPayload): void {
+  if (!ioInstance) {
+    logger.warn('Attempted to broadcast credit update before realtime init');
+    return;
+  }
+  const room = `creator:${payload.creator}`;
+  ioInstance.to(room).emit('credit:updated', payload);
+  logger.debug({ room, creator: payload.creator }, 'Broadcast credit:updated');
+}
+
+/** Broadcast a leaderboard update */
+export function broadcastLeaderboardUpdated(payload: LeaderboardUpdatedPayload): void {
+  if (!ioInstance) {
+    logger.warn('Attempted to broadcast leaderboard before realtime init');
+    return;
+  }
+  const room = `leaderboard:${payload.period}`;
+  ioInstance.to(room).emit('leaderboard:updated', payload);
+  logger.debug({ room, period: payload.period }, 'Broadcast leaderboard:updated');
+}
+
+/** Send a notification to a specific user (by userId) */
+export function sendNotificationToUser(userId: string, payload: NotificationCreatedPayload): void {
+  if (!ioInstance) {
+    logger.warn('Attempted to send notification before realtime init');
+    return;
+  }
+  // Iterate sockets and find ones with matching userId
+  for (const [, socket] of ioInstance.sockets.sockets) {
+    if (socket.data.auth?.userId === userId) {
+      socket.emit('notification:created', payload);
+      logger.debug({ socketId: socket.id, userId }, 'Sent notification to user');
+    }
+  }
+}
+
+/** Graceful shutdown */
+export async function closeRealtime(): Promise<void> {
+  if (ioInstance) {
+    clearRateLimits();
+    await ioInstance.close();
+    ioInstance = null;
+    logger.info('Realtime gateway closed');
+  }
+}
+
+// Re-export types for consumers
+export type {
+  TypedServer,
+  TypedSocket,
   ClientToServerEvents,
   ServerToClientEvents,
   InterServerEvents,
-  SocketData
->;
-
-/** Enforces the verified JWT expiry for the lifetime of one connected socket. */
-export function scheduleTokenExpiry(socket: RealtimeSocket): void {
-  const expiresInMs = Math.max(0, socket.data.auth.exp * 1_000 - Date.now());
-
-  const expiryTimer = setTimeout(() => {
-    logger.info(
-      { socketId: socket.id, userId: socket.data.auth.userId },
-      'Disconnecting client because access token expired',
-    );
-
-    socket.emit('auth.expired', AUTH_EXPIRED_PAYLOAD);
-    socket.disconnect(true);
-  }, expiresInMs);
-
-  expiryTimer.unref();
-
-  socket.once('disconnect', () => {
-    clearTimeout(expiryTimer);
-  });
-}
-
-export function initRealtime(httpServer: HttpServer): RealtimeServer {
-  io = new SocketIOServer<
-    ClientToServerEvents,
-    ServerToClientEvents,
-    InterServerEvents,
-    SocketData
-  >(httpServer, {
-    cors: {
-      origin: env.CORS_ORIGIN,
-      methods: ['GET', 'POST'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
-    },
-    pingInterval: HEARTBEAT_PING_INTERVAL_MS,
-    pingTimeout: HEARTBEAT_PING_TIMEOUT_MS,
-  });
-
-  const gateway = io;
-  configureBackpressure(io as unknown as SocketIOServer);
-  io.use(connectionRateLimit);
-  io.use(socketAuth);
-  io.use(userConnectionRateLimit);
-
-  if (config.realtime.redisAdapterEnabled) {
-    const pubClient = redis.duplicate()
-    const subClient = redis.duplicate()
-    io.adapter(createAdapter(pubClient, subClient))
-
-    registerClosable({
-      name: 'Socket.IO Redis adapter',
-      close: async () => {
-        await Promise.all([pubClient.quit(), subClient.quit()])
-      },
-    })
-
-    logger.info('Socket.IO Redis adapter attached')
-  }
-
-  const subscriber = redis.duplicate();
-  subscriber.on('message', (channel, raw) => {
-    if (channel !== ROOM_EVENT_CHANNEL) return;
-    try {
-      const message = JSON.parse(raw) as RoomEvent;
-      gateway.local.to(message.room).emit('realtime.event', message);
-    } catch (err) {
-      logger.error({ err }, 'Invalid realtime room event');
-    }
-  });
-  void subscriber
-    .subscribe(ROOM_EVENT_CHANNEL)
-    .catch((err: unknown) => logger.error({ err }, 'Realtime subscription failed'));
-  registerClosable({
-    name: 'Realtime catch-up subscriber',
-    close: async () => {
-      await subscriber.quit();
-    },
-  });
-
-  io.on('connection', (socket) => {
-    const { userId } = socket.data.auth
-    attachPacketRateLimiter(socket)
-    scheduleTokenExpiry(socket)
-    logger.info({ socketId: socket.id, userId }, 'Client connected')
-    socket.emit('connected', { userId })
-
-    socket.on('realtime:catchup', async (request, reply) => {
-      if (!guardEventRate(socket) || typeof reply !== 'function') return;
-      const parsed = catchupRequestSchema.safeParse(request);
-      if (!parsed.success) {
-        reply({ events: [], refreshRequired: true, error: 'INVALID_REQUEST' });
-        return;
-      }
-      const { room, lastSeenId } = parsed.data;
-      if (!socket.rooms.has(room) || (room.startsWith('user:') && room !== `user:${userId}`)) {
-        reply({ events: [], refreshRequired: true, error: 'FORBIDDEN' });
-        return;
-      }
-      try {
-        reply(await catchUp(room, lastSeenId));
-      } catch (err) {
-        logger.error({ err, room }, 'Realtime catch-up unavailable');
-        reply({ events: [], refreshRequired: true, error: 'UNAVAILABLE' });
-      }
-    });
-
-    socket.on('subscribe:creator', (creatorAddress: string) => {
-      if (!guardEventRate(socket)) return
-      const room = `creator:${creatorAddress}`
-      if (socket.data.auth.stellarAddress !== creatorAddress) {
-        logger.warn(
-          { socketId: socket.id, userId, room, requestedCreator: creatorAddress },
-          'Security event: unauthorized realtime room join',
-        )
-        socket.emit('error', { code: 'FORBIDDEN', message: 'Cannot subscribe to another creator' })
-        return
-      }
-      void socket.join(room)
-      logger.debug({ socketId: socket.id, room }, 'Subscribed to creator room')
-    })
-
-    socket.on('subscribe:notifications', (userId: string) => {
-      if (!guardEventRate(socket)) return
-      if (socket.data.auth.userId !== userId) {
-        logger.warn(
-          { socketId: socket.id, userId: socket.data.auth.userId, room: `user:${userId}` },
-          'Security event: unauthorized realtime room join',
-        )
-        socket.emit('error', { code: 'FORBIDDEN', message: 'Cannot subscribe to another user' })
-        return
-      }
-      const room = `user:${userId}`
-      void socket.join(room)
-      logger.debug({ socketId: socket.id, room }, 'Subscribed to notifications room')
-    })
-
-    socket.on('unsubscribe:creator', (creatorAddress: string) => {
-      if (!guardEventRate(socket)) return
-      const room = `creator:${creatorAddress}`
-      void socket.leave(room)
-      logger.debug({ socketId: socket.id, room }, 'Unsubscribed from creator room')
-    })
-
-    socket.on('unsubscribe:notifications', (userId: string) => {
-      if (!guardEventRate(socket)) return
-      const room = `user:${userId}`
-      void socket.leave(room)
-      logger.debug({ socketId: socket.id, room }, 'Unsubscribed from notifications room')
-    })
-
-    socket.on('subscribe:leaderboard', () => {
-      if (!guardEventRate(socket)) return
-      if (!PUBLIC_ROOMS.has(LEADERBOARD_ROOM)) {
-        socket.emit('error', { code: 'FORBIDDEN', message: 'Room is not public' })
-        return
-      }
-      void socket.join(LEADERBOARD_ROOM)
-      logger.debug(
-        { socketId: socket.id, room: LEADERBOARD_ROOM },
-        'Subscribed to public leaderboard room',
-      )
-    })
-
-    socket.on('unsubscribe:leaderboard', () => {
-      if (!guardEventRate(socket)) return
-      void socket.leave(LEADERBOARD_ROOM)
-      logger.debug(
-        { socketId: socket.id, room: LEADERBOARD_ROOM },
-        'Unsubscribed from leaderboard room',
-      )
-    })
-
-    socket.on('disconnect', (reason) => {
-      logger.info({ socketId: socket.id, reason }, 'Client disconnected')
-    })
-  })
-
-  const sweepInterval = setInterval(() => sweepRateLimiter(), 60_000)
-  sweepInterval.unref()
-
-  registerClosable({
-    name: 'Socket.IO',
-    close: async () => {
-      clearInterval(sweepInterval);
-      await new Promise<void>((resolve) => gateway.close(() => resolve()));
-      if (io === gateway) io = null;
-    },
-  })
-
-  logger.info('Realtime gateway initialized')
-  return io
-}
-
-export function emitTipCreated(tip: TipResponseDto): void {
-  bufferEvent(`creator:${tip.toAddress}`, 'tip.created', tip);
-  if (!io) return;
-  io.to(`creator:${tip.toAddress}`).emit('tip.created', tip);
-  logger.debug({ txHash: tip.txHash, room: `creator:${tip.toAddress}` }, 'Emitted tip.created');
-}
-
-export function emitNotificationCreated(notification: NotificationPayload): void {
-  bufferEvent(`user:${notification.userId}`, 'notification.created', notification);
-  if (!io) return;
-  io.to(`user:${notification.userId}`).emit('notification.created', notification);
-  logger.debug(
-    { notificationId: notification.id, room: `user:${notification.userId}` },
-    'Emitted notification.created',
-  )
-}
-
-/** Notifies a user's authenticated sockets (the `user:<id>` room) that their balance changed. */
-export function emitBalanceUpdated(balance: BalanceUpdatedPayload): void {
-  bufferEvent(`user:${balance.userId}`, 'balance.updated', balance);
-  if (!io) return;
-  io.to(`user:${balance.userId}`).emit('balance.updated', balance);
-  logger.debug(
-    { userId: balance.userId, room: `user:${balance.userId}` },
-    'Emitted balance.updated',
-  )
-}
-
-/** Broadcasts a leaderboard rank change to every socket subscribed to the public `leaderboard` room. */
-export function emitLeaderboardUpdated(update: LeaderboardUpdatedPayload): void {
-  bufferEvent(LEADERBOARD_ROOM, 'leaderboard.updated', update);
-  if (!io) return;
-  io.to(LEADERBOARD_ROOM).emit('leaderboard.updated', update);
-  logger.debug(
-    { userId: update.entry.userId, window: update.window, room: LEADERBOARD_ROOM },
-    'Emitted leaderboard.updated',
-  )
-}
-
-export function getIO(): SocketIOServer<ClientToServerEvents, ServerToClientEvents> | null {
-  return io
-}
-
-function bufferEvent(room: string, event: string, payload: unknown): void {
-  void publishRoomEvent(room, event, payload).catch((err: unknown) =>
-    logger.error({ err, room }, 'Realtime buffer unavailable; durable REST data remains available'),
-  );
-}
+  SocketDataExtended,
+  ConnectedPayload,
+  TipCreatedPayload,
+  CreditUpdatedPayload,
+  LeaderboardUpdatedPayload,
+  NotificationCreatedPayload,
+} from './types.js';

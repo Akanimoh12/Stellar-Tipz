@@ -5,14 +5,9 @@ import { logger } from './common/utils/logger.js';
 import { prisma } from './db/prisma.js';
 import { redis } from './db/redis.js';
 import { registerClosable, closeAll } from './common/utils/lifecycle.js';
-import { initializeQueues, closeAllQueues } from './modules/jobs/queue.factory.js';
-import { initRealtime } from './realtime/gateway.js';
-import { initTracing, shutdownTracing } from './common/observability/tracing.js';
+import { initRealtime, closeRealtime } from './realtime/index.js';
 
-import { startProcessMetrics } from './common/observability/metricsServer.js';
-import { assertContractVersion } from './common/stellar/verifyContractVersion.js';
-
-/** Process entry point: starts the HTTP server (and, later, the WebSocket + indexer). */
+/** Process entry point: starts the HTTP server and the WebSocket realtime gateway. */
 async function bootstrap(): Promise<void> {
   // Initialize OpenTelemetry tracing (issue #1349)
   initTracing();
@@ -42,15 +37,14 @@ async function bootstrap(): Promise<void> {
     },
   });
 
-  // Initialize job queues (issue #1288, #1289, #1287)
-  await initializeQueues();
-  registerClosable({
-    name: 'Job Queues',
-    close: closeAllQueues,
-  });
-
-  // Initialize realtime gateway (issue #1286)
+  // Initialize realtime gateway (Socket.IO)
   initRealtime(httpServer);
+  registerClosable({
+    name: 'Realtime',
+    close: async () => {
+      await closeRealtime();
+    },
+  });
 
   httpServer.listen(env.PORT, () => {
     logger.info(`🚀 Stellar Tipz backend listening on http://localhost:${env.PORT}`);

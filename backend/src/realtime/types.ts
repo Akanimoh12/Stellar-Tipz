@@ -1,81 +1,142 @@
-import type { RoomEvent } from './catchup.js';
-import type { TipResponseDto } from '../modules/tips/tips.dto.js';
-import type { AuthPayload } from '../modules/auth/auth.types.js';
-import type { TimeWindow } from '../modules/leaderboard/leaderboard.schema.js';
-
 /**
- * Shared typed contract for the Socket.IO gateway. This is the single source
- * of truth for event names and payload shapes on both server and client.
+ * Shared Socket.IO event contract for Stellar Tipz realtime layer.
+ * Ensures client and server agree on event names, payloads, and socket data.
  */
 
-/** Events the server may emit to a connected client. */
-export interface ServerToClientEvents {
-  'realtime.event': (event: RoomEvent) => void;
-  /** Emitted once, right after a successful auth handshake. */
-  connected: (payload: { userId: string }) => void;
-  /** Emitted immediately before a socket is disconnected because its access token expired. */
-  'auth.expired': (payload: AuthExpiredPayload) => void;
-  /** Emitted for handshake failures, forbidden actions, and rate limiting. */
-  error: (payload: { code: string; message: string }) => void;
-  'tip.created': (tip: TipResponseDto) => void;
-  'notification.created': (notification: NotificationPayload) => void;
-  'balance.updated': (balance: BalanceUpdatedPayload) => void;
-  'leaderboard.updated': (update: LeaderboardUpdatedPayload) => void;
+import type { Server as HttpServer } from 'node:http';
+import type { Server as SocketIOServer, Socket } from 'socket.io';
+
+/** Authenticated user data attached to socket after successful handshake. */
+export interface SocketAuthData {
+  userId: string;
+  address: string; // Stellar address
+  tier: 'new' | 'bronze' | 'silver' | 'gold' | 'diamond';
+  iat?: number; // issued at (unix seconds)
+  exp?: number; // expires at (unix seconds)
 }
 
-/** Events a client may emit to the server. */
-export interface ClientToServerEvents {
-  'realtime:catchup': (request: { room: string; lastSeenId: string }, reply: (result: { events: RoomEvent[]; refreshRequired: boolean; error?: string }) => void) => void;
-  'subscribe:creator': (creatorAddress: string) => void;
-  'subscribe:notifications': (userId: string) => void;
-  'subscribe:leaderboard': () => void;
-  'unsubscribe:creator': (creatorAddress: string) => void;
-  'unsubscribe:notifications': (userId: string) => void;
-  'unsubscribe:leaderboard': () => void;
-}
-
-/** Events emitted between server instances (unused for now, required by the Socket.IO generic signature). */
-export type InterServerEvents = Record<string, never>;
-
-/** Per-connection data attached during the auth handshake. */
+/** Extended socket data map for type-safe custom properties. */
 export interface SocketData {
-  auth: RealtimeAuthPayload;
+  auth?: SocketAuthData;
+  /** Per-socket rate limit tick marker (set by packet rate limiter) */
+  __rateLimitTick?: number;
 }
 
-/** A verified access-token payload. JWT expiry is required for live socket enforcement. */
-export interface RealtimeAuthPayload extends AuthPayload {
-  exp: number;
+/** Client-to-server events */
+export interface ClientToServerEvents {
+  /** Join a creator's room for live tip updates */
+  'room:join': (creatorAddress: string, ack: (err?: { message: string }) => void) => void;
+  /** Leave a creator's room */
+  'room:leave': (creatorAddress: string) => void;
+  /** Subscribe to leaderboard updates */
+  'leaderboard:subscribe': (period: 'all' | 'monthly' | 'weekly', ack: (err?: { message: string }) => void) => void;
+  /** Unsubscribe from leaderboard updates */
+  'leaderboard:unsubscribe': (period: 'all' | 'monthly' | 'weekly') => void;
+  /** Heartbeat/ping from client */
+  'ping': (ack: (ts: number) => void) => void;
 }
 
-export interface AuthExpiredPayload {
-  code: 'AUTH_TOKEN_EXPIRED';
-  message: string;
+/** Server-to-client events */
+export interface ServerToClientEvents {
+  /** New tip received by a creator the client is watching */
+  'tip:created': (payload: TipCreatedPayload) => void;
+  /** Credit score changed for a creator */
+  'credit:updated': (payload: CreditUpdatedPayload) => void;
+  /** Leaderboard snapshot update */
+  'leaderboard:updated': (payload: LeaderboardUpdatedPayload) => void;
+  /** New notification for the authenticated user */
+  'notification:created': (payload: NotificationCreatedPayload) => void;
+  /** Error emitted to client (rate limit, auth, etc.) */
+  'error': (payload: ErrorPayload) => void;
+  /** Connection acknowledged with server time */
+  'connected': (payload: ConnectedPayload) => void;
+  /** Pong response with server timestamp */
+  'pong': (serverTs: number) => void;
 }
 
-export interface NotificationPayload {
+/** Inter-server events (for multi-process scaling with Redis adapter) */
+export interface InterServerEvents {
+  /** Broadcast tip event to all gateway processes */
+  'broadcast:tip': (payload: TipCreatedPayload) => void;
+  /** Broadcast credit update to all gateway processes */
+  'broadcast:credit': (payload: CreditUpdatedPayload) => void;
+  /** Broadcast leaderboard update to all gateway processes */
+  'broadcast:leaderboard': (payload: LeaderboardUpdatedPayload) => void;
+  /** Broadcast notification to all gateway processes */
+  'broadcast:notification': (payload: NotificationCreatedPayload) => void;
+}
+
+/** Socket data attached to each connected client */
+export interface SocketDataExtended extends SocketData {}
+
+/** Payload for tip:created event */
+export interface TipCreatedPayload {
+  tipId: number;
+  creator: string;
+  sender: string;
+  amount: string; // stroops as string to avoid JS number precision loss
+  message?: string;
+  isAnonymous: boolean;
+  timestamp: number;
+}
+
+/** Payload for credit:updated event */
+export interface CreditUpdatedPayload {
+  creator: string;
+  previousScore: number;
+  newScore: number;
+  previousTier: string;
+  newTier: string;
+  timestamp: number;
+}
+
+/** Payload for leaderboard:updated event */
+export interface LeaderboardUpdatedPayload {
+  period: 'all' | 'monthly' | 'weekly';
+  entries: Array<{
+    rank: number;
+    address: string;
+    username: string;
+    amount: string;
+    creditScore: number;
+  }>;
+  timestamp: number;
+}
+
+/** Payload for notification:created event */
+export interface NotificationCreatedPayload {
   id: string;
   userId: string;
-  type: string;
-  payload: unknown;
-  createdAt: string;
+  type: 'tip_received' | 'credit_tier_changed' | 'leaderboard_rank' | 'subscription' | 'system';
+  title: string;
+  body: string;
+  data?: Record<string, unknown>;
+  read: boolean;
+  createdAt: number;
 }
 
-export interface BalanceUpdatedPayload {
-  userId: string;
-  stellarAddress: string;
-  totalReceived: string;
-  totalWithdrawn: string;
-  withdrawableBalance: string;
+/** Payload for error event */
+export interface ErrorPayload {
+  code: 'UNAUTHENTICATED' | 'RATE_LIMITED' | 'BANNED' | 'INVALID_PAYLOAD' | 'NOT_FOUND' | 'INTERNAL_ERROR';
+  message: string;
+  retryAfterMs?: number;
 }
 
-export interface LeaderboardEntryPayload {
-  rank: number;
-  userId: string;
-  stellarAddress: string;
-  totalTips: string;
+/** Payload for connected event */
+export interface ConnectedPayload {
+  socketId: string;
+  serverTime: number;
+  heartbeatIntervalMs: number;
 }
 
-export interface LeaderboardUpdatedPayload {
-  window: TimeWindow;
-  entry: LeaderboardEntryPayload;
+/** Type-safe socket instance */
+export type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketDataExtended>;
+
+/** Type-safe server instance */
+export type TypedServer = SocketIOServer<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketDataExtended>;
+
+/** Initialize and attach the Socket.IO server to an HTTP server */
+export function initRealtime(_httpServer: HttpServer): TypedServer {
+  // Implementation in gateway.ts
+  throw new Error('initRealtime not implemented — import from gateway.ts');
 }
