@@ -3,8 +3,12 @@
 use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
 
 use crate::errors::ContractError;
+use crate::types::PauseFlag;
 use crate::TipzContract;
 use crate::TipzContractClient;
+
+const PAUSE_ALL: u32 = PauseFlag::All as u32;
+const PAUSE_TIPS: u32 = PauseFlag::Tips as u32;
 
 fn setup_env() -> (
     Env,
@@ -65,8 +69,8 @@ fn setup_env() -> (
 fn test_pause_blocks_tips() {
     let (env, client, _contract_id, admin, tipper, creator, _sac) = setup_env();
 
-    client.pause(&admin);
-    assert!(client.is_paused());
+    client.pause(&admin, &PAUSE_TIPS);
+    assert!(client.is_paused(&PAUSE_TIPS));
 
     let message = String::from_str(&env, "tip");
     let amount: i128 = 100_000_000;
@@ -79,9 +83,9 @@ fn test_pause_blocks_tips() {
 fn test_unpause_allows_tips() {
     let (env, client, _contract_id, admin, tipper, creator, _sac) = setup_env();
 
-    client.pause(&admin);
-    client.unpause(&admin);
-    assert!(!client.is_paused());
+    client.pause(&admin, &PAUSE_TIPS);
+    client.unpause(&admin, &PAUSE_TIPS);
+    assert!(!client.is_paused(&PAUSE_TIPS));
 
     let message = String::from_str(&env, "tip");
     let amount: i128 = 100_000_000;
@@ -94,6 +98,6 @@ fn test_only_admin_can_pause() {
     let (env, client, _contract_id, _admin, _tipper, _creator, _sac) = setup_env();
 
     let attacker = Address::generate(&env);
-    let res = client.try_pause(&attacker);
+    let res = client.try_pause(&attacker, &PAUSE_ALL);
     assert_eq!(res, Err(Ok(ContractError::NotAuthorized)));
 }

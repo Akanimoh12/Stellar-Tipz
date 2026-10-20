@@ -68,6 +68,9 @@ jobs:
           echo "$OUTPUT"
           CONTRACT_ID=$(echo "$OUTPUT" | grep "Contract ID:" | tail -1 | awk '{print $NF}')
           echo "contract_id=$CONTRACT_ID" >> $GITHUB_OUTPUT
+          DEPLOYER_ADDR=$(echo "$OUTPUT" | grep "Deployer address:" | tail -1 | awk '{print $NF}')
+          test -n "$DEPLOYER_ADDR"
+          echo "deployer=$DEPLOYER_ADDR" >> $GITHUB_OUTPUT
 
       - name: Generate contract bindings
         run: |
@@ -77,17 +80,47 @@ jobs:
             --output-dir frontend-scaffold/src/bindings || \
           echo "Warning: Binding generation failed (may not be supported in this soroban version)"
 
-      - name: Update frontend .env with contract ID
+      - name: Verify on-chain code hash and contract version
+        env:
+          CONTRACT_ID: ${{ steps.deploy.outputs.contract_id }}
         run: |
-          echo "CONTRACT_ID=${{ steps.deploy.outputs.contract_id }}" > frontend-scaffold/.env
-          echo "NATIVE_TOKEN_ID=${{ vars.NATIVE_TOKEN_ID || 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC' }}" >> frontend-scaffold/.env
+          test -n "$CONTRACT_ID"
+          bash scripts/verify-contract-deployment.sh "$CONTRACT_ID" \
+            contracts/target/wasm32-unknown-unknown/release/tipz_contract.optimized.wasm \
+            testnet 4
+
+      - name: Record verified deployment address and artifact
+        env:
+          CONTRACT_ID: ${{ steps.deploy.outputs.contract_id }}
+          DEPLOYER: ${{ steps.deploy.outputs.deployer }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          mkdir -p deployments
+          node --input-type=module -e '
+            import fs from "node:fs";
+            import crypto from "node:crypto";
+            const response = await fetch("https://soroban-testnet.stellar.org", {
+              method: "POST", headers: { "content-type": "application/json" },
+              body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getLatestLedger" }),
+              signal: AbortSignal.timeout(15000)
+            });
+            if (!response.ok) throw new Error("Could not retrieve testnet ledger");
+            const ledger = (await response.json()).result?.sequence;
+            if (!Number.isSafeInteger(ledger) || ledger < 1) throw new Error("Invalid testnet ledger");
+            const wasm = fs.readFileSync("contracts/target/wasm32-unknown-unknown/release/tipz_contract.optimized.wasm");
+            const record = { network: "testnet", contractId: process.env.CONTRACT_ID,
+              wasmSha256: crypto.createHash("sha256").update(wasm).digest("hex"),
+              sourceCommit: process.env.SOURCE_SHA, deployer: process.env.DEPLOYER || null,
+              interfaceVersion: 4, verifiedAtLedger: ledger };
+            fs.writeFileSync("deployments/testnet.json", JSON.stringify(record, null, 2) + "\n");
+          '
 
       - name: Commit deployment artifacts
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add frontend-scaffold/.env frontend-scaffold/src/bindings 2>/dev/null || true
-          git diff --staged --quiet || git commit -m "chore: update contract bindings and env for testnet [skip ci]"
+          git add deployments/testnet.json frontend-scaffold/src/bindings 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "chore: record verified testnet contract and bindings [skip ci]"
           git push
 
       - name: Store deployment artifacts
@@ -99,7 +132,3 @@ jobs:
             contracts/target/wasm32-unknown-unknown/release/*.optimized.wasm
           retention-days: 30
 
-      - name: Verify deployment
-        run: |
-          echo "=== Deployment Verified ==="
-          echo "Contract ID: ${{ steps.deploy.outputs.contract_id }}"

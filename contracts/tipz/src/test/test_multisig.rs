@@ -5,9 +5,12 @@ use soroban_sdk::{
     vec, Address, Env,
 };
 
+use crate::errors::ContractError;
 use crate::multisig::Action;
-use crate::test::test_init::setup_test_contract;
+use crate::test::test_init::{setup_test_contract, setup_test_contract_with_admin};
 use crate::TipzContractClient;
+
+const PAUSE_ALL: u32 = PauseFlag::All as u32;
 
 #[test]
 fn test_multisig_pause() {
@@ -19,7 +22,7 @@ fn test_multisig_pause() {
     let signer2 = Address::generate(&env);
     let signer3 = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
 
     // Set up multi-sig with 2-of-3 requirement
     let signers = vec![&env, signer1.clone(), signer2.clone(), signer3.clone()];
@@ -29,13 +32,13 @@ fn test_multisig_pause() {
     let proposal_id = client.propose_action(&signer1, &Action::Pause);
 
     // Not yet executed (1 of 2)
-    assert!(!client.is_paused());
+    assert!(!client.is_paused(&PAUSE_ALL));
 
     // Second signer approves
     client.approve_action(&signer2, &proposal_id);
 
     // Now executed (2 of 2)
-    assert!(client.is_paused());
+    assert!(client.is_paused(&PAUSE_ALL));
 }
 
 #[test]
@@ -47,7 +50,7 @@ fn test_proposal_expiry() {
     let signer1 = Address::generate(&env);
     let signer2 = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
 
     let signers = vec![&env, signer1.clone(), signer2.clone()];
     client.set_multisig_config(&admin, &2, &signers);
@@ -72,7 +75,7 @@ fn test_multisig_fee_change() {
     let signer1 = Address::generate(&env);
     let signer2 = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
 
     let signers = vec![&env, signer1.clone(), signer2.clone()];
     client.set_multisig_config(&admin, &2, &signers);
@@ -80,12 +83,12 @@ fn test_multisig_fee_change() {
     // Propose fee change to 500 bps (5%)
     let proposal_id = client.propose_action(&signer1, &Action::SetFee(500));
 
-    // Approve and execute
+    // Approve and create the pending fee-change proposal.
     client.approve_action(&signer2, &proposal_id);
 
-    // Verify fee was changed
-    let config = client.get_config();
-    assert_eq!(config.fee_bps, 500);
+    let pending = client.get_pending_fee_change().unwrap();
+    assert_eq!(pending.0, 500);
+    assert_eq!(client.get_config().fee_bps, 200);
 }
 
 #[test]
@@ -98,7 +101,7 @@ fn test_multisig_admin_rotation() {
     let signer1 = Address::generate(&env);
     let signer2 = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
 
     let signers = vec![&env, signer1.clone(), signer2.clone()];
     client.set_multisig_config(&admin, &2, &signers);
@@ -123,7 +126,7 @@ fn test_get_pending_proposals() {
     let signer1 = Address::generate(&env);
     let signer2 = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
 
     let signers = vec![&env, signer1.clone(), signer2.clone()];
     client.set_multisig_config(&admin, &2, &signers);
@@ -138,6 +141,29 @@ fn test_get_pending_proposals() {
 }
 
 #[test]
+fn test_expired_proposals_are_purged() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+
+    let client = setup_test_contract_with_admin(&env, &admin);
+    let signers = vec![&env, signer1.clone(), signer2.clone()];
+    client.set_multisig_config(&admin, &2, &signers);
+
+    let proposal_id = client.propose_action(&signer1, &Action::Pause);
+    let current_time = env.ledger().timestamp();
+    env.ledger().set_timestamp(current_time + 8 * 24 * 3600);
+
+    let purged = client.purge_expired_proposals();
+    assert_eq!(purged, 1);
+    assert!(client.get_proposal(&proposal_id).is_none());
+    assert_eq!(client.get_pending_proposals().len(), 0);
+}
+
+#[test]
 fn test_unauthorized_signer() {
     let env = Env::default();
     env.mock_all_auths();
@@ -147,7 +173,7 @@ fn test_unauthorized_signer() {
     let signer2 = Address::generate(&env);
     let unauthorized = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
 
     let signers = vec![&env, signer1.clone(), signer2.clone()];
     client.set_multisig_config(&admin, &2, &signers);
@@ -165,7 +191,7 @@ fn test_single_signature_auto_execute() {
     let admin = Address::generate(&env);
     let signer1 = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
 
     // Set up 1-of-1 (auto-execute)
     let signers = vec![&env, signer1.clone()];
@@ -175,5 +201,86 @@ fn test_single_signature_auto_execute() {
     client.propose_action(&signer1, &Action::Pause);
 
     // Should be paused immediately
+    assert!(client.is_paused(&PAUSE_ALL));
+}
+
+// ── Proposal epoch invalidation (#1154) ──────────────────────────────────
+
+#[test]
+fn test_approve_fails_after_signer_set_change() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+    let signer3 = Address::generate(&env);
+
+    let client = setup_test_contract(&env, &admin);
+
+    let signers = vec![&env, signer1.clone(), signer2.clone(), signer3.clone()];
+    client.set_multisig_config(&admin, &2, &signers);
+
+    // 1 of 2 approvals so far, proposal is still pending
+    let proposal_id = client.propose_action(&signer1, &Action::Pause);
+    assert!(!client.is_paused());
+
+    // Signer set changes before the second approval lands
+    let new_signers = vec![&env, signer1.clone(), signer2.clone()];
+    client.set_multisig_config(&admin, &2, &new_signers);
+
+    // The stale approval can no longer push this proposal through
+    let result = client.try_approve_action(&signer2, &proposal_id);
+    assert_eq!(result, Err(Ok(ContractError::ProposalEpochMismatch)));
+    assert!(!client.is_paused());
+}
+
+#[test]
+fn test_approve_fails_after_threshold_change() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+    let signer3 = Address::generate(&env);
+
+    let client = setup_test_contract(&env, &admin);
+
+    let signers = vec![&env, signer1.clone(), signer2.clone(), signer3.clone()];
+    client.set_multisig_config(&admin, &2, &signers);
+
+    let proposal_id = client.propose_action(&signer1, &Action::Pause);
+
+    // Threshold raised from 2 to 3 with the same signer set
+    client.set_multisig_config(&admin, &3, &signers);
+
+    let result = client.try_approve_action(&signer2, &proposal_id);
+    assert_eq!(result, Err(Ok(ContractError::ProposalEpochMismatch)));
+    assert!(!client.is_paused());
+}
+
+#[test]
+fn test_proposal_created_after_config_change_executes_normally() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+    let signer3 = Address::generate(&env);
+
+    let client = setup_test_contract(&env, &admin);
+
+    let signers = vec![&env, signer1.clone(), signer2.clone(), signer3.clone()];
+    client.set_multisig_config(&admin, &2, &signers);
+
+    // Config changes before any proposal is made
+    let new_signers = vec![&env, signer1.clone(), signer2.clone()];
+    client.set_multisig_config(&admin, &2, &new_signers);
+
+    // A proposal created under the new config approves and executes as usual
+    let proposal_id = client.propose_action(&signer1, &Action::Pause);
+    client.approve_action(&signer2, &proposal_id);
     assert!(client.is_paused());
 }

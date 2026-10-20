@@ -1,37 +1,59 @@
-BUILD_GUIDE.md
-PITCH_DECK_10_SLIDES.md
-project_structure.md
-CONTRACT_ISSUE.md
-FRONTEND_ISSUE.md
-frontend
-contract
-
 # Dependencies
 node_modules/
 target/
+.npm_cache/
 
 # Build outputs
 dist/
+dist-images/
+build/
 *.wasm
+.vite/
 
 # Environment
 .env
-.env.local
-.env.*.local
-
-# Ignore any environment variant files but keep example files
 .env.*
 !.env.example
+.dev/
 
-# IDE
+# Terraform monitoring state and operator-specific values
+*.tfstate
+*.tfstate.*
+.terraform/
+terraform.tfvars
+*.tfvars.json
+
+# IDE / OS
 .idea/
 .vscode/
 *.swp
 *.swo
-
-# OS
 .DS_Store
 Thumbs.db
 
+# Logs and temp files
+*.log
+*.tmp
+*.bak
+*.orig
+/tmp/
+
+# Caches
+.cache/
+
+# Test and coverage artifacts
+coverage/
+coverage-*-report.md
+.lighthouseci/
+image-audit-results/
+frontend-scaffold/reports/
+frontend-scaffold/tests/images/public/
+test-results/
+playwright-report/
+contracts/tipz/test_snapshots/
+
+# Scratch notes and PR drafts
 issue.md
 pr.md
+PR_DESCRIPTION_*.md
+FIXES.md

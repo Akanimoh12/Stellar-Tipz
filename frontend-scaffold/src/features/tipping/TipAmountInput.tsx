@@ -159,11 +159,13 @@ const TipAmountInput: React.FC<TipAmountInputProps> = ({
           label="Custom amount"
           type="text"
           inputMode="decimal"
+          enterKeyHint="done"
           placeholder="0.0"
           value={amount}
           onChange={(event) => onChange(event.target.value)}
           error={amountError}
           data-tip-amount="true"
+          className="scroll-safe-bottom"
         />
       )}
 

@@ -1,0 +1,153 @@
+name: SAST
+
+# Static analysis of first-party code. This complements `security-audit.yml`,
+# which only covers dependency vulnerabilities — it cannot catch injection,
+# unsafe API usage, or hardcoded secrets in our own source.
+#
+# CodeQL is used because it is GitHub-native: results land in the Security tab
+# (code scanning) and the analysis shows up as a check that can gate merges.
+#
+# Ruleset policy: CodeQL's default suite reports style and maintainability
+# issues as security findings, which on this codebase is hundreds of
+# non-security results. We keep the default suite and exclude the query tags
+# responsible for that noise, leaving the high-confidence security queries.
+# See docs/SAST.md for the tuning rationale and the suppression register.
+#
+# Only the languages we actually ship are scanned. The backend is TypeScript
+# (Node/Express) and the contracts are Rust (Soroban).
+
+on:
+  push:
+    branches: [test-implement-drips]
+  pull_request:
+    branches: [test-implement-drips]
+  schedule:
+    # Weekly, so drift in a newly merged dependency or rule update is caught
+    # even if no PR touches the scanned paths.
+    - cron: "27 4 * * 1"
+  workflow_dispatch:
+
+# `security-events: write` is required to upload results; `actions: read` is
+# required for the CodeQL action to resolve the private-repo API.
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+concurrency:
+  group: sast-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-typescript:
+    name: SAST (TypeScript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Only needed so CodeQL can resolve the npm workspace layout; the analysis
+      # itself is compiled from source by the extractor, not run.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend-scaffold/package-lock.json
+
+      # CodeQL's TypeScript extractor resolves types from node_modules, which
+      # sharpens the type-driven queries. This is best-effort: `npm ci` in
+      # backend currently fails because backend/package.json depends on
+      # @opentelemetry/instrumentation-bullmq, which does not exist in the npm
+      # registry and is not in backend/package-lock.json. That is a pre-existing
+      # dependency bug (it also fails PR Checks on the default branch), not
+      # something SAST should block on, so a failure here is tolerated and the
+      # analysis runs without type information.
+      #
+      # `--ignore-scripts` skips the `prepare`/husky hook, which needs a git
+      # checkout and is irrelevant to analysis.
+      - name: Install backend dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: backend
+        continue-on-error: true
+
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: frontend-scaffold
+        continue-on-error: true
+
+      - name: Initialize CodeQL (JavaScript/TypeScript)
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          # Ruleset lives in a config file rather than inline: the
+          # codeql-action `init` step takes `queries` but not `query-filters`,
+          # so the tag exclusions have to be declared in a config file.
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          # Upload even when the analysis finds problems, so they appear in the
+          # Security tab. `category` keeps TS and Rust results distinguishable
+          # and lets branch protection require them independently.
+          category: "/language:javascript-typescript"
+          output: sarif-results
+          upload: always
+
+      - name: Upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-sarif-typescript
+          # `output: sarif-results` writes to the workspace root, not under the
+          # component directory, so the artifact glob is workspace-relative.
+          path: sarif-results/*.sarif
+          if-no-files-found: warn
+          retention-days: 30
+
+  analyze-rust:
+    name: SAST (Rust)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Initialize CodeQL (Rust)
+        uses: github/codeql-action/init@v3
+        with:
+          languages: rust
+          # Same shared ruleset as the TypeScript job.
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:rust"
+          output: sarif-results
+          upload: always
+
+      - name: Upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-sarif-rust
+          # Workspace-relative for the same reason as the TypeScript job.
+          path: sarif-results/*.sarif
+          if-no-files-found: warn
+          retention-days: 30

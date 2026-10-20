@@ -68,8 +68,9 @@ Our unique credit score algorithm provides transparent creator credibility. For 
 
 **Quick Overview:**
 - Score range: **0–100**
+![Docs CI](https://github.com/Akanimoh12/Stellar-Tipz/actions/workflows/docs-ci.yml/badge.svg)
 - Base score: **40** (all new creators start at Silver tier)
-- Components: Tip volume (20%), X metrics (30%), Account age (10%), Streak bonus (uncapped)
+- Components: Tip volume (20%), X metrics (30%), Account age (10%), Streak bonus (max 10 pts)
 - Maximum score: **100** (Diamond tier)
 
 ### Scoring Tiers
@@ -303,9 +304,9 @@ calculate_score()   // Compute credit score
 
 ### Prerequisites
 ```bash
-Node.js 18+
+Node.js 20+
 Rust & Cargo
-Soroban CLI
+Stellar CLI
 Freighter Wallet extension
 Docker & Docker Compose (optional, for containerized dev)
 ```
@@ -325,22 +326,40 @@ npm install
 npm run dev
 ```
 
+### Monorepo task commands
+
+Use the root Makefile for consistent task names across the frontend, backend,
+and Soroban contracts. Aggregate commands cover every component; prefixed
+commands such as `make backend-test` target one component.
+
+```bash
+make setup       # Install root, backend, and frontend dependencies
+make dev         # Start the full local development environment
+make build       # Build contracts, backend, and frontend
+make test        # Run all three test suites
+make lint        # Run contract, backend, and frontend linters
+make typecheck   # Build contract Wasm before checking backend and frontend types
+
+make contracts-test
+make backend-test
+make frontend-test
+```
+
+Build and type-check results are cached by tracked and untracked source files
+under `.cache/task-runner/`. `make clean` removes build products and this cache.
+Tests and linters always run so their results reflect the current environment.
+
 #### Option B: Docker development environment
 ```bash
-# Build and start all services
-docker compose --profile dev up -d
-
-# Frontend is available at http://localhost:3000
-# Contract changes auto-reload via cargo watch
+# Start the local chain, deploy and initialize the contract, migrate and seed
+# PostgreSQL, then start the API, indexer, jobs, and frontend.
+./scripts/dev-environment.sh up
 
 # View logs
-docker compose logs -f
+./scripts/dev-environment.sh logs
 
-# Run contract tests inside container
-docker compose exec contract cargo test
-
-# Stop all services
-docker compose down
+# Stop services; database volumes are preserved.
+./scripts/dev-environment.sh down
 ```
 
 ### Deploy Contract (Testnet)
@@ -350,8 +369,9 @@ cd contracts/tipz
 cargo build --target wasm32-unknown-unknown --release
 
 # Deploy to Stellar Testnet
-soroban contract deploy \
+stellar contract deploy \
   --wasm target/wasm32-unknown-unknown/release/tipz.wasm \
+  --source-account tipz-dev \
   --network testnet
 ```
 

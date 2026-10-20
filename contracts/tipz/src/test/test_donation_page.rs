@@ -2,7 +2,7 @@
 
 use soroban_sdk::{testutils::Address as _, vec, Address, Env, String};
 
-use crate::test::test_init::setup_test_contract;
+use crate::test::test_init::{setup_test_contract, setup_test_contract_with_admin};
 use crate::types::DonationPageConfig;
 use crate::TipzContractClient;
 
@@ -25,7 +25,7 @@ fn test_set_donation_page() {
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
     register_creator(&client, &env, &creator, "artist");
 
     let config = DonationPageConfig {
@@ -55,7 +55,7 @@ fn test_donation_page_default() {
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
     register_creator(&client, &env, &creator, "newcreator");
 
     // Creator without custom page gets default
@@ -75,7 +75,7 @@ fn test_donation_page_suggested_amounts() {
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
     register_creator(&client, &env, &creator, "creator");
 
     let config = DonationPageConfig {
@@ -101,7 +101,7 @@ fn test_donation_page_validation_message_too_long() {
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
     register_creator(&client, &env, &creator, "creator");
 
     // Create a message longer than 500 chars
@@ -127,7 +127,7 @@ fn test_donation_page_validation_too_many_amounts() {
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
     register_creator(&client, &env, &creator, "creator");
 
     // More than 6 suggested amounts
@@ -153,7 +153,7 @@ fn test_donation_page_update() {
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
     register_creator(&client, &env, &creator, "creator");
 
     // Set initial config

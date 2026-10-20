@@ -12,7 +12,8 @@ export const useXlmPrice = () => {
   const abortRef = useRef<AbortController | null>(null);
 
   const fetchPrice = useCallback(async () => {
-    if (Date.now() - cacheTimestamp < PRICE_CACHE_MS && cachedPrice !== null) {
+    const isFresh = cachedPrice !== null && Date.now() - cacheTimestamp < PRICE_CACHE_MS;
+    if (isFresh) {
       setPrice(cachedPrice);
       return;
     }
@@ -26,12 +27,22 @@ export const useXlmPrice = () => {
       const response = await fetch(XLM_PRICE_API, { signal: controller.signal });
       if (!response.ok) throw new Error("Failed to fetch XLM price");
       const data = await response.json();
-      const usdPrice = data?.stellar?.usd ?? null;
+      const usdPrice = typeof data?.stellar?.usd === "number" ? data.stellar.usd : null;
+
+      if (usdPrice === null || !Number.isFinite(usdPrice)) {
+        cachedPrice = null;
+        cacheTimestamp = 0;
+        setPrice(null);
+        return;
+      }
+
       cachedPrice = usdPrice;
       cacheTimestamp = Date.now();
       setPrice(usdPrice);
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
+        cachedPrice = null;
+        cacheTimestamp = 0;
         setPrice(null);
       }
     } finally {

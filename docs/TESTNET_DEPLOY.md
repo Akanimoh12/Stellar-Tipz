@@ -346,3 +346,16 @@ For deployment issues:
 2. Review CI/CD logs in `.github/workflows/deploy-testnet.yml`
 3. Check Stellar Discord: https://discord.gg/stellardev
 4. Create an issue with deployment logs and contract ID
+
+
+## On-chain artifact verification (issue #1366)
+
+The deploy workflow now runs `scripts/verify-contract-deployment.sh` **before** persisting the deployed ID. The check compares the SHA-256 of the exact optimized WASM file to the on-chain contract hash and calls `get_version` to require version 4. A mismatch fails the deployment job. To verify an existing deployment manually:
+
+```bash
+bash scripts/verify-contract-deployment.sh "$CONTRACT_ID" \
+  contracts/target/wasm32-unknown-unknown/release/tipz_contract.optimized.wasm \
+  testnet 4
+```
+
+Successful CI deployment writes the public `deployments/testnet.json` manifest with the on-chain contract ID, WASM hash, source commit and interface version; the optional `TESTNET_DEPLOYER_PUBLIC_KEY` variable identifies the deployment operator. Do not commit private deployer seeds, environment files, or unverified addresses. The manifest only becomes available after a real verified deployment, not by inventing a placeholder contract address. In production, the backend checks `CONTRACT_ID` and `EXPECTED_CONTRACT_VERSION` before starting its listener, and rejects an incompatible on-chain version. The manifest records the latest ledger observed at verification time (`verifiedAtLedger`), **not** the exact ledger in which the deployment transaction executed.

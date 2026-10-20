@@ -9,6 +9,7 @@ import { getExplorerTxUrl } from '@/helpers/network';
 import { useTips } from '../../hooks/useTips';
 import { useWalletStore } from '../../store/walletStore';
 import Loader from '../../components/ui/Loader';
+import { generateTipTransactionId, formatTransactionId, isPendingTransaction } from '../../lib/transactionHash';
 
 type SortBy = 'date' | 'amount';
 type DateRange = 'week' | 'month' | 'all';
@@ -68,24 +69,38 @@ const TipHistory: React.FC = () => {
   }, [filteredAndSorted, safePage]);
 
   const tableRows = pagedTips.map((tip) => {
-    // Contract Tips don't have txHash yet, so we use a placeholder or derived ID
-    const txHash = `T-${tip.timestamp.toString(16).toUpperCase()}`;
+    const transactionId = generateTipTransactionId(tip);
+    const isPending = isPendingTransaction(transactionId);
+    const displayId = formatTransactionId(transactionId);
+
     return {
       date: formatDate(tip.timestamp),
       tipper: truncateString(tip.tipper),
       amount: stroopToXlm(tip.amount),
       message: tip.message || 'No message',
       txHash: (
-        <a
-          href={getExplorerTxUrl(txHash)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-mono text-xs text-blue-500 hover:text-blue-700 underline"
-        >
-          {truncateString(txHash)}
-        </a>
+        <div className="flex items-center gap-2">
+          {isPending && (
+            <span
+              className="inline-block w-2 h-2 rounded-full bg-yellow-500"
+              title="Pending confirmation"
+            />
+          )}
+          <a
+            href={getExplorerTxUrl(transactionId)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`font-mono text-xs ${
+              isPending
+                ? 'text-yellow-600 hover:text-yellow-700'
+                : 'text-blue-500 hover:text-blue-700'
+            } underline`}
+          >
+            {displayId}
+          </a>
+        </div>
       ),
-      txHashRaw: txHash,
+      txHashRaw: transactionId,
     };
   });
 
@@ -96,7 +111,7 @@ const TipHistory: React.FC = () => {
       tipper: tip.tipper,
       amount: stroopToXlm(tip.amount),
       message: tip.message || '',
-      txHash: `T-${tip.timestamp.toString(16).toUpperCase()}`
+      txHash: generateTipTransactionId(tip)
     }));
     const csv = toCsv(exportRows);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });

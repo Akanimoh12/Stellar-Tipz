@@ -1,0 +1,57 @@
+name: Mainnet Release Gate
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Full audited 40-character commit SHA
+        required: true
+        type: string
+      change_ticket:
+        description: HTTPS link to release sign-off and readiness evidence
+        required: true
+        type: string
+      confirmation:
+        description: Enter AUTHORIZE STELLAR MAINNET
+        required: true
+        type: string
+permissions:
+  contents: read
+  deployments: read
+jobs:
+  prereqs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate full SHA, change ticket and protected environment
+        env:
+          GH_TOKEN: ${{ secrets.MAINNET_ENV_INSPECTION_TOKEN }}
+          GH_REPOSITORY: ${{ github.repository }}
+          RELEASE_SHA: ${{ inputs.commit_sha }}
+          CURRENT_SHA: ${{ github.sha }}
+          CURRENT_BRANCH: ${{ github.ref_name }}
+          CHANGE_TICKET: ${{ inputs.change_ticket }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          node <<'NODE'
+          async function check() {
+            if (!/^[0-9a-f]{40}$/.test(process.env.RELEASE_SHA || '') || process.env.RELEASE_SHA !== process.env.CURRENT_SHA)
+              throw Error('SHA must match the audited workflow-dispatch commit');
+            if (process.env.CURRENT_BRANCH !== 'main') throw Error('Only the protected main branch can authorize mainnet');
+            if (process.env.CONFIRMATION !== 'AUTHORIZE STELLAR MAINNET') throw Error('Missing explicit confirmation');
+            if (!/^https:\/\//.test(process.env.CHANGE_TICKET || '')) throw Error('HTTPS release ticket required');
+            const url = 'https://api.github.com/repos/' + process.env.GH_REPOSITORY + '/environments/mainnet';
+            const res = await fetch(url, {headers:{Authorization:'Bearer ' + process.env.GH_TOKEN,Accept:'application/vnd.github+json'}});
+            if (!res.ok) throw Error('Cannot verify mainnet environment protections; failing closed: HTTP ' + res.status);
+            const settings = await res.json();
+            const review = (settings.protection_rules || []).find(x => x.type === 'required_reviewers');
+            if (!review?.reviewers?.length || settings.can_admins_bypass !== false)
+              throw Error('Configure required independent reviewers and disable admin bypass');
+          }
+          check().catch(e => {console.error(e.message); process.exitCode=1;});
+          NODE
+  approval:
+    name: Protected mainnet human approval
+    needs: prereqs
+    runs-on: ubuntu-latest
+    environment: mainnet
+    steps:
+      - run: echo "Candidate authorized for a separate deployment process; no transactions executed."

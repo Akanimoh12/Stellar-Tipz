@@ -5,6 +5,56 @@
 
 ---
 
+## Backend REST API versioning and deprecation policy
+
+The backend REST API uses major versions in its URL (`/api/v1`, `/api/v2`, and so on). Each
+major version has an independently mountable router, allowing an old and a new version to run
+concurrently during migrations. Only `v1` is currently available; a production `v2` has not been
+created.
+
+Breaking response, request, authentication, or endpoint changes require a new major version.
+Backward-compatible fields and endpoints may be added within the current version.
+
+Deprecated endpoints follow this lifecycle:
+
+1. The endpoint is documented as deprecated and a replacement is provided.
+2. Responses include `Deprecation`, `Sunset`, and `Link` headers. `Deprecation` uses the structured
+   timestamp defined by [RFC 9745](https://www.rfc-editor.org/rfc/rfc9745.html), while `Sunset` uses
+   the HTTP date defined by [RFC 8594](https://www.rfc-editor.org/rfc/rfc8594.html).
+3. Clients receive at least 180 days between the announced deprecation and sunset dates unless an
+   urgent security or legal issue requires faster removal.
+4. Usage is logged with the authenticated user or API-key identifier when available. Public clients
+   should send `X-Client-Id` (for example, `mobile-ios/4.2`); otherwise the user agent or source IP is
+   recorded. Authorization credentials and raw API-key secrets are never logged.
+5. At or after the sunset date, the endpoint may return `410 Gone` before removal. Removal happens
+   only after the documented sunset date or in a later major API version.
+
+Example response headers:
+
+```http
+Deprecation: @1787702400
+Sunset: Sun, 28 Feb 2027 00:00:00 GMT
+Link: </api/v1/docs>; rel="deprecation", </api/v1/profiles/by-username/alice>; rel="successor-version"
+```
+
+### Currently deprecated REST endpoints
+
+| Endpoint | Replacement | Deprecated | Sunset |
+|---|---|---|---|
+| `GET /api/v1/profiles/username/:username` | `GET /api/v1/profiles/by-username/:username` | 2026-08-26 | 2027-02-28 |
+
+### REST list pagination
+
+Tips, refunds, notifications, withdrawals, and subscriptions use cursor pagination. Pass `limit`
+on the first request, then send the response's opaque `nextCursor` as `cursor` on the next request.
+Cursors are signed, tied to the authenticated user and active filters, and must not be decoded or
+constructed by clients. A `null` `nextCursor` means the final page has been reached.
+
+The legacy `offset` parameter remains available until 2027-02-28. Responses to requests that use
+it include `Deprecation` and `Sunset` headers. `cursor` and `offset` cannot be supplied together.
+
+---
+
 ## Quick Start
 
 ### Install dependencies
@@ -1823,3 +1873,83 @@ All write operations require `caller.require_auth()`. The Soroban host verifies 
 
 ### Rate Limiting
 All write operations are rate-limited (50 ops per 3600s window by default). Admin is exempt. Registration uses a separate pool (20 per hour). Rate limit config is admin-settable via `set_rate_limit_config`.
+
+
+## Webhook signature verification and replay protection
+
+Webhook deliveries include three security headers:
+
+- `X-Stellar-Tipz-Timestamp` — Unix timestamp in seconds.
+- `X-Stellar-Tipz-Delivery-Id` — unique, stable identifier for the delivery. Store processed ids and reject duplicates.
+- `X-Stellar-Tipz-Signature` — `sha256=<hex>`, where the HMAC input is `<timestamp>.<delivery-id>.<raw-request-body>`.
+
+Receivers should reject timestamps more than 300 seconds from their local clock, verify the HMAC using a constant-time comparison, and only mark the delivery id as processed after verification succeeds. During secret rotation, keep both the new and previous secret valid for the agreed overlap window; accept a signature that verifies with either, then retire the old secret when the window ends.
+
+### Rotate a webhook signing secret
+
+`POST /api/v1/webhooks/subscriptions/:id/rotate-secret`
+
+Authenticated owners can rotate a subscription secret without a cutover outage. The optional body field `overlapSeconds` accepts 60–86400 seconds and defaults to 3600. The response returns the new secret once plus `previousSecretValidUntil`. Deliveries queued before rotation keep their original secret; new deliveries use the new secret. Receivers should accept either secret until the overlap deadline.
+
+```json
+{
+  "overlapSeconds": 3600
+}
+```
+
+### Node.js verification
+
+```js
+import crypto from "node:crypto";
+
+function verifyWebhook(rawBody, headers, currentSecret, previousSecret) {
+  const timestamp = Number(headers["x-stellar-tipz-timestamp"]);
+  const deliveryId = headers["x-stellar-tipz-delivery-id"];
+  const supplied = String(headers["x-stellar-tipz-signature"] || "").replace(/^sha256=/, "");
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(timestamp) || Math.abs(now - timestamp) > 300 || !deliveryId) return false;
+
+  const message = `${timestamp}.${deliveryId}.${rawBody}`;
+  return [currentSecret, previousSecret].filter(Boolean).some((secret) => {
+    const expected = crypto.createHmac("sha256", secret).update(message).digest("hex");
+    if (expected.length !== supplied.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(supplied, "hex"));
+  });
+}
+```
+
+### Python verification
+
+```python
+import hashlib, hmac, time
+
+def verify_webhook(raw_body: bytes, headers: dict, secrets: list[str]) -> bool:
+    timestamp = int(headers["X-Stellar-Tipz-Timestamp"])
+    delivery_id = headers["X-Stellar-Tipz-Delivery-Id"]
+    supplied = headers["X-Stellar-Tipz-Signature"].removeprefix("sha256=")
+    if abs(int(time.time()) - timestamp) > 300:
+        return False
+    message = str(timestamp).encode() + b"." + delivery_id.encode() + b"." + raw_body
+    return any(
+        hmac.compare_digest(hmac.new(secret.encode(), message, hashlib.sha256).hexdigest(), supplied)
+        for secret in secrets
+    )
+```
+
+Webhook endpoints must use HTTPS and resolve only to public IP addresses. The service validates the hostname when a subscription is created and resolves it again immediately before every delivery to prevent DNS-rebinding attacks. Redirects are not followed.
+
+## Operator-triggered scheduled jobs
+
+`POST /api/v1/admin/jobs/:name/trigger` is admin-only and enqueues the same queue/job name used by the scheduler, so manual and scheduled runs share the same overlap lock. Every manual trigger writes an audit record containing the operator id, job name, parameters, outcome, and job id when available.
+
+Supported job names are `credit-recompute`, `analytics-daily`, `subscription-charge`, `leaderboard-snapshot`, `x-metrics-refresh`, `discovery`, `platform-stats`, `payout`, `auth-challenge-cleanup`, and `retention`.
+
+`analytics-daily` accepts an optional UTC `date` parameter in `YYYY-MM-DD` form; all other jobs currently reject extra parameters.
+
+```json
+{
+  "params": {
+    "date": "2026-09-24"
+  }
+}
+```

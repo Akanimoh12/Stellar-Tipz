@@ -1,0 +1,33 @@
+name: Validate monitoring configuration
+
+on:
+  pull_request:
+    paths:
+      - 'monitoring/checkly/**'
+      - '.github/workflows/monitoring-config.yml'
+  push:
+    branches: [test-implement-drips]
+    paths:
+      - 'monitoring/checkly/**'
+      - '.github/workflows/monitoring-config.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check required monitoring controls
+        run: node monitoring/checkly/validate-config.mjs
+      - uses: hashicorp/setup-terraform@v3
+      - name: Format Terraform
+        run: terraform -chdir=monitoring/checkly fmt -check
+      - name: Initialize provider without backend
+        run: terraform -chdir=monitoring/checkly init -backend=false
+      - name: Validate Terraform
+        run: terraform -chdir=monitoring/checkly validate

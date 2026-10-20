@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars only in a secure local workspace; never commit the
+# populated file. API key and account ID are intentionally omitted.
+frontend_url      = "https://stellar-tipz.vercel.app"
+api_url           = "https://api.example.com"
+on_call_email     = "oncall@example.com"
+status_page_domain = "status.example.com"

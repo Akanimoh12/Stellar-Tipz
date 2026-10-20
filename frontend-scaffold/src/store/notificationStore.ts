@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { broadcastCrossTabEvent } from '../services/crossTabSync';
 
 export type NotificationType = 'tip' | 'achievement' | 'system';
 
@@ -44,23 +45,34 @@ export const useNotificationStore = create<NotificationStore>()(
         return id;
       },
 
-      markAsRead: (id) =>
+      markAsRead: (id) => {
         set((state) => ({
           notifications: state.notifications.map((n) =>
             n.id === id ? { ...n, unread: false } : n,
           ),
-        })),
+        }));
+        broadcastCrossTabEvent({ type: "NOTIFICATION_READ", payload: { id } });
+      },
 
-      markAllAsRead: () =>
+      markAllAsRead: () => {
         set((state) => ({
           notifications: state.notifications.map((n) => ({ ...n, unread: false })),
-        })),
+        }));
+        broadcastCrossTabEvent({ type: "NOTIFICATION_ALL_READ" });
+      },
 
       clearAll: () => set({ notifications: [] }),
     }),
     {
       name: 'tipz_notifications',
+      version: 1,
       partialize: (state) => ({ notifications: state.notifications }),
+      migrate: (persistedState: unknown, version: number) => {
+        if (version !== 1 || !persistedState || typeof persistedState !== 'object') {
+          return { notifications: [] };
+        }
+        return persistedState as { notifications: AppNotification[] };
+      },
     },
   ),
 );

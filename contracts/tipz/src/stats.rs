@@ -124,6 +124,12 @@ pub fn mark_creator_active(env: &Env, creator: &Address) {
     let now = env.ledger().timestamp();
     storage::set_creator_last_active(env, creator, now);
 
+    // Update the profile's last_active_at timestamp so credit decay can track it
+    if let Ok(mut profile) = storage::get_profile_opt(env, creator) {
+        profile.last_active_at = now;
+        storage::set_profile(env, &profile);
+    }
+
     // Update active creators count for 30d window
     update_active_creators_count(env);
 }

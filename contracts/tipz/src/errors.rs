@@ -1,7 +1,11 @@
-//! Error types for the Tipz contract.
-
 use soroban_sdk::contracterror;
 
+/// Contract error codes.
+///
+/// Every variant has a unique discriminant and a unique name. The discriminant is the
+/// on-chain error code, so existing codes must never be reused for a different meaning.
+/// Frontend messages for each variant live in `frontend-scaffold/src/helpers/error.ts`
+/// (`CONTRACT_ERROR_CODES`) and are kept in sync by a test that parses this file.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -9,8 +13,8 @@ pub enum ContractError {
     NotInitialized = 1,
     AlreadyInitialized = 2,
     NotAuthorized = 3,
-    AdminChangeAlreadyPending = 4,
-    AdminChangeTimelockNotMet = 5,
+    AdminChangePending = 4,
+    AdminTimelockNotMet = 5,
     NoPendingAdmin = 6,
     ContractPaused = 7,
     NotRegistered = 8,
@@ -23,45 +27,99 @@ pub enum ContractError {
     BalanceNotZero = 15,
     OverflowError = 16,
     NotFound = 17,
-    AlreadyDeactivated = 18,
-    ProfileDeactivated = 19,
-    ProfileNotDeactivated = 20,
-    MessageTooLong = 21,
-    InvalidImageUrl = 22,
-    BatchTooLarge = 23,
-    InvalidFee = 24,
-    CannotTipSelf = 25,
-    NotVerified = 26,
-    AlreadyVerified = 27,
-    Unauthorized = 28,
-    RateLimitExceeded = 29,
-    InvalidXHandle = 30,
-    TipBelowMinimum = 31,
-    ProfileNotActive = 32,
-    /// Tip message contains invalid control characters
-    InvalidMessage = 33,
-    /// Tip amount is below the creator's custom minimum
-    BelowCreatorMinimum = 34,
-    /// Domain format is invalid or empty when required
-    InvalidDomain = 35,
+    ProfileDeactivated = 18,
+    ProfileNotDeactivated = 19,
+    MessageTooLong = 20,
+    InvalidImageUrl = 21,
+    BatchTooLarge = 22,
+    InvalidFee = 23,
+    CannotTipSelf = 24,
+    NotVerified = 25,
+    AlreadyVerified = 26,
+    RateLimitExceeded = 27,
+    TipBelowMinimum = 28,
+    BelowCreatorMinimum = 29,
+    InvalidDomain = 30,
     /// Generic invalid input error
-    InvalidInput = 36,
+    InvalidInput = 31,
     /// Token is not in the accepted whitelist
-    TokenNotAccepted = 37,
+    TokenNotAccepted = 32,
     /// Maximum number of registered profiles reached (DoS protection)
-    MaxProfilesReached = 38,
-    /// Profile is inactive beyond the cleanup threshold
-    ProfileInactive = 39,
+    MaxProfilesReached = 33,
     /// Refund request window has expired
-    RefundWindowExpired = 38,
+    RefundWindowExpired = 34,
     /// Refund has already been requested for this tip
-    RefundAlreadyRequested = 39,
+    RefundAlreadyRequested = 35,
     /// Refund has already been processed
-    RefundAlreadyProcessed = 40,
-    /// No refund request exists for this tip
-    NoRefundRequest = 41,
+    RefundAlreadyProcessed = 36,
     /// Only the tipper can request a refund
-    NotTipper = 42,
+    NotTipper = 37,
     /// Only the creator can approve/reject a refund
-    NotCreator = 43,
+    NotCreator = 38,
+    /// A creator has blocked this tipper
+    TipperBlocked = 39,
+    BlocklistLimitReached = 40,
+    ContractNotPaused = 41,
+    EmergencyNotAllowed = 42,
+    ProposalExpired = 43,
+    MigrationCompleted = 44,
+    MigrationDowngradeRejected = 45,
+    InvalidMigrationVersion = 46,
+    /// No refund request exists for this tip
+    NoRefundRequest = 47,
+    /// Tip message contains invalid control characters
+    InvalidMessage = 48,
+    SubscriptionLimitReached = 49,
+    /// Refund request window for pending refunds has expired
+    RefundRequestExpired = 50,
+    /// Profile is inactive beyond the cleanup threshold
+    ProfileInactive = 51,
+    /// Storage limit exceeded for variable-size entry
+    StorageLimitExceeded = 52,
+    /// Username is reserved and cannot be registered
+    ReservedUsername = 53,
+}
+
+impl ContractError {
+    pub const AlreadyInitialized: Self = Self::AlreadyInit;
+    pub const AdminChangeAlreadyPending: Self = Self::AdminChangePending;
+    pub const AdminChangeTimelockNotMet: Self = Self::AdminTimelockNotMet;
+    pub const InsufficientBalance: Self = Self::LowBalance;
+    pub const ProfileDeactivated: Self = Self::Deactivated;
+    pub const ProfileNotDeactivated: Self = Self::NotDeactivated;
+    pub const BelowCreatorMinimum: Self = Self::BelowCreatorMin;
+    pub const MaxProfilesReached: Self = Self::MaxProfiles;
+    pub const RefundWindowExpired: Self = Self::RefundExpired;
+    pub const RefundAlreadyRequested: Self = Self::RefundRequested;
+    pub const RefundAlreadyProcessed: Self = Self::RefundProcessed;
+    pub const BlocklistLimitReached: Self = Self::BlocklistLimit;
+    pub const EmergencyWithdrawalNotAllowed: Self = Self::EmergencyNotAllowed;
+    pub const AdminProposalExpired: Self = Self::ProposalExpired;
+    pub const MigrationAlreadyCompleted: Self = Self::MigrationCompleted;
+    pub const MigrationDowngradeRejected: Self = Self::MigrationDowngrade;
+    pub const InvalidMigrationVersion: Self = Self::InvalidMigration;
+    pub const SubscriptionLimitReached: Self = Self::SubLimitReached;
+    pub const RefundRequestExpired: Self = Self::InvalidInput;
+    pub const MultisigRequired: Self = Self::InvalidInput;
+    pub const WdrBelowMin: Self = Self::ProposalExpired;
+    pub const WithdrawalBelowMinimum: Self = Self::WdrBelowMin;
+    pub const ProposalEpochMismatch: Self = Self::ProposalExpired;
+    /// Admin change proposal has expired before confirmation
+    AdminProposalExpired = 52,
+    /// Emergency withdrawal is not permitted in the current state
+    EmergencyWithdrawalNotAllowed = 53,
+    /// Caller is not authorized for this admin-only operation
+    Unauthorized = 54,
+    /// Withdrawal amount is below the configured minimum
+    WdrBelowMin = 55,
+    /// Operation must go through the multisig flow
+    MultisigRequired = 56,
+    /// Configuration values are inconsistent with each other
+    ConfigMismatch = 57,
+    /// Multisig proposal was created under a different epoch
+    ProposalEpochMismatch = 58,
+    /// Per-address or global storage limit reached
+    StorageLimitExceeded = 59,
+    /// Token did not credit exactly the tipped amount (fee-on-transfer or rebasing token)
+    NonStandardToken = 60,
 }

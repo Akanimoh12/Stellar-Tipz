@@ -6,7 +6,7 @@
 use soroban_sdk::{contracttype, Address, Env, Vec};
 
 use crate::errors::ContractError;
-use crate::storage::{self, DataKey};
+use crate::storage::{self, DataKey, ExtendedDataKey};
 
 /// Default proposal expiry time in seconds (7 days)
 pub const DEFAULT_PROPOSAL_EXPIRY: u64 = 7 * 24 * 3600;
@@ -35,6 +35,10 @@ pub struct MultisigConfig {
     pub required_signatures: u32,
     /// List of authorized signers
     pub signers: Vec<Address>,
+    /// Monotonically increasing counter bumped on every config change.
+    /// Proposals record the epoch they were created under; a config change
+    /// invalidates approvals collected under a prior epoch (#1154).
+    pub epoch: u32,
 }
 
 /// Proposal state
@@ -53,6 +57,12 @@ pub struct Proposal {
     pub expires_at: u64,
     /// Whether the proposal has been executed
     pub executed: bool,
+    /// Address that originally proposed the action
+    pub proposer: Address,
+    /// Whether the proposal has been cancelled
+    pub cancelled: bool,
+    /// Configuration epoch when the proposal was created (#1154).
+    pub epoch: u32,
 }
 
 /// Set the multi-signature configuration (admin only)
@@ -69,25 +79,35 @@ pub fn set_multisig_config(
         return Err(ContractError::InvalidAmount);
     }
 
+    let epoch = get_multisig_config(env).map(|c| c.epoch + 1).unwrap_or(0);
+
     let config = MultisigConfig {
         required_signatures,
         signers,
+        epoch,
     };
 
     env.storage()
         .instance()
-        .set(&DataKey::MultisigConfig, &config);
+        .set(&ExtendedDataKey::MultisigConfig, &config);
+
+    crate::admin::log_admin_action(
+        env,
+        admin,
+        soroban_sdk::Symbol::new(env, "set_multisig_config"),
+        soroban_sdk::String::from_str(env, ""),
+        crate::admin::u32_to_string(env, required_signatures),
+    );
 
     Ok(())
 }
 
 /// Get the current multi-signature configuration
 pub fn get_multisig_config(env: &Env) -> Option<MultisigConfig> {
-    env.storage().instance().get(&DataKey::MultisigConfig)
+    env.storage().instance().get(&ExtendedDataKey::MultisigConfig)
 }
 
 /// Check if multi-sig is enabled
-#[allow(dead_code)]
 pub fn is_multisig_enabled(env: &Env) -> bool {
     get_multisig_config(env).is_some()
 }
@@ -108,7 +128,7 @@ pub fn propose_action(env: &Env, signer: &Address, action: Action) -> Result<u32
     let proposal_id: u32 = env
         .storage()
         .instance()
-        .get(&DataKey::NextProposalId)
+        .get(&ExtendedDataKey::NextProposalId)
         .unwrap_or(0);
 
     let now = env.ledger().timestamp();
@@ -122,17 +142,20 @@ pub fn propose_action(env: &Env, signer: &Address, action: Action) -> Result<u32
         created_at: now,
         expires_at: now + DEFAULT_PROPOSAL_EXPIRY,
         executed: false,
+        proposer: signer.clone(),
+        cancelled: false,
+        epoch: config.epoch,
     };
 
     // Store proposal
     env.storage()
         .instance()
-        .set(&DataKey::Proposal(proposal_id), &proposal);
+        .set(&ExtendedDataKey::Proposal(proposal_id), &proposal);
 
     // Increment proposal ID counter
     env.storage()
         .instance()
-        .set(&DataKey::NextProposalId, &(proposal_id + 1));
+        .set(&ExtendedDataKey::NextProposalId, &(proposal_id + 1));
 
     // Emit event
     crate::events::emit_proposal_created(env, proposal_id, signer, &action);
@@ -161,23 +184,33 @@ pub fn approve_action(env: &Env, signer: &Address, proposal_id: u32) -> Result<(
     let mut proposal: Proposal = env
         .storage()
         .instance()
-        .get(&DataKey::Proposal(proposal_id))
+        .get(&ExtendedDataKey::Proposal(proposal_id))
         .ok_or(ContractError::NotFound)?;
 
     // Check if already executed
     if proposal.executed {
-        return Err(ContractError::AlreadyVerified); // Reusing error for "already executed"
+        return Err(ContractError::AlreadyVerified);
+    }
+
+    // Check if cancelled
+    if proposal.cancelled {
+        return Err(ContractError::ProposalExpired);
     }
 
     // Check if expired
     let now = env.ledger().timestamp();
     if now > proposal.expires_at {
-        return Err(ContractError::NotFound); // Proposal expired
+        return Err(ContractError::ProposalExpired);
+    }
+
+    // Reject if the signer set/threshold changed since this proposal was created (#1154)
+    if proposal.epoch != config.epoch {
+        return Err(ContractError::ProposalEpochMismatch);
     }
 
     // Check if already approved by this signer
     if proposal.approvals.contains(signer) {
-        return Err(ContractError::AlreadyVerified); // Already approved
+        return Err(ContractError::AlreadyVerified);
     }
 
     // Add approval
@@ -186,7 +219,7 @@ pub fn approve_action(env: &Env, signer: &Address, proposal_id: u32) -> Result<(
     // Update proposal
     env.storage()
         .instance()
-        .set(&DataKey::Proposal(proposal_id), &proposal);
+        .set(&ExtendedDataKey::Proposal(proposal_id), &proposal);
 
     // Emit event
     crate::events::emit_proposal_approved(env, proposal_id, signer);
@@ -195,6 +228,48 @@ pub fn approve_action(env: &Env, signer: &Address, proposal_id: u32) -> Result<(
     if proposal.approvals.len() >= config.required_signatures {
         execute_proposal_internal(env, proposal_id, &config)?;
     }
+
+    Ok(())
+}
+
+/// Cancel a proposal (only the proposer can cancel)
+pub fn cancel_proposal(
+    env: &Env,
+    proposer: &Address,
+    proposal_id: u32,
+) -> Result<(), ContractError> {
+    storage::extend_instance_ttl(env);
+    proposer.require_auth();
+
+    let mut proposal: Proposal = env
+        .storage()
+        .instance()
+        .get(&DataKey::Proposal(proposal_id))
+        .ok_or(ContractError::NotFound)?;
+
+    // Check if already executed
+    if proposal.executed {
+        return Err(ContractError::AlreadyVerified);
+    }
+
+    // Check if already cancelled
+    if proposal.cancelled {
+        return Err(ContractError::AlreadyVerified);
+    }
+
+    // Only the proposer can cancel
+    if proposal.proposer != *proposer {
+        return Err(ContractError::NotAuthorized);
+    }
+
+    // Cancel the proposal
+    proposal.cancelled = true;
+    env.storage()
+        .instance()
+        .set(&DataKey::Proposal(proposal_id), &proposal);
+
+    // Emit event
+    crate::events::emit_proposal_cancelled(env, proposal_id, proposer);
 
     Ok(())
 }
@@ -208,7 +283,7 @@ fn execute_proposal_internal(
     let mut proposal: Proposal = env
         .storage()
         .instance()
-        .get(&DataKey::Proposal(proposal_id))
+        .get(&ExtendedDataKey::Proposal(proposal_id))
         .ok_or(ContractError::NotFound)?;
 
     // Verify we have enough approvals
@@ -216,21 +291,26 @@ fn execute_proposal_internal(
         return Err(ContractError::NotAuthorized);
     }
 
+    // Reject if the signer set/threshold changed since this proposal was created (#1154)
+    if proposal.epoch != config.epoch {
+        return Err(ContractError::ProposalEpochMismatch);
+    }
+
     // Mark as executed
     proposal.executed = true;
     env.storage()
         .instance()
-        .set(&DataKey::Proposal(proposal_id), &proposal);
+        .set(&ExtendedDataKey::Proposal(proposal_id), &proposal);
 
     // Execute the action
     match proposal.action {
         Action::Pause => {
-            storage::set_paused(env, true);
-            crate::events::emit_contract_paused(env, &env.current_contract_address());
+            storage::set_pause_flag(env, crate::types::PauseFlag::All, true);
+            crate::events::emit_contract_paused(env, &env.current_contract_address(), crate::types::PauseFlag::All);
         }
         Action::Unpause => {
-            storage::set_paused(env, false);
-            crate::events::emit_contract_unpaused(env, &env.current_contract_address());
+            storage::set_pause_flag(env, crate::types::PauseFlag::All, false);
+            crate::events::emit_contract_unpaused(env, &env.current_contract_address(), crate::types::PauseFlag::All);
         }
         Action::Upgrade(wasm_hash) => {
             env.deployer().update_current_contract_wasm(wasm_hash);
@@ -238,12 +318,7 @@ fn execute_proposal_internal(
             storage::set_version(env, new_version);
         }
         Action::SetFee(fee_bps) => {
-            if fee_bps > 1000 {
-                return Err(ContractError::InvalidFee);
-            }
-            let old_bps = storage::get_fee_bps(env);
-            storage::set_fee_bps(env, fee_bps);
-            crate::events::emit_fee_updated(env, old_bps, fee_bps);
+            crate::admin::propose_fee_change_inner(env, fee_bps)?;
         }
         Action::SetAdmin(new_admin) => {
             let old_admin = storage::get_admin(env);
@@ -258,12 +333,12 @@ fn execute_proposal_internal(
     Ok(())
 }
 
-/// Get all pending (non-executed, non-expired) proposals
+/// Get all pending (non-executed, non-expired, non-cancelled) proposals
 pub fn get_pending_proposals(env: &Env) -> Vec<Proposal> {
     let next_id: u32 = env
         .storage()
         .instance()
-        .get(&DataKey::NextProposalId)
+        .get(&ExtendedDataKey::NextProposalId)
         .unwrap_or(0);
 
     let mut pending = Vec::new(env);
@@ -273,9 +348,9 @@ pub fn get_pending_proposals(env: &Env) -> Vec<Proposal> {
         if let Some(proposal) = env
             .storage()
             .instance()
-            .get::<DataKey, Proposal>(&DataKey::Proposal(id))
+            .get::<ExtendedDataKey, Proposal>(&ExtendedDataKey::Proposal(id))
         {
-            if !proposal.executed && now <= proposal.expires_at {
+            if !proposal.executed && !proposal.cancelled && now <= proposal.expires_at {
                 pending.push_back(proposal);
             }
         }
@@ -284,9 +359,40 @@ pub fn get_pending_proposals(env: &Env) -> Vec<Proposal> {
     pending
 }
 
+/// Remove all proposals that have already expired to keep storage bounded.
+///
+/// Expired proposals are deleted from instance storage and not returned again by
+/// [`get_pending_proposals`]. Calls are intentionally idempotent: the function
+/// returns the count of purged records and leaves active proposals untouched.
+pub fn purge_expired_proposals(env: &Env) -> u32 {
+    let next_id: u32 = env
+        .storage()
+        .instance()
+        .get(&ExtendedDataKey::NextProposalId)
+        .unwrap_or(0);
+
+    let now = env.ledger().timestamp();
+    let mut purged = 0_u32;
+
+    for id in 0..next_id {
+        if let Some(proposal) = env
+            .storage()
+            .instance()
+            .get::<ExtendedDataKey, Proposal>(&ExtendedDataKey::Proposal(id))
+        {
+            if !proposal.executed && now > proposal.expires_at {
+                env.storage().instance().remove(&ExtendedDataKey::Proposal(id));
+                purged += 1;
+            }
+        }
+    }
+
+    purged
+}
+
 /// Get a specific proposal by ID
 pub fn get_proposal(env: &Env, proposal_id: u32) -> Option<Proposal> {
     env.storage()
         .instance()
-        .get(&DataKey::Proposal(proposal_id))
+        .get(&ExtendedDataKey::Proposal(proposal_id))
 }

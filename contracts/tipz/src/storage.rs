@@ -5,17 +5,18 @@
 //! | Tier | Usage |
 //! |------|-------|
 //! | `instance()` | Contract-wide config and counters (Admin, fee, TotalCreators, …) |
-//! | `persistent()` | Per-entry long-lived data (Profile, username reverse-lookup) |
+//! | `persistent()` | Per-entry long-lived data (profiles, subscriptions, indexes) |
 //! | `temporary()` | Short-lived tip records; TTL extended on write |
 //!
 //! All callers should go through the helpers in this module instead of
 //! accessing raw storage directly.
 
-use soroban_sdk::{contracttype, Address, Env, String};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
 
 use crate::errors::ContractError;
 use crate::types::{
-    LeaderboardEntry, LeaderboardPeriod, Profile, RateLimitConfig, RateLimitStatus,
+    CircuitBreakerConfig, CircuitBreakerStatus, LeaderboardEntry, LeaderboardPeriod, Profile,
+    RateLimitConfig, RateLimitStatus,
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -37,11 +38,19 @@ pub const PROFILE_TTL_MIN_LEDGERS: u32 = 120_960;
 /// Target TTL for profile entries after a bump (~31 days).
 pub const PROFILE_TTL_MAX_LEDGERS: u32 = 535_680;
 
+/// Maximum number of entries accepted by any batch operation.
+pub const MAX_BATCH_SIZE: u32 = 50;
+
+/// Subscription records and their indexes use the long-lived persistent TTL
+/// policy, matching profile storage.
+pub const SUBSCRIPTION_TTL_MIN_LEDGERS: u32 = PROFILE_TTL_MIN_LEDGERS;
+pub const SUBSCRIPTION_TTL_MAX_LEDGERS: u32 = PROFILE_TTL_MAX_LEDGERS;
+
 // ──────────────────────────────────────────────────────────────────────────────
 // DataKey
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Storage key enum for all contract data.
+/// Storage key enum for the hot path and frequently-used values.
 #[contracttype]
 pub enum DataKey {
     /// Contract admin address
@@ -78,6 +87,8 @@ pub enum DataKey {
     Paused,
     /// Minimum allowed tip amount in stroops
     MinTipAmount,
+    /// Reentrancy guard: set before fund-moving external calls
+    ReentrancyGuard,
     /// Number of tips sent by a specific tipper
     TipperTipCount(Address),
     /// Reverse index: (tipper, local_index) → global tip ID
@@ -86,14 +97,42 @@ pub enum DataKey {
     CreatorTipCount(Address),
     /// Reverse index: (creator, local_index) → global tip ID
     CreatorTip(Address, u32),
+    /// Withdrawal cooldown in seconds
+    WithdrawalCooldown,
+    /// Large withdrawal threshold in stroops
+    WithdrawalThreshold,
+    /// Percentage of fees going to operations
+    OpsFeePct,
+    /// Percentage of fees going to staking pool
+    PoolFeePct,
+    /// Current pool balance
+    PoolBalance,
+}
+
+/// Extended storage keys for additional state to keep the main key enum under the
+/// Soroban contracttype size limit.
+#[contracttype]
+pub enum ExtendedDataKey {
+    /// Global scheduled-tip counter.
+    ScheduledTipCount,
+    /// Optional scheduled tip by ID.
+    ScheduledTip(u32),
+    /// Scheduled tip IDs for a sender.
+    SenderScheduledTip(Address, u32),
+    /// Scheduled tip IDs for a creator.
+    CreatorScheduledTip(Address, u32),
+    /// Total scheduled tips for a sender.
+    SenderScheduledTipCount(Address),
+    /// Total scheduled tips for a creator.
+    CreatorScheduledTipCount(Address),
     /// Pending two-step admin change proposal (full transition record).
     PendingAdminChange,
-    /// Admin change history list (newest entries appended last).
-    AdminChangeHistory,
     /// Pending verification request by creator address
     VerificationRequest(Address),
     /// Subscription by (subscriber, creator)
     Subscription(Address, Address),
+    /// Pending amount and interval, applied at the existing next_due boundary.
+    SubscriptionChange(Address, Address),
     /// Number of subscriptions for a subscriber
     SubscriberSubCount(Address),
     /// Index: (subscriber, index) -> creator
@@ -106,16 +145,6 @@ pub enum DataKey {
     PendingWithdrawal(Address, u32),
     /// Next withdrawal ID for a creator
     NextWithdrawalId(Address),
-    /// Withdrawal cooldown in seconds
-    WithdrawalCooldown,
-    /// Large withdrawal threshold in stroops
-    WithdrawalThreshold,
-    /// Percentage of fees going to operations
-    OpsFeePct,
-    /// Percentage of fees going to staking pool
-    PoolFeePct,
-    /// Current pool balance
-    PoolBalance,
     /// Multi-signature configuration
     MultisigConfig,
     /// Multi-sig proposal by ID
@@ -136,19 +165,12 @@ pub enum DataKey {
     CreatorLastActive(Address),
     /// Supporter streak by (supporter, creator)
     Streak(Address, Address),
-    /// When set, profile is deactivated (unix timestamp); absent means active
-    ProfileDeactivatedAt(Address),
     /// Rate limit status by address
     RateLimit(Address),
     /// Global rate limit configuration
     RateLimitConfig,
     /// Tips received by a creator during a specific period (Address, Period, StartTimestamp)
     CreatorPeriodVolume(Address, crate::types::LeaderboardPeriod, u64),
-}
-
-/// Extended storage keys for new features (separate enum to avoid size limits)
-#[contracttype]
-pub enum ExtendedDataKey {
     /// Active goal for a creator
     ActiveGoal(Address),
     /// Archived goals for a creator
@@ -163,6 +185,56 @@ pub enum ExtendedDataKey {
     RefundRequest(u32),
     /// Refund configuration
     RefundConfig,
+    /// Cumulative tip volume from a specific sender to a specific creator (for leaderboard concentration cap).
+    SenderCreatorVolume(Address, Address),
+    /// Number of pending refund requests tracked for cursor-based iteration.
+    PendingRefundCount,
+    /// Pending refund request tip ID by dense index.
+    PendingRefundTip(u32),
+    /// Bounded ring-buffered log of all privileged admin actions.
+    AdminAuditLog,
+    /// Counter for total recorded admin audit entries over time.
+    AdminAuditCount,
+    /// When set, profile is deactivated (unix timestamp); absent means active
+    ProfileDeactivatedAt(Address),
+    /// Creator-level blocked tipper entry `(creator, tipper)`.
+    CreatorBlockedTipper(Address, Address),
+    /// Active blocked-tipper count for a creator.
+    CreatorBlockedTipperCount(Address),
+    /// Proposed contract upgrade WASM hash awaiting execution.
+    ProposedUpgradeHash,
+    /// Scheduled tip counter
+    ScheduledTipCount,
+    /// Scheduled tip record by ID
+    ScheduledTip(u32),
+    /// Number of scheduled tips sent by a sender
+    SenderScheduledTipCount(Address),
+    /// Index: (sender, local_index) -> scheduled_tip_id
+    SenderScheduledTip(Address, u32),
+    /// Number of scheduled tips for a creator
+    CreatorScheduledTipCount(Address),
+    /// Index: (creator, local_index) -> scheduled_tip_id
+    CreatorScheduledTip(Address, u32),
+    /// Unix timestamp when contract was paused.
+    PausedAt,
+    /// State tracking for storage migration harness.
+    MigrationState,
+    /// Active subscriptions list by subscriber (Vec<(subscriber, creator)>)
+    ActiveSubscriptions,
+    /// Minimum explicit withdrawal amount in stroops.
+    MinWithdrawalAmount,
+    /// Ledger sequence when a creator's credit score was last persisted (#1186).
+    CreditComputedAtLedger(Address),
+    /// Configurable staleness threshold in ledgers (#1186).
+    CreditStalenessThreshold,
+    /// Dense index: u32 → Address for paginated creator iteration (#1185).
+    CreatorIndex(u32),
+    /// Total entries in the dense creator index (#1185).
+    CreatorIndexCount,
+    /// Oracle contract address for a token (#1184).
+    TokenOracleAddress(Address),
+    /// Last known oracle price for a token (#1184).
+    TokenOraclePrice(Address),
 }
 
 /// Storage keys for compact performance caches.
@@ -181,12 +253,17 @@ pub struct RuntimeConfig {
     pub admin: Address,
     pub fee_collector: Address,
     pub fee_bps: u32,
+    pub fee_change_delay_ledgers: u32,
     pub native_token: Address,
-    pub paused: bool,
+    /// Bitmask of paused operations (see `PauseFlag`).
+    /// Global pause is represented by `PauseFlag::All`.
+    pub pause_flags: u32,
     pub min_tip_amount: i128,
     pub rate_limit: RateLimitConfig,
     /// Domain re-verification interval in seconds (default 30 days)
     pub domain_reverify_secs: u64,
+    /// Maximum sender contribution to a creator's leaderboard score in basis points (default 5000 = 50%).
+    pub max_sender_contribution_bps: u32,
 }
 
 /// All leaderboard periods cached under one key for write-heavy operations.
@@ -650,6 +727,59 @@ pub fn bump_username_ttl(env: &Env, username: &soroban_sdk::String) {
             PROFILE_TTL_MIN_LEDGERS,
             PROFILE_TTL_MAX_LEDGERS,
         );
+    }
+}
+
+/// Bump a subscription and the index entries needed to enumerate it together.
+pub fn bump_subscription_ttl(env: &Env, subscriber: &Address, creator: &Address) {
+    let persistent = env.storage().persistent();
+    let subscription_key = DataKey::Subscription(subscriber.clone(), creator.clone());
+    if persistent.has(&subscription_key) {
+        persistent.extend_ttl(
+            &subscription_key,
+            SUBSCRIPTION_TTL_MIN_LEDGERS,
+            SUBSCRIPTION_TTL_MAX_LEDGERS,
+        );
+    }
+
+    if let Some(count) =
+        persistent.get::<_, u32>(&DataKey::SubscriberSubCount(subscriber.clone()))
+    {
+        persistent.extend_ttl(
+            &DataKey::SubscriberSubCount(subscriber.clone()),
+            SUBSCRIPTION_TTL_MIN_LEDGERS,
+            SUBSCRIPTION_TTL_MAX_LEDGERS,
+        );
+        for index in 0..count {
+            let key = DataKey::SubscriberSub(subscriber.clone(), index);
+            if persistent.get::<_, Address>(&key).as_ref() == Some(creator) {
+                persistent.extend_ttl(
+                    &key,
+                    SUBSCRIPTION_TTL_MIN_LEDGERS,
+                    SUBSCRIPTION_TTL_MAX_LEDGERS,
+                );
+                break;
+            }
+        }
+    }
+
+    if let Some(count) = persistent.get::<_, u32>(&DataKey::CreatorSubCount(creator.clone())) {
+        persistent.extend_ttl(
+            &DataKey::CreatorSubCount(creator.clone()),
+            SUBSCRIPTION_TTL_MIN_LEDGERS,
+            SUBSCRIPTION_TTL_MAX_LEDGERS,
+        );
+        for index in 0..count {
+            let key = DataKey::CreatorSub(creator.clone(), index);
+            if persistent.get::<_, Address>(&key).as_ref() == Some(subscriber) {
+                persistent.extend_ttl(
+                    &key,
+                    SUBSCRIPTION_TTL_MIN_LEDGERS,
+                    SUBSCRIPTION_TTL_MAX_LEDGERS,
+                );
+                break;
+            }
+        }
     }
 }
 
@@ -1217,602 +1347,15 @@ pub fn add_to_tips_volume(env: &Env, amount: i128) -> Result<(), ContractError> 
 // Fee tracking
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Returns the lifetime total fees collected in stroops.
-pub fn get_total_fees(env: &Env) -> i128 {
-    env.storage()
-        .instance()
-        .get(&DataKey::TotalFeesCollected)
-        .unwrap_or(0)
-}
-
-/// Adds `fee` stroops to the lifetime fees collected.
-#[allow(dead_code)]
-pub fn add_to_fees(env: &Env, fee: i128) -> Result<(), ContractError> {
-    let total = get_total_fees(env);
-    // Security: fail closed on arithmetic overflow.
-    let next = total.checked_add(fee).ok_or(ContractError::OverflowError)?;
-    env.storage()
-        .instance()
-        .set(&DataKey::TotalFeesCollected, &next);
-    Ok(())
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Refund storage functions
-// ──────────────────────────────────────────────────────────────────────────────
-
-/// Default refund configuration
-pub const DEFAULT_REFUND_REQUEST_WINDOW_SECS: u64 = 86400; // 24 hours
-pub const DEFAULT_REFUND_RESPONSE_WINDOW_SECS: u64 = 172800; // 48 hours
-pub const DEFAULT_NON_REFUNDABLE_FEE_BPS: u32 = 200; // 2%
-
-/// Get refund configuration
-pub fn get_refund_config(env: &Env) -> crate::types::RefundConfig {
-    env.storage()
-        .instance()
-        .get(&ExtendedDataKey::RefundConfig)
-        .unwrap_or(crate::types::RefundConfig {
-            request_window_secs: DEFAULT_REFUND_REQUEST_WINDOW_SECS,
-            response_window_secs: DEFAULT_REFUND_RESPONSE_WINDOW_SECS,
-            non_refundable_fee_bps: DEFAULT_NON_REFUNDABLE_FEE_BPS,
-        })
-}
-
-/// Set refund configuration (admin only)
-pub fn set_refund_config(env: &Env, config: &crate::types::RefundConfig) {
-    env.storage()
-        .instance()
-        .set(&ExtendedDataKey::RefundConfig, config);
-}
-
-/// Get refund request by tip ID
-pub fn get_refund_request(env: &Env, tip_id: u32) -> Option<crate::types::RefundRequest> {
-    env.storage()
-        .temporary()
-        .get(&ExtendedDataKey::RefundRequest(tip_id))
-}
-
-/// Set refund request
-pub fn set_refund_request(env: &Env, request: &crate::types::RefundRequest) {
-    let key = ExtendedDataKey::RefundRequest(request.tip_id);
-    env.storage().temporary().set(&key, request);
-    // Use same TTL as tips - we need to use a DataKey for TTL extension
-    // Store in temporary with manual TTL
-    env.storage()
-        .temporary()
-        .extend_ttl(&key, TIP_TTL_LEDGERS, TIP_TTL_LEDGERS);
-}
-
-/// Remove refund request
-pub fn remove_refund_request(env: &Env, tip_id: u32) {
-    env.storage()
-        .temporary()
-        .remove(&ExtendedDataKey::RefundRequest(tip_id));
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Tests
-// ──────────────────────────────────────────────────────────────────────────────
+pub use accounting::*;
+pub use auxiliary::*;
+pub use config::*;
+pub use leaderboard::*;
+pub use profiles::*;
+pub use tips::*;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::storage::{Instance, Temporary};
-    use soroban_sdk::{testutils::Address as _, Env, Map, Symbol};
-
-    use crate::types::{VerificationStatus, VerificationType};
-    use crate::TipzContract;
-
-    /// Creates a test `Env` and registers the contract, returning both.
-    /// Storage operations must be executed inside `env.as_contract(&id, ...)`.
-    fn make_env() -> (Env, Address) {
-        let env = Env::default();
-        let id = env.register_contract(None, TipzContract);
-        (env, id)
-    }
-
-    // ── is_initialized ────────────────────────────────────────────────────────
-
-    #[test]
-    fn is_initialized_false_before_set() {
-        let (env, id) = make_env();
-        env.as_contract(&id, || {
-            assert!(!is_initialized(&env));
-        });
-    }
-
-    #[test]
-    fn is_initialized_true_after_set() {
-        let (env, id) = make_env();
-        env.as_contract(&id, || {
-            env.storage().instance().set(&DataKey::Initialized, &true);
-            assert!(is_initialized(&env));
-        });
-    }
-
-    #[test]
-    fn extend_instance_ttl_sets_expected_ttl() {
-        let (env, id) = make_env();
-        env.as_contract(&id, || {
-            extend_instance_ttl(&env);
-            assert_eq!(env.storage().instance().get_ttl(), INSTANCE_TTL_MAX_LEDGERS);
-        });
-    }
-
-    // ── admin ─────────────────────────────────────────────────────────────────
-
-    #[test]
-    fn set_and_get_admin() {
-        let (env, id) = make_env();
-        let admin = Address::generate(&env);
-        env.as_contract(&id, || {
-            set_admin(&env, &admin);
-            assert_eq!(get_admin(&env), admin);
-        });
-    }
-
-    // ── fee bps ───────────────────────────────────────────────────────────────
-
-    #[test]
-    fn get_fee_bps_defaults_to_zero() {
-        let (env, id) = make_env();
-        env.as_contract(&id, || {
-            assert_eq!(get_fee_bps(&env), 0);
-        });
-    }
-
-    #[test]
-    fn set_and_get_fee_bps() {
-        let (env, id) = make_env();
-        env.as_contract(&id, || {
-            set_fee_bps(&env, 200);
-            assert_eq!(get_fee_bps(&env), 200);
-        });
-    }
-
-    // ── fee collector ─────────────────────────────────────────────────────────
-
-    #[test]
-    fn set_and_get_fee_collector() {
-        let (env, id) = make_env();
-        let collector = Address::generate(&env);
-        env.as_contract(&id, || {
-            set_fee_collector(&env, &collector);
-            assert_eq!(get_fee_collector(&env), collector);
-        });
-    }
-
-    // ── profile ───────────────────────────────────────────────────────────────
-
-    #[test]
-    fn has_profile_false_when_absent() {
-        let (env, id) = make_env();
-        let addr = Address::generate(&env);
-        env.as_contract(&id, || {
-            assert!(!has_profile(&env, &addr));
-        });
-    }
-
-    #[test]
-    fn set_profile_and_has_profile() {
-        let (env, id) = make_env();
-        let owner = Address::generate(&env);
-        let profile = Profile {
-            owner: owner.clone(),
-            username: String::from_str(&env, "alice"),
-            display_name: String::from_str(&env, "Alice"),
-            bio: String::from_str(&env, ""),
-            website: String::from_str(&env, ""),
-            image_url: String::from_str(&env, ""),
-            social_links: Map::<Symbol, String>::new(&env),
-            x_handle: String::from_str(&env, ""),
-            x_followers: 0,
-            x_engagement_avg: 0,
-            credit_score: 40,
-            total_tips_received: 0,
-            total_tips_count: 0,
-            balance: 0,
-            registered_at: 0,
-            updated_at: 0,
-            verification: crate::types::VerificationStatus::default(),
-            domain: String::from_str(&env, ""),
-            domain_verified: false,
-            domain_verified_at: None,
-            custom_min_tip: None,
-        };
-        env.as_contract(&id, || {
-            set_profile(&env, &profile);
-            assert!(has_profile(&env, &owner));
-        });
-    }
-
-    #[test]
-    fn get_profile_round_trips() {
-        let (env, id) = make_env();
-        let owner = Address::generate(&env);
-        let profile = Profile {
-            owner: owner.clone(),
-            username: String::from_str(&env, "bob"),
-            display_name: String::from_str(&env, "Bob"),
-            bio: String::from_str(&env, ""),
-            website: String::from_str(&env, ""),
-            image_url: String::from_str(&env, ""),
-            social_links: Map::<Symbol, String>::new(&env),
-            x_handle: String::from_str(&env, ""),
-            x_followers: 0,
-            x_engagement_avg: 0,
-            credit_score: 40,
-            total_tips_received: 0,
-            total_tips_count: 0,
-            balance: 500,
-            registered_at: 100,
-            updated_at: 200,
-            verification: crate::types::VerificationStatus::default(),
-            domain: String::from_str(&env, ""),
-            domain_verified: false,
-            domain_verified_at: None,
-            custom_min_tip: None,
-        };
-        env.as_contract(&id, || {
-            set_profile(&env, &profile);
-            let retrieved = get_profile(&env, &owner);
-            assert_eq!(retrieved.username, String::from_str(&env, "bob"));
-            assert_eq!(retrieved.balance, 500);
-            assert_eq!(retrieved.registered_at, 100);
-        });
-    }
-
-    // ── username reverse lookup ───────────────────────────────────────────────
-
-    #[test]
-    fn get_username_address_none_when_absent() {
-        let (env, id) = make_env();
-        let username = String::from_str(&env, "ghost");
-        env.as_contract(&id, || {
-            assert_eq!(get_username_address(&env, &username), None);
-        });
-    }
-
-    #[test]
-    fn set_and_get_username_address() {
-        let (env, id) = make_env();
-        let addr = Address::generate(&env);
-        let username = String::from_str(&env, "alice");
-        env.as_contract(&id, || {
-            set_username_address(&env, &username, &addr);
-            assert_eq!(get_username_address(&env, &username), Some(addr));
-        });
-    }
-
-    // ── tip counter ───────────────────────────────────────────────────────────
-
-    #[test]
-    fn get_tip_count_defaults_to_zero() {
-        let (env, id) = make_env();
-        env.as_contract(&id, || {
-            assert_eq!(get_tip_count(&env), 0);
-        });
-    }
-
-    #[test]
-    fn increment_tip_count_returns_pre_increment_value() {
-        let (env, id) = make_env();
-        env.as_contract(&id, || {
-            assert_eq!(increment_tip_count(&env), 0); // pre-increment → 0; stored → 1
-            assert_eq!(get_tip_count(&env), 1);
-            assert_eq!(increment_tip_count(&env), 1); // pre-increment → 1; stored → 2
-            assert_eq!(get_tip_count(&env), 2);
-        });
-    }
-
-    // ── total creators ────────────────────────────────────────────────────────
-
-    #[test]
-    fn get_total_creators_defaults_to_zero() {
-        let (env, id) = make_env();
-        env.as_contract(&id, || {
-            assert_eq!(get_total_creators(&env), 0);
-        });
-    }
-
-    #[test]
-    fn total_creators_increments_correctly() {
-        let (env, id) = make_env();
-        env.as_contract(&id, || {
-            super::increment_total_creators(&env);
-            assert_eq!(get_total_creators(&env), 1);
-            super::increment_total_creators(&env);
-            assert_eq!(get_total_creators(&env), 2);
-        });
-    }
-
-    // ── tips volume ───────────────────────────────────────────────────────────
-
-    #[test]
-    fn get_total_tips_volume_defaults_to_zero() {
-        let (env, id) = make_env();
-        env.as_contract(&id, || {
-            assert_eq!(get_total_tips_volume(&env), 0);
-        });
-    }
-
-    #[test]
-    fn add_to_tips_volume_accumulates() {
-        let (env, id) = make_env();
-        env.as_contract(&id, || {
-            add_to_tips_volume(&env, 1_000_000).unwrap();
-            add_to_tips_volume(&env, 2_000_000).unwrap();
-            assert_eq!(get_total_tips_volume(&env), 3_000_000);
-        });
-    }
-
-    // ── fees ──────────────────────────────────────────────────────────────────
-
-    #[test]
-    fn get_total_fees_defaults_to_zero() {
-        let (env, id) = make_env();
-        env.as_contract(&id, || {
-            assert_eq!(get_total_fees(&env), 0);
-        });
-    }
-
-    #[test]
-    fn add_to_fees_accumulates() {
-        let (env, id) = make_env();
-        env.as_contract(&id, || {
-            add_to_fees(&env, 500).unwrap();
-            add_to_fees(&env, 300).unwrap();
-            assert_eq!(get_total_fees(&env), 800);
-        });
-    }
-
-    #[test]
-    fn set_tip_ttl_sets_expected_ttl() {
-        let (env, id) = make_env();
-        env.as_contract(&id, || {
-            let key = DataKey::Tip(7);
-            env.storage().temporary().set(&key, &7_u32);
-            set_tip_ttl(&env, &key);
-            assert_eq!(env.storage().temporary().get_ttl(&key), TIP_TTL_LEDGERS);
-        });
-    }
-
-    #[test]
-    fn remove_profile_removes_entry() {
-        use soroban_sdk::testutils::Address as _;
-        let (env, id) = make_env();
-        let owner = Address::generate(&env);
-        let profile = Profile {
-            owner: owner.clone(),
-            username: String::from_str(&env, "testuser"),
-            display_name: String::from_str(&env, "Test User"),
-            bio: String::from_str(&env, ""),
-            website: String::from_str(&env, ""),
-            image_url: String::from_str(&env, ""),
-            social_links: Map::<Symbol, String>::new(&env),
-            x_handle: String::from_str(&env, ""),
-            x_followers: 0,
-            x_engagement_avg: 0,
-            credit_score: 40,
-            total_tips_received: 0,
-            total_tips_count: 0,
-            balance: 0,
-            registered_at: 0,
-            updated_at: 0,
-            verification: crate::types::VerificationStatus::default(),
-            domain: String::from_str(&env, ""),
-            domain_verified: false,
-            domain_verified_at: None,
-            custom_min_tip: None,
-        };
-        env.as_contract(&id, || {
-            // Set profile
-            set_profile(&env, &profile);
-            assert!(has_profile(&env, &owner));
-
-            // Remove profile
-            remove_profile(&env, &owner);
-            assert!(!has_profile(&env, &owner));
-        });
-    }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Verification storage functions
-// ──────────────────────────────────────────────────────────────────────────────
-
-pub fn set_verification_request(
-    env: &Env,
-    address: &Address,
-    verification_type: &crate::types::VerificationType,
-) {
-    env.storage().persistent().set(
-        &DataKey::VerificationRequest(address.clone()),
-        verification_type,
-    );
-    bump_profile_ttl(env, address);
-}
-
-pub fn remove_verification_request(env: &Env, address: &Address) {
-    env.storage()
-        .persistent()
-        .remove(&DataKey::VerificationRequest(address.clone()));
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Donation page storage functions
-// ──────────────────────────────────────────────────────────────────────────────
-
-pub fn get_donation_page(env: &Env, creator: &Address) -> Option<crate::types::DonationPageConfig> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::DonationPage(creator.clone()))
-}
-
-pub fn set_donation_page(env: &Env, creator: &Address, config: &crate::types::DonationPageConfig) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::DonationPage(creator.clone()), config);
-    bump_profile_ttl(env, creator);
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Stats storage functions
-// ──────────────────────────────────────────────────────────────────────────────
-
-pub fn get_stats_window_start(env: &Env) -> u64 {
-    env.storage()
-        .instance()
-        .get(&DataKey::StatsWindowStart)
-        .unwrap_or(0)
-}
-
-pub fn set_stats_window_start(env: &Env, timestamp: u64) {
-    env.storage()
-        .instance()
-        .set(&DataKey::StatsWindowStart, &timestamp);
-    if let Some(mut state) = get_send_tip_state(env) {
-        state.stats_window_start = timestamp;
-        set_send_tip_state(env, &state);
-    }
-}
-
-pub fn get_tips_last_24h(env: &Env) -> u32 {
-    env.storage()
-        .instance()
-        .get(&DataKey::TipsLast24h)
-        .unwrap_or(0)
-}
-
-pub fn set_tips_last_24h(env: &Env, count: u32) {
-    env.storage().instance().set(&DataKey::TipsLast24h, &count);
-    if let Some(mut state) = get_send_tip_state(env) {
-        state.tips_last_24h = count;
-        set_send_tip_state(env, &state);
-    }
-}
-
-pub fn get_volume_last_24h(env: &Env) -> i128 {
-    env.storage()
-        .instance()
-        .get(&DataKey::VolumeLast24h)
-        .unwrap_or(0)
-}
-
-pub fn set_volume_last_24h(env: &Env, volume: i128) {
-    env.storage()
-        .instance()
-        .set(&DataKey::VolumeLast24h, &volume);
-    if let Some(mut state) = get_send_tip_state(env) {
-        state.volume_last_24h = volume;
-        set_send_tip_state(env, &state);
-    }
-}
-
-pub fn get_active_creators_30d(env: &Env) -> u32 {
-    env.storage()
-        .instance()
-        .get(&DataKey::ActiveCreators30d)
-        .unwrap_or(0)
-}
-
-pub fn set_active_creators_30d(env: &Env, count: u32) {
-    env.storage()
-        .instance()
-        .set(&DataKey::ActiveCreators30d, &count);
-    if let Some(mut state) = get_send_tip_state(env) {
-        state.active_creators_30d = count;
-        set_send_tip_state(env, &state);
-    }
-}
-
-pub fn get_creator_last_active(env: &Env, creator: &Address) -> u64 {
-    env.storage()
-        .persistent()
-        .get(&DataKey::CreatorLastActive(creator.clone()))
-        .unwrap_or(0)
-}
-
-pub fn set_creator_last_active(env: &Env, creator: &Address, timestamp: u64) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::CreatorLastActive(creator.clone()), &timestamp);
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Goal storage functions
-// ──────────────────────────────────────────────────────────────────────────────
-
-pub fn get_active_goal(env: &Env, creator: &Address) -> Option<crate::types::Goal> {
-    env.storage()
-        .persistent()
-        .get(&ExtendedDataKey::ActiveGoal(creator.clone()))
-}
-
-pub fn set_active_goal(env: &Env, creator: &Address, goal: &crate::types::Goal) {
-    env.storage()
-        .persistent()
-        .set(&ExtendedDataKey::ActiveGoal(creator.clone()), goal);
-}
-
-pub fn get_archived_goals(env: &Env, creator: &Address) -> soroban_sdk::Vec<crate::types::Goal> {
-    env.storage()
-        .persistent()
-        .get(&ExtendedDataKey::ArchivedGoals(creator.clone()))
-        .unwrap_or(soroban_sdk::Vec::new(env))
-}
-
-pub fn set_archived_goals(env: &Env, creator: &Address, goals: &soroban_sdk::Vec<crate::types::Goal>) {
-    env.storage()
-        .persistent()
-        .set(&ExtendedDataKey::ArchivedGoals(creator.clone()), goals);
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Multi-token storage functions
-// ──────────────────────────────────────────────────────────────────────────────
-
-pub fn get_accepted_token(env: &Env, token: &Address) -> Option<crate::types::AcceptedToken> {
-    env.storage()
-        .instance()
-        .get(&ExtendedDataKey::AcceptedToken(token.clone()))
-}
-
-pub fn set_accepted_token(env: &Env, token: &Address, config: &crate::types::AcceptedToken) {
-    env.storage()
-        .instance()
-        .set(&ExtendedDataKey::AcceptedToken(token.clone()), config);
-}
-
-pub fn get_accepted_token_list(env: &Env) -> soroban_sdk::Vec<Address> {
-    env.storage()
-        .instance()
-        .get(&ExtendedDataKey::AcceptedTokenList)
-        .unwrap_or(soroban_sdk::Vec::new(env))
-}
-
-pub fn set_accepted_token_list(env: &Env, tokens: &soroban_sdk::Vec<Address>) {
-    env.storage()
-        .instance()
-        .set(&ExtendedDataKey::AcceptedTokenList, tokens);
-}
-
-pub fn get_token_balance(env: &Env, creator: &Address, token: &Address) -> i128 {
-    env.storage()
-        .persistent()
-        .get(&ExtendedDataKey::TokenBalance(creator.clone(), token.clone()))
-        .unwrap_or(0)
-}
-
-pub fn set_token_balance(env: &Env, creator: &Address, token: &Address, amount: i128) {
-    env.storage()
-        .persistent()
-        .set(&ExtendedDataKey::TokenBalance(creator.clone(), token.clone()), &amount);
-}
-
-pub fn add_token_balance(env: &Env, creator: &Address, token: &Address, amount: i128) -> Result<i128, ContractError> {
-    let current = get_token_balance(env, creator, token);
-    let new_balance = current.checked_add(amount).ok_or(ContractError::OverflowError)?;
-    set_token_balance(env, creator, token, new_balance);
-    Ok(new_balance)
+    include!("storage_parts/tests.rs");
 }

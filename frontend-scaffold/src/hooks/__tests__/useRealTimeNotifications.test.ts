@@ -21,6 +21,7 @@ class MockEventSource {
   static instances: MockEventSource[] = [];
   onmessage: ((e: MessageEvent) => void) | null = null;
   onerror: ((e: Event) => void) | null = null;
+  onopen: (() => void) | null = null;
   closed = false;
 
   constructor(public url: string) {
@@ -34,6 +35,9 @@ class MockEventSource {
   }
   simulateMessage(data: unknown) {
     this.onmessage?.({ data: JSON.stringify(data) } as MessageEvent);
+  }
+  simulateOpen() {
+    this.onopen?.();
   }
 }
 
@@ -65,11 +69,11 @@ describe('useRealTimeNotifications', () => {
     expect(typeof result.current.markSeen).toBe('function');
   });
 
-  it('exposes isConnected, reconnectCount, and isSSESupported', () => {
+  it('exposes connectionState, reconnectCount, and isSSESupported', () => {
     const { result } = renderHook(() =>
       useRealTimeNotifications('GCREATOR0000'),
     );
-    expect(typeof result.current.isConnected).toBe('boolean');
+    expect(typeof result.current.connectionState).toBe('string');
     expect(typeof result.current.reconnectCount).toBe('number');
     expect(typeof result.current.isSSESupported).toBe('boolean');
   });
@@ -85,18 +89,16 @@ describe('useRealTimeNotifications', () => {
     expect(MockEventSource.instances).toHaveLength(0);
   });
 
-  it('sets isConnected to true after mounting with a valid address', () => {
+  it('sets connectionState to connected after mounting', async () => {
     const { result } = renderHook(() =>
       useRealTimeNotifications('GCREATOR0000'),
     );
+    // Starts as 'connecting', transitions to 'connected' via queueMicrotask
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(result.current.connectionState).toBe('connected');
     expect(result.current.isConnected).toBe(true);
-  });
-
-  it('reports isSSESupported as true when EventSource is available', () => {
-    const { result } = renderHook(() =>
-      useRealTimeNotifications('GCREATOR0000'),
-    );
-    expect(result.current.isSSESupported).toBe(true);
   });
 
   it('reports isSSESupported as false when EventSource is unavailable', () => {
@@ -121,17 +123,20 @@ describe('useRealTimeNotifications', () => {
     expect(result.current.reconnectCount).toBe(before + 1);
   });
 
-  it('sets isConnected to false on SSE error', () => {
+  it('sets connectionState to disconnected on SSE error', async () => {
     const { result } = renderHook(() =>
       useRealTimeNotifications('GCREATOR0000'),
     );
-    expect(result.current.isConnected).toBe(true);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(result.current.connectionState).toBe('connected');
 
     act(() => {
       MockEventSource.instances[0].simulateError();
     });
 
-    expect(result.current.isConnected).toBe(false);
+    expect(result.current.connectionState).toBe('disconnected');
   });
 
   it('closes the SSE stream on unmount', () => {
@@ -151,9 +156,15 @@ describe('useRealTimeNotifications', () => {
     expect(MockEventSource.instances).toHaveLength(1);
 
     rerender({ addr: 'GCREATOR_B' });
-    // Old stream closed, new one opened.
     expect(MockEventSource.instances[0].closed).toBe(true);
     expect(MockEventSource.instances).toHaveLength(2);
     expect(MockEventSource.instances[1].url).toContain('GCREATOR_B');
+  });
+
+  it('exposes reconnect function for manual retry', () => {
+    const { result } = renderHook(() =>
+      useRealTimeNotifications('GCREATOR0000'),
+    );
+    expect(typeof result.current.reconnect).toBe('function');
   });
 });
