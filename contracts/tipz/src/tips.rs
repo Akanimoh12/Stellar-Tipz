@@ -1075,7 +1075,7 @@ pub fn batch_tip(
     // This ensures all-or-nothing: if any recipient is invalid, entire batch reverts
     let mut profiles = Vec::new(env);
     for i in 0..batch_len {
-        let (creator, amount) = recipients.get(i).unwrap();
+        let (creator, amount) = recipients.get(i).ok_or(ContractError::InvalidInput)?;
         
         // Check creator exists
         let profile = storage::get_profile_opt(env, &creator)
@@ -1102,13 +1102,17 @@ pub fn batch_tip(
         profiles.push_back(profile);
     }
 
+    if profiles.len() != batch_len {
+        return Err(ContractError::InvalidInput);
+    }
+
     // Transfer all tokens (set reentrancy guard once for batch)
     let contract_address = env.current_contract_address();
     storage::set_reentrancy_guard(env, true);
     
     let mut total_amount: i128 = 0;
     for i in 0..batch_len {
-        let (_, amount) = recipients.get(i).unwrap();
+        let (_, amount) = recipients.get(i).ok_or(ContractError::InvalidInput)?;
         total_amount = total_amount
             .checked_add(amount)
             .ok_or(ContractError::OverflowError)?;
@@ -1123,8 +1127,8 @@ pub fn batch_tip(
     let mut tip_state = storage::get_or_build_send_tip_state(env);
 
     for i in 0..batch_len {
-        let (creator, amount) = recipients.get(i).unwrap();
-        let mut profile = profiles.get(i).unwrap();
+        let (creator, amount) = recipients.get(i).ok_or(ContractError::InvalidInput)?;
+        let mut profile = profiles.get(i).ok_or(ContractError::InvalidInput)?;
 
         // Update profile balance and counts
         profile.balance = profile
