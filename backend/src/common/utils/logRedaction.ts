@@ -85,9 +85,9 @@ export function truncateMessage(message: string | undefined | null): string | un
  * @param obj - Object to sanitize
  * @returns Sanitized object with sensitive fields redacted
  */
-export function sanitizeForLogging(obj: any): any {
+export function sanitizeForLogging(obj: unknown): Record<string, unknown> {
   if (!obj || typeof obj !== 'object') {
-    return obj;
+    return {};
   }
 
   const sensitiveKeys = [
@@ -95,7 +95,7 @@ export function sanitizeForLogging(obj: any): any {
     'privateKey', 'secret', 'authorization', 'cookie', 'signature'
   ];
 
-  const sanitized = { ...obj };
+  const sanitized: Record<string, unknown> = { ...(obj as Record<string, unknown>) };
 
   for (const key of sensitiveKeys) {
     if (key in sanitized) {
