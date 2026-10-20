@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq';
-import { redis } from '../db/redis.js';
+import { bullConnection } from '../db/redis.js';
 import { config } from '../config/index.js';
 import { logger } from '../common/utils/logger.js';
 import { pruneExpiredChallenges } from '../modules/auth/auth.service.js';
@@ -21,7 +21,7 @@ export function createAuthChallengeCleanupWorker(): Worker {
         logger.info(result, 'Auth challenge cleanup complete');
       }
     },
-    { connection: redis as any },
+    { connection: bullConnection },
   );
 
   worker.on('failed', (job, err) => {

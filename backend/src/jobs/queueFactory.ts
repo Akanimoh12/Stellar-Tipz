@@ -1,5 +1,5 @@
 import { Queue, Job } from 'bullmq';
-import { redis } from '../db/redis.js';
+import { bullConnection } from '../db/redis.js';
 import {
   injectTraceContextIntoJob,
   createTracedAdd,
@@ -34,7 +34,7 @@ export function getQueue(name: string, overrides?: QueueOptions): Queue {
   let queue = queues.get(name);
   if (!queue) {
     queue = new Queue(name, {
-      connection: redis as any,
+      connection: bullConnection,
       defaultJobOptions: { ...DEFAULT_OPTIONS, ...overrides },
     });
     queues.set(name, queue);

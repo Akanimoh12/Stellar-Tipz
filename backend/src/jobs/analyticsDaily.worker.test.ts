@@ -33,7 +33,7 @@ vi.mock('./analyticsDaily.queue.js', () => ({
   ANALYTICS_DAILY_QUEUE: 'analytics-daily',
   getAnalyticsDailyQueue: () => ({ name: 'analytics-daily' }),
 }));
-vi.mock('../db/redis.js', () => ({ redis: { on: vi.fn() } }));
+vi.mock('../db/redis.js', () => ({ redis: { on: vi.fn() }, bullConnection: {} }));
 
 describe('runDailyAnalyticsRollup', () => {
   beforeEach(() => {

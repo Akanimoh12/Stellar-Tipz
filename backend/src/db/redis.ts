@@ -1,4 +1,5 @@
 import Redis from 'ioredis';
+import type { ConnectionOptions } from 'bullmq';
 import { config } from '../config/index.js';
 import { logger } from '../common/utils/logger.js';
 
@@ -13,6 +14,15 @@ export const redis = new Redis(config.redis.redisUrl, {
   maxRetriesPerRequest: null, // required by BullMQ
   enableReadyCheck: false,
 });
+
+/**
+ * The shared connection, typed for BullMQ `Queue` and `Worker` constructors.
+ *
+ * BullMQ bundles its own ioredis copy, so `redis` is not assignable to its
+ * `ConnectionOptions` type. This is the only place that bridges the two:
+ * pass `bullConnection` to queues and workers instead of casting `redis`.
+ */
+export const bullConnection = redis as unknown as ConnectionOptions;
 
 redis.on('connect', () => {
   logger.info('Redis connected');

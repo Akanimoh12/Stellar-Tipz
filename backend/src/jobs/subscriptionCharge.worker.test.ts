@@ -16,7 +16,7 @@ vi.mock('../db/prisma.js', () => ({
   },
 }));
 
-vi.mock('../db/redis.js', () => ({ redis: {} }));
+vi.mock('../db/redis.js', () => ({ redis: {}, bullConnection: {} }));
 vi.mock('../common/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
