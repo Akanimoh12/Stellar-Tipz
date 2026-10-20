@@ -28,7 +28,7 @@
 use soroban_sdk::{testutils::Address as _, token, Address, Env, Map, String, Symbol};
 
 use crate::leaderboard::MAX_LEADERBOARD_SIZE;
-use crate::storage::DataKey;
+use crate::storage::{DataKey, ExtendedDataKey};
 use crate::types::{Profile, VerificationStatus, VerificationType};
 use crate::TipzContract;
 use crate::TipzContractClient;

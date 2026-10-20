@@ -6,7 +6,7 @@ use soroban_sdk::{
 };
 
 use crate::errors::ContractError;
-use crate::storage::DataKey;
+use crate::storage::{DataKey, ExtendedDataKey};
 use crate::types::{Profile, Subscription};
 use crate::TipzContract;
 use crate::TipzContractClient;

@@ -10,6 +10,8 @@ global:
 rule_files:
   - alerts.yml
   - financial-alerts.yml
+  - cost-alerts.yml
+  - database-alerts.yml
 
 scrape_configs:
   - job_name: stellar-tipz-api

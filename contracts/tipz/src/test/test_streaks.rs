@@ -7,7 +7,7 @@ use soroban_sdk::{
 };
 
 use crate::credit::calculate_credit_score;
-use crate::storage::DataKey;
+use crate::storage::{DataKey, ExtendedDataKey};
 use crate::token as xlm;
 use crate::types::{Profile, VerificationStatus, VerificationType};
 use crate::TipzContract;

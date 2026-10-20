@@ -1,0 +1,29 @@
+groups:
+  - name: stellar-tipz-cost
+    rules:
+      - alert: PaidServiceCallSpike
+        expr: |
+          sum by (service) (rate(tipz_paid_service_requests_total[15m]))
+          > 3 * clamp_min(sum by (service) (rate(tipz_paid_service_requests_total[1h] offset 1d)), 0.02)
+        for: 15m
+        labels:
+          severity: warning
+          area: cost
+        annotations:
+          summary: Paid upstream requests exceeded baseline
+      - alert: IpfsCostAmplification
+        expr: sum(rate(tipz_paid_service_requests_total{service="ipfs"}[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+          area: cost
+        annotations:
+          summary: Sustained high-volume IPFS pinning activity
+      - alert: EstimatedDailyVariableCostHigh
+        expr: sum(rate(tipz_estimated_variable_cost_usd_total[1h])) * 86400 > 100
+        for: 15m
+        labels:
+          severity: warning
+          area: cost
+        annotations:
+          summary: Estimated variable cost exceeds $100 per day at current rate

@@ -102,6 +102,53 @@ If we are unable to meet a deadline, we will communicate the delay and provide a
 
 ---
 
+## Dependency Vulnerability Policy
+
+This section defines how dependency vulnerabilities detected by automated scanning are classified, blocked, and tracked. It covers all three package ecosystems in this monorepo: **npm (frontend-scaffold)**, **npm (contracts tooling)**, and **Cargo (contracts/)**.
+
+### Severity Classification and Remediation SLAs
+
+| Severity | Blocking? | Remediation SLA | Notes |
+| -------- | --------- | --------------- | ----- |
+| **Critical** (CVSS 9.0–10.0) | ✅ Blocks CI merge | **24 hours** after detection | Patch, pin to safe version, or raise an exception immediately |
+| **High** (CVSS 7.0–8.9) | ✅ Blocks CI merge | **7 days** after detection | Must be patched or have an approved exception before next release |
+| **Medium** (CVSS 4.0–6.9) | ❌ Does not block | **30 days** after detection | Tracked via GitHub issue; must not accumulate |
+| **Low** (CVSS 0.1–3.9) | ❌ Does not block | Next scheduled release | Batched with regular dependency updates |
+
+### CI Enforcement
+
+- **npm (frontend-scaffold)**: `npm audit --audit-level=high` — any high or critical finding fails the build.
+- **npm (contracts tooling)**: `npm audit --audit-level=high` — same policy.
+- **Cargo**: `cargo audit --deny warnings` in `security-audit.yml` and `cargo deny check` in `contract-ci.yml` — both run on every PR.
+- `cargo-deny` enforces license allow-lists and bans on crates with known advisories, defined in `contracts/deny.toml`.
+- The weekly scheduled audit (`security-audit.yml`) auto-creates a GitHub issue labelled `security` and `priority: high` when any high or critical finding is detected.
+
+### Exception Process
+
+An exception may be granted for a finding that cannot be remediated immediately (e.g. no upstream fix exists, transitive dependency, or the vulnerable code path is not reachable).
+
+**Granting an exception:**
+
+1. Open a GitHub issue referencing the advisory ID (e.g. `RUSTSEC-XXXX-XXXX` or npm advisory number).
+2. Document:
+   - Why the vulnerable code path is not reachable **or** why an immediate fix is not feasible.
+   - The proposed resolution (upstream patch ETA, alternative package, or code-level mitigation).
+   - An **expiry date** — no exception may be open for longer than **90 days**. After that, the CI block re-activates automatically unless renewed.
+3. For Cargo, add the advisory ID to the `ignore` list in `contracts/deny.toml` with an inline comment containing the issue URL and expiry date:
+   ```toml
+   [advisories]
+   ignore = [
+     # Exception: <GitHub issue URL> — expires <YYYY-MM-DD>
+     "RUSTSEC-XXXX-XXXX",
+   ]
+   ```
+4. For npm, document the exception in `.nsprc` or as an inline `npm audit --ignore` flag in the workflow, with the same comment format.
+5. A maintainer must review and approve the exception before the PR merges.
+
+**Exception expiry:** The CI workflow checks for entries in `deny.toml` whose expiry date comment has passed and will fail with a message prompting renewal or removal. This prevents the exception list from silently accumulating stale ignored advisories.
+
+---
+
 ## Severity Definitions
 
 We follow [CVSS v3.1](https://www.first.org/cvss/calculator/3.1) as a baseline and adjust based on the on-chain financial impact.

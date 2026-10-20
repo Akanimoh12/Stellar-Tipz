@@ -2,7 +2,7 @@ use soroban_sdk::{Address, Env, String, Vec};
 
 use crate::errors::ContractError;
 use crate::events;
-use crate::storage::{self, DataKey};
+use crate::storage::{self, DataKey, ExtendedDataKey};
 use crate::tips;
 use crate::types::Subscription;
 
@@ -83,6 +83,7 @@ pub fn create_subscription(
         active: true,
     };
 
+    let sub_key = ExtendedDataKey::Subscription(subscriber.clone(), creator.clone());
     env.storage().persistent().set(&sub_key, &sub);
 
     // Update indices
@@ -107,13 +108,7 @@ pub fn cancel_subscription(
 ) -> Result<(), ContractError> {
     subscriber.require_auth();
 
-    if storage::is_paused(env, crate::types::PauseFlag::Subscriptions)
-        || storage::is_paused(env, crate::types::PauseFlag::All)
-    {
-        return Err(ContractError::ContractPaused);
-    }
-
-    let sub_key = DataKey::Subscription(subscriber.clone(), creator.clone());
+    let sub_key = ExtendedDataKey::Subscription(subscriber.clone(), creator.clone());
     if !env.storage().persistent().has(&sub_key) {
         return Err(ContractError::NotFound);
     }
@@ -193,13 +188,7 @@ pub fn execute_due_subscription(
     subscriber: Address,
     creator: Address,
 ) -> Result<(), ContractError> {
-    if storage::is_paused(env, crate::types::PauseFlag::Subscriptions)
-        || storage::is_paused(env, crate::types::PauseFlag::All)
-    {
-        return Err(ContractError::ContractPaused);
-    }
-
-    let sub_key = DataKey::Subscription(subscriber.clone(), creator.clone());
+    let sub_key = ExtendedDataKey::Subscription(subscriber.clone(), creator.clone());
     if !env.storage().persistent().has(&sub_key) {
         return Err(ContractError::NotFound);
     }
@@ -218,9 +207,10 @@ pub fn execute_due_subscription(
             &subscriber,
             &creator,
             sub.amount,
-            sub.interval_days,
-            sub.next_due,
-        );
+            &String::from_str(env, "Recurring Tip"),
+            false, // Subscriptions are not anonymous
+            false, // Message is not encrypted
+        )?;
     }
 
     Ok(())
@@ -264,19 +254,19 @@ pub fn get_subscriptions(env: &Env, subscriber: Address) -> Vec<Subscription> {
     let count = env
         .storage()
         .persistent()
-        .get(&DataKey::SubscriberSubCount(subscriber.clone()))
+        .get(&ExtendedDataKey::SubscriberSubCount(subscriber.clone()))
         .unwrap_or(0);
     let mut result = Vec::new(env);
     for i in 0..count {
         if let Some(creator) = env
             .storage()
             .persistent()
-            .get(&DataKey::SubscriberSub(subscriber.clone(), i))
+            .get(&ExtendedDataKey::SubscriberSub(subscriber.clone(), i))
         {
             if let Some(sub) = env
                 .storage()
                 .persistent()
-                .get(&DataKey::Subscription(subscriber.clone(), creator))
+                .get(&ExtendedDataKey::Subscription(subscriber.clone(), creator))
             {
                 result.push_back(sub);
             }
@@ -289,19 +279,19 @@ pub fn get_subscribers(env: &Env, creator: Address) -> Vec<Subscription> {
     let count = env
         .storage()
         .persistent()
-        .get(&DataKey::CreatorSubCount(creator.clone()))
+        .get(&ExtendedDataKey::CreatorSubCount(creator.clone()))
         .unwrap_or(0);
     let mut result = Vec::new(env);
     for i in 0..count {
         if let Some(subscriber) = env
             .storage()
             .persistent()
-            .get(&DataKey::CreatorSub(creator.clone(), i))
+            .get(&ExtendedDataKey::CreatorSub(creator.clone(), i))
         {
             if let Some(sub) = env
                 .storage()
                 .persistent()
-                .get(&DataKey::Subscription(subscriber, creator.clone()))
+                .get(&ExtendedDataKey::Subscription(subscriber, creator.clone()))
             {
                 result.push_back(sub);
             }
@@ -322,27 +312,27 @@ fn add_subscriber_to_creator(env: &Env, creator: &Address, subscriber: &Address)
     let count: u32 = env
         .storage()
         .persistent()
-        .get(&DataKey::CreatorSubCount(creator.clone()))
+        .get(&ExtendedDataKey::CreatorSubCount(creator.clone()))
         .unwrap_or(0);
     env.storage()
         .persistent()
-        .set(&DataKey::CreatorSub(creator.clone(), count), subscriber);
+        .set(&ExtendedDataKey::CreatorSub(creator.clone(), count), subscriber);
     env.storage()
         .persistent()
-        .set(&DataKey::CreatorSubCount(creator.clone()), &(count + 1));
+        .set(&ExtendedDataKey::CreatorSubCount(creator.clone()), &(count + 1));
 }
 
 fn add_creator_to_subscriber(env: &Env, subscriber: &Address, creator: &Address) {
     let count: u32 = env
         .storage()
         .persistent()
-        .get(&DataKey::SubscriberSubCount(subscriber.clone()))
+        .get(&ExtendedDataKey::SubscriberSubCount(subscriber.clone()))
         .unwrap_or(0);
     env.storage()
         .persistent()
-        .set(&DataKey::SubscriberSub(subscriber.clone(), count), creator);
+        .set(&ExtendedDataKey::SubscriberSub(subscriber.clone(), count), creator);
     env.storage().persistent().set(
-        &DataKey::SubscriberSubCount(subscriber.clone()),
+        &ExtendedDataKey::SubscriberSubCount(subscriber.clone()),
         &(count + 1),
     );
 }

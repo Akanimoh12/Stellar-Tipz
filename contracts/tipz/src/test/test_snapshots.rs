@@ -5,15 +5,16 @@
 #![cfg(test)]
 
 extern crate alloc;
+extern crate std;
 
+use alloc::collections::BTreeMap;
+use alloc::format;
+use alloc::string::{String, ToString};
 use core::fmt::Debug;
-use std::collections::BTreeMap;
-
-use alloc::string::ToString;
 
 use soroban_sdk::{testutils::Address as _, token, Address, Env, String as SorobanString};
 
-use crate::storage::{CacheKey, DataKey};
+use crate::storage::{CacheKey, DataKey, ExtendedDataKey};
 use crate::types::{Profile, Tip};
 use crate::{TipzContract, TipzContractClient};
 
@@ -45,18 +46,18 @@ fn redact_address(addr: &Address, ctx: &AddrCtx) -> &'static str {
     }
 }
 
-fn s(s: &SorobanString) -> std::string::String {
+fn s(s: &SorobanString) -> String {
     s.to_string()
 }
 
 #[derive(Debug)]
 struct ProfileRedacted {
     owner: &'static str,
-    username: std::string::String,
-    display_name: std::string::String,
-    bio: std::string::String,
-    image_url: std::string::String,
-    x_handle: std::string::String,
+    username: String,
+    display_name: String,
+    bio: String,
+    image_url: String,
+    x_handle: String,
     x_followers: u32,
     x_engagement_avg: u32,
     credit_score: u32,
@@ -97,7 +98,7 @@ struct TipRedacted {
     benefactor: Option<&'static str>,
     creator: &'static str,
     amount: i128,
-    message: std::string::String,
+    message: String,
     timestamp: u64,
     is_anonymous: bool,
 }
@@ -120,29 +121,29 @@ impl TipRedacted {
 #[derive(Debug)]
 struct StorageSnapshot {
     instance_has: BTreeMap<&'static str, bool>,
-    persistent_has: BTreeMap<std::string::String, bool>,
-    temporary_has: BTreeMap<std::string::String, bool>,
-    instance_values: BTreeMap<&'static str, std::string::String>,
+    persistent_has: BTreeMap<String, bool>,
+    temporary_has: BTreeMap<String, bool>,
+    instance_values: BTreeMap<&'static str, String>,
     profile: Option<ProfileRedacted>,
     tip0: Option<TipRedacted>,
 }
 
-fn put_bool(map: &mut BTreeMap<&'static str, std::string::String>, k: &'static str, v: bool) {
+fn put_bool(map: &mut BTreeMap<&'static str, String>, k: &'static str, v: bool) {
     map.insert(k, if v { "true".into() } else { "false".into() });
 }
-fn put_u32(map: &mut BTreeMap<&'static str, std::string::String>, k: &'static str, v: u32) {
-    map.insert(k, std::format!("{v}"));
+fn put_u32(map: &mut BTreeMap<&'static str, String>, k: &'static str, v: u32) {
+    map.insert(k, format!("{v}"));
 }
-fn put_i128(map: &mut BTreeMap<&'static str, std::string::String>, k: &'static str, v: i128) {
-    map.insert(k, std::format!("{v}"));
+fn put_i128(map: &mut BTreeMap<&'static str, String>, k: &'static str, v: i128) {
+    map.insert(k, format!("{v}"));
 }
 
 fn snapshot_storage(env: &Env, contract_id: &Address, ctx: &AddrCtx) -> StorageSnapshot {
     env.as_contract(contract_id, || {
         let mut instance_has: BTreeMap<&'static str, bool> = BTreeMap::new();
-        let mut persistent_has: BTreeMap<std::string::String, bool> = BTreeMap::new();
-        let mut temporary_has: BTreeMap<std::string::String, bool> = BTreeMap::new();
-        let mut instance_values: BTreeMap<&'static str, std::string::String> = BTreeMap::new();
+        let mut persistent_has: BTreeMap<String, bool> = BTreeMap::new();
+        let mut temporary_has: BTreeMap<String, bool> = BTreeMap::new();
+        let mut instance_values: BTreeMap<&'static str, String> = BTreeMap::new();
 
         let instance_keys: [(&'static str, DataKey); 11] = [
             ("Initialized", DataKey::Initialized),

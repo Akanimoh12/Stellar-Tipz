@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { env } from '../../config/env.js';
+import { collectDatabaseHealth } from './databaseHealth.js';
 import { registerClosable } from '../utils/lifecycle.js';
 import { logger } from '../utils/logger.js';
 import {
@@ -117,6 +118,13 @@ export function startMetricsServer(options: MetricsServerOptions): Promise<Metri
  */
 export async function startProcessMetrics(processName: ProcessName): Promise<MetricsServerHandle | null> {
   initProcessMetrics(processName);
+  if (processName === 'api') {
+    // Poll PostgreSQL stats asynchronously; never delay HTTP request handling.
+    void collectDatabaseHealth();
+    const timer = setInterval(() => { void collectDatabaseHealth(); }, 60_000);
+    timer.unref();
+    registerClosable({ name: 'DB monitoring', close: async () => clearInterval(timer) });
+  }
   if (env.METRICS_PORT === 0) return null;
   const handle = await startMetricsServer({
     host: env.METRICS_HOST,

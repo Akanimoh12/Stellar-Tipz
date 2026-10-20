@@ -10,7 +10,7 @@
 
 use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
 
-use crate::test::test_init::setup_test_contract;
+use crate::test::test_init::{setup_test_contract, setup_test_contract_with_admin};
 use crate::TipzContractClient;
 
 static mut CREATOR_COUNTER: u32 = 0;
@@ -63,7 +63,7 @@ fn test_anonymous_tip_redacts_sender_in_creator_history() {
     let tipper = Address::generate(&env);
     let creator = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
     register_creator(&client, &env, &creator);
     fund_tipper(&client, &env, &tipper);
 
@@ -126,7 +126,7 @@ fn test_tipper_sees_own_anonymous_tip() {
     let tipper = Address::generate(&env);
     let creator = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
     register_creator(&client, &env, &creator);
     fund_tipper(&client, &env, &tipper);
 
@@ -158,7 +158,7 @@ fn test_non_anonymous_tip_exposes_sender() {
     let tipper = Address::generate(&env);
     let creator = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
     register_creator(&client, &env, &creator);
     fund_tipper(&client, &env, &tipper);
 
@@ -191,7 +191,7 @@ fn test_mixed_anonymous_and_public_tips() {
     let tipper2 = Address::generate(&env);
     let creator = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
     register_creator(&client, &env, &creator);
     fund_tipper(&client, &env, &tipper1);
     fund_tipper(&client, &env, &tipper2);

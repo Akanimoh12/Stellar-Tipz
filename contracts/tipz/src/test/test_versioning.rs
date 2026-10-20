@@ -9,7 +9,7 @@
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
 use crate::errors::ContractError;
-use crate::storage::DataKey;
+use crate::storage::{DataKey, ExtendedDataKey};
 use crate::TipzContract;
 use crate::TipzContractClient;
 use crate::CONTRACT_VERSION;

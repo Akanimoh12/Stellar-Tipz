@@ -115,6 +115,7 @@ export const envSchema = z.object({
   HORIZON_FALLBACK_URLS: z.string().default(''),
   NETWORK_PASSPHRASE: z.string(),
   CONTRACT_ID: z.string().optional(),
+  EXPECTED_CONTRACT_VERSION: z.coerce.number().int().positive().default(4),
 
   INDEXER_POLL_INTERVAL_MS: z.coerce.number().default(5000),
   INDEXER_START_LEDGER: z.coerce.number().optional(),
@@ -234,6 +235,9 @@ export const envSchema = z.object({
   IPFS_API_URL: z.string().optional(),
   IPFS_GATEWAY_URL: z.string().default('https://ipfs.io/ipfs/'),
   IPFS_CLEANUP_GRACE_PERIOD_DAYS: z.coerce.number().default(30),
+  COST_IPFS_REQUEST_USD: z.coerce.number().nonnegative().default(0),
+  COST_SOROBAN_RPC_REQUEST_USD: z.coerce.number().nonnegative().default(0),
+  COST_HORIZON_REQUEST_USD: z.coerce.number().nonnegative().default(0),
 
   /** Creator discovery — trending formula tuning. */
   DISCOVERY_TRENDING_WINDOW_DAYS: z.coerce.number().int().positive().default(14),

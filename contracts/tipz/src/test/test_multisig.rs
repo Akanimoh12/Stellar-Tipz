@@ -7,8 +7,7 @@ use soroban_sdk::{
 
 use crate::errors::ContractError;
 use crate::multisig::Action;
-use crate::test::test_init::setup_test_contract;
-use crate::types::PauseFlag;
+use crate::test::test_init::{setup_test_contract, setup_test_contract_with_admin};
 use crate::TipzContractClient;
 
 const PAUSE_ALL: u32 = PauseFlag::All as u32;
@@ -23,7 +22,7 @@ fn test_multisig_pause() {
     let signer2 = Address::generate(&env);
     let signer3 = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
 
     // Set up multi-sig with 2-of-3 requirement
     let signers = vec![&env, signer1.clone(), signer2.clone(), signer3.clone()];
@@ -51,7 +50,7 @@ fn test_proposal_expiry() {
     let signer1 = Address::generate(&env);
     let signer2 = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
 
     let signers = vec![&env, signer1.clone(), signer2.clone()];
     client.set_multisig_config(&admin, &2, &signers);
@@ -76,7 +75,7 @@ fn test_multisig_fee_change() {
     let signer1 = Address::generate(&env);
     let signer2 = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
 
     let signers = vec![&env, signer1.clone(), signer2.clone()];
     client.set_multisig_config(&admin, &2, &signers);
@@ -102,7 +101,7 @@ fn test_multisig_admin_rotation() {
     let signer1 = Address::generate(&env);
     let signer2 = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
 
     let signers = vec![&env, signer1.clone(), signer2.clone()];
     client.set_multisig_config(&admin, &2, &signers);
@@ -127,7 +126,7 @@ fn test_get_pending_proposals() {
     let signer1 = Address::generate(&env);
     let signer2 = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
 
     let signers = vec![&env, signer1.clone(), signer2.clone()];
     client.set_multisig_config(&admin, &2, &signers);
@@ -142,6 +141,29 @@ fn test_get_pending_proposals() {
 }
 
 #[test]
+fn test_expired_proposals_are_purged() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+
+    let client = setup_test_contract_with_admin(&env, &admin);
+    let signers = vec![&env, signer1.clone(), signer2.clone()];
+    client.set_multisig_config(&admin, &2, &signers);
+
+    let proposal_id = client.propose_action(&signer1, &Action::Pause);
+    let current_time = env.ledger().timestamp();
+    env.ledger().set_timestamp(current_time + 8 * 24 * 3600);
+
+    let purged = client.purge_expired_proposals();
+    assert_eq!(purged, 1);
+    assert!(client.get_proposal(&proposal_id).is_none());
+    assert_eq!(client.get_pending_proposals().len(), 0);
+}
+
+#[test]
 fn test_unauthorized_signer() {
     let env = Env::default();
     env.mock_all_auths();
@@ -151,7 +173,7 @@ fn test_unauthorized_signer() {
     let signer2 = Address::generate(&env);
     let unauthorized = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
 
     let signers = vec![&env, signer1.clone(), signer2.clone()];
     client.set_multisig_config(&admin, &2, &signers);
@@ -169,7 +191,7 @@ fn test_single_signature_auto_execute() {
     let admin = Address::generate(&env);
     let signer1 = Address::generate(&env);
 
-    let client = setup_test_contract(&env, &admin);
+    let client = setup_test_contract_with_admin(&env, &admin);
 
     // Set up 1-of-1 (auto-execute)
     let signers = vec![&env, signer1.clone()];

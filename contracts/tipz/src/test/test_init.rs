@@ -12,7 +12,7 @@
 use soroban_sdk::{testutils::Address as _, Address, Env};
 
 use crate::errors::ContractError;
-use crate::storage::DataKey;
+use crate::storage::{DataKey, ExtendedDataKey};
 use crate::TipzContract;
 use crate::TipzContractClient;
 
@@ -32,7 +32,10 @@ fn setup() -> (Env, TipzContractClient<'static>, Address, Address, Address) {
     (env, client, admin, fee_collector, native_token)
 }
 
-pub fn setup_test_contract<'a>(env: &'a Env, admin: &'a Address) -> TipzContractClient<'a> {
+pub fn setup_test_contract_with_admin<'a>(
+    env: &'a Env,
+    admin: &'a Address,
+) -> TipzContractClient<'a> {
     let contract_id = env.register_contract(None, TipzContract);
     let client = TipzContractClient::new(env, &contract_id);
     let fee_collector = Address::generate(env);
@@ -44,26 +47,8 @@ pub fn setup_test_contract<'a>(env: &'a Env, admin: &'a Address) -> TipzContract
     client
 }
 
-/// Setup test contract with all necessary components for testing
-pub fn setup_test_contract_default(env: &Env) -> (TipzContractClient, Address, Address, Address) {
-    let contract_id = env.register_contract(None, TipzContract);
-    let client = TipzContractClient::new(env, &contract_id);
-    let admin = Address::generate(env);
-    let fee_collector = Address::generate(env);
-    let native_token = env
-        .register_stellar_asset_contract_v2(Address::generate(env))
-        .address();
-
-    client.initialize(&admin, &fee_collector, &200_u32, &native_token);
-    (client, admin, fee_collector, native_token)
-}
-
 /// Setup test contract with all necessary components for testing.
-/// Returns `(client, admin, fee_collector, native_token)` — use when the
-/// generated admin address is needed by the caller.
-pub fn setup_test_contract_simple(
-    env: &Env,
-) -> (TipzContractClient, Address, Address, Address) {
+pub fn setup_test_contract(env: &Env) -> (TipzContractClient, Address, Address, Address) {
     let contract_id = env.register_contract(None, TipzContract);
     let client = TipzContractClient::new(env, &contract_id);
     let admin = Address::generate(env);

@@ -10,12 +10,7 @@ use crate::credit;
 use crate::errors::ContractError;
 use crate::events;
 use crate::storage::{self, DataKey, ExtendedDataKey};
-use crate::types::{AdminAuditEntry, AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip};
-
-/// Documented minimum fee-change delay in ledgers.
-pub const MIN_FEE_CHANGE_DELAY_LEDGERS: u32 = 24;
-/// Default fee-change delay in ledgers.
-pub const DEFAULT_FEE_CHANGE_DELAY_LEDGERS: u32 = 24 * 12;
+use crate::types::{AdminChangeHistoryEntry, AdminChangeProposal, BatchSkip};
 
 pub fn u32_to_string(env: &Env, val: u32) -> String {
     let mut buf = [0u8; 10];
@@ -116,7 +111,7 @@ pub fn require_not_paused(env: &Env) -> Result<(), ContractError> {
 /// enabled these entrypoints error instead of executing directly; callers must instead
 /// go through `propose_action`/`approve_action` in `multisig.rs`. With multisig disabled,
 /// this is a no-op and behaviour is unchanged.
-fn require_no_multisig(env: &Env) -> Result<(), ContractError> {
+pub fn require_no_multisig(env: &Env) -> Result<(), ContractError> {
     if crate::multisig::is_multisig_enabled(env) {
         return Err(ContractError::MultisigRequired);
     }

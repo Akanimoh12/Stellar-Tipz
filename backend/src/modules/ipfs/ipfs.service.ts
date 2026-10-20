@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { recordPaidServiceCall } from "../../common/observability/costMetrics.js";
 import sharp from "sharp";
 import { config } from "../../config/index.js";
 import { logger } from "../../common/utils/logger.js";
@@ -194,6 +195,7 @@ export async function pinImageToIpfs(
       serviceName: "ipfs",
     });
 
+    recordPaidServiceCall('ipfs', response.ok);
     if (!response.ok) {
       const errorText = await response.text().catch(() => "Unknown IPFS error");
       logger.error(
@@ -252,6 +254,7 @@ export async function pinImageToIpfs(
       throw new ServiceUnavailableError("IPFS pinning cancelled");
     }
 
+    recordPaidServiceCall('ipfs', false);
     logger.error({ error }, "Error communicating with IPFS pinning service");
 
     // Fallback handling (#984): network exception / timeout fallback for non-prod

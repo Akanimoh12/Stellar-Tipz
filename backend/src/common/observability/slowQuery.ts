@@ -1,6 +1,9 @@
 import type { Prisma } from '@prisma/client';
 import { getRequestId } from '../middleware/requestContext.js';
 import { logger } from '../utils/logger.js';
+import { createHistogram } from './prometheus.js';
+
+const durations = createHistogram({ name: 'db_query_duration_seconds', help: 'Observed Prisma query duration in seconds', labelNames: ['model','operation'] as const, buckets: [0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2,5,10] });
 
 // `recordSlowQuery` is loaded lazily to avoid a module-init cycle
 // (metrics -> prisma -> slowQuery -> metrics) that would otherwise leave this
@@ -63,6 +66,7 @@ export function createSlowQueryMiddleware(options: SlowQueryOptions) {
       throw error;
     }
     const durationMs = performance.now() - start;
+    durations.observe({model:params.model ?? 'unknown',operation:params.action}, durationMs / 1000);
 
     if (options.enabled && durationMs >= options.thresholdMs) {
       logger.warn(

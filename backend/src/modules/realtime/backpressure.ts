@@ -8,6 +8,23 @@ interface ConnectionMetrics {
   eventFrequency: number;
 }
 
+/** Shape of a socket.io transport's underlying writable stream. */
+interface SocketTransport {
+  writable?: {
+    writableLength?: number;
+  };
+}
+
+/**
+ * Reads the internal write-buffer length from a socket.io transport.
+ * The transport object is not publicly typed, so we narrow it safely here
+ * rather than casting to `any` at each call site.
+ */
+function getTransportWritableLength(transport: unknown): number {
+  const t = transport as SocketTransport | null | undefined;
+  return t?.writable?.writableLength ?? 0;
+}
+
 const connectionMetrics = new Map<string, ConnectionMetrics>();
 
 export function configureBackpressure(io: SocketIOServer): void {
@@ -44,7 +61,7 @@ export function configureBackpressure(io: SocketIOServer): void {
         return;
       }
 
-      const writableLength = (socket.conn.transport as any)?.writable?.writableLength || 0;
+      const writableLength = getTransportWritableLength(socket.conn.transport);
       const bufferSize = writableLength;
 
       if (bufferSize > maxBufferSize) {

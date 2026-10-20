@@ -1,4 +1,5 @@
 import { SorobanRpc } from "@stellar/stellar-sdk";
+import { recordPaidServiceCall } from "../observability/costMetrics.js";
 import { ProviderPool, parseProviderUrls } from "./providerPool.js";
 import { config } from "../../config/index.js";
 import { CircuitBreaker } from "../utils/circuitBreaker.js";
@@ -96,8 +97,11 @@ export async function rpcCall<T>(
         const server = new SorobanRpc.Server(providerUrl, { allowHttp: providerUrl.startsWith('http://') });
         const promise = operation(server);
         try {
-          return await withTimeoutAndSignal(promise, timeoutMs, opts.signal, name);
+          const result = await withTimeoutAndSignal(promise, timeoutMs, opts.signal, name);
+          recordPaidServiceCall('soroban_rpc', true);
+          return result;
         } catch (err) {
+          recordPaidServiceCall('soroban_rpc', false);
           if (span) {
             span.setStatus({
               code: SpanStatusCode.ERROR,
@@ -149,6 +153,7 @@ export async function horizonFetch(
           timeoutMs,
           parentSignal: signal,
         });
+        recordPaidServiceCall('horizon', response.status < 500 && response.status !== 429);
         if (response.status === 429 || response.status >= 500) throw new Error(`Horizon provider returned ${response.status}`);
         return response;
       });
