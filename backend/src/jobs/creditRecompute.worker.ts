@@ -1,6 +1,6 @@
 import { Worker } from 'bullmq';
 import { prisma } from '../db/prisma.js';
-import { redis } from '../db/redis.js';
+import { bullConnection } from '../db/redis.js';
 import { config } from '../config/index.js';
 import { logger } from '../common/utils/logger.js';
 import { recalculateCreditScore } from '../modules/credit/credit.service.js';
@@ -66,7 +66,7 @@ export function createCreditRecomputeWorker(): Worker {
         throw err;
       }
     },
-    { connection: redis as any },
+    { connection: bullConnection },
   );
 
   worker.on('failed', (job, err) => {

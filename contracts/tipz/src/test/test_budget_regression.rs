@@ -22,11 +22,15 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, token, Address, Env, Map, String, Symbol};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger as _},
+    token, Address, Env, Map, String, Symbol,
+};
 
 use crate::{
     leaderboard::MAX_LEADERBOARD_SIZE,
     storage::DataKey,
+    test::test_init::setup_test_contract,
     types::{Profile, VerificationStatus, VerificationType},
     TipzContract, TipzContractClient,
 };
@@ -52,6 +56,15 @@ const BASELINE_MEM_WITHDRAW: u64 = 5_000_000;
 
 const BASELINE_CPU_LEADERBOARD_FULL: u64 = 12_000_000;
 const BASELINE_MEM_LEADERBOARD_FULL: u64 = 4_000_000;
+
+// UNMEASURED: these two entries need values from a `TIPZ_UPDATE_BASELINES=1`
+// run before merge (see the module docs above). They stay at 0 on purpose, so
+// the tests fail loudly instead of passing against a made-up number.
+const BASELINE_CPU_WITHDRAW_TOKEN: u64 = 0;
+const BASELINE_MEM_WITHDRAW_TOKEN: u64 = 0;
+
+const BASELINE_CPU_SUBSCRIPTION_CHARGE: u64 = 0;
+const BASELINE_MEM_SUBSCRIPTION_CHARGE: u64 = 0;
 
 /// Regression tolerance: fail if measured > baseline × (1 + TOLERANCE).
 const TOLERANCE: f64 = 0.10;
@@ -302,4 +315,70 @@ fn regression_get_leaderboard_full() {
         "get_leaderboard CPU regression: {} > {}", cpu, threshold(BASELINE_CPU_LEADERBOARD_FULL));
     assert!(mem <= threshold(BASELINE_MEM_LEADERBOARD_FULL),
         "get_leaderboard MEM regression: {} > {}", mem, threshold(BASELINE_MEM_LEADERBOARD_FULL));
+}
+
+/// `withdraw_token` (multi-token path). `withdraw_tips` is covered above; this
+/// is the separate whitelisted-token withdrawal entrypoint.
+#[test]
+fn regression_withdraw_token() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _fee_collector, _native_token) = setup_test_contract(&env);
+
+    let creator = Address::generate(&env);
+    let tipper = Address::generate(&env);
+    let usdc = env.register_stellar_asset_contract_v2(admin.clone()).address();
+    token::StellarAssetClient::new(&env, &usdc).mint(&tipper, &10_000_000_000_000_i128);
+    client.add_accepted_token(&admin, &usdc, &None);
+    client.register_profile(
+        &creator,
+        &String::from_str(&env, "alice"),
+        &String::from_str(&env, "Alice"),
+        &String::from_str(&env, ""),
+        &String::from_str(&env, ""),
+        &String::from_str(&env, ""),
+    );
+    client.send_tip_token(
+        &tipper,
+        &creator,
+        &100_000_000_i128,
+        &usdc,
+        &String::from_str(&env, ""),
+        &false,
+    );
+
+    env.budget().reset_unlimited();
+    client.withdraw_token(&creator, &usdc, &50_000_000_i128);
+    let cpu = env.budget().cpu_instruction_cost();
+    let mem = env.budget().memory_bytes_cost();
+
+    soroban_sdk::log!(&env, "BASELINE withdraw_token: CPU={} MEM={}", cpu, mem);
+
+    assert!(cpu <= threshold(BASELINE_CPU_WITHDRAW_TOKEN),
+        "withdraw_token CPU regression: {} > {}", cpu, threshold(BASELINE_CPU_WITHDRAW_TOKEN));
+    assert!(mem <= threshold(BASELINE_MEM_WITHDRAW_TOKEN),
+        "withdraw_token MEM regression: {} > {}", mem, threshold(BASELINE_MEM_WITHDRAW_TOKEN));
+}
+
+/// Recurring charge via `execute_due_subscription` once the period has elapsed.
+#[test]
+fn regression_subscription_charge() {
+    let (env, client, contract_id, tipper, _) = setup();
+    let creator = Address::generate(&env);
+    insert_profile(&env, &contract_id, &creator, "alice");
+
+    let sub = client.create_subscription(&tipper, &creator, &100_000_000_i128, &7_u32);
+    env.ledger().set_timestamp(sub.next_due);
+
+    env.budget().reset_unlimited();
+    client.execute_due_subscription(&tipper, &creator);
+    let cpu = env.budget().cpu_instruction_cost();
+    let mem = env.budget().memory_bytes_cost();
+
+    soroban_sdk::log!(&env, "BASELINE subscription_charge: CPU={} MEM={}", cpu, mem);
+
+    assert!(cpu <= threshold(BASELINE_CPU_SUBSCRIPTION_CHARGE),
+        "subscription_charge CPU regression: {} > {}", cpu, threshold(BASELINE_CPU_SUBSCRIPTION_CHARGE));
+    assert!(mem <= threshold(BASELINE_MEM_SUBSCRIPTION_CHARGE),
+        "subscription_charge MEM regression: {} > {}", mem, threshold(BASELINE_MEM_SUBSCRIPTION_CHARGE));
 }

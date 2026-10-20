@@ -21,6 +21,7 @@ vi.mock('../db/prisma.js', () => ({
 
 vi.mock('../db/redis.js', () => ({
   redis: { quit: mockRedisQuit },
+  bullConnection: {},
 }));
 
 vi.mock('../config/index.js', () => ({

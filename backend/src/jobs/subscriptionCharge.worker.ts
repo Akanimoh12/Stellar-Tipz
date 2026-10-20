@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq';
-import { redis } from '../db/redis.js';
+import { bullConnection } from '../db/redis.js';
 import { prisma } from '../db/prisma.js';
 import { logger } from '../common/utils/logger.js';
 import { config } from '../config/index.js';
@@ -245,7 +245,7 @@ export function createSubscriptionChargeWorker(): Worker {
       const result = await processDueSubscriptions();
       logger.info(result, 'Subscription charge job complete');
     }),
-    { connection: redis as never },
+    { connection: bullConnection },
   );
 
   worker.on('failed', (job, err) => {

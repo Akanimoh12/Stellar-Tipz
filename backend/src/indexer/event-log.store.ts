@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { Prisma } from '@prisma/client';
 import type { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { prisma } from '../db/prisma.js';
 
@@ -23,15 +24,15 @@ export class EventLogStore {
       topic: string;
       ledger: number;
       contractId: string;
-      value: Record<string, unknown>;
+      value: Prisma.InputJsonObject;
     }>,
   ): Promise<number> {
-    const rows = events.map((e) => ({
+    const rows: Prisma.EventLogCreateInput[] = events.map((e) => ({
       id: deterministicId({ txHash: e.txHash, ledger: e.ledger, topic: e.topic }),
       topic: e.topic,
       ledger: e.ledger,
       txHash: e.txHash,
-      data: { contractId: e.contractId, value: e.value, eventId: e.id } as Record<string, unknown>,
+      data: { contractId: e.contractId, value: e.value, eventId: e.id },
     }));
 
     if (rows.length === 0) return 0;
@@ -43,7 +44,7 @@ export class EventLogStore {
         let count = 0;
         for (const row of rows) {
           try {
-            await (tx as typeof prisma).eventLog.create({ data: row as any });
+            await (tx as typeof prisma).eventLog.create({ data: row });
             count++;
           } catch (err) {
             const error = err as PrismaClientKnownRequestError;

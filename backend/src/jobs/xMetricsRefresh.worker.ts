@@ -1,6 +1,6 @@
 import { Worker } from 'bullmq';
 import { prisma } from '../db/prisma.js';
-import { redis } from '../db/redis.js';
+import { bullConnection } from '../db/redis.js';
 import { config } from '../config/index.js';
 import { logger } from '../common/utils/logger.js';
 import { fetchXMetrics } from '../modules/x/x.service.js';
@@ -42,7 +42,7 @@ export function createXMetricsRefreshWorker(): Worker {
       const result = await refreshAllXMetrics();
       logger.info(result, 'X metrics refresh job complete');
     },
-    { connection: redis as any },
+    { connection: bullConnection },
   );
 
   worker.on('failed', (job, err) => {

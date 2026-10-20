@@ -1,7 +1,7 @@
 import { Worker } from 'bullmq';
 import { config } from '../config/index.js';
 import { prisma, prismaIncludingDeleted } from '../db/prisma.js';
-import { redis } from '../db/redis.js';
+import { bullConnection } from '../db/redis.js';
 import { recordRetentionPruned } from '../common/observability/metrics.js';
 import { logger } from '../common/utils/logger.js';
 import { attachDeadLetterHandler } from './deadLetter.js';
@@ -107,7 +107,7 @@ export function createRetentionWorker(): Worker {
       const result = await runRetentionPrune();
       logger.info(result, 'Data retention prune complete');
     },
-    { connection: redis as any },
+    { connection: bullConnection },
   );
   worker.on('failed', (job, err) => logger.error({ err, jobId: job?.id }, 'Data retention job failed'));
   attachDeadLetterHandler(worker, RETENTION_QUEUE);

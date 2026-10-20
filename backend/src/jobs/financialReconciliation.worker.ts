@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq';
-import { redis } from '../db/redis.js';
+import { bullConnection } from '../db/redis.js';
 import { logger } from '../common/utils/logger.js';
 import { attachDeadLetterHandler } from './deadLetter.js';
 import { scheduleRepeatable } from './scheduler.js';
@@ -14,7 +14,7 @@ export function createFinancialReconciliationWorker(): Worker {
     if (report.status !== 'reconciled') {
       logger.error({ day: yesterday, status: report.status, discrepancies: report.discrepancies.length }, 'Financial report requires review');
     }
-  }, { connection: redis as any });
+  }, { connection: bullConnection });
   worker.on('failed', (job, err) => logger.error({ err, jobId: job?.id }, 'Financial reconciliation job failed'));
   attachDeadLetterHandler(worker, FINANCIAL_RECONCILIATION_QUEUE);
   return worker;

@@ -54,3 +54,18 @@ cpu_baseline  = 12_000_000
 mem_baseline  =  4_000_000
 cpu_tolerance = 0.10
 mem_tolerance = 0.10
+
+# UNMEASURED (issue #1604): 0 fails on purpose until measured with
+# TIPZ_UPDATE_BASELINES=1. Replace with the printed BASELINE values.
+[withdraw_token]
+cpu_baseline  = 0
+mem_baseline  = 0
+cpu_tolerance = 0.10
+mem_tolerance = 0.10
+
+# UNMEASURED (issue #1604): same as above.
+[subscription_charge]
+cpu_baseline  = 0
+mem_baseline  = 0
+cpu_tolerance = 0.10
+mem_tolerance = 0.10

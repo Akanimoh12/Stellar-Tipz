@@ -7,6 +7,7 @@ vi.mock('bullmq', () => ({
 
 vi.mock('../db/redis.js', () => ({
   redis: { url: 'redis://localhost:6379' },
+  bullConnection: { url: 'redis://localhost:6379' },
 }));
 
 describe('getQueue', () => {

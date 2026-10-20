@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq';
-import { redis } from '../db/redis.js';
+import { bullConnection } from '../db/redis.js';
 import { config } from '../config/index.js';
 import { logger } from '../common/utils/logger.js';
 import {
@@ -38,7 +38,7 @@ export function createAnalyticsDailyWorker(): Worker {
       );
       logger.info(result, 'Daily analytics rollup complete');
     },
-    { connection: redis as any },
+    { connection: bullConnection },
   );
 
   worker.on('failed', (job, err) => {
