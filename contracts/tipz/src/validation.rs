@@ -62,6 +62,46 @@ pub fn validate_username(username: &String) -> Result<(), ContractError> {
     Ok(())
 }
 
+/// Check whether a username is on the reserved list.
+///
+/// Reserved usernames (e.g. `admin`, `support`, `tipz`) are blocked at
+/// registration to prevent impersonation of platform roles and abuse.
+/// The comparison is case-insensitive: `Admin`, `TIPZ`, and `admin` are
+/// all matched against the reserved list.
+///
+/// # Errors
+/// Returns [`ContractError::ReservedUsername`] when the username is reserved.
+pub fn is_reserved_username(username: &String) -> Result<(), ContractError> {
+    let len = username.len() as usize;
+    if len == 0 || len > types::MAX_USERNAME_LENGTH as usize {
+        // Length validation is handled elsewhere; skip reserved check.
+        return Ok(());
+    }
+
+    let mut buf = [0u8; types::MAX_USERNAME_LENGTH as usize];
+    username.copy_into_slice(&mut buf[..len]);
+
+    // Lowercase the candidate in-place for case-insensitive comparison.
+    for b in buf[..len].iter_mut() {
+        if *b >= b'A' && *b <= b'Z' {
+            *b += 32;
+        }
+    }
+
+    let candidate = match core::str::from_utf8(&buf[..len]) {
+        Ok(s) => s,
+        Err(_) => return Ok(()), // Non-ASCII is already rejected by validate_username.
+    };
+
+    for &reserved in types::RESERVED_USERNAMES {
+        if candidate == reserved {
+            return Err(ContractError::ReservedUsername);
+        }
+    }
+
+    Ok(())
+}
+
 /// Validate a display name (1-64 chars, not just whitespace).
 pub fn validate_display_name(display_name: &String) -> Result<(), ContractError> {
     let len = display_name.len();
