@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, Trash2, Gift, Star, Info, Circle } from 'lucide-react';
 import { useNotificationStore, type NotificationType, type AppNotification } from '@/store/notificationStore';
+import EmptyState from '@/components/ui/EmptyState';
 
 const TYPE_CONFIG: Record<NotificationType, { icon: React.ReactNode; color: string }> = {
   tip: { icon: <Gift size={16} />, color: 'text-green-600' },
@@ -110,11 +111,11 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ onClose }) => {
 
       <div className="overflow-y-auto flex-1">
         {notifications.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
-            <Bell size={32} className="text-gray-300 mb-2" />
-            <p className="text-sm font-bold text-gray-500">No notifications yet</p>
-            <p className="text-xs text-gray-400 mt-1">Notifications will appear here when you receive tips or achievements.</p>
-          </div>
+          <EmptyState
+            icon={<Bell size={32} />}
+            title="No notifications yet"
+            description="Notifications will appear here when you receive tips or achievements."
+          />
         ) : (
           notifications.map((n) => (
             <NotificationItem key={n.id} notification={n} onClose={onClose} />

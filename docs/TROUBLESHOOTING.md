@@ -263,15 +263,17 @@ Check the contract state before calling finalize or cancel. Submit a new proposa
 
 **What it means**
 
-All write operations are blocked because the contract is in its paused state.
+The paused operations are blocked because the contract is in its paused state. Pausing is granular: each operation checks its own flag, or the global flag.
 
 **Likely cause**
 
-The admin triggered an emergency pause. This is a safety measure used during incident response or upgrades.
+The admin triggered a pause. This is a safety measure used during incident response, upgrades, or automatically by the circuit breaker after abnormal withdrawal volume.
 
 **Resolution**
 
-Wait for the contract admin to resume the contract. If you are the admin, call `unpause()` with the admin keypair.
+Wait for the contract admin to resume the contract. If you are the admin, call `unpause` with the admin keypair and the flag you paused — `unpause(caller, flag)`. The flags are `1` tips, `2` withdrawals, `4` registration, `8` subscriptions, `16` refunds, and `4294967295` for all of them. To check the current state, call `is_paused(flag)`.
+
+A global pause is only lifted by `unpause(caller, 4294967295)` — clearing a single flag does not lift it. The full procedure, including the exact commands, is in [`docs/INCIDENT_RESPONSE.md`](INCIDENT_RESPONSE.md) §5a.
 
 ---
 

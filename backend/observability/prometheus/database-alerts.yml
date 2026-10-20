@@ -1,0 +1,30 @@
+groups:
+  - name: stellar-tipz-database
+    rules:
+      - alert: DatabaseMetricsCollectionFailed
+        expr: tipz_db_monitor_collection_success == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Database stats collection failed
+      - alert: DatabaseLockWaiters
+        expr: tipz_db_lock_waiting_sessions > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than five DB sessions are waiting on locks
+      - alert: DatabaseBloatHigh
+        expr: tipz_db_dead_tuple_ratio > 0.20
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: Estimated dead tuples exceed 20 percent on {{ $labels.table }}
+      - alert: PrismaPoolSaturation
+        expr: increase(tipz_db_pool_saturation_total[10m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Prisma connection acquisition timed out

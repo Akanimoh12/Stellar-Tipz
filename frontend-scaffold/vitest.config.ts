@@ -19,8 +19,17 @@ export default defineConfig({
   test: {
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html'],
-      exclude: ['node_modules/', 'src/test/']
+      // `json-summary` feeds the ratchet totals; `json` feeds the critical-path
+      // line report; `lcov` feeds Codecov.
+      reporter: process.env.CI
+        ? ['json', 'json-summary', 'lcov']
+        : ['text', 'json', 'json-summary', 'html', 'lcov'],
+      exclude: ['node_modules/', 'src/test/'],
+      // The suite currently has failing tests (see docs/COVERAGE.md). Without
+      // this, Vitest skips writing any coverage output when a run fails, which
+      // would leave the ratchet with no data to check. Enforced thresholds live
+      // in scripts/check-coverage.mjs, not here.
+      reportOnFailure: true,
     },
     projects: [{
       extends: true,

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ArrowDownToLine, ReceiptText } from "lucide-react";
 
 import AmountDisplay from "../../components/shared/AmountDisplay";
@@ -16,10 +16,13 @@ import { useDashboardContext } from "./DashboardContext";
 
 interface WithdrawalHistoryItem {
   id: string;
-  createdAt: number;
-  gross: string;
+  amount: string;
   fee: string;
   net: string;
+  txHash: string | null;
+  status: "PENDING" | "CONFIRMED" | "FAILED";
+  requestedAt: string;
+  confirmedAt: string | null;
 }
 
 const DEFAULT_FEE_BPS = 200;
@@ -35,25 +38,33 @@ const EarningsTab: React.FC = () => {
     refetch,
   } = useDashboardContext();
   const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawals, setWithdrawals] = useState<WithdrawalHistoryItem[]>([]);
+  const [withdrawalsLoading, setWithdrawalsLoading] = useState(true);
+  const [withdrawalsError, setWithdrawalsError] = useState<string | null>(null);
   const { addToast } = useToastStore();
   const feeBps = stats?.feeBps ?? DEFAULT_FEE_BPS;
 
-  // Manual calculation for withdrawal history based on tips (placeholder logic since contract doesn't return withdrawals yet)
-  const withdrawals = useMemo<WithdrawalHistoryItem[]>(() => {
-    return tips.slice(0, 4).map((tip: Tip, index: number) => {
-      const gross = BigInt(tip.amount) * BigInt(index + 2);
-      const fee = (gross * BigInt(feeBps)) / BigInt(10_000);
-      const net = gross - fee;
+  useEffect(() => {
+    const fetchWithdrawals = async () => {
+      setWithdrawalsLoading(true);
+      setWithdrawalsError(null);
+      try {
+        const response = await fetch("/api/withdrawals/me?limit=50");
+        if (!response.ok) {
+          throw new Error(`Failed to fetch withdrawals: ${response.statusText}`);
+        }
+        const data = await response.json();
+        setWithdrawals(data.data || []);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        setWithdrawalsError(message);
+      } finally {
+        setWithdrawalsLoading(false);
+      }
+    };
 
-      return {
-        id: `${tip.id}-${tip.timestamp}`,
-        createdAt: tip.timestamp - (index + 1) * 12 * 60 * 60,
-        gross: gross.toString(),
-        fee: fee.toString(),
-        net: net.toString(),
-      };
-    });
-  }, [tips, feeBps]);
+    void fetchWithdrawals();
+  }, []);
 
   if (loading && !profile) {
     return (
@@ -104,7 +115,16 @@ const EarningsTab: React.FC = () => {
           <Button onClick={() => setWithdrawOpen(true)}>Withdraw</Button>
         </div>
 
-        {withdrawals.length === 0 ? (
+        {withdrawalsLoading ? (
+          <div className="flex justify-center py-12">
+            <Loader size="md" text="Loading withdrawal history..." />
+          </div>
+        ) : withdrawalsError ? (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <p className="text-red-800 font-semibold">Error loading withdrawals</p>
+            <p className="text-red-600 text-sm mt-1">{withdrawalsError}</p>
+          </div>
+        ) : withdrawals.length === 0 ? (
           <EmptyState
             icon={<ReceiptText />}
             title="No withdrawals yet"
@@ -112,43 +132,71 @@ const EarningsTab: React.FC = () => {
           />
         ) : (
           <div className="space-y-3">
-            {withdrawals.map((entry) => (
-              <article
-                key={entry.id}
-                className="grid gap-4 border-[3px] border-black bg-[#faf7ef] p-4 md:grid-cols-[1.1fr_repeat(3,minmax(0,1fr))]"
-              >
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.2em] text-gray-800 dark:text-gray-200">
-                    Requested
-                  </p>
-                  <p className="mt-2 text-lg font-black">
-                    {formatTimestamp(entry.createdAt).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.2em] text-gray-800 dark:text-gray-200">
-                    Gross
-                  </p>
-                  <AmountDisplay amount={entry.gross} className="mt-2 block text-lg" />
-                </div>
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.2em] text-gray-800 dark:text-gray-200">
-                    Fee
-                  </p>
-                  <AmountDisplay amount={entry.fee} className="mt-2 block text-lg" />
-                </div>
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.2em] text-gray-800 dark:text-gray-200">
-                    Net
-                  </p>
-                  <AmountDisplay amount={entry.net} className="mt-2 block text-lg" />
-                </div>
-              </article>
-            ))}
+            {withdrawals.map((entry) => {
+              const statusColor =
+                entry.status === "CONFIRMED"
+                  ? "text-green-600"
+                  : entry.status === "FAILED"
+                    ? "text-red-600"
+                    : "text-yellow-600";
+
+              return (
+                <article
+                  key={entry.id}
+                  className="grid gap-4 border-[3px] border-black bg-[#faf7ef] p-4 md:grid-cols-[1.1fr_repeat(3,minmax(0,1fr))_1fr]"
+                >
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-gray-800 dark:text-gray-200">
+                      Requested
+                    </p>
+                    <p className="mt-2 text-lg font-black">
+                      {new Date(entry.requestedAt).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-gray-800 dark:text-gray-200">
+                      Gross
+                    </p>
+                    <AmountDisplay
+                      amount={entry.amount}
+                      className="mt-2 block text-lg"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-gray-800 dark:text-gray-200">
+                      Fee
+                    </p>
+                    <AmountDisplay
+                      amount={entry.fee}
+                      className="mt-2 block text-lg"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-gray-800 dark:text-gray-200">
+                      Net
+                    </p>
+                    <AmountDisplay
+                      amount={
+                        (BigInt(entry.amount) - BigInt(entry.fee)).toString()
+                      }
+                      className="mt-2 block text-lg"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-gray-800 dark:text-gray-200">
+                      Status
+                    </p>
+                    <p className={`mt-2 text-sm font-bold uppercase ${statusColor}`}>
+                      {entry.status}
+                    </p>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </Card>

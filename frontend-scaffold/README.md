@@ -107,6 +107,24 @@ yarn && yarn build
 yarn && yarn start
 ```
 
+## Running Tests
+
+```
+npm test                                   # run the full Vitest suite
+npx vitest run src/hooks/__tests__/<name>  # run a single test file
+```
+
+Hook tests live in `src/hooks/__tests__/`. `useWalletResilience.test.ts`
+covers the wallet watchdog, using fake timers and a mocked Freighter
+`getAddress`:
+
+- **Inactive:** no polling while the wallet is disconnected or has no public key
+- **Loading:** overlapping checks are skipped while one is in flight
+- **Success:** a matching address keeps the session and resets the mismatch counter
+- **Error:** a missing extension, an externally switched account, and repeated
+  timeouts or failures disconnect the wallet with a user-facing message
+- **Cleanup:** the polling interval stops on unmount or disconnect
+
 ## Contributions
 
 Contributions to the Payment DApp are welcome. If you encounter any issues, have

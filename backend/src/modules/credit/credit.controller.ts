@@ -1,52 +1,53 @@
-import { Request, Response, NextFunction } from "express";
-import { z } from "zod";
-import { BadRequestError } from "../../common/errors/AppError.js";
-import { getCreditScore, recomputeCreditScore } from "./credit.service.js";
-import { userIdParamSchema } from "./credit.schema.js";
+import type { Request, Response, NextFunction } from 'express';
+import {
+  creditIdentifierParamSchema,
+  creditHistoryQuerySchema,
+  recalculateSchema,
+  userIdParamSchema,
+} from './credit.schema.js';
+import * as creditService from './credit.service.js';
+import { assertOwnership } from '../../common/utils/ownership.js';
 
-/**
- * GET /credit/:userId
- * Returns the credit score for a user (computed fresh – no persistent cache yet).
- * Issues #920 · #919 · #922
- */
-export async function getCreditScoreController(
+export async function getCreditScore(
   req: Request,
   res: Response,
   next: NextFunction,
-) {
+): Promise<void> {
   try {
-    const { userId } = userIdParamSchema.parse(req.params);
-    const score = await getCreditScore(userId);
-    res.json({ data: score });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      next(new BadRequestError("Invalid userId", error.issues));
-    } else {
-      next(error);
-    }
+    const { identifier } = creditIdentifierParamSchema.parse(req.params);
+    const result = await creditService.getCreditScoreByUsername(identifier);
+    res.status(200).json({ data: result });
+  } catch (err) {
+    next(err);
   }
 }
 
-/**
- * POST /credit/:userId/recompute
- * Triggers a fresh credit-score recompute after X metrics refresh (issue #919).
- * Intended to be called by the background X-metrics refresh job, not directly
- * by end users.
- */
-export async function recomputeCreditScoreController(
+export async function getCreditScoreHistory(
   req: Request,
   res: Response,
   next: NextFunction,
-) {
+): Promise<void> {
   try {
     const { userId } = userIdParamSchema.parse(req.params);
-    const score = await recomputeCreditScore(userId);
-    res.json({ data: score });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      next(new BadRequestError("Invalid userId", error.issues));
-    } else {
-      next(error);
-    }
+    const { limit, offset } = creditHistoryQuerySchema.parse(req.query);
+    const result = await creditService.getCreditScoreHistory(userId, limit, offset);
+    res.status(200).json({ data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function recalculate(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const { userId } = recalculateSchema.parse(req.body);
+    assertOwnership(req.user!.id, userId, 'You can only recalculate your own credit score');
+    const result = await creditService.recalculateCreditScore(userId);
+    res.status(200).json({ data: result });
+  } catch (err) {
+    next(err);
   }
 }

@@ -44,14 +44,18 @@ function isIpfsSource(rawSrc: string, normalizedSrc: string): boolean {
   );
 }
 
-function toOptimizerUrl(src: string, width: number): string {
+function toOptimizerUrl(
+  src: string,
+  width: number,
+  format: "webp" | "jpg",
+): string {
   const withoutProtocol = src.replace(/^https?:\/\//i, "");
   const params = new URLSearchParams({
     url: withoutProtocol,
     w: String(width),
     h: String(width),
     fit: "cover",
-    output: "webp",
+    output: format,
   });
 
   return `${IMAGE_OPTIMIZER_ORIGIN}?${params.toString()}`;
@@ -60,6 +64,7 @@ function toOptimizerUrl(src: string, width: number): string {
 export function getAvatarSrcSet(
   rawSrc: string | undefined,
   displaySize: AvatarSize,
+  format: "webp" | "jpg" = "webp",
 ): string | undefined {
   const normalizedSrc = normalizeAvatarSrc(rawSrc);
   const trimmedSrc = rawSrc?.trim();
@@ -74,7 +79,7 @@ export function getAvatarSrcSet(
 
   const baseWidth = AVATAR_DIMENSIONS[displaySize];
   return [baseWidth, baseWidth * 2]
-    .map((width) => `${toOptimizerUrl(normalizedSrc, width)} ${width}w`)
+    .map((width) => `${toOptimizerUrl(normalizedSrc, width, format)} ${width}w`)
     .join(", ");
 }
 

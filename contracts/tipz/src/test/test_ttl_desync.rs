@@ -15,7 +15,7 @@ use soroban_sdk::{
 };
 
 use crate::errors::ContractError;
-use crate::storage::{self, DataKey, PROFILE_TTL_MAX_LEDGERS};
+use crate::storage::{self, DataKey, ExtendedDataKey, PROFILE_TTL_MAX_LEDGERS};
 use crate::types::Profile;
 use crate::{TipzContract, TipzContractClient};
 

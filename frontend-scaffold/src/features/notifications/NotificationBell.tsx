@@ -1,6 +1,9 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Bell } from 'lucide-react';
 import { useNotificationStore } from '@/store/notificationStore';
+import { useRealTimeNotifications } from '@/hooks/useRealTimeNotifications';
+import { useWalletStore } from '@/store/walletStore';
+import ConnectionStatusIndicator from '@/components/shared/ConnectionStatusIndicator';
 import NotificationCenter from './NotificationCenter';
 
 const NotificationBell: React.FC = () => {
@@ -9,6 +12,8 @@ const NotificationBell: React.FC = () => {
   const unreadCount = useNotificationStore((s) =>
     s.notifications.filter((n) => n.unread).length,
   );
+  const { publicKey } = useWalletStore();
+  const { connectionState, reconnect } = useRealTimeNotifications(publicKey ?? undefined);
 
   useEffect(() => {
     if (!open) return;
@@ -31,7 +36,8 @@ const NotificationBell: React.FC = () => {
   }, [open]);
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative inline-flex items-center gap-2">
+      <ConnectionStatusIndicator state={connectionState} onRetry={reconnect} />
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}

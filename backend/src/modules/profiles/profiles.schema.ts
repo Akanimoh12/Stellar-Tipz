@@ -21,16 +21,21 @@ export const updateProfileSchema = z.object({
     .max(15)
     .regex(/^[a-zA-Z0-9_]+$/)
     .optional(),
-});
+}).strict();
 
 export const profileIdSchema = z.object({
   id: z.string().min(1),
-});
+}).strict();
 
 export const usernameSchema = z.object({
   username: z.string().min(1),
-});
+}).strict();
+
+export const uploadProfileImageSchema = z.object({
+  dataUrl: z.string().startsWith("data:"),
+}).strict();
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type ProfileIdInput = z.infer<typeof profileIdSchema>;
 export type UsernameInput = z.infer<typeof usernameSchema>;
+export type UploadProfileImageInput = z.infer<typeof uploadProfileImageSchema>;

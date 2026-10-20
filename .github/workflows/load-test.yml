@@ -1,0 +1,54 @@
+name: Staging load test
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  load-test:
+    name: Mixed-traffic regression guard
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install k6
+        uses: grafana/setup-k6-action@v1
+      - name: Require staging configuration
+        env:
+          RPC_URL: ${{ vars.STAGING_RPC_URL }}
+          PROFILE_KEY_XDR: ${{ secrets.STAGING_PROFILE_KEY_XDR }}
+          LEADERBOARD_KEY_XDR: ${{ secrets.STAGING_LEADERBOARD_KEY_XDR }}
+          SIGNED_TIP_XDRS: ${{ secrets.STAGING_SIGNED_TIP_XDRS }}
+        run: |
+          test -n "$RPC_URL"
+          test -n "$PROFILE_KEY_XDR"
+          test -n "$LEADERBOARD_KEY_XDR"
+          test -n "$SIGNED_TIP_XDRS"
+      - name: Run approved mixed workload against staging
+        env:
+          RPC_URL: ${{ vars.STAGING_RPC_URL }}
+          PROFILE_KEY_XDR: ${{ secrets.STAGING_PROFILE_KEY_XDR }}
+          LEADERBOARD_KEY_XDR: ${{ secrets.STAGING_LEADERBOARD_KEY_XDR }}
+          SIGNED_TIP_XDRS: ${{ secrets.STAGING_SIGNED_TIP_XDRS }}
+        run: k6 run --summary-export=load-summary.json scripts/load-test.js
+      - name: Fail on regression from approved baseline
+        run: npm run load:compare -- load-summary.json scripts/load-test-baselines/staging.json
+      - name: Publish result summary
+        if: always()
+        run: |
+          echo '## Staging mixed-traffic load test' >> "$GITHUB_STEP_SUMMARY"
+          echo "Run: `$GITHUB_RUN_ID` — compare output and JSON artifact below." >> "$GITHUB_STEP_SUMMARY"
+          test -f load-summary.json && node -e "const s=require('./load-summary.json'); const m=s.metrics; console.log('| Metric | Value |\n| --- | ---: |'); for (const [n,v] of Object.entries({error_rate:m.http_req_failed?.values?.rate,p50_ms:m.http_req_duration?.values?.['p(50)'],p95_ms:m.http_req_duration?.values?.['p(95)'],p99_ms:m.http_req_duration?.values?.['p(99)']})) console.log('| '+n+' | '+v+' |')" >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Retain time-series result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-load-summary-${{ github.run_id }}
+          path: load-summary.json
+          if-no-files-found: warn
+          retention-days: 90

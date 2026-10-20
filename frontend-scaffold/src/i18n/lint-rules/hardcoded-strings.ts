@@ -1,12 +1,9 @@
 import type { Rule } from "eslint";
-
 const RULE_ID = "i18n/hardcoded-strings";
-const IGNORE_PATTERNS = ["className", "id", "htmlFor", "name", "type", "role", "aria-label", "aria-describedby", "aria-labelledby", "aria-controls", "aria-selected", "aria-expanded", "aria-haspopup", "aria-live", "aria-invalid", "alt", "title", "placeholder", "src", "href", "target", "rel", "download", "action", "method", "data-testid", "data-id", "data-name", "data-test", "value", "label", "kind", "variant", "size", "color", "bg", "text", "border", "shadow", "transition", "duration", "delay", "state", "status", "loading", "disabled", "error", "helperText", "message", "to", "key", "children"];
-
 const rule: Rule.RuleModule = {
   meta: { type: "suggestion", docs: { description: "Detects hardcoded user-facing strings that should be externalized via i18n", category: "Best Practices", recommended: "error" }, messages: { [RULE_ID]: "Hardcoded user-facing string found: '{{string}}'. Use i18n translation key instead." }, schema: [{ type: "object", properties: { ignorePatterns: { type: "array", items: { type: "string" } } }, additionalProperties: false }] },
   create(context) {
-    const ignorePatterns = context.options[0]?.ignorePatterns || IGNORE_PATTERNS;
+    const ignorePatterns = context.options[0]?.ignorePatterns || ["className", "id", "htmlFor", "name", "type", "role", "aria-label", "aria-describedby", "aria-labelledby", "aria-controls", "aria-selected", "aria-expanded", "aria-haspopup", "aria-live", "aria-invalid", "alt", "title", "placeholder", "src", "href", "target", "rel", "download", "action", "method", "data-testid", "value", "label", "kind", "variant", "size", "color", "bg", "text", "border", "shadow", "transition", "duration", "delay", "state", "status", "loading", "disabled", "error", "helperText", "message"];
     function isIgnored(value: string): boolean { return ignorePatterns.some((p) => value.includes(p)); }
     function isJsxText(node: Rule.Node): boolean { let current = node.parent; while (current) { if (current.type === "JSXText") return true; if (current.type === "JSXExpressionContainer") return false; current = current.parent; } return false; }
     return {

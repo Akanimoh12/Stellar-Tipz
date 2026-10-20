@@ -1,0 +1,30 @@
+groups:
+  - name: stellar-tipz-finance
+    rules:
+      - alert: FinancialReconciliationDiscrepancy
+        expr: tipz_financial_reconciliation_unresolved > 0
+        for: 0m
+        labels:
+          severity: critical
+          area: finance
+        annotations:
+          summary: Financial reconciliation contains mismatched transactions
+          runbook: docs/runbooks/financial-reconciliation.md
+      - alert: FinancialReconciliationUnverifiable
+        expr: tipz_financial_reconciliation_verified == 0
+        for: 10m
+        labels:
+          severity: critical
+          area: finance
+        annotations:
+          summary: Financial reconciliation cannot verify complete ledger coverage
+          runbook: docs/runbooks/financial-reconciliation.md
+      - alert: FinancialReconciliationStalled
+        expr: (time() - tipz_financial_reconciliation_last_success_timestamp_seconds > 172800) or absent(tipz_financial_reconciliation_last_success_timestamp_seconds)
+        for: 15m
+        labels:
+          severity: critical
+          area: finance
+        annotations:
+          summary: No successfully verified financial audit for 48 hours
+          runbook: docs/runbooks/financial-reconciliation.md

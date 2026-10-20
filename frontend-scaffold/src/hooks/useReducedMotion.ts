@@ -2,10 +2,35 @@ import { useEffect, useState } from 'react';
 
 export type ReduceMotionPreference = 'auto' | 'always';
 
-const SETTINGS_STORAGE_KEY = 'tipz_settings';
+/**
+ * Single source of truth for reduced-motion support.
+ *
+ * `useReducedMotionPreference.ts` used to duplicate this hook; the two were
+ * consolidated here so every consumer shares one implementation, one media
+ * query and one settings key.
+ */
+export const REDUCED_MOTION_MEDIA_QUERY = '(prefers-reduced-motion: reduce)';
+
+/**
+ * Mirrored onto `<html>` so plain CSS animations (Tailwind's `animate-*`,
+ * keyframes and transitions) can honour the in-app preference too.
+ */
+export const REDUCED_MOTION_ATTRIBUTE = 'data-reduced-motion';
+
 export const REDUCED_MOTION_SETTINGS_EVENT = 'tipz:settings-updated';
 
-const readReduceMotionPreference = (): ReduceMotionPreference => {
+const SETTINGS_STORAGE_KEY = 'tipz_settings';
+
+const getReducedMotionMediaQuery = () => {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return null;
+  }
+
+  return window.matchMedia(REDUCED_MOTION_MEDIA_QUERY);
+};
+
+/** Reads the explicit preference persisted by the settings page. */
+export const readReduceMotionPreference = (): ReduceMotionPreference => {
   if (typeof window === 'undefined') {
     return 'auto';
   }
@@ -23,17 +48,16 @@ const readReduceMotionPreference = (): ReduceMotionPreference => {
   }
 };
 
-const getReducedMotionMediaQuery = () => {
-  if (typeof window === 'undefined' || !window.matchMedia) {
-    return null;
-  }
+/** OS-level preference exposed by the `prefers-reduced-motion` media query. */
+export const systemPrefersReducedMotion = (): boolean =>
+  getReducedMotionMediaQuery()?.matches === true;
 
-  return window.matchMedia('(prefers-reduced-motion: reduce)');
-};
-
-const shouldReduceMotion = () => {
-  return readReduceMotionPreference() === 'always' || getReducedMotionMediaQuery()?.matches === true;
-};
+/**
+ * Synchronous counterpart of {@link useReducedMotion} for non-React consumers
+ * (imperative helpers such as confetti) that must not animate.
+ */
+export const shouldReduceMotionNow = (): boolean =>
+  readReduceMotionPreference() === 'always' || systemPrefersReducedMotion();
 
 export const notifyReducedMotionSettingsChanged = () => {
   if (typeof window === 'undefined') return;
@@ -41,12 +65,25 @@ export const notifyReducedMotionSettingsChanged = () => {
   window.dispatchEvent(new Event(REDUCED_MOTION_SETTINGS_EVENT));
 };
 
+/**
+ * Reflects the resolved preference onto `<html data-reduced-motion="...">`
+ * so CSS-only motion is suppressed for users who asked for reduced motion in
+ * the app settings, not just for those with the OS-level preference.
+ */
+export const syncReducedMotionDocumentAttribute = (reduceMotion: boolean): void => {
+  if (typeof document === 'undefined' || !document.documentElement) {
+    return;
+  }
+
+  document.documentElement.setAttribute(REDUCED_MOTION_ATTRIBUTE, reduceMotion ? 'true' : 'false');
+};
+
 export const useReducedMotion = (): boolean => {
-  const [reduceMotion, setReduceMotion] = useState(() => shouldReduceMotion());
+  const [reduceMotion, setReduceMotion] = useState(() => shouldReduceMotionNow());
 
   useEffect(() => {
     const updatePreference = () => {
-      setReduceMotion(shouldReduceMotion());
+      setReduceMotion(shouldReduceMotionNow());
     };
 
     const mediaQuery = getReducedMotionMediaQuery();
@@ -83,6 +120,10 @@ export const useReducedMotion = (): boolean => {
       window.removeEventListener(REDUCED_MOTION_SETTINGS_EVENT, updatePreference);
     };
   }, []);
+
+  useEffect(() => {
+    syncReducedMotionDocumentAttribute(reduceMotion);
+  }, [reduceMotion]);
 
   return reduceMotion;
 };

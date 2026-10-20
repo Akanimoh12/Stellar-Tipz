@@ -1,0 +1,23 @@
+export { bootstrapIndexer } from './main.js';
+export { startIndexer, pollOnce } from './poller.js';
+export type { IndexerHandle } from './poller.js';
+export { projectEvent } from './projections.js';
+export { getCursorLedger, setCursorLedger } from './cursor.js';
+export { getEventsFrom, getLatestLedger } from './sorobanClient.js';
+export type { DecodedEvent, EventPage } from './sorobanClient.js';
+export { SorobanClient } from './soroban.client.js';
+export { CursorStore } from './cursor.store.js';
+export { EventLogStore } from './event-log.store.js';
+export { IndexerService } from './indexer.service.js';
+export type { IndexedEvent, IndexerStatus } from './indexer.types.js';
+export { withRetry } from './retry.js';
+export {
+  getIndexerReport,
+  getIndexerSnapshot,
+  recordIndexerTick,
+  noteIndexerError,
+  resetIndexerMonitor,
+} from './monitor.js';
+export type { IndexerMonitorReport } from './monitor.js';
+export { runBackfill, BACKFILL_CURSOR_TOPIC } from './backfill.js';
+export type { BackfillOptions, BackfillReport, BackfillSummary } from './backfill.js';

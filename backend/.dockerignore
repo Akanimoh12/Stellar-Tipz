@@ -1,0 +1,17 @@
+node_modules
+dist
+.git
+.gitignore
+.dockerignore
+.env
+.env.*
+npm-debug.log
+Dockerfile
+docker-compose.yml
+tests
+vitest.config.ts
+tsconfig.json
+eslint.config.js
+prettier.config.js
+.husky
+.git/hooks
