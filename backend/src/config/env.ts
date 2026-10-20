@@ -315,6 +315,10 @@ export const envSchema = z.object({
   SOCKET_IO_CONNECTION_TIMEOUT_MS: z.coerce.number().default(30000),
   SOCKET_IO_HEARTBEAT_INTERVAL_MS: z.coerce.number().default(25000),
 
+  REALTIME_PING_INTERVAL_MS: z.coerce.number().default(25_000),
+  REALTIME_PING_TIMEOUT_MS: z.coerce.number().default(20_000),
+  REALTIME_REDIS_ADAPTER_ENABLED: z.string().default('false'),
+
   LOG_LEVEL: z.string().default('info'),
   SENTRY_DSN: z.string().optional(),
 

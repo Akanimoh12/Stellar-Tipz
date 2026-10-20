@@ -87,10 +87,9 @@ pub fn create_subscription(
     env.storage().persistent().set(&sub_key, &sub);
 
     // Update indices
-    if existing.is_none() {
-        add_subscriber_to_creator(env, &creator, &subscriber);
-        add_creator_to_subscriber(env, &subscriber, &creator);
-    }
+    add_subscriber_to_creator(env, &creator, &subscriber);
+    add_creator_to_subscriber(env, &subscriber, &creator);
+    storage::bump_subscription_ttl(env, &subscriber, &creator);
 
     // Add to active subscriptions list
     storage::add_active_subscription(env, &subscriber, &creator);
@@ -128,6 +127,7 @@ pub fn cancel_subscription(
         ));
     sub.active = false;
     env.storage().persistent().set(&sub_key, &sub);
+    storage::bump_subscription_ttl(env, &subscriber, &creator);
 
     // Remove from active subscriptions list
     storage::remove_active_subscription(env, &subscriber, &creator);
@@ -209,12 +209,14 @@ pub fn execute_due_subscription(
             sub.amount,
             &String::from_str(env, "Recurring Tip"),
             false, // Subscriptions are not anonymous
-            false, // Message is not encrypted
+            false, // Subscription messages are not encrypted
         )?;
     }
 
-    Ok(())
-}
+        // Update next_due
+        sub.next_due = now + (sub.interval_days as u64 * 86400);
+        env.storage().persistent().set(&sub_key, &sub);
+        storage::bump_subscription_ttl(env, &subscriber, &creator);
 
 fn execute_due_subscription_internal(
     env: &Env,
@@ -266,8 +268,9 @@ pub fn get_subscriptions(env: &Env, subscriber: Address) -> Vec<Subscription> {
             if let Some(sub) = env
                 .storage()
                 .persistent()
-                .get(&ExtendedDataKey::Subscription(subscriber.clone(), creator))
+                .get(&DataKey::Subscription(subscriber.clone(), creator.clone()))
             {
+                storage::bump_subscription_ttl(env, &subscriber, &creator);
                 result.push_back(sub);
             }
         }
@@ -291,8 +294,9 @@ pub fn get_subscribers(env: &Env, creator: Address) -> Vec<Subscription> {
             if let Some(sub) = env
                 .storage()
                 .persistent()
-                .get(&ExtendedDataKey::Subscription(subscriber, creator.clone()))
+                .get(&DataKey::Subscription(subscriber.clone(), creator.clone()))
             {
+                storage::bump_subscription_ttl(env, &subscriber, &creator);
                 result.push_back(sub);
             }
         }

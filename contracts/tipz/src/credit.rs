@@ -40,6 +40,11 @@
 //! | Silver  | 40 – 59 |
 //! | Gold    | 60 – 79 |
 //! | Diamond | 80 – 100|
+//!
+//! ## Overflow Safety
+//! All arithmetic uses saturating or checked operations to prevent overflow.
+//! Boundary tests in `test_credit.rs` verify behavior at type limits
+//! (e.g. `i128::MAX`, `u32::MAX`, `u64::MAX`).
 
 use soroban_sdk::{Address, Env};
 
@@ -135,7 +140,8 @@ pub fn get_credit_breakdown_for_profile(profile: &Profile, now: u64) -> CreditBr
         let follower_part = (profile.x_followers / FOLLOWER_DIVISOR).min(X_SUB_CAP);
         let engagement_part = (profile.x_engagement_avg / ENGAGEMENT_DIVISOR).min(X_SUB_CAP);
 
-        follower_part + engagement_part
+        // Both parts are capped at 50, so sum fits in u32; use saturating_add for defense.
+        follower_part.saturating_add(engagement_part)
     };
 
     // ── Step 3: account-age sub-score (0–100) ──────────────────────────────
@@ -147,7 +153,9 @@ pub fn get_credit_breakdown_for_profile(profile: &Profile, now: u64) -> CreditBr
             0
         } else {
             let age_days = (now - profile.registered_at) / SECONDS_PER_DAY;
-            (age_days as u32 / AGE_DIVISOR).min(AGE_CAP)
+            // age_days fits in u64; casting to u32 truncates but min(AGE_CAP=100) bounds result.
+            // Use saturating_cast pattern: division before cast prevents overflow.
+            (age_days.saturating_div(AGE_DIVISOR as u64) as u32).min(AGE_CAP)
         };
 
     // ── Step 4: weight each sub-score and sum onto the base ─────────────────

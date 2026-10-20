@@ -203,7 +203,7 @@ pub fn initialize(
 }
 
 /// Maximum number of creators in a single [`batch_update_x_metrics`] call.
-pub const MAX_X_METRICS_BATCH_LEN: u32 = 50;
+pub const MAX_X_METRICS_BATCH_LEN: u32 = storage::MAX_BATCH_SIZE;
 
 /// Waiting period before a proposed new admin may call [`confirm_admin_change`].
 pub const ADMIN_CHANGE_TIMELOCK_SECS: u64 = 48 * 3600;
@@ -293,7 +293,10 @@ pub fn batch_update_x_metrics_preview(
     let mut skipped: Vec<BatchSkip> = Vec::new(env);
     let mut i: u32 = 0;
     while i < len {
-        let (creator, x_followers, x_engagement_avg) = updates.get(i).unwrap();
+        let (creator, x_followers, x_engagement_avg) = match updates.get(i) {
+            Some(entry) => entry,
+            None => return Err(ContractError::InvalidInput),
+        };
         if !storage::has_profile(env, &creator) {
             skipped.push_back(BatchSkip {
                 address: creator,
@@ -336,7 +339,10 @@ pub fn batch_update_x_metrics(
     let mut skipped: Vec<BatchSkip> = Vec::new(env);
     let mut i: u32 = 0;
     while i < len {
-        let (creator, x_followers, x_engagement_avg) = updates.get(i).unwrap();
+        let (creator, x_followers, x_engagement_avg) = match updates.get(i) {
+            Some(entry) => entry,
+            None => return Err(ContractError::InvalidInput),
+        };
         if !storage::has_profile(env, &creator) {
             events::emit_x_metrics_batch_skipped(env, &creator, 0);
             skipped.push_back(BatchSkip {

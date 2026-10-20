@@ -5,7 +5,7 @@
 //! | Tier | Usage |
 //! |------|-------|
 //! | `instance()` | Contract-wide config and counters (Admin, fee, TotalCreators, …) |
-//! | `persistent()` | Per-entry long-lived data (Profile, username reverse-lookup) |
+//! | `persistent()` | Per-entry long-lived data (profiles, subscriptions, indexes) |
 //! | `temporary()` | Short-lived tip records; TTL extended on write |
 //!
 //! All callers should go through the helpers in this module instead of
@@ -38,27 +38,13 @@ pub const PROFILE_TTL_MIN_LEDGERS: u32 = 120_960;
 /// Target TTL for profile entries after a bump (~31 days).
 pub const PROFILE_TTL_MAX_LEDGERS: u32 = 535_680;
 
-// Per-entry-type persistent TTL policy (#1175).
-//
-// Two tiers, so no persistent entry silently archives mid-lifecycle:
-//
-// | Tier       | Entries                              | Min bump | Extend-to |
-// |------------|--------------------------------------|----------|-----------|
-// | `Balance`  | `Profile`, `TokenBalance`            | ~7 days  | ~31 days  |
-// | `Standard` | username, streak, goal, donation, …  | ~7 days  | ~15 days  |
-//
-// Balance-bearing entries get the longest target so a creator's funds can
-// never become inaccessible before their metadata does.
+/// Maximum number of entries accepted by any batch operation.
+pub const MAX_BATCH_SIZE: u32 = 50;
 
-/// Minimum remaining TTL before a balance-bearing entry is extended (~7 days).
-pub const BALANCE_TTL_MIN_LEDGERS: u32 = 120_960;
-/// Extend-to target for balance-bearing entries after a bump (~31 days).
-pub const BALANCE_TTL_MAX_LEDGERS: u32 = 535_680;
-
-/// Minimum remaining TTL before a standard persistent entry is extended (~7 days).
-pub const PERSISTENT_TTL_MIN_LEDGERS: u32 = 120_960;
-/// Extend-to target for standard persistent entries after a bump (~15 days).
-pub const PERSISTENT_TTL_MAX_LEDGERS: u32 = 267_840;
+/// Subscription records and their indexes use the long-lived persistent TTL
+/// policy, matching profile storage.
+pub const SUBSCRIPTION_TTL_MIN_LEDGERS: u32 = PROFILE_TTL_MIN_LEDGERS;
+pub const SUBSCRIPTION_TTL_MAX_LEDGERS: u32 = PROFILE_TTL_MAX_LEDGERS;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // DataKey
@@ -313,13 +299,1053 @@ pub struct SendTipState {
     pub active_creators_30d: u32,
 }
 
-// Domain modules keep the storage API stable while making each concern independently readable.
-mod config { use super::*; include!("storage_parts/config.rs"); }
-mod profiles { use super::*; include!("storage_parts/profiles.rs"); }
-mod tips { use super::*; include!("storage_parts/tips.rs"); }
-mod leaderboard { use super::*; include!("storage_parts/leaderboard.rs"); }
-mod accounting { use super::*; include!("storage_parts/accounting.rs"); }
-mod auxiliary { use super::*; include!("storage_parts/auxiliary.rs"); }
+/// Extend the contract instance TTL when a write transaction starts.
+pub fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_TTL_MIN_LEDGERS, INSTANCE_TTL_MAX_LEDGERS);
+}
+
+/// Set the TTL for a temporary tip record after storing it.
+pub fn set_tip_ttl(env: &Env, key: &DataKey) {
+    env.storage()
+        .temporary()
+        .extend_ttl(key, TIP_TTL_LEDGERS, TIP_TTL_LEDGERS);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Initialisation
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns `true` if the contract has been initialised.
+pub fn is_initialized(env: &Env) -> bool {
+    env.storage().instance().has(&DataKey::Initialized)
+}
+
+/// Marks the contract as initialised.
+pub fn set_initialized(env: &Env) {
+    env.storage().instance().set(&DataKey::Initialized, &true);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Native token
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the native XLM token contract address (SAC).
+///
+/// # Panics
+/// Panics if the contract is not yet initialised.
+pub fn get_native_token(env: &Env) -> Address {
+    if let Some(config) = get_runtime_config(env) {
+        return config.native_token;
+    }
+    env.storage()
+        .instance()
+        .get(&DataKey::NativeToken)
+        .expect("native_token not set")
+}
+
+/// Sets the native XLM token contract address.
+pub fn set_native_token(env: &Env, addr: &Address) {
+    env.storage().instance().set(&DataKey::NativeToken, addr);
+    update_runtime_config(env, |config| {
+        config.native_token = addr.clone();
+    });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Pause state
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns `true` when the contract is paused.
+pub fn is_paused(env: &Env) -> bool {
+    if let Some(config) = get_runtime_config(env) {
+        return config.paused;
+    }
+    env.storage()
+        .instance()
+        .get(&DataKey::Paused)
+        .unwrap_or(false)
+}
+
+/// Sets the paused flag.
+pub fn set_paused(env: &Env, paused: bool) {
+    env.storage().instance().set(&DataKey::Paused, &paused);
+    update_runtime_config(env, |config| {
+        config.paused = paused;
+    });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Minimum tip amount
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the minimum allowed tip amount in stroops.
+pub fn get_min_tip_amount(env: &Env) -> i128 {
+    if let Some(config) = get_runtime_config(env) {
+        return config.min_tip_amount;
+    }
+    env.storage()
+        .instance()
+        .get(&DataKey::MinTipAmount)
+        .unwrap_or(0_i128)
+}
+
+/// Sets the minimum allowed tip amount in stroops.
+pub fn set_min_tip_amount(env: &Env, amount: i128) {
+    env.storage()
+        .instance()
+        .set(&DataKey::MinTipAmount, &amount);
+    update_runtime_config(env, |config| {
+        config.min_tip_amount = amount;
+    });
+}
+
+/// Default domain re-verification interval: 30 days.
+pub const DEFAULT_DOMAIN_REVERIFICATION_INTERVAL: u64 = 2_592_000;
+
+/// Returns the configured domain re-verification interval in seconds.
+pub fn get_domain_reverification_interval(env: &Env) -> u64 {
+    if let Some(config) = get_runtime_config(env) {
+        if config.domain_reverify_secs > 0 {
+            return config.domain_reverify_secs;
+        }
+    }
+    DEFAULT_DOMAIN_REVERIFICATION_INTERVAL
+}
+
+/// Sets the domain re-verification interval in seconds (admin only).
+pub fn set_domain_reverification_interval(env: &Env, interval_secs: u64) {
+    update_runtime_config(env, |config| {
+        config.domain_reverify_secs = interval_secs;
+    });
+}
+
+/// Returns the effective minimum tip for a creator (custom override or global default).
+pub fn get_effective_creator_min_tip(env: &Env, creator: &Address) -> i128 {
+    if let Some(profile) = get_profile_opt(env, creator) {
+        if let Some(custom) = profile.custom_min_tip {
+            return custom;
+        }
+    }
+    get_min_tip_amount(env)
+}
+
+/// Returns a creator's custom minimum tip override from their profile, if set.
+pub fn get_creator_min_tip_override(env: &Env, creator: &Address) -> Option<i128> {
+    get_profile_opt(env, creator).and_then(|p| p.custom_min_tip)
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Admin
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the current admin address.
+///
+/// # Panics
+/// Panics if the contract is not yet initialised.
+#[allow(dead_code)]
+pub fn get_admin(env: &Env) -> Address {
+    if let Some(config) = get_runtime_config(env) {
+        return config.admin;
+    }
+    env.storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .expect("admin not set")
+}
+
+/// Overwrites the admin address.
+pub fn set_admin(env: &Env, admin: &Address) {
+    env.storage().instance().set(&DataKey::Admin, admin);
+    update_runtime_config(env, |config| {
+        config.admin = admin.clone();
+    });
+}
+
+/// Pending admin change proposal, if any.
+pub fn get_pending_admin_change(env: &Env) -> Option<crate::types::AdminChangeProposal> {
+    env.storage().instance().get(&DataKey::PendingAdminChange)
+}
+
+pub fn set_pending_admin_change(env: &Env, proposal: &crate::types::AdminChangeProposal) {
+    env.storage()
+        .instance()
+        .set(&DataKey::PendingAdminChange, proposal);
+}
+
+pub fn remove_pending_admin_change(env: &Env) {
+    env.storage()
+        .instance()
+        .remove(&DataKey::PendingAdminChange);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Profile deactivation (separate from `Profile` blob for upgrade-safe reads)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// `true` when the creator profile is temporarily deactivated.
+pub fn is_profile_deactivated(env: &Env, address: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::ProfileDeactivatedAt(address.clone()))
+}
+
+/// Ledger timestamp when the profile was deactivated, if deactivated.
+pub fn get_profile_deactivated_at(env: &Env, address: &Address) -> Option<u64> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ProfileDeactivatedAt(address.clone()))
+}
+
+pub fn set_profile_deactivated_at(env: &Env, address: &Address, at: u64) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ProfileDeactivatedAt(address.clone()), &at);
+}
+
+pub fn clear_profile_deactivation(env: &Env, address: &Address) {
+    let key = DataKey::ProfileDeactivatedAt(address.clone());
+    if env.storage().persistent().has(&key) {
+        env.storage().persistent().remove(&key);
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Admin change history
+// ──────────────────────────────────────────────────────────────────────────────
+
+fn load_admin_change_history(env: &Env) -> soroban_sdk::Vec<crate::types::AdminChangeHistoryEntry> {
+    env.storage()
+        .instance()
+        .get(&DataKey::AdminChangeHistory)
+        .unwrap_or(soroban_sdk::Vec::new(env))
+}
+
+pub fn get_admin_change_history_next_id(env: &Env) -> u32 {
+    load_admin_change_history(env).len()
+}
+
+/// Append a completed admin change to history (sequential ids, newest has highest id).
+pub fn append_admin_change_history(env: &Env, entry: &crate::types::AdminChangeHistoryEntry) {
+    let mut history = load_admin_change_history(env);
+    history.push_back(entry.clone());
+    env.storage()
+        .instance()
+        .set(&DataKey::AdminChangeHistory, &history);
+}
+
+pub fn get_admin_change_history_entry(
+    env: &Env,
+    id: u32,
+) -> Option<crate::types::AdminChangeHistoryEntry> {
+    load_admin_change_history(env).get(id)
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Contract version
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the stored contract version, or 0 if not yet initialized.
+pub fn get_version(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::ContractVersion)
+        .unwrap_or(0)
+}
+
+/// Sets the stored contract version.
+pub fn set_version(env: &Env, version: u32) {
+    env.storage()
+        .instance()
+        .set(&DataKey::ContractVersion, &version);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Fee basis points
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the withdrawal fee in basis points (100 bps = 1 %).
+pub fn get_fee_bps(env: &Env) -> u32 {
+    if let Some(config) = get_runtime_config(env) {
+        return config.fee_bps;
+    }
+    env.storage()
+        .instance()
+        .get(&DataKey::FeePercent)
+        .unwrap_or(0)
+}
+
+/// Sets the withdrawal fee in basis points.
+pub fn set_fee_bps(env: &Env, fee_bps: u32) {
+    env.storage().instance().set(&DataKey::FeePercent, &fee_bps);
+    update_runtime_config(env, |config| {
+        config.fee_bps = fee_bps;
+    });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Fee collector
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the address that receives collected fees.
+///
+/// # Panics
+/// Panics if the contract is not yet initialised.
+#[allow(dead_code)]
+pub fn get_fee_collector(env: &Env) -> Address {
+    if let Some(config) = get_runtime_config(env) {
+        return config.fee_collector;
+    }
+    env.storage()
+        .instance()
+        .get(&DataKey::FeeCollector)
+        .expect("fee_collector not set")
+}
+
+/// Sets the fee collector address.
+pub fn set_fee_collector(env: &Env, addr: &Address) {
+    env.storage().instance().set(&DataKey::FeeCollector, addr);
+    update_runtime_config(env, |config| {
+        config.fee_collector = addr.clone();
+    });
+}
+
+pub fn get_runtime_config(env: &Env) -> Option<RuntimeConfig> {
+    env.storage().instance().get(&CacheKey::RuntimeConfig)
+}
+
+pub fn set_runtime_config(env: &Env, config: &RuntimeConfig) {
+    env.storage()
+        .instance()
+        .set(&CacheKey::RuntimeConfig, config);
+}
+
+fn update_runtime_config<F>(env: &Env, update: F)
+where
+    F: FnOnce(&mut RuntimeConfig),
+{
+    if let Some(mut config) = get_runtime_config(env) {
+        update(&mut config);
+        set_runtime_config(env, &config);
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Profile CRUD
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns `true` if `address` has a registered profile.
+pub fn has_profile(env: &Env, address: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::Profile(address.clone()))
+}
+
+/// Returns the profile for `address`.
+///
+/// # Panics
+/// Panics if no profile is registered for `address`. Callers should guard
+/// with [`has_profile`] first.
+pub fn get_profile(env: &Env, address: &Address) -> Profile {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Profile(address.clone()))
+        .expect("profile not found")
+}
+
+/// Returns the profile for `address`, or `None` when absent.
+pub fn get_profile_opt(env: &Env, address: &Address) -> Option<Profile> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Profile(address.clone()))
+}
+
+/// Persists (creates or updates) a profile, keyed by `profile.owner`.
+pub fn set_profile(env: &Env, profile: &Profile) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Profile(profile.owner.clone()), profile);
+}
+
+/// Remove a profile from persistent storage.
+pub fn remove_profile(env: &Env, address: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Profile(address.clone()));
+}
+
+/// Remove a username reverse-lookup entry from persistent storage.
+pub fn remove_username_address(env: &Env, username: &String) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::UsernameToAddress(username.clone()));
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Username reverse lookup
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the address associated with `username`, or `None` if not taken.
+pub fn get_username_address(env: &Env, username: &String) -> Option<Address> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::UsernameToAddress(username.clone()))
+}
+
+/// Stores the `username → address` reverse-lookup entry.
+pub fn set_username_address(env: &Env, username: &String, address: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::UsernameToAddress(username.clone()), address);
+}
+
+/// Bumps the TTL for both `Profile` and `UsernameToAddress` entries together,
+/// preventing TTL desync between the two persistent storage entries.
+///
+/// Must be called on every profile interaction (register, update, tip, withdraw).
+pub fn bump_profile_ttl(env: &Env, address: &Address) {
+    let profile_key = DataKey::Profile(address.clone());
+    if env.storage().persistent().has(&profile_key) {
+        env.storage().persistent().extend_ttl(
+            &profile_key,
+            PROFILE_TTL_MIN_LEDGERS,
+            PROFILE_TTL_MAX_LEDGERS,
+        );
+    }
+}
+
+/// Bumps the TTL for a `UsernameToAddress` entry.
+///
+/// Call this alongside [`bump_profile_ttl`] whenever the username is already
+/// known, to keep both entries in sync without an extra storage read.
+pub fn bump_username_ttl(env: &Env, username: &soroban_sdk::String) {
+    let username_key = DataKey::UsernameToAddress(username.clone());
+    if env.storage().persistent().has(&username_key) {
+        env.storage().persistent().extend_ttl(
+            &username_key,
+            PROFILE_TTL_MIN_LEDGERS,
+            PROFILE_TTL_MAX_LEDGERS,
+        );
+    }
+}
+
+/// Bump a subscription and the index entries needed to enumerate it together.
+pub fn bump_subscription_ttl(env: &Env, subscriber: &Address, creator: &Address) {
+    let persistent = env.storage().persistent();
+    let subscription_key = DataKey::Subscription(subscriber.clone(), creator.clone());
+    if persistent.has(&subscription_key) {
+        persistent.extend_ttl(
+            &subscription_key,
+            SUBSCRIPTION_TTL_MIN_LEDGERS,
+            SUBSCRIPTION_TTL_MAX_LEDGERS,
+        );
+    }
+
+    if let Some(count) =
+        persistent.get::<_, u32>(&DataKey::SubscriberSubCount(subscriber.clone()))
+    {
+        persistent.extend_ttl(
+            &DataKey::SubscriberSubCount(subscriber.clone()),
+            SUBSCRIPTION_TTL_MIN_LEDGERS,
+            SUBSCRIPTION_TTL_MAX_LEDGERS,
+        );
+        for index in 0..count {
+            let key = DataKey::SubscriberSub(subscriber.clone(), index);
+            if persistent.get::<_, Address>(&key).as_ref() == Some(creator) {
+                persistent.extend_ttl(
+                    &key,
+                    SUBSCRIPTION_TTL_MIN_LEDGERS,
+                    SUBSCRIPTION_TTL_MAX_LEDGERS,
+                );
+                break;
+            }
+        }
+    }
+
+    if let Some(count) = persistent.get::<_, u32>(&DataKey::CreatorSubCount(creator.clone())) {
+        persistent.extend_ttl(
+            &DataKey::CreatorSubCount(creator.clone()),
+            SUBSCRIPTION_TTL_MIN_LEDGERS,
+            SUBSCRIPTION_TTL_MAX_LEDGERS,
+        );
+        for index in 0..count {
+            let key = DataKey::CreatorSub(creator.clone(), index);
+            if persistent.get::<_, Address>(&key).as_ref() == Some(subscriber) {
+                persistent.extend_ttl(
+                    &key,
+                    SUBSCRIPTION_TTL_MIN_LEDGERS,
+                    SUBSCRIPTION_TTL_MAX_LEDGERS,
+                );
+                break;
+            }
+        }
+    }
+}
+
+/// Returns `true` only when both the `Profile` and its `UsernameToAddress`
+/// reverse-lookup entry exist in persistent storage.
+///
+/// A profile is considered active only when both entries are live; if either
+/// has expired the profile is in an orphaned state and should be treated as
+/// absent.
+pub fn is_profile_active(env: &Env, address: &Address) -> bool {
+    let profile_key = DataKey::Profile(address.clone());
+    if !env.storage().persistent().has(&profile_key) {
+        return false;
+    }
+    let profile: crate::types::Profile = match env.storage().persistent().get(&profile_key) {
+        Some(p) => p,
+        None => return false,
+    };
+    env.storage()
+        .persistent()
+        .has(&DataKey::UsernameToAddress(profile.username))
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Tip counter
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the current global tip count (also the index of the *next* tip).
+pub fn get_tip_count(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::TipCount)
+        .unwrap_or(0)
+}
+
+/// Atomically reads the current tip count, increments it in storage, and
+/// returns the **pre-increment** value (the index to assign to the new tip).
+pub fn increment_tip_count(env: &Env) -> u32 {
+    let count = get_tip_count(env);
+    env.storage()
+        .instance()
+        .set(&DataKey::TipCount, &(count + 1));
+    if let Some(mut state) = get_send_tip_state(env) {
+        state.tip_count = count + 1;
+        set_send_tip_state(env, &state);
+    }
+    count
+}
+
+pub fn get_send_tip_state(env: &Env) -> Option<SendTipState> {
+    env.storage().instance().get(&CacheKey::SendTipState)
+}
+
+pub fn set_send_tip_state(env: &Env, state: &SendTipState) {
+    env.storage().instance().set(&CacheKey::SendTipState, state);
+}
+
+pub fn get_or_build_send_tip_state(env: &Env) -> SendTipState {
+    get_send_tip_state(env).unwrap_or(SendTipState {
+        tip_count: get_tip_count(env),
+        total_tips_volume: get_total_tips_volume(env),
+        stats_window_start: get_stats_window_start(env),
+        tips_last_24h: get_tips_last_24h(env),
+        volume_last_24h: get_volume_last_24h(env),
+        active_creators_30d: get_active_creators_30d(env),
+    })
+}
+
+pub fn apply_send_tip_state(env: &Env, state: &SendTipState) {
+    set_send_tip_state(env, state);
+    env.storage()
+        .instance()
+        .set(&DataKey::TipCount, &state.tip_count);
+    env.storage()
+        .instance()
+        .set(&DataKey::TotalTipsVolume, &state.total_tips_volume);
+    env.storage()
+        .instance()
+        .set(&DataKey::StatsWindowStart, &state.stats_window_start);
+    env.storage()
+        .instance()
+        .set(&DataKey::TipsLast24h, &state.tips_last_24h);
+    env.storage()
+        .instance()
+        .set(&DataKey::VolumeLast24h, &state.volume_last_24h);
+    env.storage()
+        .instance()
+        .set(&DataKey::ActiveCreators30d, &state.active_creators_30d);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Per-tipper reverse index
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the number of tips sent by `tipper`.
+pub fn get_tipper_tip_count(env: &Env, tipper: &Address) -> u32 {
+    env.storage()
+        .temporary()
+        .get(&DataKey::TipperTipCount(tipper.clone()))
+        .unwrap_or(0)
+}
+
+/// Records a new tip ID for `tipper` and bumps the per-tipper count.
+/// The reverse-index entry shares the same TTL as tip records.
+pub fn add_tipper_tip(env: &Env, tipper: &Address, tip_id: u32) {
+    let local_index = get_tipper_tip_count(env, tipper);
+
+    let idx_key = DataKey::TipperTip(tipper.clone(), local_index);
+    env.storage().temporary().set(&idx_key, &tip_id);
+    set_tip_ttl(env, &idx_key);
+
+    let count_key = DataKey::TipperTipCount(tipper.clone());
+    env.storage()
+        .temporary()
+        .set(&count_key, &(local_index + 1));
+    set_tip_ttl(env, &count_key);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Per-creator reverse index
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the number of tips received by `creator` (within the TTL window).
+pub fn get_creator_tip_count(env: &Env, creator: &Address) -> u32 {
+    env.storage()
+        .temporary()
+        .get(&DataKey::CreatorTipCount(creator.clone()))
+        .unwrap_or(0)
+}
+
+/// Records a new tip ID for `creator` and bumps the per-creator count.
+/// The reverse-index entry shares the same TTL as tip records.
+pub fn add_creator_tip(env: &Env, creator: &Address, tip_id: u32) {
+    let local_index = get_creator_tip_count(env, creator);
+
+    let idx_key = DataKey::CreatorTip(creator.clone(), local_index);
+    env.storage().temporary().set(&idx_key, &tip_id);
+    set_tip_ttl(env, &idx_key);
+
+    let count_key = DataKey::CreatorTipCount(creator.clone());
+    env.storage()
+        .temporary()
+        .set(&count_key, &(local_index + 1));
+    set_tip_ttl(env, &count_key);
+}
+
+/// Remove all per-creator tip index entries from temporary storage.
+///
+/// Called during `deregister_profile` to prevent stale `CreatorTipCount` from
+/// causing index collisions when the same address re-registers later.
+pub fn reset_creator_tip_index(env: &Env, creator: &Address) {
+    let count = get_creator_tip_count(env, creator);
+    let mut i: u32 = 0;
+    while i < count {
+        let key = DataKey::CreatorTip(creator.clone(), i);
+        if env.storage().temporary().has(&key) {
+            env.storage().temporary().remove(&key);
+        }
+        i += 1;
+    }
+    let count_key = DataKey::CreatorTipCount(creator.clone());
+    if env.storage().temporary().has(&count_key) {
+        env.storage().temporary().remove(&count_key);
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Streak tracking
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Return the streak record for a supporter/creator pair, if any.
+pub fn get_streak(
+    env: &Env,
+    supporter: &Address,
+    creator: &Address,
+) -> Option<crate::types::Streak> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Streak(supporter.clone(), creator.clone()))
+}
+
+/// Persist a streak record for a supporter/creator pair.
+pub fn set_streak(env: &Env, streak: &crate::types::Streak) {
+    env.storage().persistent().set(
+        &DataKey::Streak(streak.supporter.clone(), streak.creator.clone()),
+        streak,
+    );
+}
+
+/// Return the total streak bonus accumulated for a creator.
+///
+/// Streak-bonus storage is intentionally disabled. Persisting it requires either
+/// a new `DataKey` variant (increases contract footprint) or embedding a
+/// `streak_bonus` field in `Profile` (requires a storage-schema migration). Both
+/// options are deferred to the next planned contract upgrade. The three helpers
+/// are kept as zero-cost stubs so existing call sites compile without change.
+/// See PR #745 for the full deferral rationale.
+pub fn get_creator_streak_bonus(_env: &Env, _creator: &Address) -> u32 {
+    0
+}
+
+/// Add streak bonus points to a creator.
+///
+/// No-op until `streak_bonus` is introduced to `Profile` during a planned
+/// storage-schema migration. See [`get_creator_streak_bonus`] for details.
+pub fn add_creator_streak_bonus(_env: &Env, _creator: &Address, _bonus: u32) {}
+
+/// Adjust a creator's streak bonus by a signed delta.
+///
+/// No-op until `streak_bonus` is introduced to `Profile` during a planned
+/// storage-schema migration. See [`get_creator_streak_bonus`] for details.
+pub fn adjust_creator_streak_bonus(_env: &Env, _creator: &Address, _delta: i32) {}
+
+/// Remove all per-tipper tip index entries from temporary storage.
+///
+/// Called during `deregister_profile` to prevent stale `TipperTipCount` from
+/// causing index collisions when the same address re-registers later.
+pub fn reset_tipper_tip_index(env: &Env, tipper: &Address) {
+    let count = get_tipper_tip_count(env, tipper);
+    let mut i: u32 = 0;
+    while i < count {
+        let key = DataKey::TipperTip(tipper.clone(), i);
+        if env.storage().temporary().has(&key) {
+            env.storage().temporary().remove(&key);
+        }
+        i += 1;
+    }
+    let count_key = DataKey::TipperTipCount(tipper.clone());
+    if env.storage().temporary().has(&count_key) {
+        env.storage().temporary().remove(&count_key);
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Leaderboard (Multi-period)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the leaderboard for a specific period.
+pub fn get_leaderboard(env: &Env, period: LeaderboardPeriod) -> soroban_sdk::Vec<LeaderboardEntry> {
+    if let Some(boards) = get_leaderboard_set(env) {
+        return match period {
+            LeaderboardPeriod::AllTime => boards.all_time,
+            LeaderboardPeriod::Monthly => boards.monthly,
+            LeaderboardPeriod::Weekly => boards.weekly,
+        };
+    }
+    env.storage()
+        .instance()
+        .get(&DataKey::Leaderboard(period))
+        .unwrap_or(soroban_sdk::Vec::new(env))
+}
+
+/// Sets the leaderboard for a specific period.
+pub fn set_leaderboard(
+    env: &Env,
+    period: LeaderboardPeriod,
+    leaderboard: &soroban_sdk::Vec<LeaderboardEntry>,
+) {
+    env.storage()
+        .instance()
+        .set(&DataKey::Leaderboard(period), leaderboard);
+    let mut boards = get_leaderboard_set(env).unwrap_or_else(|| LeaderboardSet {
+        all_time: get_legacy_leaderboard(env, LeaderboardPeriod::AllTime),
+        monthly: get_legacy_leaderboard(env, LeaderboardPeriod::Monthly),
+        weekly: get_legacy_leaderboard(env, LeaderboardPeriod::Weekly),
+        monthly_reset_at: get_last_leaderboard_reset(env, LeaderboardPeriod::Monthly),
+        weekly_reset_at: get_last_leaderboard_reset(env, LeaderboardPeriod::Weekly),
+    });
+    match period {
+        LeaderboardPeriod::AllTime => boards.all_time = leaderboard.clone(),
+        LeaderboardPeriod::Monthly => boards.monthly = leaderboard.clone(),
+        LeaderboardPeriod::Weekly => boards.weekly = leaderboard.clone(),
+    }
+    set_leaderboard_set(env, &boards);
+}
+
+fn get_legacy_leaderboard(
+    env: &Env,
+    period: LeaderboardPeriod,
+) -> soroban_sdk::Vec<LeaderboardEntry> {
+    env.storage()
+        .instance()
+        .get(&DataKey::Leaderboard(period))
+        .unwrap_or(soroban_sdk::Vec::new(env))
+}
+
+pub fn get_leaderboard_set(env: &Env) -> Option<LeaderboardSet> {
+    env.storage().instance().get(&CacheKey::LeaderboardSet)
+}
+
+pub fn set_leaderboard_set(env: &Env, boards: &LeaderboardSet) {
+    env.storage()
+        .instance()
+        .set(&CacheKey::LeaderboardSet, boards);
+    env.storage().instance().set(
+        &DataKey::Leaderboard(LeaderboardPeriod::AllTime),
+        &boards.all_time,
+    );
+    env.storage().instance().set(
+        &DataKey::Leaderboard(LeaderboardPeriod::Monthly),
+        &boards.monthly,
+    );
+    env.storage().instance().set(
+        &DataKey::Leaderboard(LeaderboardPeriod::Weekly),
+        &boards.weekly,
+    );
+    env.storage().instance().set(
+        &DataKey::LastLeaderboardReset(LeaderboardPeriod::Monthly),
+        &boards.monthly_reset_at,
+    );
+    env.storage().instance().set(
+        &DataKey::LastLeaderboardReset(LeaderboardPeriod::Weekly),
+        &boards.weekly_reset_at,
+    );
+}
+
+/// Returns the timestamp of the last reset for a specific period.
+pub fn get_last_leaderboard_reset(env: &Env, period: LeaderboardPeriod) -> u64 {
+    if let Some(boards) = get_leaderboard_set(env) {
+        return match period {
+            LeaderboardPeriod::AllTime => 0,
+            LeaderboardPeriod::Monthly => boards.monthly_reset_at,
+            LeaderboardPeriod::Weekly => boards.weekly_reset_at,
+        };
+    }
+    env.storage()
+        .instance()
+        .get(&DataKey::LastLeaderboardReset(period))
+        .unwrap_or(0)
+}
+
+/// Sets the timestamp of the last reset for a specific period.
+pub fn set_last_leaderboard_reset(env: &Env, period: LeaderboardPeriod, at: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::LastLeaderboardReset(period), &at);
+    if let Some(mut boards) = get_leaderboard_set(env) {
+        match period {
+            LeaderboardPeriod::AllTime => {}
+            LeaderboardPeriod::Monthly => boards.monthly_reset_at = at,
+            LeaderboardPeriod::Weekly => boards.weekly_reset_at = at,
+        }
+        set_leaderboard_set(env, &boards);
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Rate Limiting
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the current rate limit configuration.
+pub fn get_rate_limit_config(env: &Env) -> RateLimitConfig {
+    if let Some(config) = get_runtime_config(env) {
+        return config.rate_limit;
+    }
+    env.storage()
+        .instance()
+        .get(&DataKey::RateLimitConfig)
+        .unwrap_or(RateLimitConfig {
+            max_ops: 50,
+            window_secs: 3600, // 1 hour default
+        })
+}
+
+/// Sets the rate limit configuration.
+pub fn set_rate_limit_config(env: &Env, config: &RateLimitConfig) {
+    env.storage()
+        .instance()
+        .set(&DataKey::RateLimitConfig, config);
+    update_runtime_config(env, |runtime_config| {
+        runtime_config.rate_limit = config.clone();
+    });
+}
+
+pub fn bump_existing_profile_ttl(env: &Env, address: &Address) {
+    env.storage().persistent().extend_ttl(
+        &DataKey::Profile(address.clone()),
+        PROFILE_TTL_MIN_LEDGERS,
+        PROFILE_TTL_MAX_LEDGERS,
+    );
+}
+
+/// Returns the current rate limit status for an address.
+pub fn get_rate_limit_status(env: &Env, address: &Address) -> Option<RateLimitStatus> {
+    env.storage()
+        .instance()
+        .get(&DataKey::RateLimit(address.clone()))
+}
+
+/// Sets the rate limit status for an address.
+pub fn set_rate_limit_status(env: &Env, address: &Address, status: &RateLimitStatus) {
+    env.storage()
+        .instance()
+        .set(&DataKey::RateLimit(address.clone()), status);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Period Volume Tracking
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the tip volume received by a creator during a specific period.
+pub fn get_creator_period_volume(env: &Env, creator: &Address, period: LeaderboardPeriod) -> i128 {
+    let start_at = get_last_leaderboard_reset(env, period);
+    env.storage()
+        .instance()
+        .get(&DataKey::CreatorPeriodVolume(
+            creator.clone(),
+            period,
+            start_at,
+        ))
+        .unwrap_or(0)
+}
+
+/// Adds `amount` to a creator's tip volume for a specific period.
+pub fn add_creator_period_volume(
+    env: &Env,
+    creator: &Address,
+    period: LeaderboardPeriod,
+    amount: i128,
+) -> i128 {
+    let start_at = get_last_leaderboard_reset(env, period);
+    let current = get_creator_period_volume(env, creator, period);
+    let next = current.saturating_add(amount);
+    env.storage().instance().set(
+        &DataKey::CreatorPeriodVolume(creator.clone(), period, start_at),
+        &next,
+    );
+    next
+}
+
+pub fn get_creator_period_volumes(env: &Env, creator: &Address) -> Option<CreatorPeriodVolumes> {
+    env.storage()
+        .instance()
+        .get(&CacheKey::CreatorPeriodVolumes(creator.clone()))
+}
+
+pub fn set_creator_period_volumes(env: &Env, creator: &Address, volumes: &CreatorPeriodVolumes) {
+    env.storage()
+        .instance()
+        .set(&CacheKey::CreatorPeriodVolumes(creator.clone()), volumes);
+    env.storage().instance().set(
+        &DataKey::CreatorPeriodVolume(
+            creator.clone(),
+            LeaderboardPeriod::Monthly,
+            volumes.monthly_start_at,
+        ),
+        &volumes.monthly,
+    );
+    env.storage().instance().set(
+        &DataKey::CreatorPeriodVolume(
+            creator.clone(),
+            LeaderboardPeriod::Weekly,
+            volumes.weekly_start_at,
+        ),
+        &volumes.weekly,
+    );
+}
+
+pub fn add_creator_period_volumes(
+    env: &Env,
+    creator: &Address,
+    monthly_start_at: u64,
+    weekly_start_at: u64,
+    amount: i128,
+) -> (i128, i128) {
+    let mut volumes = get_creator_period_volumes(env, creator).unwrap_or(CreatorPeriodVolumes {
+        monthly_start_at,
+        monthly: 0,
+        weekly_start_at,
+        weekly: 0,
+    });
+
+    if volumes.monthly_start_at != monthly_start_at {
+        volumes.monthly_start_at = monthly_start_at;
+        volumes.monthly = 0;
+    }
+    if volumes.weekly_start_at != weekly_start_at {
+        volumes.weekly_start_at = weekly_start_at;
+        volumes.weekly = 0;
+    }
+
+    volumes.monthly = volumes.monthly.saturating_add(amount);
+    volumes.weekly = volumes.weekly.saturating_add(amount);
+
+    let monthly = volumes.monthly;
+    let weekly = volumes.weekly;
+    set_creator_period_volumes(env, creator, &volumes);
+    (monthly, weekly)
+}
+
+/// Resets a creator's period volume (e.g. after a leaderboard reset).
+/// Note: With timestamp-based keys, we don't strictly need this, but it can be used for cleanup.
+pub fn reset_creator_period_volume(env: &Env, creator: &Address, period: LeaderboardPeriod) {
+    let start_at = get_last_leaderboard_reset(env, period);
+    env.storage()
+        .instance()
+        .remove(&DataKey::CreatorPeriodVolume(
+            creator.clone(),
+            period,
+            start_at,
+        ));
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Creator counter
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the total number of registered creators.
+pub fn get_total_creators(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::TotalCreators)
+        .unwrap_or(0)
+}
+
+/// Increments the total registered creators counter by one.
+pub fn increment_total_creators(env: &Env) {
+    let total = get_total_creators(env);
+    env.storage()
+        .instance()
+        .set(&DataKey::TotalCreators, &(total + 1));
+}
+
+/// Decrements the total registered creators counter by one.
+/// Includes underflow protection (only decrements if total > 0).
+pub fn decrement_total_creators(env: &Env) {
+    let total = get_total_creators(env);
+    if total > 0 {
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalCreators, &(total - 1));
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Tips volume tracking
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Returns the lifetime total tip volume in stroops.
+pub fn get_total_tips_volume(env: &Env) -> i128 {
+    env.storage()
+        .instance()
+        .get(&DataKey::TotalTipsVolume)
+        .unwrap_or(0)
+}
+
+/// Adds `amount` stroops to the lifetime tip volume.
+pub fn add_to_tips_volume(env: &Env, amount: i128) -> Result<(), ContractError> {
+    let volume = get_total_tips_volume(env);
+    // Security: fail closed on arithmetic overflow.
+    let next = volume
+        .checked_add(amount)
+        .ok_or(ContractError::OverflowError)?;
+    env.storage()
+        .instance()
+        .set(&DataKey::TotalTipsVolume, &next);
+    if let Some(mut state) = get_send_tip_state(env) {
+        state.total_tips_volume = next;
+        set_send_tip_state(env, &state);
+    }
+    Ok(())
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Fee tracking
+// ──────────────────────────────────────────────────────────────────────────────
 
 pub use accounting::*;
 pub use auxiliary::*;
