@@ -1,4 +1,4 @@
-import { Queue, Job, Worker } from 'bullmq';
+import { Queue, Job, Worker, type JobsOptions } from 'bullmq';
 import { context, propagation, trace, SpanStatusCode, type Span, type Tracer } from '@opentelemetry/api';
 import { SEMATTRS_MESSAGING_SYSTEM, SEMATTRS_MESSAGING_DESTINATION, SEMATTRS_MESSAGING_OPERATION, SEMATTRS_MESSAGING_MESSAGE_ID } from '@opentelemetry/semantic-conventions';
 import { getTracer, extractContext, injectContext, createTraceCarrier, withSpan, isTracingActive, getTraceId } from './tracing.js';
@@ -11,14 +11,14 @@ const BULLMQ_SYSTEM = 'bullmq';
 export type TracedAddFn<T extends Record<string, unknown>> = (
   name: string,
   data: T,
-  opts?: any,
+  opts?: JobsOptions,
 ) => Promise<Job<T>>;
 
 /**
  * Type for traced addBulk function
  */
 export type TracedAddBulkFn<T extends Record<string, unknown>> = (
-  jobs: Array<{ name: string; data: T; opts?: any }>,
+  jobs: Array<{ name: string; data: T; opts?: JobsOptions }>,
 ) => Promise<Job<T>[]>;
 
 /**
@@ -125,8 +125,8 @@ export function withTracing<T extends Job>(
  */
 export function createTracedAdd<T extends Record<string, unknown>>(
   queue: Queue,
-): (name: string, data: T, opts?: any) => Promise<Job<T>> {
-  return async (name: string, data: T, opts?: any) => {
+): (name: string, data: T, opts?: JobsOptions) => Promise<Job<T>> {
+  return async (name: string, data: T, opts?: JobsOptions) => {
     const tracedData = injectTraceContextIntoJob(data);
     return queue.add(name, tracedData, opts);
   };
@@ -137,7 +137,7 @@ export function createTracedAdd<T extends Record<string, unknown>>(
  */
 export function createTracedAddBulk<T extends Record<string, unknown>>(
   queue: Queue,
-): (jobs: Array<{ name: string; data: T; opts?: any }>) => Promise<Job<T>[]> {
+): (jobs: Array<{ name: string; data: T; opts?: JobsOptions }>) => Promise<Job<T>[]> {
   return async (jobs) => {
     const tracedJobs = jobs.map((j) => ({
       ...j,
@@ -155,7 +155,7 @@ export async function addJobWithTrace<T extends Record<string, unknown>>(
   queue: Queue,
   name: string,
   data: T,
-  opts?: any,
+  opts?: JobsOptions,
 ): Promise<Job<T>> {
   const tracedData = injectTraceContextIntoJob(data);
   return queue.add(name, tracedData, opts);

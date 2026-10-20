@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/node';
+import type { Request, Response, NextFunction, ErrorRequestHandler, RequestHandler } from 'express';
 import { env } from '../../config/env.js';
 import { logger } from '../utils/logger.js';
 
@@ -25,16 +26,16 @@ export function initSentry() {
   }
 }
 
-export function getSentryRequestHandler() {
+export function getSentryRequestHandler(): RequestHandler {
   if (!env.SENTRY_DSN) {
-    return (_req: any, _res: any, next: any) => next();
+    return (_req: Request, _res: Response, next: NextFunction) => next();
   }
   return Sentry.Handlers.requestHandler();
 }
 
-export function getSentryErrorHandler() {
+export function getSentryErrorHandler(): ErrorRequestHandler {
   if (!env.SENTRY_DSN) {
-    return (err: any, _req: any, _res: any, next: any) => next(err);
+    return (err: unknown, _req: Request, _res: Response, next: NextFunction) => next(err);
   }
   return Sentry.Handlers.errorHandler();
 }
