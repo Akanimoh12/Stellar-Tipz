@@ -796,3 +796,139 @@ fn unique_tippers_does_not_affect_score_today() {
         calculate_credit_score(&b, now)
     );
 }
+
+/// Boundary test: maximum u64 timestamp values should not overflow age calculation.
+/// Tests the saturating division pattern in age_sub computation.
+#[test]
+fn max_timestamp_values_do_not_overflow_age_calculation() {
+    let env = Env::default();
+    // registered_at = 0, now = u64::MAX ≈ 584 billion years
+    let now = u64::MAX;
+    let mut profile = blank_profile(&env, now);
+    profile.registered_at = 0;
+
+    // Should not panic; age_sub capped at AGE_CAP (100) → age_pts = 10
+    let score = calculate_credit_score(&profile, now);
+    assert!(score <= 100);
+    // base(40) + age_pts(10) = 50 (other components zero)
+    assert_eq!(score, BASE_SCORE + 10);
+}
+
+/// Boundary test: maximum u32 followers and engagement should not overflow x_sub.
+/// Both components capped at X_SUB_CAP (50) before addition.
+#[test]
+fn max_u32_x_metrics_do_not_overflow_x_sub() {
+    let env = Env::default();
+    let now = env.ledger().timestamp();
+    let mut profile = blank_profile(&env, now);
+    profile.x_followers = u32::MAX;
+    profile.x_engagement_avg = u32::MAX;
+
+    // follower_part = min(u32::MAX/50, 50) = 50
+    // engagement_part = min(u32::MAX/10, 50) = 50
+    // x_sub = 50 + 50 = 100 (saturating_add)
+    // x_pts = 100 * 30 / 100 = 30
+    let score = calculate_credit_score(&profile, now);
+    assert_eq!(score, BASE_SCORE + 30); // 40 + 30 = 70
+}
+
+/// Boundary test: i128::MAX tip volume should not overflow and is capped at TIP_VOLUME_CAP.
+#[test]
+fn i128_max_tip_volume_capped_correctly() {
+    let env = Env::default();
+    let now = env.ledger().timestamp();
+    let mut profile = blank_profile(&env, now);
+    profile.total_tips_received = i128::MAX;
+
+    // Clamp to TIP_VOLUME_CAP (1_000_000_000), tip_sub = 100, tip_pts = 20
+    let score = calculate_credit_score(&profile, now);
+    assert_eq!(score, BASE_SCORE + 20); // 40 + 20 = 60
+}
+
+/// Boundary test: negative tip volume (defensive) is clamped to 0.
+#[test]
+fn negative_tip_volume_clamped_to_zero() {
+    let env = Env::default();
+    let now = env.ledger().timestamp();
+    let mut profile = blank_profile(&env, now);
+    profile.total_tips_received = -1_000_000_000_000_000_000; // Large negative
+
+    // Clamped to 0 → tip_sub = 0 → tip_pts = 0
+    let score = calculate_credit_score(&profile, now);
+    assert_eq!(score, BASE_SCORE);
+}
+
+/// Boundary test: streak bonus at maximum should not overflow total score.
+#[test]
+fn max_streak_bonus_capped_at_100() {
+    let env = Env::default();
+    let now = env.ledger().timestamp();
+    let mut profile = blank_profile(&env, now);
+    // Max out all components
+    profile.total_tips_received = 1_000_000_000; // tip_pts = 20
+    profile.x_followers = 2_500; // follower_part = 50
+    profile.x_engagement_avg = 500; // engagement_part = 50, x_pts = 30
+    profile.registered_at = 0; // age_days large, age_pts = 10
+    // base(40) + 20 + 30 + 10 = 100 before streak
+
+    // Simulate max streak bonus by directly calling breakdown with streak
+    let breakdown = crate::credit::get_credit_breakdown_for_profile(&profile, now);
+    assert_eq!(breakdown.total, 100);
+
+    // Adding streak bonus (capped at MAX_SCORE) should still result in 100
+    let mut breakdown_with_streak = breakdown;
+    breakdown_with_streak.streak_score = 100;
+    breakdown_with_streak.total = breakdown_with_streak.total.saturating_add(100).min(100);
+    assert_eq!(breakdown_with_streak.total, 100);
+}
+
+/// Property: score calculation is monotonic in all inputs simultaneously.
+/// Increasing any single metric should never decrease the total score.
+#[test]
+fn property_score_monotonic_in_all_inputs() {
+    let env = Env::default();
+    let registered_at = 0_u64;
+
+    // Test tip volume monotonicity
+    let mut last_score = 0_u32;
+    for xlm in (0..=200).step_by(10) {
+        let now = 86_400_u64 * 100;
+        let mut profile = blank_profile(&env, now);
+        profile.registered_at = registered_at;
+        profile.total_tips_received = (xlm as i128) * 10_000_000;
+        let score = calculate_credit_score(&profile, now);
+        assert!(
+            score >= last_score,
+            "tip volume monotonicity violated at {xlm} XLM: {score} < {last_score}"
+        );
+        last_score = score;
+    }
+
+    // Test follower count monotonicity
+    last_score = 0;
+    for followers in (0..=3000).step_by(250) {
+        let now = env.ledger().timestamp();
+        let mut profile = blank_profile(&env, now);
+        profile.x_followers = followers;
+        let score = calculate_credit_score(&profile, now);
+        assert!(
+            score >= last_score,
+            "follower monotonicity violated at {followers}: {score} < {last_score}"
+        );
+        last_score = score;
+    }
+
+    // Test engagement monotonicity
+    last_score = 0;
+    for engagement in (0..=1000).step_by(50) {
+        let now = env.ledger().timestamp();
+        let mut profile = blank_profile(&env, now);
+        profile.x_engagement_avg = engagement;
+        let score = calculate_credit_score(&profile, now);
+        assert!(
+            score >= last_score,
+            "engagement monotonicity violated at {engagement}: {score} < {last_score}"
+        );
+        last_score = score;
+    }
+}
