@@ -46,6 +46,10 @@ const envSchema = z.object({
   IPFS_API_URL: z.string().optional(),
   IPFS_GATEWAY_URL: z.string().default('https://ipfs.io/ipfs/'),
 
+  REALTIME_PING_INTERVAL_MS: z.coerce.number().default(25_000),
+  REALTIME_PING_TIMEOUT_MS: z.coerce.number().default(20_000),
+  REALTIME_REDIS_ADAPTER_ENABLED: z.string().default('false'),
+
   LOG_LEVEL: z.string().default('info'),
   SENTRY_DSN: z.string().optional(),
 });

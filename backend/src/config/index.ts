@@ -54,6 +54,12 @@ export const config = {
     gatewayUrl: env.IPFS_GATEWAY_URL,
   },
 
+  realtime: {
+    pingIntervalMs: env.REALTIME_PING_INTERVAL_MS ?? 25_000,
+    pingTimeoutMs: env.REALTIME_PING_TIMEOUT_MS ?? 20_000,
+    redisAdapterEnabled: env.REALTIME_REDIS_ADAPTER_ENABLED === 'true',
+  },
+
   logging: {
     level: env.LOG_LEVEL,
     sentryDsn: env.SENTRY_DSN,
