@@ -84,6 +84,31 @@ describe('health endpoints', () => {
     expect(response.body.checks).toHaveLength(3);
   });
 
+  it('returns valid JSON content type', async () => {
+    const response = await request(createApp()).get('/health');
+    expect(response.headers['content-type']).toMatch(/application\/json/);
+  });
+
+  it('returns ISO timestamp', async () => {
+    const response = await request(createApp()).get('/health');
+    expect(response.body.timestamp).toBeDefined();
+    expect(() => new Date(response.body.timestamp)).not.toThrow();
+    const date = new Date(response.body.timestamp);
+    expect(date.toISOString()).toBe(response.body.timestamp);
+  });
+
+  it('handles multiple concurrent requests', async () => {
+    const app = createApp();
+    const requests = Array(5)
+      .fill(null)
+      .map(() => request(app).get('/health'));
+    const responses = await Promise.all(requests);
+    responses.forEach((res) => {
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('pass');
+    });
+  });
+
   it('prevents the legacy GET /health probe from false-positive readiness', async () => {
     const dependencies = healthyDependencies();
     dependencies.postgres = vi.fn().mockRejectedValue(new Error('database down'));
@@ -178,5 +203,31 @@ describe('health endpoints', () => {
     expect(dependencies.postgres).toHaveBeenCalledTimes(1);
     expect(dependencies.redis).toHaveBeenCalledTimes(1);
     expect(dependencies['soroban-rpc']).toHaveBeenCalledTimes(1);
+  });
+
+  describe('error handling', () => {
+    it('returns 404 for non-existent routes', async () => {
+      const app = createApp();
+      const res = await request(app).get('/health/invalid');
+      expect(res.status).toBe(404);
+    });
+
+    it('rejects POST requests to health endpoint', async () => {
+      const app = createApp();
+      const res = await request(app).post('/health');
+      expect(res.status).toBe(404);
+    });
+
+    it('rejects PUT requests to health endpoint', async () => {
+      const app = createApp();
+      const res = await request(app).put('/health');
+      expect(res.status).toBe(404);
+    });
+
+    it('rejects DELETE requests to health endpoint', async () => {
+      const app = createApp();
+      const res = await request(app).delete('/health');
+      expect(res.status).toBe(404);
+    });
   });
 });
