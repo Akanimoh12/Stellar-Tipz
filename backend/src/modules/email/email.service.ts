@@ -22,7 +22,9 @@ export type EmailDeliveryResult = {
   deliveryId: string;
 };
 
-const EMAIL_WEBHOOK_URL = env.EMAIL_WEBHOOK_URL;
+function getEmailWebhookUrl(): string | undefined {
+  return env.EMAIL_WEBHOOK_URL;
+}
 
 function assertValidRecipient(to: string): void {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
@@ -31,11 +33,12 @@ function assertValidRecipient(to: string): void {
 }
 
 async function postToEmailWebhook(input: EmailNotificationInput): Promise<void> {
-  if (!EMAIL_WEBHOOK_URL) {
+  const webhookUrl = getEmailWebhookUrl();
+  if (!webhookUrl) {
     return;
   }
 
-  const response = await fetch(EMAIL_WEBHOOK_URL, {
+  const response = await fetch(webhookUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -60,11 +63,12 @@ export async function sendEmailNotification(
 ): Promise<EmailDeliveryResult> {
   assertValidRecipient(input.to);
 
-  const provider = EMAIL_WEBHOOK_URL ? 'webhook' : 'audit-log';
-  const status = EMAIL_WEBHOOK_URL ? 'sent' : 'queued';
+  const webhookUrl = getEmailWebhookUrl();
+  const provider = webhookUrl ? 'webhook' : 'audit-log';
+  const status = webhookUrl ? 'sent' : 'queued';
 
   const delivery = await queueDelivery(input.userId, 'email');
-  if (EMAIL_WEBHOOK_URL) {
+  if (webhookUrl) {
     try {
       await postToEmailWebhook({ ...input, metadata: { ...input.metadata, deliveryId: delivery.id } });
       await acknowledgeDeliverySent(delivery.id);

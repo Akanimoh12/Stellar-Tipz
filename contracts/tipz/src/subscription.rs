@@ -211,6 +211,7 @@ pub fn execute_due_subscription(
             false, // Subscriptions are not anonymous
             false, // Message is not encrypted
         )?;
+    }
 
     Ok(())
 }
