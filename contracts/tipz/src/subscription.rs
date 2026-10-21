@@ -112,7 +112,11 @@ pub fn cancel_subscription(
         return Err(ContractError::NotFound);
     }
 
-    let mut sub: Subscription = env.storage().persistent().get(&sub_key).unwrap();
+    let mut sub: Subscription = env
+        .storage()
+        .persistent()
+        .get(&sub_key)
+        .ok_or(ContractError::NotFound)?;
     if !sub.active {
         return Err(ContractError::NotFound);
     }
@@ -193,7 +197,11 @@ pub fn execute_due_subscription(
         return Err(ContractError::NotFound);
     }
 
-    let mut sub: Subscription = env.storage().persistent().get(&sub_key).unwrap();
+    let mut sub: Subscription = env
+        .storage()
+        .persistent()
+        .get(&sub_key)
+        .ok_or(ContractError::NotFound)?;
     if !sub.active {
         return Ok(());
     }

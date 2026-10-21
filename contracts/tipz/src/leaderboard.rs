@@ -61,8 +61,12 @@ fn find_insertion_index(entries: &Vec<LeaderboardEntry>, amount: i128) -> u32 {
     let mut high = entries.len();
     while low < high {
         let mid = low + (high - low) / 2;
-        if entries.get(mid).unwrap().amount >= amount {
-            low = mid + 1;
+        if let Some(entry) = entries.get(mid) {
+            if entry.amount >= amount {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
         } else {
             high = mid;
         }
@@ -93,9 +97,11 @@ fn update_entries(entries: &mut Vec<LeaderboardEntry>, profile: &Profile, amount
     // Step 1 — drop the creator's stale entry if they are already ranked.
     let mut i: u32 = 0;
     while i < entries.len() {
-        if entries.get(i).unwrap().address == profile.owner {
-            entries.remove(i);
-            break;
+        if let Some(entry) = entries.get(i) {
+            if entry.address == profile.owner {
+                entries.remove(i);
+                break;
+            }
         }
         i += 1;
     }
@@ -249,7 +255,9 @@ pub fn get_leaderboard(env: &Env, period: LeaderboardPeriod, limit: u32) -> Vec<
     let mut result = Vec::new(env);
     let mut i: u32 = 0;
     while i < limit && i < entries.len() {
-        result.push_back(entries.get(i).unwrap().clone());
+        if let Some(entry) = entries.get(i) {
+            result.push_back(entry.clone());
+        }
         i += 1;
     }
     result

@@ -333,16 +333,16 @@ pub fn set_initialized(env: &Env) {
 
 /// Returns the native XLM token contract address (SAC).
 ///
-/// # Panics
-/// Panics if the contract is not yet initialised.
-pub fn get_native_token(env: &Env) -> Address {
+/// # Errors
+/// Returns `ContractError::NotInitialized` if the contract is not yet initialised.
+pub fn get_native_token(env: &Env) -> Result<Address, ContractError> {
     if let Some(config) = get_runtime_config(env) {
-        return config.native_token;
+        return Ok(config.native_token);
     }
     env.storage()
         .instance()
         .get(&DataKey::NativeToken)
-        .expect("native_token not set")
+        .ok_or(ContractError::NotInitialized)
 }
 
 /// Sets the native XLM token contract address.
@@ -442,17 +442,17 @@ pub fn get_creator_min_tip_override(env: &Env, creator: &Address) -> Option<i128
 
 /// Returns the current admin address.
 ///
-/// # Panics
-/// Panics if the contract is not yet initialised.
+/// # Errors
+/// Returns `ContractError::NotInitialized` if the contract is not yet initialised.
 #[allow(dead_code)]
-pub fn get_admin(env: &Env) -> Address {
+pub fn get_admin(env: &Env) -> Result<Address, ContractError> {
     if let Some(config) = get_runtime_config(env) {
-        return config.admin;
+        return Ok(config.admin);
     }
     env.storage()
         .instance()
         .get(&DataKey::Admin)
-        .expect("admin not set")
+        .ok_or(ContractError::NotInitialized)
 }
 
 /// Overwrites the admin address.
@@ -590,17 +590,17 @@ pub fn set_fee_bps(env: &Env, fee_bps: u32) {
 
 /// Returns the address that receives collected fees.
 ///
-/// # Panics
-/// Panics if the contract is not yet initialised.
+/// # Errors
+/// Returns `ContractError::NotInitialized` if the contract is not yet initialised.
 #[allow(dead_code)]
-pub fn get_fee_collector(env: &Env) -> Address {
+pub fn get_fee_collector(env: &Env) -> Result<Address, ContractError> {
     if let Some(config) = get_runtime_config(env) {
-        return config.fee_collector;
+        return Ok(config.fee_collector);
     }
     env.storage()
         .instance()
         .get(&DataKey::FeeCollector)
-        .expect("fee_collector not set")
+        .ok_or(ContractError::NotInitialized)
 }
 
 /// Sets the fee collector address.
