@@ -26,6 +26,7 @@ import {
   validateDisplayName,
   validateXHandle,
 } from "@/helpers/validation";
+import { validateProfileForm, type FormErrors } from "./profileFormValidation";
 
 type TxStatus =
   | "idle"
@@ -35,57 +36,7 @@ type TxStatus =
   | "success"
   | "error";
 
-interface FormErrors {
-  displayName?: string;
-  bio?: string;
-  imageUrl?: string;
-  xHandle?: string;
-  githubHandle?: string;
-  websiteUrl?: string;
-  bannerUrl?: string;
-}
-
 const MAX_BANNER_BYTES = 5 * 1024 * 1024; // 5 MB
-
-function validate(data: ProfileFormData): FormErrors {
-  const errors: FormErrors = {};
-
-  const displayNameValidation = validateDisplayName(data.displayName);
-  if (!displayNameValidation.valid) {
-    errors.displayName = displayNameValidation.error;
-  }
-
-  const bioValidation = validateBio(data.bio);
-  if (!bioValidation.valid) {
-    errors.bio = bioValidation.error;
-  }
-
-  if (data.xHandle.trim()) {
-    const xHandleValidation = validateXHandle(data.xHandle);
-    if (!xHandleValidation.valid) {
-      errors.xHandle = xHandleValidation.error;
-    }
-  }
-
-  if (data.imageUrl && !isValidUrl(data.imageUrl)) {
-    errors.imageUrl = "Please enter a valid URL.";
-  }
-
-  if (data.websiteUrl && !isValidUrl(data.websiteUrl)) {
-    errors.websiteUrl = "Please enter a valid URL (include https://).";
-  }
-
-  return errors;
-}
-
-function isValidUrl(url: string): boolean {
-  try {
-    new URL(url);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // ── Conflict dialog ───────────────────────────────────────────────────────────
 
@@ -220,7 +171,9 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
   const [showBioPreview, setShowBioPreview] = useState(false);
   const [showProfilePreview, setShowProfilePreview] = useState(false);
   // Error summary — populated on submit failure, cleared on success.
-  const [errorSummaryItems, setErrorSummaryItems] = useState<ErrorSummaryItem[]>([]);
+  const [errorSummaryItems, setErrorSummaryItems] = useState<
+    ErrorSummaryItem[]
+  >([]);
 
   const { addToast } = useToastStore();
   const navigate = useNavigate();
@@ -378,18 +331,38 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
       websiteUrl: form.websiteUrl?.trim(),
     };
 
-    const validationErrors = validate(trimmedForm);
+    const validationErrors = validateProfileForm(trimmedForm);
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
 
       // Build ordered error summary (matches DOM field order).
-      const fieldOrder: Array<{ key: keyof FormErrors; label: string; fieldId: string }> = [
+      const fieldOrder: Array<{
+        key: keyof FormErrors;
+        label: string;
+        fieldId: string;
+      }> = [
         { key: "displayName", label: "Display Name", fieldId: "display-name" },
-        { key: "bio",         label: "Bio",          fieldId: "bio" },
-        { key: "xHandle",     label: "X Handle",     fieldId: "x-(twitter)-handle-(optional)" },
-        { key: "githubHandle",label: "GitHub Handle",fieldId: "github-handle-(optional)" },
-        { key: "websiteUrl",  label: "Website URL",  fieldId: "website-url-(optional)" },
-        { key: "imageUrl",    label: "Profile Image URL", fieldId: "profile-image-url-(optional)" },
+        { key: "bio", label: "Bio", fieldId: "bio" },
+        {
+          key: "xHandle",
+          label: "X Handle",
+          fieldId: "x-(twitter)-handle-(optional)",
+        },
+        {
+          key: "githubHandle",
+          label: "GitHub Handle",
+          fieldId: "github-handle-(optional)",
+        },
+        {
+          key: "websiteUrl",
+          label: "Website URL",
+          fieldId: "website-url-(optional)",
+        },
+        {
+          key: "imageUrl",
+          label: "Profile Image URL",
+          fieldId: "profile-image-url-(optional)",
+        },
       ];
       const summary = fieldOrder
         .filter(({ key }) => validationErrors[key as keyof FormErrors])
@@ -483,8 +456,7 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
 
   // ── Derived state ─────────────────────────────────────────────────────────
 
-  const isPending =
-    updateStatus === "pending" || updateStatus === "confirming";
+  const isPending = updateStatus === "pending" || updateStatus === "confirming";
   const isInFlight =
     isPending || ["signing", "submitting", "confirming"].includes(txStatus);
 
@@ -515,9 +487,7 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
 
         {/* Optimistic/confirming pending banner */}
         {isPending && (
-          <PendingBanner
-            status={updateStatus as "pending" | "confirming"}
-          />
+          <PendingBanner status={updateStatus as "pending" | "confirming"} />
         )}
 
         {/* Rollback error banner (distinct from tx widget) */}
@@ -536,8 +506,7 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
               <p className="font-bold text-red-700">Update failed</p>
               <p className="text-red-600">{updateError}</p>
               <p className="text-xs text-red-500">
-                Your edits have been preserved — review and resubmit when
-                ready.
+                Your edits have been preserved — review and resubmit when ready.
               </p>
             </div>
             <button
@@ -638,9 +607,7 @@ const EditProfileForm: React.FC<EditProfileFormProps> = ({
                 key={key}
                 type="button"
                 disabled={isInFlight}
-                onClick={() =>
-                  setForm((prev) => ({ ...prev, themeKey: key }))
-                }
+                onClick={() => setForm((prev) => ({ ...prev, themeKey: key }))}
                 className={`px-3 py-1.5 text-xs font-black uppercase border-2 border-black transition-colors ${
                   form.themeKey === key
                     ? "bg-black text-white"
