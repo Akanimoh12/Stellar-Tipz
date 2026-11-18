@@ -11,7 +11,6 @@ import ErrorState from "@/components/shared/ErrorState";
 import { categorizeError } from "@/helpers/error";
 import { env } from "@/helpers/env";
 import { logger } from "../../services/logger";
-import { mockLeaderboard } from "@/features/mockData";
 import { useI18n } from "@/i18n";
 
 export default function TopCreatorsSection() {
@@ -27,18 +26,6 @@ export default function TopCreatorsSection() {
   const fetchCreators = useCallback(async () => {
     setLoading(true);
     setError(null);
-
-    if (env.useMockData) {
-      if (import.meta.env.PROD) {
-        logger.error(
-          'features/landing/TopCreatorsSection',
-          'VITE_USE_MOCK_DATA enabled in production build — real leaderboard will not be displayed',
-        );
-      }
-      setCreators(mockLeaderboard.slice(0, 5));
-      setLoading(false);
-      return;
-    }
 
     if (!env.contractId) {
       setCreators([]);
@@ -69,7 +56,6 @@ export default function TopCreatorsSection() {
   const handleRetry = useCallback(() => {
     if (
       !env.contractId &&
-      !env.useMockData &&
       import.meta.env.MODE !== "test"
     ) {
       setCreators([]);

@@ -294,8 +294,8 @@ describe('useTrendingCreators', () => {
     }
   });
 
-  it('should use mock data when enabled', async () => {
-    mockEnv.useMockData = true;
+  it('should not call the contract when no contract is configured', async () => {
+    mockEnv.contractId = '';
 
     const mockGetLeaderboard = vi.fn();
     const mockGetRecentTips = vi.fn();

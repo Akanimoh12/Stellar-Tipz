@@ -284,11 +284,11 @@ describe('useTips', () => {
     });
   });
 
-  it('should use mock data when enabled', async () => {
+  it('should always fetch from the contract, even when the mock-data flag is set', async () => {
     mockEnv.useMockData = true;
 
-    const mockGetRecentTips = vi.fn();
-    const mockGetCreatorTipCount = vi.fn();
+    const mockGetRecentTips = vi.fn().mockResolvedValue([]);
+    const mockGetCreatorTipCount = vi.fn().mockResolvedValue(0);
 
     mockUseContract.mockReturnValue({
       getRecentTips: mockGetRecentTips,
@@ -303,8 +303,8 @@ describe('useTips', () => {
       expect(result.current.loading).toBe(false);
     });
 
-    expect(mockGetRecentTips).not.toHaveBeenCalled();
-    expect(result.current.tips.length).toBeGreaterThanOrEqual(0);
+    expect(mockGetRecentTips).toHaveBeenCalledWith('creator_address', 10, 0);
+    expect(result.current.tips).toEqual([]);
   });
 
   it('should not fetch without address', () => {

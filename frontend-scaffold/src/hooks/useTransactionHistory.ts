@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useContract } from "./useContract";
 import { Tip } from "../types/contract";
-import { env } from "../helpers/env";
-import { mockTips } from "../features/mockData";
 import { logger } from "../services/logger";
 
 export type TransactionType = "sent" | "received" | "withdrawal";
@@ -44,8 +42,8 @@ const PAGE_SIZE = 20;
 
 /**
  * Converts a Tip (received) to a Transaction.
- * Direction is determined by comparing the connected wallet address
- * against the tip's creator field — not guessed from mock data.
+ * Direction is determined by which contract API returned the tip
+ * (getRecentTips → received).
  */
 function tipToReceived(tip: Tip): Transaction {
   return {
@@ -60,8 +58,8 @@ function tipToReceived(tip: Tip): Transaction {
 
 /**
  * Converts a Tip (sent) to a Transaction.
- * Direction is determined by comparing the connected wallet address
- * against the tip's tipper field — not guessed from mock data.
+ * Direction is determined by which contract API returned the tip
+ * (getTipsByTipper → sent).
  */
 function tipToSent(tip: Tip): Transaction {
   return {
@@ -75,44 +73,14 @@ function tipToSent(tip: Tip): Transaction {
 }
 
 /**
- * Builds mock withdrawal transactions from a set of tips.
- * Only used when VITE_USE_MOCK_DATA=true — never in live mode.
- */
-function buildMockWithdrawals(tips: Tip[], feeBps: number): Transaction[] {
-  return tips.slice(0, 3).map((tip, i) => {
-    const gross = BigInt(tip.amount) * BigInt(i + 2);
-    const fee = (gross * BigInt(feeBps)) / BigInt(10_000);
-    const net = gross - fee;
-    return {
-      id: `withdrawal-${tip.id}-${i}`,
-      type: "withdrawal" as TransactionType,
-      amount: gross.toString(),
-      counterparty: "",
-      date: tip.timestamp - (i + 1) * 12 * 60 * 60,
-      message: "",
-      fee: fee.toString(),
-      net: net.toString(),
-    };
-  });
-}
-
-/**
  * Hook that fetches and manages the full transaction history for the connected wallet.
  *
- * In live mode (VITE_USE_MOCK_DATA unset or false):
  *   - Received tips are fetched via getRecentTips(publicKey, ...) — tips where
  *     the connected wallet is the creator.
  *   - Sent tips are fetched via getTipsByTipper(publicKey, ...) — tips where
  *     the connected wallet is the tipper.
  *   - Direction is determined by which API returned the tip, not guessed.
  *   - Withdrawals are omitted (not yet exposed by the contract API).
- *
- * In mock mode (VITE_USE_MOCK_DATA=true):
- *   - Only tips that exactly match publicKey as creator or tipper are shown.
- *   - The previous fallback that showed ALL mock tips as "received" when no
- *     exact match existed has been removed — it caused sent tips to appear
- *     as received, a serious correctness bug (issue #1302).
- *   - Mock withdrawals are still generated for demo purposes.
  *
  * Pagination is cursor-based via offset: loadMore() fetches the next page of
  * received and/or sent tips depending on the active tab.
@@ -121,7 +89,6 @@ export function useTransactionHistory(
   publicKey: string | null,
   tab: TabFilter,
   dateRange: DateRange,
-  feeBps = 200,
 ): TransactionHistoryData {
   const {
     getRecentTips,
@@ -144,22 +111,6 @@ export function useTransactionHistory(
   // ── Initial load ──────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
     if (!publicKey || isFetchingRef.current) return;
-
-    if (env.useMockData) {
-      // In mock mode, only show tips that exactly match this wallet address.
-      // Never fall back to showing all mock tips as "received" — that produces
-      // incorrect direction data (issue #1302).
-      const received = mockTips.filter((t) => t.creator === publicKey);
-      const sent = mockTips.filter((t) => t.tipper === publicKey);
-      setReceivedTips(received);
-      setSentTips(sent);
-      setReceivedTotal(received.length);
-      setSentTotal(sent.length);
-      setReceivedOffset(received.length);
-      setSentOffset(sent.length);
-      setLoading(false);
-      return;
-    }
 
     isFetchingRef.current = true;
     setLoading(true);
@@ -222,7 +173,7 @@ export function useTransactionHistory(
 
   // ── Load more (cursor-based pagination) ───────────────────────────────────
   const loadMore = useCallback(async () => {
-    if (!publicKey || isFetchingRef.current || env.useMockData) return;
+    if (!publicKey || isFetchingRef.current) return;
 
     isFetchingRef.current = true;
     try {
@@ -267,12 +218,9 @@ export function useTransactionHistory(
 
   // ── Derived data ──────────────────────────────────────────────────────────
 
-  // Withdrawals are only available in mock mode — the contract API does not
-  // yet expose a withdrawal history endpoint. In live mode the list is empty.
-  const withdrawals = useMemo<Transaction[]>(
-    () => (env.useMockData ? buildMockWithdrawals(receivedTips, feeBps) : []),
-    [receivedTips, feeBps],
-  );
+  // The contract API does not yet expose a withdrawal history endpoint, so
+  // the withdrawals list is always empty for now.
+  const withdrawals = useMemo<Transaction[]>(() => [], []);
 
   const allTransactions = useMemo<Transaction[]>(() => {
     const list: Transaction[] = [
