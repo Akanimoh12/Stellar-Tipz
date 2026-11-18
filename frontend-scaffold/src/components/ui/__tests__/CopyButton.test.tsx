@@ -2,19 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import CopyButton from '../CopyButton';
 
-const mockAddToast = vi.fn();
+const mockLoggerError = vi.fn();
 
-// Mock the toast store
-vi.mock('@/store/toastStore', () => ({
-  useToastStore: () => ({
-    addToast: mockAddToast,
-  }),
+vi.mock('../../../services/logger', () => ({
+  logger: {
+    error: (...args: unknown[]) => mockLoggerError(...args),
+  },
 }));
 
 describe('CopyButton', () => {
   beforeEach(() => {
     vi.useRealTimers();
-    mockAddToast.mockClear();
+    mockLoggerError.mockClear();
     // Mock clipboard API
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -33,46 +32,46 @@ describe('CopyButton', () => {
   it('copies wallet address to clipboard', async () => {
     render(<CopyButton text="GABCD..." />);
     const button = screen.getByLabelText(/copy/i);
-    
+
     await act(async () => {
       fireEvent.click(button);
       await Promise.resolve();
     });
-    
+
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('GABCD...');
   });
 
-  it('shows checkmark icon after copy', async () => {
+  it('shows checkmark state after copy', async () => {
     render(<CopyButton text="GABCD..." />);
     const button = screen.getByLabelText(/copy/i);
-    
-    await fireEvent.click(button);
-    
+
+    fireEvent.click(button);
+
     // After click, the button should have aria-label "Copied"
     await waitFor(() => {
       expect(screen.getByLabelText(/copied/i)).toBeInTheDocument();
     });
   });
 
-  it('reverts to copy icon after 2 seconds', async () => {
+  it('reverts to copy state after 2 seconds', async () => {
     vi.useFakeTimers();
     render(<CopyButton text="GABCD..." />);
     const button = screen.getByLabelText(/copy/i);
-    
+
     await act(async () => {
       fireEvent.click(button);
       await Promise.resolve();
     });
     expect(screen.getByLabelText(/copied/i)).toBeInTheDocument();
-    
+
     // Fast-forward 2 seconds
     act(() => {
       vi.advanceTimersByTime(2000);
     });
-    
+
     // Should revert to copy label
     expect(screen.getByLabelText(/copy/i)).toBeInTheDocument();
-    
+
     vi.useRealTimers();
   });
 
@@ -82,24 +81,26 @@ describe('CopyButton', () => {
       configurable: true,
       value: undefined,
     });
-    
+
     const mockExecCommand = vi.fn().mockReturnValue(true);
     document.execCommand = mockExecCommand;
-    
+
     render(<CopyButton text="GABCD..." />);
     const button = screen.getByLabelText(/copy/i);
-    
+
     await act(async () => {
       fireEvent.click(button);
       await Promise.resolve();
     });
-    
+
     expect(mockExecCommand).toHaveBeenCalledWith('copy');
+    await waitFor(() => {
+      expect(screen.getByLabelText(/copied/i)).toBeInTheDocument();
+    });
   });
 
-  it('shows error toast when copy fails', async () => {
+  it('logs an error and stays in copy state when copy fails', async () => {
     const writeText = vi.fn().mockRejectedValue(new Error('Copy failed'));
-    // Mock clipboard failure
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: {
@@ -109,18 +110,33 @@ describe('CopyButton', () => {
 
     render(<CopyButton text="GABCD..." />);
     const button = screen.getByLabelText(/copy/i);
-    
-    await fireEvent.click(button);
-    
+
+    fireEvent.click(button);
+
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith('GABCD...');
+      expect(mockLoggerError).toHaveBeenCalled();
     });
+    expect(screen.queryByLabelText(/copied/i)).not.toBeInTheDocument();
+  });
+
+  it('renders a visible label and swaps it after copy', async () => {
+    render(<CopyButton text="tx-hash" label="Copy TX Hash" />);
+    const button = screen.getByRole('button', { name: /copy tx hash/i });
+
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(screen.getByText('Copied!')).toBeInTheDocument();
+    });
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('tx-hash');
   });
 
   it('renders with custom size', () => {
     render(<CopyButton text="GABCD..." size="lg" />);
     const button = screen.getByLabelText(/copy/i);
     expect(button).toBeInTheDocument();
+    expect(button.querySelector('svg')).toHaveAttribute('width', '24');
   });
 
   it('renders with custom className', () => {
