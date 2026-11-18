@@ -1,4 +1,4 @@
-import type { LeaderboardEntry, Profile, Tip } from "../types";
+import type { LeaderboardEntry, Profile, Tip } from "../../types";
 
 export const mockProfile: Profile = {
   owner: "GBZXN7PIRZGNMHGA6M44Q5X5V5JH7OD7TLFAGL5EXAMPLEA",

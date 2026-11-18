@@ -3,7 +3,6 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useWallet } from "./";
 import { LeaderboardEntry } from "../types/contract";
 import { env } from "../helpers/env";
-import { mockLeaderboard } from "../features/mockData";
 import { getNetworkDetails, NetworkDetails } from "../helpers/network";
 import { useWalletStore } from "../store/walletStore";
 import {
@@ -64,14 +63,6 @@ export const useLeaderboard = (): LeaderboardData => {
         return;
       }
 
-      if (env.useMockData) {
-        fullBatchRef.current = mockLeaderboard;
-        setEntries(mockLeaderboard);
-        setLoading(false);
-        setError(null);
-        return;
-      }
-
       if (!env.contractId) {
         setEntries([]);
         setLoading(false);
@@ -115,10 +106,6 @@ export const useLeaderboard = (): LeaderboardData => {
   }, [fetchLeaderboard]);
 
   useEffect(() => {
-    if (env.useMockData) {
-      return;
-    }
-
     const intervalId = setInterval(() => {
       void fetchLeaderboard({ background: true, reset: false });
     }, LEADERBOARD_CACHE_TTL_MS);

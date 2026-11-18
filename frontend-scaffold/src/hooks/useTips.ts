@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useContract } from './useContract';
 import { Tip } from '../types/contract';
-import { env } from '../helpers/env';
-import { mockTips } from '../features/mockData';
 
 export interface TipsData {
   tips: Tip[];
@@ -30,21 +28,6 @@ export const useTips = (address: string, role: 'creator' | 'tipper' = 'creator',
 
   const fetchTips = useCallback(async (isLoadMore = false) => {
     if (!address || isFetchingRef.current) return;
-
-    // Mock fallback
-    if (env.useMockData) {
-      const filteredMocks = mockTips.filter(t => 
-        role === 'creator' ? t.creator === address : t.tipper === address
-      );
-      const currentOffset = isLoadMore ? offsetRef.current : 0;
-      const nextOffset = currentOffset + limit;
-
-      setTips(filteredMocks.slice(0, nextOffset));
-      setTotalCount(filteredMocks.length);
-      offsetRef.current = nextOffset;
-      setLoading(false);
-      return;
-    }
 
     isFetchingRef.current = true;
     if (!isLoadMore) setLoading(true);

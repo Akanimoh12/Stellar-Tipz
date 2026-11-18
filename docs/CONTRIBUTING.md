@@ -472,8 +472,9 @@ through the app's own localStorage keys and media emulation), language,
 viewport and device scale factor, and the network (only the app origin and Google Fonts are reachable;
 every `/api/v1` call answers a fixed 503 so components render their error and
 empty states; RPC, Horizon, analytics and Sentry are blocked). The app is built
-with `--mode visual`, which enables `VITE_USE_MOCK_DATA` so pages that read the
-chain render fixtures. Screenshots wait for the web fonts and fail with a clear
+with `--mode visual`. App code never imports mock fixtures: they live in
+`frontend-scaffold/src/test/fixtures` and are used by unit tests only, so pages
+that read the chain render their empty or error states. Screenshots wait for the web fonts and fail with a clear
 message if they are not loaded, and inherently dynamic elements
 (`DYNAMIC_SELECTOR`) are masked.
 

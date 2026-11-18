@@ -8,14 +8,9 @@ import { useContract } from "../useContract";
 vi.mock("../useContract");
 const mockUseContract = vi.mocked(useContract);
 
-// Stub env so tests control useMockData without importing Vite globals.
+// Stub env so tests do not depend on Vite globals.
 vi.mock("../../helpers/env", () => ({
   env: { useMockData: false },
-}));
-
-// Stub mockData — we only test the real API path in this suite.
-vi.mock("../../features/mockData", () => ({
-  mockTips: [],
 }));
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────

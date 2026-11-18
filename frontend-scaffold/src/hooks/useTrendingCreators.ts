@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useContract } from "./useContract";
 import { LeaderboardEntry, Tip } from "../types/contract";
 import { env } from "../helpers/env";
-import { mockLeaderboard, mockTips } from "../features/mockData";
 import { logger } from '../services/logger';
 
 const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
@@ -68,15 +67,9 @@ export function useTrendingCreators(limit = 10) {
     setError(null);
 
     try {
-      // Mock data fallback
-      if (env.useMockData || !env.contractId) {
-        const mockTrending: TrendingCreator[] = mockLeaderboard
-          .slice(0, limit)
-          .map((entry) => ({
-            ...entry,
-            weeklyTips: entry.totalTipsReceived, // Use total as weekly for demo
-          }));
-        setCreators(mockTrending);
+      // No contract configured: there is no leaderboard to rank.
+      if (!env.contractId) {
+        setCreators([]);
         setIsFallback(false);
         setLoading(false);
         isFetchingRef.current = false;
