@@ -134,7 +134,7 @@ export const backendPolicy = {
     { pattern: 'src/server.ts', reason: 'Process entrypoint; exercised by integration tests, not unit tests.' },
     { pattern: 'prisma/seed.ts', reason: 'One-off seeding script, not shipped code.' },
     { pattern: 'src/types/**', reason: 'Type-only declarations emit no runtime code.' },
-    { pattern: 'src/docs/**', reason: 'Static OpenAPI document.' },
+    { pattern: 'docs/**', reason: 'Static OpenAPI document.' },
   ],
 };
 

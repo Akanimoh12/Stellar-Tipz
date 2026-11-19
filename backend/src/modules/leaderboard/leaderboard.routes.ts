@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import * as leaderboardController from './leaderboard.controller.js';
 import { env } from '../../config/env.js';
-import { mergeOpenApiPaths } from '../../docs/openapi.js';
+import { mergeOpenApiPaths } from '../../../docs/openapi.js';
 import { deprecatedOffsetPagination } from '../../common/middleware/deprecatedOffsetPagination.js';
 
 export const leaderboardRouter = Router();

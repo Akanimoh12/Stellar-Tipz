@@ -2,7 +2,7 @@ import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { createApp } from '../../app.js';
-import { openApiDocument } from '../../docs/openapi.js';
+import { openApiDocument } from '../../../docs/openapi.js';
 import { createCursorScope, decodeCursor } from '../../common/pagination/cursor.js';
 
 const {

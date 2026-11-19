@@ -1,4 +1,4 @@
-import { mergeOpenApiPaths } from '../../docs/openapi.js';
+import { mergeOpenApiPaths } from '../../../docs/openapi.js';
 import { env } from '../../config/env.js';
 
 const base = `${env.API_BASE_PATH}/subscriptions`;

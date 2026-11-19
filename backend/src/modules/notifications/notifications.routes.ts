@@ -3,7 +3,7 @@ import { Router } from 'express';
 import * as notificationsController from './notifications.controller.js';
 import { requireAuth } from '../auth/auth.middleware.js';
 import { env } from '../../config/env.js';
-import { mergeOpenApiPaths } from '../../docs/openapi.js';
+import { mergeOpenApiPaths } from '../../../docs/openapi.js';
 import { deprecatedOffsetPagination } from '../../common/middleware/deprecatedOffsetPagination.js';
 
 export const notificationsRouter = Router();

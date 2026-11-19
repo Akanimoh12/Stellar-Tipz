@@ -13,8 +13,8 @@ import { Router } from 'express';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import { openApiDocument } from '../docs/openapi.js';
-import { createV1Router } from '../api/v1.routes.js';
-import { env } from '../config/env.js';
+import { createV1Router } from '../src/api/v1.routes.js';
+import { env } from '../src/config/env.js';
 
 type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete' | 'options' | 'head';
 
