@@ -22,6 +22,7 @@ import {
   type LeaderboardUpdatedPayload,
   type NotificationCreatedPayload,
 } from './types.js';
+import { configureBackpressure } from './backpressure.js';
 import {
   connectionRateLimit,
   userConnectionRateLimit,
@@ -62,6 +63,9 @@ export function initRealtime(httpServer: HttpServer): TypedServer {
     pingTimeout: config.realtime?.pingTimeoutMs ?? 20_000,
     maxHttpBufferSize: 1e6, // 1 MB
   });
+
+  // Configure backpressure handling and buffer monitoring
+  configureBackpressure(io as any);
 
   // Connection rate limiting (per IP)
   io.use(connectionRateLimit);

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { prisma } from '@/db/prisma.js';
 import { logJobExecution, logApiCall, createAuditLog } from './audit.service.js';
-import { initializeQueues, closeAllQueues, getQueue } from './queue.factory.js';
+import { initializeQueues, closeAllQueues, getQueue } from '@/jobs/queueFactory.js';
 import { getQueueHealthStatus, captureQueueMetrics } from './monitoring.service.js';
 
 describe('Jobs Module', () => {
