@@ -6,14 +6,8 @@ import Button from "@/components/ui/Button";
 import TransactionStatus from "@/components/shared/TransactionStatus";
 import DraftRestoreBanner from "@/components/shared/DraftRestoreBanner";
 import TransactionRestoredNotice from "@/components/shared/TransactionRestoredNotice";
-import ErrorSummary, { ErrorSummaryItem } from "@/components/shared/ErrorSummary";
-import {
-  MAX_BIO_LENGTH,
-  validateBio,
-  validateDisplayName,
-  validateUsername,
-  validateXHandle,
-} from "@/helpers/validation";
+import ErrorSummary from "@/components/shared/ErrorSummary";
+import { MAX_BIO_LENGTH, validateBio, validateXHandle } from "@/helpers/validation";
 import { useContract, useUsernameCheck, useTransactionGuard } from "@/hooks";
 import { useToastStore } from "@/store/toastStore";
 import { ProfileFormData } from "@/types/profile";
@@ -22,6 +16,13 @@ import { useFormAutosave } from "@/hooks/useFormAutosave";
 import { useOnboardingProgress } from "@/hooks/useOnboardingProgress";
 import { useWallet } from "@/hooks/useWallet";
 import { analytics } from "@/services/analytics";
+import {
+  validateRegistrationForm,
+  buildErrorSummary,
+  type FormErrors,
+} from "./registerFormValidation";
+import { WalletRecoveryBanner } from "./WalletRecoveryBanner";
+import { UsernameField } from "./UsernameField";
 
 type TxStatus =
   | "idle"
@@ -30,50 +31,6 @@ type TxStatus =
   | "confirming"
   | "success"
   | "error";
-
-interface FormErrors {
-  username?: string;
-  displayName?: string;
-  bio?: string;
-  imageUrl?: string;
-  xHandle?: string;
-}
-
-function validate(
-  data: ProfileFormData,
-  available: boolean | null,
-  checking: boolean,
-): FormErrors {
-  const errors: FormErrors = {};
-
-  const usernameValidation = validateUsername(data.username);
-  if (!usernameValidation.valid) {
-    errors.username = usernameValidation.error;
-  } else if (!checking && available === false) {
-    errors.username = "Username is already taken";
-  } else if (checking) {
-    errors.username = "Please wait for username availability check";
-  }
-
-  const displayNameValidation = validateDisplayName(data.displayName);
-  if (!displayNameValidation.valid) {
-    errors.displayName = displayNameValidation.error;
-  }
-
-  const bioValidation = validateBio(data.bio);
-  if (!bioValidation.valid) {
-    errors.bio = bioValidation.error;
-  }
-
-  if (data.xHandle.trim()) {
-    const xHandleValidation = validateXHandle(data.xHandle);
-    if (!xHandleValidation.valid) {
-      errors.xHandle = xHandleValidation.error;
-    }
-  }
-
-  return errors;
-}
 
 interface RegisterFormProps {
   initialImageUrl?: string;
@@ -231,7 +188,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
         xHandle: form.xHandle.trim(),
       };
 
-      const validationErrors = validate(trimmedForm, available, checking);
+      const validationErrors = validateRegistrationForm(trimmedForm, available, checking);
       if (Object.keys(validationErrors).length > 0) {
         analytics.trackEvent("onboarding_step_failed", {
           step: "register",
@@ -239,21 +196,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
         });
         setErrors(validationErrors);
 
-        // Build the ordered error summary (field order matches DOM order).
-        const fieldOrder: Array<{ key: keyof FormErrors; label: string; fieldId: string }> = [
-          { key: "username",    label: "Username",     fieldId: "username" },
-          { key: "displayName", label: "Display Name", fieldId: "display-name" },
-          { key: "bio",         label: "Bio",          fieldId: "bio" },
-          { key: "xHandle",     label: "X Handle",     fieldId: "x-(twitter)-handle-(optional)" },
-          { key: "imageUrl",    label: "Profile Image URL", fieldId: "profile-image-url-(optional)" },
-        ];
-        const summary: ErrorSummaryItem[] = fieldOrder
-          .filter(({ key }) => validationErrors[key])
-          .map(({ key, label, fieldId }) => ({
-            fieldId,
-            label,
-            message: validationErrors[key]!,
-          }));
+        const summary = buildErrorSummary(validationErrors);
         setErrorSummaryItems(summary);
 
         // Focus the first invalid field so keyboard/AT users land on the problem.
@@ -363,141 +306,25 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ initialImageUrl }) => {
 
       {/* Wallet-connection recovery: registration cannot be signed without one (#1345) */}
       {(walletPrompt || (!connected && walletError)) && (
-        <div
-          role="alert"
-          data-testid="wallet-recovery"
-          className="rounded-md border-2 border-amber-500 bg-amber-50 p-4"
-        >
-          <p className="text-sm font-bold text-gray-900">
-            Your profile is ready, but a wallet is needed to finish registering.
-          </p>
-          <p className="mt-1 text-sm text-gray-800">
-            {walletError
-              ? `We couldn't reach your wallet: ${walletError}.`
-              : "Registration is confirmed on the Stellar network, so a connected wallet has to approve the transaction."}{" "}
-            Your details are saved — reconnect the same wallet and press
-            Register again, and nothing has to be retyped.
-          </p>
-          <Button
-            type="button"
-            variant="primary"
-            size="md"
-            className="mt-3 w-full sm:w-auto"
-            disabled={connecting}
-            onClick={() => {
-              analytics.trackEvent("onboarding_wallet_reconnect_attempted", {
-                step: "wallet",
-              });
-              void connect().catch(() => {
-                analytics.trackEvent("onboarding_wallet_reconnect_failed", {
-                  step: "wallet",
-                });
-              });
-            }}
-          >
-            {connecting ? "Reconnecting…" : "Reconnect wallet"}
-          </Button>
-        </div>
+        <WalletRecoveryBanner
+          walletError={walletError}
+          connecting={connecting}
+          onConnect={connect}
+        />
       )}
 
       {/* Username */}
-      <div>
-        <div className="relative">
-          <Input
-            label="Username"
-            placeholder="your_handle"
-            value={form.username}
-            onChange={handleChange("username")}
-            error={errors.username}
-            disabled={isSubmitting}
-            maxLength={32}
-            required
-          />
-          {/* Availability indicator */}
-          {form.username && !errors.username && (
-            <div className="absolute right-3 top-9 flex items-center">
-              {checking && (
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-blue-600"></div>
-              )}
-              {!checking && available === true && (
-                <div
-                  className="text-green-500"
-                  data-testid="username-available"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </div>
-              )}
-              {!checking && available === false && (
-                <div className="text-red-500" data-testid="username-taken">
-                  <svg
-                    className="w-5 h-5"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        <p className="mt-1 text-xs text-gray-800 dark:text-gray-200">
-          Your profile will be at{" "}
-          {import.meta.env.VITE_APP_URL || window.location.origin}/@
-          {form.username || "username"}
-        </p>
-        {/* Availability status */}
-        {form.username && !errors.username && (
-          <div className="mt-1">
-            {checking && (
-              <p className="text-xs text-gray-800 dark:text-gray-200">
-                Checking availability...
-              </p>
-            )}
-            {!checking && available === true && (
-              <p className="text-xs text-green-600">Username is available!</p>
-            )}
-            {!checking && available === false && (
-              <p className="text-xs text-red-600">
-                Username is taken. Try:{" "}
-                {[
-                  `${form.username}1`,
-                  `${form.username}_`,
-                  `${form.username}x`,
-                ].map((s, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    className="underline ml-1"
-                    onClick={() =>
-                      setForm((prev: typeof form) => ({ ...prev, username: s }))
-                    }
-                  >
-                    {s}
-                  </button>
-                ))}
-              </p>
-            )}
-            {availabilityError && (
-              <p className="text-xs text-yellow-600">{availabilityError}</p>
-            )}
-          </div>
-        )}
-      </div>
+      <UsernameField
+        value={form.username}
+        error={errors.username}
+        disabled={isSubmitting}
+        checking={checking}
+        available={available}
+        availabilityError={availabilityError}
+        onChange={handleChange("username")}
+        onBlur={handleBlur("username")}
+        onSelectSuggestion={(s) => setForm((prev) => ({ ...prev, username: s }))}
+      />
 
       {/* Display Name */}
       <Input
