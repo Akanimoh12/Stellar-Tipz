@@ -3,8 +3,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { stroopToXlm } from "@/helpers/format";
 import { useContract } from "@/hooks/useContract";
 import type { Tip } from "@/types/contract";
+import {
+  subscribeToOperations,
+  isSSESupported,
+  type ConnectionState,
+} from "../services/eventStream";
 import { logger } from '../services/logger';
 
+const MODULE = "useTipNotifications";
 const POLL_INTERVAL_MS = 15_000;
 const SETTINGS_KEY = "tipz_notification_settings";
 const SEEN_KEY_PREFIX = "tipz_seen_tip_ids:";
@@ -77,6 +83,27 @@ export const useNotificationPreferences = () => {
   return { settings, updateSettings };
 };
 
+/**
+ * Tip notifications for a creator, delivered by a polling loop that is
+ * augmented with a Stellar Horizon SSE connection for near-real-time tips.
+ *
+ * This hook consolidates what used to be two separate hooks
+ * (`useTipNotifications` + `useRealTimeNotifications`):
+ *
+ * - A polling loop checks `getRecentTips` every {@link POLL_INTERVAL_MS} and
+ *   surfaces unseen tips via sound / desktop notifications.
+ * - When SSE is available a persistent event stream is opened for
+ *   `creatorAddress`; each incoming Horizon operation event triggers an
+ *   immediate tip check, and a catch-up poll runs on (re)connect, so new
+ *   tips are surfaced as soon as they land on-chain rather than waiting for
+ *   the next scheduled poll interval.
+ * - The stream reconnects with exponential backoff and jitter, reports its
+ *   state via `connectionState`, gives up after bounded retries (restartable
+ *   with `reconnect()`), and falls back transparently to polling alone when
+ *   SSE is unavailable in the current environment.
+ *
+ * @param creatorAddress - Stellar address of the creator to watch for tips.
+ */
 export const useTipNotifications = (creatorAddress?: string) => {
   const { getRecentTips } = useContract();
   const { settings, updateSettings } = useNotificationPreferences();
@@ -85,6 +112,17 @@ export const useTipNotifications = (creatorAddress?: string) => {
     Number(window.localStorage.getItem(UNSEEN_TIPS_KEY) || "0"),
   );
   const initializedRef = useRef(false);
+
+  // Near-real-time (SSE) state — merged from useRealTimeNotifications.
+  const [connectionState, setConnectionState] = useState<ConnectionState>(
+    'disconnected',
+  );
+  const [reconnectCount, setReconnectCount] = useState(0);
+  const streamRef = useRef<ReturnType<typeof subscribeToOperations> | null>(null);
+  // Latest poll run, assigned by the polling effect below and invoked by SSE
+  // events so a fresh on-chain tip is checked immediately instead of waiting
+  // for the next scheduled tick.
+  const pollRef = useRef<(() => void) | null>(null);
 
   const markSeen = useCallback(() => {
     setUnseenCount(0);
@@ -166,14 +204,76 @@ export const useTipNotifications = (creatorAddress?: string) => {
       }
     };
 
+    pollRef.current = () => void poll();
     void poll();
     const intervalId = window.setInterval(() => void poll(), POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
+      pollRef.current = null;
       window.clearInterval(intervalId);
     };
   }, [creatorAddress, getRecentTips, settings.desktop, settings.sound]);
+
+  // Horizon SSE stream: near-real-time tip delivery on top of polling.
+  useEffect(() => {
+    if (!creatorAddress) return;
+
+    if (!isSSESupported()) {
+      logger.warn(MODULE, 'SSE not supported; relying on poll fallback only', {
+        creatorAddress,
+      });
+      return;
+    }
+
+    setConnectionState('connecting');
+
+    const stream = subscribeToOperations(creatorAddress, {
+      onEvent: () => {
+        logger.debug(MODULE, 'SSE event received — refreshing tip check', {
+          creatorAddress,
+        });
+        setReconnectCount((n) => n + 1);
+        // Immediate tip check so new tips surface as soon as they land.
+        pollRef.current?.();
+      },
+      onConnected: () => {
+        setConnectionState('connected');
+        // Catch-up poll on (re)connect to fetch missed events.
+        pollRef.current?.();
+      },
+      onReconnect: () => {
+        setConnectionState('connecting');
+        logger.info(MODULE, 'SSE reconnecting', { creatorAddress });
+      },
+      onError: (e) => {
+        setConnectionState('disconnected');
+        logger.warn(MODULE, 'SSE error', { creatorAddress, event: String(e) });
+      },
+      onGiveUp: () => {
+        setConnectionState('gave-up');
+        logger.warn(MODULE, 'SSE gave up reconnecting', { creatorAddress });
+      },
+    });
+
+    queueMicrotask(() => {
+      if (streamRef.current === stream) {
+        setConnectionState('connected');
+      }
+    });
+    streamRef.current = stream;
+
+    return () => {
+      stream.close();
+      streamRef.current = null;
+      setConnectionState('disconnected');
+    };
+  }, [creatorAddress]);
+
+  const reconnect = useCallback(() => {
+    streamRef.current?.retry();
+    setConnectionState('connecting');
+  }, []);
 
   return {
     latestTip,
@@ -181,5 +281,15 @@ export const useTipNotifications = (creatorAddress?: string) => {
     settings,
     unseenCount,
     updateSettings,
+    /** Current connection state: connecting, connected, disconnected, or gave-up. */
+    connectionState,
+    /** Whether the SSE stream is currently open. */
+    isConnected: connectionState === 'connected',
+    /** How many SSE events have been received since mount. */
+    reconnectCount,
+    /** Whether SSE is supported in the current browser environment. */
+    isSSESupported: isSSESupported(),
+    /** Manually retry the connection after give-up. */
+    reconnect,
   };
 };

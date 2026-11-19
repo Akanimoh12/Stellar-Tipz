@@ -50,10 +50,6 @@ const LeaderboardPage = lazyRoute(
 const TipPage = lazyRoute(() => import("@/features/tipping/TipPage"), ["/@:username"]);
 const TipReceipt = lazyRoute(() => import("@/features/tipping/TipReceipt"), ["/receipt"]);
 const EmbedWidget = lazyRoute(() => import("@/features/tipping/EmbedWidget"));
-const EmbedGeneratorPage = lazyRoute(
-  () => import("@/features/embed/EmbedGeneratorPage"),
-  ["/embed/generate"],
-);
 const TransactionsPage = lazyRoute(
   () => import("@/features/transactions/TransactionsPage"),
   ["/transactions"],
@@ -93,13 +89,6 @@ export const routes: RouteObject[] = [
   {
     path: "/embed/@:username",
     element: wrap(<EmbedWidget />, <EmbedRouteSkeleton />),
-  },
-  {
-    path: "/embed/generate",
-    element: protect(
-      <EmbedGeneratorPage />,
-      <FormRouteSkeleton label="Loading embed generator" />,
-    ),
   },
   {
     path: "/receipt",
