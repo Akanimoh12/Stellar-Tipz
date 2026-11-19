@@ -14,7 +14,7 @@ vi.mock('../src/common/middleware/rateLimiter.js', () => {
 });
 
 import { createApp } from '../src/app.js';
-import { openApiDocument } from '../src/docs/openapi.js';
+import { openApiDocument } from '../docs/openapi.js';
 
 describe('API docs', () => {
   it('serves Swagger UI at /api/v1/docs', async () => {

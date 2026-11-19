@@ -5,7 +5,7 @@
  * `mergeOpenApiPaths` utility, aligning with the Express mount in app.ts.
  */
 
-import { mergeOpenApiPaths } from '../../docs/openapi.js';
+import { mergeOpenApiPaths } from '../../../docs/openapi.js';
 import { env } from '../../config/env.js';
 
 const basePath = `${env.API_BASE_PATH}/goals`;

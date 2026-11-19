@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import swaggerUi from 'swagger-ui-express';
-import { openApiDocument } from '../docs/openapi.js';
+import { openApiDocument } from '../../docs/openapi.js';
 import { adminRouter } from '../modules/admin/admin.routes.js';
 import { analyticsRouter } from '../modules/analytics/analytics.routes.js';
 import { apiKeysRouter } from '../modules/apiKeys/apiKeys.routes.js';

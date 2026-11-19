@@ -14,7 +14,7 @@ import { getSentryRequestHandler, getSentryErrorHandler } from './common/observa
 import { tracingMiddleware } from './common/observability/tracingMiddleware.js';
 import { logger } from './common/utils/logger.js';
 import { truncateStellarAddress, truncateEmail, truncateMessage } from './common/utils/logRedaction.js';
-import { openApiDocument } from './docs/openapi.js';
+import { openApiDocument } from '../docs/openapi.js';
 import { requestId } from './common/middleware/requestId.js';
 import { requestTimeoutAndSignal } from './common/middleware/requestTimeout.js';
 import { healthRouter } from './modules/health/health.routes.js';

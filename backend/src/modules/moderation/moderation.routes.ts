@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { env } from '../../config/env.js';
-import { mergeOpenApiPaths } from '../../docs/openapi.js';
+import { mergeOpenApiPaths } from '../../../docs/openapi.js';
 import { requireAuth } from '../auth/auth.middleware.js';
 import * as moderationController from './moderation.controller.js';
 

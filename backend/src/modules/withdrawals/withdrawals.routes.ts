@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../../common/middleware/requireAuth.js';
 import { env } from '../../config/env.js';
-import { mergeOpenApiPaths } from '../../docs/openapi.js';
+import { mergeOpenApiPaths } from '../../../docs/openapi.js';
 import * as withdrawalsController from './withdrawals.controller.js';
 import * as payoutsController from './payouts.controller.js';
 import { deprecatedOffsetPagination } from '../../common/middleware/deprecatedOffsetPagination.js';

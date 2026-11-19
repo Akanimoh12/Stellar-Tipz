@@ -2,7 +2,7 @@ import { Router } from 'express';
 import * as tipsController from './tips.controller.js';
 import { requireAuth } from '../../common/middleware/requireAuth.js';
 import { env } from '../../config/env.js';
-import { mergeOpenApiPaths } from '../../docs/openapi.js';
+import { mergeOpenApiPaths } from '../../../docs/openapi.js';
 import { deprecatedOffsetPagination } from '../../common/middleware/deprecatedOffsetPagination.js';
 
 export const tipsRouter = Router();
