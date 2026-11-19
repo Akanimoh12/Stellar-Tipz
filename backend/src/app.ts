@@ -143,7 +143,32 @@ export function createApp(): Express {
   app.use(mutationRateLimiter);
   app.use(requestId);
   app.use(requestTimeoutAndSignal);
-  app.use(express.json({ limit: '1mb' }));
+
+  // Per-route request body size limits (issue #1637)
+  // Routes with small expected payloads get tighter limits
+  const strictJsonLimiter = express.json({ limit: '32kb' });
+  const standardJsonLimiter = express.json({ limit: '256kb' });
+  const defaultJsonLimiter = express.json({ limit: '1mb' });
+
+  // Auth endpoints: very strict (challenge + signature are small)
+  app.use('/api/v1/auth', strictJsonLimiter);
+
+  // API keys and sensitive operations: strict
+  app.use('/api/v1/api-keys', strictJsonLimiter);
+
+  // Admin and moderation: moderate
+  app.use('/api/v1/admin', standardJsonLimiter);
+  app.use('/api/v1/moderation', standardJsonLimiter);
+
+  // Webhook operations: moderate (but not webhook callbacks which are raw)
+  app.use('/api/v1/webhooks', standardJsonLimiter);
+
+  // Privacy and email operations: moderate
+  app.use('/api/v1/privacy', standardJsonLimiter);
+  app.use('/api/v1/email', standardJsonLimiter);
+
+  // Global default: 1mb for remaining routes
+  app.use(defaultJsonLimiter);
 
   app.use(
     pinoHttp({
