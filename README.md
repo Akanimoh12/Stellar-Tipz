@@ -489,3 +489,5 @@ Built with ❤️ for the Scaffold Stellar Hackathon
 ## Troubleshooting
 
 For common errors and their solutions, see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+
+
