@@ -375,6 +375,37 @@ describe("Auth security hardening", () => {
         verifyChallenge(TEST_ADDRESS, "sig", challengeStr, TEST_NETWORK),
       ).rejects.toThrow("Challenge expired");
     });
+
+    it("rejects nonce replay after challenge expiry", async () => {
+      const challengeStr = "nonce_replay".repeat(5).slice(0, 64);
+      const originalExpiresAt = new Date(Date.now() - 300_000); // Expired 5 minutes ago
+
+      // First attempt: challenge exists but is now expired
+      mockAuthChallenge.findUnique.mockResolvedValueOnce({
+        id: "ch_expired_replay",
+        stellarAddress: TEST_ADDRESS,
+        challenge: challengeStr,
+        network: TEST_NETWORK,
+        expiresAt: originalExpiresAt,
+      });
+
+      await expect(
+        verifyChallenge(TEST_ADDRESS, "sig_replay_1", challengeStr, TEST_NETWORK),
+      ).rejects.toThrow("Challenge expired");
+
+      // Second attempt: even with a different signature, still rejected due to expiry
+      mockAuthChallenge.findUnique.mockResolvedValueOnce({
+        id: "ch_expired_replay",
+        stellarAddress: TEST_ADDRESS,
+        challenge: challengeStr,
+        network: TEST_NETWORK,
+        expiresAt: originalExpiresAt,
+      });
+
+      await expect(
+        verifyChallenge(TEST_ADDRESS, "sig_replay_2", challengeStr, TEST_NETWORK),
+      ).rejects.toThrow("Challenge expired");
+    });
   });
 
   // ── 8. Challenge address mismatch ──────────────────────────────────────────
