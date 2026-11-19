@@ -8,7 +8,6 @@ export * from "./usePageTitle";
 export * from "./usePageMeta";
 export * from "./useBalance";
 export * from "./useSearch";
-export * from "./useRealTimeNotifications";
 export * from "./useTransactionGuard";
 export * from "./useTheme";
 export * from "./useOfflineStatus";

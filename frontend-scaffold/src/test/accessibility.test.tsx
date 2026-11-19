@@ -247,8 +247,8 @@ describe("Accessibility", () => {
   });
 
   it("ProfilePage has no WCAG 2.1 AA axe violations", async () => {
-    const { default: ProfileSkeleton } = await import("../features/profile/ProfileSkeleton");
-    const { container } = renderPage(<ProfileSkeleton />);
+    const { default: ProfileViewSkeleton } = await import("../features/profile/ProfileViewSkeleton");
+    const { container } = renderPage(<ProfileViewSkeleton />);
     await expectAccessible("ProfilePage", container);
   });
 

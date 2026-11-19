@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Bell } from 'lucide-react';
 import { useNotificationStore } from '@/store/notificationStore';
-import { useRealTimeNotifications } from '@/hooks/useRealTimeNotifications';
+import { useTipNotifications } from '@/hooks/useTipNotifications';
 import { useWalletStore } from '@/store/walletStore';
 import ConnectionStatusIndicator from '@/components/shared/ConnectionStatusIndicator';
 import NotificationCenter from './NotificationCenter';
@@ -13,7 +13,7 @@ const NotificationBell: React.FC = () => {
     s.notifications.filter((n) => n.unread).length,
   );
   const { publicKey } = useWalletStore();
-  const { connectionState, reconnect } = useRealTimeNotifications(publicKey ?? undefined);
+  const { connectionState, reconnect } = useTipNotifications(publicKey ?? undefined);
 
   useEffect(() => {
     if (!open) return;
