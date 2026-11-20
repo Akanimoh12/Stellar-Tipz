@@ -15,10 +15,46 @@
 
 import { Configuration, ApiClient } from '@stellar-tipz/sdk';
 import * as Sentry from '@sentry/react';
-import { getValidAccessToken, refreshTokens } from './auth.js';
-import logger from '../logger.js';
+import { getValidAccessToken, refreshTokens } from '../auth/tokenManager';
+import { logger } from '../logger';
 
-// ────────────────────────────────────────────────────────────────────────────
+interface SdkApiError extends Error {
+  name: 'ApiError';
+  status: number;
+}
+
+interface SdkRequestContext {
+  url: string;
+  method: string;
+}
+
+export class SdkError extends Error {
+  readonly originalError: unknown;
+  readonly context?: string;
+
+  constructor(
+    message: string,
+    options: { originalError?: unknown; context?: string } = {},
+  ) {
+    super(
+      message,
+      options.originalError !== undefined
+        ? { cause: options.originalError }
+        : undefined,
+    );
+    this.name = 'SdkError';
+    this.originalError = options.originalError;
+    this.context = options.context;
+  }
+}
+
+function isSdkApiError(error: unknown): error is SdkApiError {
+  return (
+    error instanceof Error &&
+    error.name === 'ApiError' &&
+    typeof (error as Error & { status?: unknown }).status === 'number'
+  );
+}
 
 /**
  * Create an authenticated API configuration.
@@ -56,15 +92,11 @@ export function createSdkClient(): ApiClient {
 
   // Wrap request interceptor to handle 401 and refresh tokens
   const originalRequest = client.request.bind(client);
-  client.request = async function (requestContext) {
+  client.request = async function (requestContext: SdkRequestContext) {
     try {
       return await originalRequest(requestContext);
     } catch (error: unknown) {
-      if (
-        error instanceof Error &&
-        error.name === 'ApiError' &&
-        (error as any).status === 401
-      ) {
+      if (isSdkApiError(error) && error.status === 401) {
         // Try to refresh tokens and retry
         const refreshed = await refreshTokens();
         if (refreshed) {
@@ -74,7 +106,9 @@ export function createSdkClient(): ApiClient {
           return await newClient.request(requestContext);
         }
 
-        throw new Error('Session expired. Please log in again.');
+        throw new SdkError('Session expired. Please log in again.', {
+          originalError: error,
+        });
       }
 
       // Log to Sentry for tracking
@@ -136,16 +170,13 @@ export async function withSdkError<T>(
     return await fn();
   } catch (error) {
     if (error instanceof Error) {
-      logger.error('SDK API error', {
-        context,
-        error: error.message,
-        stack: error.stack,
-      });
+      logger.error('services/api/sdk-client', 'SDK API error', { context }, error);
 
       // Re-throw with context
-      const err = new Error(`${context}: ${error.message}`);
-      (err as any).originalError = error;
-      throw err;
+      throw new SdkError(`${context}: ${error.message}`, {
+        context,
+        originalError: error,
+      });
     }
 
     throw error;
