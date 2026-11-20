@@ -47,6 +47,28 @@ describe('sendEmailNotification', () => {
       auditId: 'audit-1',
       deliveryId: 'delivery-1',
     });
+  });
+
+  // Unsubscribe handling (refs #1647)
+  it('appends unsubscribe link and headers when provided', async () => {
+    mocks.env.EMAIL_WEBHOOK_URL = 'https://email.example.com/webhook';
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await sendEmailNotification({
+      ...input,
+      unsubscribeUrl: 'https://tipz.stellar.org/unsubscribe?token=abc',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://email.example.com/webhook',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'List-Unsubscribe': '<https://tipz.stellar.org/unsubscribe?token=abc>',
+        }),
+      }),
+    );
+  });
 
     expect(mocks.queueDelivery).toHaveBeenCalledWith('user-1', 'email');
     expect(mocks.acknowledgeDeliverySent).not.toHaveBeenCalled();
