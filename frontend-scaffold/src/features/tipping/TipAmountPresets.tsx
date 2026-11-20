@@ -100,9 +100,10 @@ const TipAmountPresets: React.FC<TipAmountPresetsProps> = ({
             <button
               key={preset}
               type="button"
+              aria-pressed={isSelected}
               disabled={disabled}
               onClick={() => handlePresetClick(preset)}
-              className={`min-h-11 border-2 border-black px-2 text-sm font-black uppercase transition-transform ${
+              className={`min-h-11 border-2 border-black px-2 text-sm font-black uppercase transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${
                 isSelected ? "bg-black text-white selected" : "bg-white text-black"
               } ${
                 disabled
@@ -119,8 +120,9 @@ const TipAmountPresets: React.FC<TipAmountPresetsProps> = ({
       <div className="flex items-center gap-2">
         <button
           type="button"
+          aria-pressed={isCustom}
           onClick={handleCustomClick}
-          className={`min-h-11 border-2 border-black px-3 text-sm font-black uppercase transition-transform ${
+          className={`min-h-11 border-2 border-black px-3 text-sm font-black uppercase transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${
             isCustom ? "bg-black text-white selected" : "bg-white text-black hover:-translate-x-0.5 hover:-translate-y-0.5"
           }`}
         >
@@ -139,7 +141,7 @@ const TipAmountPresets: React.FC<TipAmountPresetsProps> = ({
           onFocus={() => {
             if (!isCustom) handleCustomClick();
           }}
-          className={`min-h-11 flex-1 border-2 border-black bg-white px-3 text-sm font-bold ${
+          className={`min-h-11 flex-1 border-2 border-black bg-white px-3 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black ${
             isCustom ? "focus:outline-none" : "cursor-pointer text-gray-700"
           }`}
         />
