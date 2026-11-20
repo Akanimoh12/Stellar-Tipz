@@ -5,21 +5,31 @@ import PageLoader from '@/components/shared/PageLoader';
 import ErrorBoundary from '@/components/shared/ErrorBoundary';
 
 /**
- * Wraps a component with ErrorBoundary, Suspense (PageLoader) and PageTransition.
- * Issue #733: All routes now have error boundaries
- * Issue #1337: `skeleton` is the route-shaped Suspense fallback.
+ * Wraps a route element with its own isolated ErrorBoundary, Suspense fallback,
+ * and PageTransition. Keying the ErrorBoundary by `routeName` ensures a crash
+ * on one route cannot blank the whole app and automatically recovers when the
+ * user navigates to another route.
  */
-export const wrap = (element: React.ReactElement) => (
-  <ErrorBoundary level="feature" name="route">
-    <Suspense fallback={<PageLoader />}>
+export const wrap = (
+  element: React.ReactElement,
+  skeleton?: React.ReactNode,
+  routeName = 'route',
+) => (
+  <ErrorBoundary key={routeName} level="feature" name={routeName}>
+    <Suspense fallback={skeleton ?? <PageLoader />}>
       <PageTransition>{element}</PageTransition>
     </Suspense>
   </ErrorBoundary>
 );
 
 /**
- * Wraps a component with ProtectedRoute and the default wrap (error boundary + transitions + loading).
+ * Wraps a component with ProtectedRoute and the default wrap (per-route error
+ * boundary + transitions + loading).
  */
-export const protect = (element: React.ReactElement, skeleton?: React.ReactNode) => (
-  <ProtectedRoute>{wrap(element, skeleton)}</ProtectedRoute>
+export const protect = (
+  element: React.ReactElement,
+  skeleton?: React.ReactNode,
+  routeName = 'route',
+) => (
+  <ProtectedRoute>{wrap(element, skeleton, routeName)}</ProtectedRoute>
 );
