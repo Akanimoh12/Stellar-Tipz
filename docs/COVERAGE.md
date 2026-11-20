@@ -49,7 +49,7 @@ See `scripts/coverage-policy.mjs` for the floor and rationale of every module.
 Every floor and baseline is seeded from coverage **measured in CI** (commit
 `181aaa2`), minus a small margin, so the ratchet starts from the true current
 state rather than an aspiration. The committed total baselines live in
-`coverage-baseline.json`.
+`config/coverage-baseline.json`.
 
 The backend is measured with the Postgres and Redis service containers running.
 Without them 279 of 705 tests fail and coverage reads roughly 12 points lower
@@ -74,7 +74,7 @@ them.
 2. Run `npm run test:coverage` then `npm run coverage:check` for the component.
 3. Update the `floor` and `baseline` for that module in
    `scripts/coverage-policy.mjs`, and if total coverage improved, update
-   `coverage-baseline.json`.
+   `config/coverage-baseline.json`.
 
 **Never lower a floor or baseline to make a build pass.** Floors only move up.
 

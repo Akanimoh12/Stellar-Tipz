@@ -6,7 +6,7 @@
  * `TEST_REDIS_URL` is set. They cover what mocks cannot: the raw SQL (keyset
  * pagination, bucketing, fencing locks) and the Lua scripts.
  *
- *   docker compose -f docker-compose.test.yml up -d
+ *   docker compose -f ../docker-compose.yml --profile test up -d postgres-test redis-test
  *   TEST_DATABASE_URL=postgresql://tipz_test:<password>@localhost:5433/tipz_test \
  *   TEST_REDIS_URL=redis://localhost:6380 \
  *   npx vitest run --no-file-parallelism .db.test .redis.test

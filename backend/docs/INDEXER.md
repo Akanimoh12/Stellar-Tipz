@@ -78,7 +78,7 @@ The indexer guarantees that re-processing the same ledger range produces no dupl
 ### Development
 ```bash
 # From repo root
-docker compose -f backend/docker-compose.yml up -d  # Postgres + Redis
+docker compose up -d postgres redis  # Postgres + Redis
 cd backend && npm run prisma:generate && npm run prisma:migrate
 npm run dev  # Starts server (includes indexer)
 ```

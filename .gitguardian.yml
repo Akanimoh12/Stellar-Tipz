@@ -16,7 +16,7 @@ secret:
     - name: ci-test-jwt-secret-vitest
       match: test-secret-key-for-vitest
   ignored_paths:
-    - backend/docker-compose.test.yml
+    - docker-compose.yml
     - .github/workflows/backup-verify.yml
     - .github/workflows/pr-checks.yml
     - .github/workflows/coverage.yml
@@ -34,7 +34,7 @@ secret:
     - name: ci-test-jwt-secret-compat
       match: test-secret-key-for-ci
   ignored-paths:
-    - backend/docker-compose.test.yml
+    - docker-compose.yml
     - .github/workflows/backup-verify.yml
     - .github/workflows/pr-checks.yml
     - .github/workflows/coverage.yml

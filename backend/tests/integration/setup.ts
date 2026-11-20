@@ -5,7 +5,7 @@ import { PrismaClient } from '@prisma/client';
 // Integration test environment configuration
 // Respect CI-provided DATABASE_URL/REDIS_URL when set (coverage.yml services
 // expose postgres on 5432 and redis on 6379); fall back to local
-// docker-compose.test.yml ports (5433/6380) for local runs.
+// root docker-compose.yml test profile ports (5433/6380) for local runs.
 process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL ||= 'postgresql://tipz_test:tipz_test@localhost:5433/tipz_test';
 process.env.REDIS_URL ||= 'redis://localhost:6380';

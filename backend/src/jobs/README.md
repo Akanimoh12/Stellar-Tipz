@@ -31,7 +31,7 @@ When you start the local dev server, the workers will automatically begin proces
 ```bash
 npm run dev
 ```
-*(Make sure your local Redis instance is running via `docker compose -f backend/docker-compose.yml up -d`)*
+*(Make sure your local Redis instance is running via `docker compose up -d redis`)*
 
 ### Error Handling
 Workers should **throw** an Error whenever a job fails due to a transient external factor. Throwing an error natively leverages BullMQ's automatic retry logic. The webhook worker classifies permanent non-429 4xx responses and throws BullMQ's `UnrecoverableError` so they do not consume the remaining retry budget; 429, 5xx, network failures, and timeouts remain retryable.
