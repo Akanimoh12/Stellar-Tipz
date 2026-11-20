@@ -340,6 +340,10 @@ Before production rollout:
 Database migrations are forward-only in Prisma, so rollback is an incident
 procedure rather than `prisma migrate down`.
 
+For the full per-environment procedure (local, CI, staging, production),
+including recovering from `P3009` failed migrations, see
+[PRISMA_MIGRATION_ROLLBACK.md](./PRISMA_MIGRATION_ROLLBACK.md).
+
 1. Stop application deploys and pause workers that write to the affected
   tables. Record the current migration name with `npx prisma migrate status`.
 2. Assess whether the newest migration has a sibling `down.sql`. Review it
