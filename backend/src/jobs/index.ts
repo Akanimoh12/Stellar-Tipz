@@ -1,4 +1,13 @@
-export { getQueue } from './queueFactory.js';
+export {
+  getQueue,
+  initializeQueues,
+  createWorker,
+  closeAllQueues,
+  getQueueConfigs,
+  queues,
+  type QueueConfig,
+  type QueueOptions,
+} from './queueFactory.js';
 export { scheduleRepeatable } from './scheduler.js';
 export { reportJobProgress, jobIdempotencyKey } from './progress.js';
 
@@ -103,3 +112,19 @@ export {
 } from './retention.worker.js';
 
 export { createFinancialReconciliationWorker, scheduleFinancialReconciliation } from './financialReconciliation.worker.js';
+
+export {
+  runIpfsCleanupJob,
+  handleIpfsCleanupJob,
+  type CleanupJobResult,
+} from './ipfs-cleanup.worker.js';
+export {
+  runIpfsVerifyJob,
+  handleIpfsVerifyJob,
+  type VerifyJobResult,
+} from './ipfs-verify.worker.js';
+export {
+  runXRefreshJob,
+  handleXRefreshJob,
+  type RefreshJobResult,
+} from './x-refresh.worker.js';

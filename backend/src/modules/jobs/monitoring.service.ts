@@ -1,6 +1,6 @@
 import { prisma } from '@/db/prisma.js';
 import { logger } from '@/common/utils/logger.js';
-import { getQueue, getQueueConfigs } from './queue.factory.js';
+import { getQueue, getQueueConfigs } from '@/jobs/queueFactory.js';
 
 export interface QueueDepthMetrics {
   queueName: string;

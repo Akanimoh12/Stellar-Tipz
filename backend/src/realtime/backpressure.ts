@@ -1,6 +1,6 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
-import { env } from '@/config/env.js';
-import { logger } from '@/common/utils/logger.js';
+import { env } from '../config/env.js';
+import { logger } from '../common/utils/logger.js';
 
 interface ConnectionMetrics {
   bufferedBytes: number;
@@ -28,8 +28,8 @@ function getTransportWritableLength(transport: unknown): number {
 const connectionMetrics = new Map<string, ConnectionMetrics>();
 
 export function configureBackpressure(io: SocketIOServer): void {
-  const maxBufferSize = env.SOCKET_IO_MAX_BUFFER_SIZE;
-  const connectionTimeout = env.SOCKET_IO_CONNECTION_TIMEOUT_MS;
+  const maxBufferSize = env?.SOCKET_IO_MAX_BUFFER_SIZE ?? 1048576;
+  const connectionTimeout = env?.SOCKET_IO_CONNECTION_TIMEOUT_MS ?? 30000;
 
   io.on('connection', (socket: Socket) => {
     logger.debug({ clientId: socket.id }, 'Client connected');
@@ -61,7 +61,7 @@ export function configureBackpressure(io: SocketIOServer): void {
         return;
       }
 
-      const writableLength = getTransportWritableLength(socket.conn.transport);
+      const writableLength = getTransportWritableLength(socket.conn?.transport);
       const bufferSize = writableLength;
 
       if (bufferSize > maxBufferSize) {
@@ -97,6 +97,11 @@ export function configureBackpressure(io: SocketIOServer): void {
 
       lastBufferCheck = Date.now();
     }, 1000);
+
+    // Prevent interval from keeping event loop alive in test environments
+    if (typeof checkBackpressure?.unref === 'function') {
+      checkBackpressure.unref();
+    }
 
     rawSocket.on('close', () => {
       clearInterval(checkBackpressure);
@@ -156,7 +161,7 @@ export function broadcastWithBackpressure(
       options?.throttleMs || 100
     );
 
-    if (!shouldEmit && logger.level <= 20) {
+    if (!shouldEmit) {
       logger.debug({ event, clientId: socket.id }, 'Event throttled in broadcast');
     }
   }
@@ -178,7 +183,7 @@ export function getConnectionMetrics(): {
     };
   }
 
-  const highPressureThreshold = env.SOCKET_IO_MAX_BUFFER_SIZE * 0.8;
+  const highPressureThreshold = (env?.SOCKET_IO_MAX_BUFFER_SIZE ?? 1048576) * 0.8;
   const highPressureConnections = metrics.filter(
     (m) => m.bufferedBytes > highPressureThreshold
   ).length;
