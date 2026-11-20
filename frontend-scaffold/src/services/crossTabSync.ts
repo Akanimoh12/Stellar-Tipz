@@ -1,6 +1,6 @@
 import { logger } from "./logger";
 import { useWalletStore } from "../store/walletStore";
-import { useNotificationStore } from "../store/notificationStore";
+import { useNotificationStore, type AppNotification } from "../store/notificationStore";
 import { useProfileStore } from "../store/profileStore";
 import { setTokens, clearTokens } from "./auth/tokenManager";
 import { clearClientStorageOnLogout } from "./secureStorage";
@@ -170,13 +170,13 @@ export function initCrossTabSync(): () => void {
     if (ev.key === "tipz_notifications" && ev.newValue) {
       try {
         const parsed = JSON.parse(ev.newValue) as {
-          state?: { notifications?: unknown[] };
+          state?: { notifications?: AppNotification[] };
         };
         const items = parsed?.state?.notifications;
         if (Array.isArray(items)) {
           // If all notifications in the new state are read, mark all read locally
-          const allRead = items.every(
-            (n: any) => n && typeof n === "object" && n.unread === false
+          const allRead = (items as AppNotification[]).every(
+            (n) => n && typeof n === "object" && n.unread === false
           );
           if (allRead) {
             handleCrossTabEvent({ type: "NOTIFICATION_ALL_READ" });

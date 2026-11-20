@@ -37,17 +37,17 @@ function scrubbString(str: string | undefined | null): string | null {
 /**
  * Recursively scrub PII from an object (breadcrumbs, tags, context).
  */
-function scrubbObject(obj: any): any {
+function scrubbObject(obj: unknown): unknown {
   if (obj === null || obj === undefined) return obj;
   if (typeof obj === "string") return scrubbString(obj);
   if (typeof obj !== "object") return obj;
 
   if (Array.isArray(obj)) {
-    return obj.map((item) => scrubbObject(item));
+    return obj.map((item: unknown) => scrubbObject(item));
   }
 
-  const scrubbed: any = {};
-  for (const [key, value] of Object.entries(obj)) {
+  const scrubbed: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
     // Skip sensitive keys entirely
     if (["password", "secret", "token", "apiKey", "privateKey"].includes(key.toLowerCase())) {
       scrubbed[key] = "[REDACTED]";
@@ -98,7 +98,7 @@ export function initSentry(): void {
       }
 
       if (event.request) {
-        event.request = scrubbObject(event.request);
+        event.request = scrubbObject(event.request) as typeof event.request;
       }
 
       if (event.tags) {
@@ -106,11 +106,11 @@ export function initSentry(): void {
       }
 
       if (event.contexts) {
-        event.contexts = scrubbObject(event.contexts);
+        event.contexts = scrubbObject(event.contexts) as typeof event.contexts;
       }
 
       if (event.extra) {
-        event.extra = scrubbObject(event.extra);
+        event.extra = scrubbObject(event.extra) as typeof event.extra;
       }
 
       // Scrub exception message and values
@@ -178,7 +178,7 @@ export function setRequestId(requestId: string | null): void {
  */
 export function addBreadcrumb(
   message: string,
-  data?: Record<string, any>,
+  data?: Record<string, unknown>,
   category?: string,
   level?: "fatal" | "error" | "warning" | "info" | "debug",
 ): void {
