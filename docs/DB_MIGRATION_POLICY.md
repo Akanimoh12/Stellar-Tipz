@@ -45,3 +45,8 @@ The test database is disposable and is intentionally built by applying every
 migration from an empty PostgreSQL 16 instance. This catches ordering,
 syntax, and migration-history drift; production rollout still requires the
 same reviewed migration files and the expand/contract sequence.
+
+## Rolling back
+
+See [PRISMA_MIGRATION_ROLLBACK.md](./PRISMA_MIGRATION_ROLLBACK.md) for how to
+revert a failed or bad migration in each environment.
