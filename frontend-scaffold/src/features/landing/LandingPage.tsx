@@ -4,6 +4,7 @@ import HeroSection from "./HeroSection";
 import FeaturesSection from "./FeaturesSection";
 import HowItWorksSection from "./HowItWorksSection";
 import StatsSection from "./StatsSection";
+import CreatorShowcaseSection from "./CreatorShowcaseSection";
 import TopCreatorsSection from "./TopCreatorsSection";
 import TrendingCreatorsSection from "./TrendingCreatorsSection";
 import CTASection from "./CTASection";
@@ -50,12 +51,8 @@ const LandingPage: React.FC = () => {
         <StatsSection />
       </FeatureErrorBoundary>
       <Divider />
-      <FeatureErrorBoundary name="landing-top-creators">
-        <TopCreatorsSection />
-      </FeatureErrorBoundary>
-      <Divider />
-      <FeatureErrorBoundary name="landing-trending-creators">
-        <TrendingCreatorsSection />
+      <FeatureErrorBoundary name="landing-creator-showcase">
+        <CreatorShowcaseSection />
       </FeatureErrorBoundary>
       <Divider />
       <FeatureErrorBoundary name="landing-cta">

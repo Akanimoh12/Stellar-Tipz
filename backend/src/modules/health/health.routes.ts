@@ -42,11 +42,12 @@ const defaultHealthService = createHealthService(dependencies);
 export function createHealthRouter(service: HealthService = defaultHealthService): Router {
   const router = Router();
 
+  // Dedicated liveness endpoint for orchestrator probes (refs #1641)
   router.get('/live', (_req, res) => {
     res.json(service.getLiveStatus());
   });
 
-  // Keep /health useful for existing probe configurations by treating it as readiness.
+  // Dedicated readiness probe and backwards-compatible /health endpoint (refs #1641)
   router.get(['/', '/ready'], async (_req, res, next) => {
     try {
       const result = await service.getReadyStatus();

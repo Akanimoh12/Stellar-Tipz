@@ -13,11 +13,12 @@ export type EmailNotificationInput = {
   html?: string;
   type?: string;
   metadata?: Record<string, unknown>;
+  unsubscribeUrl?: string;
 };
 
 export type EmailDeliveryResult = {
-  status: 'sent' | 'queued';
-  provider: 'webhook' | 'audit-log';
+  status: 'sent' | 'queued' | 'suppressed';
+  provider: 'webhook' | 'audit-log' | 'suppression';
   auditId: string;
   deliveryId: string;
 };
@@ -38,16 +39,28 @@ async function postToEmailWebhook(input: EmailNotificationInput): Promise<void> 
     return;
   }
 
+  // Include unsubscribe handling and headers/payload (refs #1647)
+  const unsubscribeUrl = input.unsubscribeUrl ?? (input.metadata?.unsubscribeUrl as string | undefined);
+  const textContent = unsubscribeUrl
+    ? `${input.text}\n\nUnsubscribe: ${unsubscribeUrl}`
+    : input.text;
+  const htmlContent = unsubscribeUrl && input.html
+    ? `${input.html}<p><a href="${unsubscribeUrl}">Unsubscribe</a></p>`
+    : input.html;
+
   const response = await fetch(webhookUrl, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...(unsubscribeUrl ? { 'List-Unsubscribe': `<${unsubscribeUrl}>` } : {}),
+    },
     body: JSON.stringify({
       to: input.to,
       subject: input.subject,
-      text: input.text,
-      html: input.html,
+      text: textContent,
+      html: htmlContent,
       type: input.type ?? 'notification',
-      metadata: input.metadata ?? {},
+      metadata: { ...input.metadata, ...(unsubscribeUrl ? { unsubscribeUrl } : {}) },
     }),
   });
 

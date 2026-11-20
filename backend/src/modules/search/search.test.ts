@@ -236,6 +236,25 @@ describe('GET /api/v1/search/creators', () => {
     expect(res.status).toBe(200);
     expect(res.body.data[0].displayName).toBe('Bob Star');
   });
+
+  // Search ranking tests (refs #1645)
+  it('ranks exact matches before prefix and fuzzy matches', async () => {
+    mockQueryRaw.mockResolvedValue([
+      { id: 'user-exact', username: 'star', displayName: 'Star', stellarAddress: 'GA1', imageUrl: null, bio: null },
+      { id: 'user-prefix', username: 'starman', displayName: 'Starman', stellarAddress: 'GA2', imageUrl: null, bio: null },
+      { id: 'user-fuzzy', username: 'superstar', displayName: 'Super Star', stellarAddress: 'GA3', imageUrl: null, bio: null },
+    ]);
+    mockCount.mockResolvedValue(3);
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/search/creators?q=star');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(3);
+    expect(res.body.data[0].username).toBe('star');
+    expect(res.body.data[1].username).toBe('starman');
+    expect(res.body.data[2].username).toBe('superstar');
+  });
 });
 
 describe('GET /api/v1/search/creators/trending', () => {
