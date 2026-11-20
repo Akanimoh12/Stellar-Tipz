@@ -1,27 +1,31 @@
 #!/usr/bin/env sh
+set -eu
 
-# Block staged .env files (not .env.example)
-if git diff --cached --name-only | grep -E "(^|/)\.env$" > /dev/null 2>&1; then
-  echo "ERROR: Attempting to commit a .env file. Remove it from staging."
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -n "$staged" ] || exit 0
+
+# Refuse private environment files, but allow documented templates.
+if printf '%s\n' "$staged" | grep -E '(^|/)\.env($|\.[^.]+$)' | grep -Ev '(^|/)\.env\.(example|sample|template)$' | grep -q .; then
+  echo 'ERROR: A private .env file is staged.' >&2
   exit 1
 fi
 
-# Secret pattern scan on staged files
-if git diff --cached --name-only | xargs grep -lE \
-  "(PRIVATE_KEY|SECRET_KEY|API_KEY|ACCESS_TOKEN|PASSWORD)\s*=\s*['\"][^'\"]{8,}['\"]" \
-  2>/dev/null; then
-  echo "ERROR: Possible secrets detected in staged files. Review and remove before committing."
-  exit 1
+# Inspect index content rather than potentially different working-tree content.
+printf '%s\n' "$staged" | while IFS= read -r path; do
+  [ -n "$path" ] || continue
+  if git show ":$path" 2>/dev/null | grep -Eq '(PRIVATE_KEY|SECRET_KEY|API_KEY|ACCESS_TOKEN|PASSWORD)[[:space:]]*=[[:space:]]*[^[:space:]]{8,}'; then
+    echo "ERROR: Possible secret staged in $path" >&2
+    exit 1
+  fi
+done
+
+if printf '%s\n' "$staged" | grep -Eq '^contracts/.*\.rs$'; then
+  (cd contracts && cargo fmt --all -- --check)
 fi
 
-# Run cargo fmt on staged Rust files
-STAGED_RS=$(git diff --cached --name-only | grep '\.rs$' || true)
-if [ -n "$STAGED_RS" ]; then
-  cargo fmt -- $STAGED_RS 2>/dev/null || true
+if printf '%s\n' "$staged" | grep -Eq '^frontend-scaffold/src/'; then
+  (cd frontend-scaffold && npx --no-install lint-staged)
 fi
-
-# Run lint-staged in frontend-scaffold
-(cd frontend-scaffold && npx lint-staged)
-
-# Run lint + format on staged backend files
-(cd backend && npx lint-staged)
+if printf '%s\n' "$staged" | grep -Eq '^backend/'; then
+  (cd backend && npx --no-install lint-staged)
+fi
