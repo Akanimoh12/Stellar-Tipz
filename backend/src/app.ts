@@ -14,6 +14,8 @@ import { authRouter } from "./modules/auth/auth.routes.js";
 import { profilesRouter } from "./modules/profiles/profiles.routes.js";
 import { creditRouter } from "./modules/credit/credit.routes.js";
 import { leaderboardRouter } from "./modules/leaderboard/leaderboard.routes.js";
+import { financialRouter } from "./modules/financial/index.js";
+import { notificationsRouter } from "./modules/notifications/index.js";
 
 /**
  * Builds and configures the Express application (no listening here — see server.ts).
@@ -62,6 +64,8 @@ export function createApp(): Express {
   app.use(`${env.API_BASE_PATH}/profiles`, profilesRouter);
   app.use(`${env.API_BASE_PATH}/credit`, creditRouter);
   app.use(`${env.API_BASE_PATH}/leaderboard`, leaderboardRouter);
+  app.use(`${env.API_BASE_PATH}/financial`, financialRouter);
+  app.use(`${env.API_BASE_PATH}/notifications`, notificationsRouter);
   // app.use(`${env.API_BASE_PATH}/tips`, tipsRouter);
   // ... (one issue per module)
   // ─────────────────────────────────────────────────────────────

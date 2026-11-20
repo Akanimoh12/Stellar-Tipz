@@ -10,7 +10,7 @@ import Loader from "../../components/ui/Loader";
 import ErrorBoundary from "../../components/shared/ErrorBoundary";
 import ErrorState from "../../components/shared/ErrorState";
 import { useProfile } from "../../hooks/useProfile";
-import { usePageTitle } from "../../hooks/usePageTitle";
+import { usePageMeta } from "../../hooks/usePageMeta";
 import { categorizeError } from "../../helpers/error";
 import EditProfileForm from "./EditProfileForm";
 import DomainVerificationSection from "./DomainVerificationSection";
@@ -20,13 +20,13 @@ const ProfileEditPage: React.FC = () => {
   const { profile, loading, error, isRegistered, refetch } = useProfile();
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-  usePageTitle(
-    loading
+  usePageMeta({
+    title: loading
       ? "Loading Profile..."
       : profile
         ? `Edit ${profile.displayName}`
         : "Edit Profile",
-  );
+  });
 
   // Redirect to register if no profile exists after loading completes
   useEffect(() => {

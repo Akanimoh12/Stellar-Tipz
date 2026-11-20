@@ -11,7 +11,7 @@ import ConfirmDialog from "../../components/shared/ConfirmDialog";
 import ShareButton from "../../components/shared/ShareButton";
 import { hasPositiveBalance } from "@/helpers/balance";
 import { useProfile, useContract } from "../../hooks";
-import { usePageTitle } from "../../hooks/usePageTitle";
+import { usePageMeta } from "../../hooks/usePageMeta";
 import { categorizeError } from "@/helpers/error";
 import { useToastStore } from "@/store/toastStore";
 import { useGoalStore } from "@/store/goalStore";
@@ -56,13 +56,13 @@ const ProfilePage: React.FC = () => {
     streak: profile?.streak ?? 0,
   });
 
-  usePageTitle(
-    loading
+  usePageMeta({
+    title: loading
       ? "Loading Profile..."
       : isRegistered && profile
       ? `${profile.displayName} (@${profile.username})`
       : "Register Profile",
-  );
+  });
 
   React.useEffect(() => {
     getStats()

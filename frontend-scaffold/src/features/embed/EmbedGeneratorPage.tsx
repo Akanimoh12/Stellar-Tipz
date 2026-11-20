@@ -9,7 +9,7 @@ import ErrorState from "../../components/shared/ErrorState";
 import Loader from "../../components/ui/Loader";
 import EmptyState from "../../components/ui/EmptyState";
 import { useProfile } from "../../hooks/useProfile";
-import { usePageTitle } from "../../hooks/usePageTitle";
+import { usePageMeta } from "../../hooks/usePageMeta";
 import { categorizeError } from "../../helpers/error";
 import EmbedCodeGenerator from "../profile/EmbedCodeGenerator";
 
@@ -17,7 +17,7 @@ const EmbedGeneratorPage: React.FC = () => {
   const { profile, loading, error, isRegistered, refetch } = useProfile();
   const navigate = useNavigate();
 
-  usePageTitle(profile ? `Embed Widget — @${profile.username}` : "Embed Widget");
+  usePageMeta({ title: profile ? `Embed Widget — @${profile.username}` : "Embed Widget" });
 
   if (loading) {
     return (

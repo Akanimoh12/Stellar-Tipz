@@ -7,8 +7,8 @@ import LeaderboardPage from "../../features/leaderboard/LeaderboardPage";
 import * as soroban from "../../services/soroban";
 import type { LeaderboardEntry } from "../../types/contract";
 
-vi.mock("../../hooks/usePageTitle", () => ({
-  usePageTitle: vi.fn(),
+vi.mock("../../hooks/usePageMeta", () => ({
+  usePageMeta: vi.fn(),
 }));
 
 vi.mock("../../hooks", () => ({

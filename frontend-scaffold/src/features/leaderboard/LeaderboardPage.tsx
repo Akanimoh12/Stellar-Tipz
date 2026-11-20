@@ -12,7 +12,7 @@ import Card from "../../components/ui/Card";
 import { categorizeError } from "@/helpers/error";
 import { useI18n } from "@/i18n";
 import { useLeaderboard } from "@/hooks/useLeaderboard";
-import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePageMeta } from "@/hooks/usePageMeta";
 import LeaderboardSkeleton from "./LeaderboardSkeleton";
 import LeaderboardTable from "./LeaderboardTable";
 
@@ -20,7 +20,7 @@ const PAGE_SIZE = 20;
 
 const LeaderboardPage: React.FC = () => {
   const { t } = useI18n();
-  usePageTitle(t("leaderboard.title"));
+  usePageMeta({ title: t("leaderboard.title") });
 
   const { entries, loading, hasMore, error, loadMore, refetch } =
     useLeaderboard(PAGE_SIZE);

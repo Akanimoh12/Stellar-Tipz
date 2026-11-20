@@ -9,7 +9,7 @@ import WalletConnect from "@/components/shared/WalletConnect";
 import ErrorState from "@/components/shared/ErrorState";
 import { categorizeError } from "@/helpers/error";
 import { useWalletStore } from "@/store/walletStore";
-import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePageMeta } from "@/hooks/usePageMeta";
 import {
   useTransactionHistory,
   TabFilter,
@@ -28,7 +28,7 @@ const TABS: { id: TabFilter; label: string }[] = [
 ];
 
 const TransactionsPage: React.FC = () => {
-  usePageTitle("Transactions");
+  usePageMeta({ title: "Transactions" });
 
   const { connected, publicKey } = useWalletStore();
   const [activeTab, setActiveTab] = useState<TabFilter>("all");

@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from "react";
 import { Search, ChevronDown, ChevronUp, MessageCircle, ExternalLink } from "lucide-react";
 import PageContainer from "@/components/layout/PageContainer";
-import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePageMeta } from "@/hooks/usePageMeta";
 import { faqData, faqCategories, FaqItem } from "./faqData";
 
 const HelpPage: React.FC = () => {
-  usePageTitle("Help Center");
+  usePageMeta({ title: "Help Center" });
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");

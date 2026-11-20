@@ -78,10 +78,6 @@ vi.mock("@/i18n", () => ({
   I18nProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-vi.mock("@/hooks/usePageTitle", () => ({
-  usePageTitle: vi.fn(),
-}));
-
 vi.mock("@/hooks/usePageMeta", () => ({
   usePageMeta: vi.fn(),
 }));
