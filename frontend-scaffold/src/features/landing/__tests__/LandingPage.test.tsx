@@ -49,6 +49,10 @@ vi.mock("../TrendingCreatorsSection", () => ({
   default: () => <section aria-label="Trending Creators Section">Trending creators</section>,
 }));
 
+vi.mock("../CreatorShowcaseSection", () => ({
+  default: () => <section aria-label="Creator Showcase">alice</section>,
+}));
+
 vi.mock("../CTASection", () => ({
   default: () => (
     <section>
