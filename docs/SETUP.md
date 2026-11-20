@@ -69,11 +69,11 @@ script again. This deletes the local PostgreSQL and Redis data volumes.
 
 ```bash
 # Clone your fork
-git clone https://github.com/<your-username>/stellar-tipz.git
+git clone https://github.com/<your-username>/Stellar-Tipz.git
 cd stellar-tipz
 
 # Set upstream
-git remote add upstream https://github.com/akan_nigeria/stellar-tipz.git
+git remote add upstream https://github.com/Akanimoh12/Stellar-Tipz.git
 ```
 
 ---
@@ -286,4 +286,4 @@ npm run build
 - Read [CONTRIBUTING.md](./CONTRIBUTING.md) for the contribution workflow
 - Read [CONTRACT_SPEC.md](./CONTRACT_SPEC.md) for the smart contract specification
 - Read [FRONTEND_GUIDE.md](./FRONTEND_GUIDE.md) for frontend conventions
-- Browse [open issues](https://github.com/akan_nigeria/stellar-tipz/issues) and pick one to work on
+- Browse [open issues](https://github.com/Akanimoh12/Stellar-Tipz/issues) and pick one to work on
