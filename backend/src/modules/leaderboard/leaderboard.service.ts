@@ -1,6 +1,7 @@
 import { prisma } from "../../db/prisma.js";
 import { logger } from "../../common/utils/logger.js";
 import { computeCreditScore } from "../credit/credit.service.js";
+import { fetchOnChainLeaderboard, fetchOnChainLeaderboardPosition } from "./onchain.service.js";
 import type {
   LeaderboardEntry,
   LeaderboardResponse,
@@ -13,9 +14,9 @@ import type {
 /**
  * Returns leaderboard entries ranked by total tips received (stroops).
  * Uses pre-computed LeaderboardSnapshot rows for WEEKLY / MONTHLY views;
- * falls back to a live aggregate for ALL_TIME.
+ * fetches from on-chain contract for ALL_TIME.
  *
- * Issue #933
+ * Issue #933, #1617
  */
 async function getTipsLeaderboard(
   period: LeaderboardPeriod,
@@ -58,39 +59,64 @@ async function getTipsLeaderboard(
     return { entries, total };
   }
 
-  // ALL_TIME: aggregate directly from Tip table.
+  // ALL_TIME: fetch from on-chain contract.
   const skip = (page - 1) * limit;
+  
+  try {
+    const onChainEntries = await fetchOnChainLeaderboard(limit * 2);
+    const paginatedEntries = onChainEntries.slice(skip, skip + limit);
 
-  // Group tips by recipient address, sum amounts.
-  const grouped = await prisma.tip.groupBy({
-    by: ["toAddress"],
-    _sum: { amountStroops: true },
-    orderBy: { _sum: { amountStroops: "desc" } },
-    skip,
-    take: limit,
-  });
+    const entries: LeaderboardEntry[] = await Promise.all(
+      paginatedEntries.map(async (entry, index) => {
+        const user = await prisma.user.findUnique({
+          where: { stellarAddress: entry.address },
+          select: { id: true, stellarAddress: true, username: true, displayName: true },
+        });
+        return {
+          rank: skip + index + 1,
+          userId: user?.id ?? "",
+          stellarAddress: entry.address,
+          username: user?.username ?? entry.username,
+          displayName: user?.displayName ?? null,
+          totalTipsStroops: entry.amount,
+        };
+      }),
+    );
 
-  const total = (await prisma.tip.groupBy({ by: ["toAddress"] })).length;
+    return { entries, total: onChainEntries.length };
+  } catch (error) {
+    logger.error({ error, period }, 'Failed to fetch on-chain leaderboard, falling back to database');
+    
+    // Fallback to database aggregate if contract call fails.
+    const grouped = await prisma.tip.groupBy({
+      by: ["toAddress"],
+      _sum: { amountStroops: true },
+      orderBy: { _sum: { amountStroops: "desc" } },
+      skip,
+      take: limit,
+    });
 
-  // Resolve users by stellarAddress for display fields.
-  const entries: LeaderboardEntry[] = await Promise.all(
-    grouped.map(async (row, index) => {
-      const user = await prisma.user.findUnique({
-        where: { stellarAddress: row.toAddress },
-        select: { id: true, stellarAddress: true, username: true, displayName: true },
-      });
-      return {
-        rank: skip + index + 1,
-        userId: user?.id ?? "",
-        stellarAddress: row.toAddress,
-        username: user?.username ?? null,
-        displayName: user?.displayName ?? null,
-        totalTipsStroops: (row._sum.amountStroops ?? 0n).toString(),
-      };
-    }),
-  );
+    const total = (await prisma.tip.groupBy({ by: ["toAddress"] })).length;
 
-  return { entries, total };
+    const entries: LeaderboardEntry[] = await Promise.all(
+      grouped.map(async (row, index) => {
+        const user = await prisma.user.findUnique({
+          where: { stellarAddress: row.toAddress },
+          select: { id: true, stellarAddress: true, username: true, displayName: true },
+        });
+        return {
+          rank: skip + index + 1,
+          userId: user?.id ?? "",
+          stellarAddress: row.toAddress,
+          username: user?.username ?? null,
+          displayName: user?.displayName ?? null,
+          totalTipsStroops: (row._sum.amountStroops ?? 0n).toString(),
+        };
+      }),
+    );
+
+    return { entries, total };
+  }
 }
 
 // ── Credit score leaderboard (issue #933 variant) ────────────────────────────
@@ -204,4 +230,24 @@ export async function getLeaderboard(
       : await getTipsLeaderboard(period, page, limit);
 
   return { variant, period, entries, total, page, limit };
+}
+
+/**
+ * Returns the on-chain leaderboard rank for a specific address.
+ * Returns null if the address is not on the leaderboard.
+ *
+ * Issue #1616
+ */
+export async function getLeaderboardPosition(
+  address: string,
+): Promise<number | null> {
+  logger.info({ address }, "Fetching leaderboard position");
+
+  try {
+    const rank = await fetchOnChainLeaderboardPosition(address);
+    return rank;
+  } catch (error) {
+    logger.error({ error, address }, 'Failed to fetch on-chain position');
+    return null;
+  }
 }
