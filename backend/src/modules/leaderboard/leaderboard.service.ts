@@ -245,3 +245,23 @@ export async function createLeaderboardSnapshot(
 
   return { period, entriesCreated: data.length };
 }
+
+/**
+ * Returns the on-chain leaderboard rank for a specific address.
+ * Returns null if the address is not on the leaderboard.
+ *
+ * Issue #1616
+ */
+export async function getLeaderboardPosition(
+  address: string,
+): Promise<number | null> {
+  logger.info({ address }, "Fetching leaderboard position");
+
+  try {
+    const rank = await fetchOnChainLeaderboardPosition(address);
+    return rank;
+  } catch (error) {
+    logger.error({ error, address }, 'Failed to fetch on-chain position');
+    return null;
+  }
+}
