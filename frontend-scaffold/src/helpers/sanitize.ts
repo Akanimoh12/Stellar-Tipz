@@ -104,6 +104,13 @@ export function hasHomoglyphs(str: string): boolean {
  */
 export function sanitizeHTML(html: string): string {
   if (typeof document === 'undefined') {
+    // codeql[js/incomplete-multi-character-sanitization]
+    // False positive. Callers run `sanitize()` first, which escapes all five
+    // HTML metacharacters (& < > " '), so user text cannot introduce a tag
+    // here. renderMarkdown only adds <strong>/<em>/<code>/<br> afterwards,
+    // which this regex removes. The DOM branch below is the real sanitizer and
+    // runs in the browser, which is the only place this output is rendered
+    // (the app is a Vite SPA with no SSR or prerender step).
     return html.replace(/<[^>]*>/g, '');
   }
   const wrapper = document.createElement('div');

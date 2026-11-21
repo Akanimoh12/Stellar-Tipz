@@ -54,7 +54,8 @@ const CTASection: React.FC = () => {
 
           <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
             <button
-              className="btn-brutalist group text-lg"
+              type="button"
+              className="btn-brutalist group text-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-black focus-visible:ring-offset-2"
               data-tour-id="tour-register"
               onClick={handleCreateProfile}
             >
@@ -65,7 +66,8 @@ const CTASection: React.FC = () => {
               />
             </button>
             <button
-              className="btn-brutalist-outline text-lg"
+              type="button"
+              className="btn-brutalist-outline text-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-black focus-visible:ring-offset-2"
               data-tour-id="tour-browse-creators"
               onClick={() => navigate("/leaderboard")}
             >

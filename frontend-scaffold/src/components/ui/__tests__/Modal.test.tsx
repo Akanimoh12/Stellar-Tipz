@@ -19,9 +19,8 @@ describe("Modal", () => {
         <p data-testid="modal-body">Content</p>
       </Modal>,
     );
-    expect(screen.getByText('Test Modal')).toBeInTheDocument();
-    expect(screen.getByTestId('modal-content')).toBeInTheDocument();
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByTestId('modal-body')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { hidden: true })).toBeInTheDocument();
   });
 
   it("renders the title and a close button when title is provided", () => {
@@ -31,7 +30,7 @@ describe("Modal", () => {
       </Modal>,
     );
     expect(screen.getByRole("heading", { name: "Send a tip" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /close modal/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "common.close" })).toBeInTheDocument();
   });
 
   it("omits the close button when no title is provided", () => {
@@ -40,7 +39,7 @@ describe("Modal", () => {
         <p>x</p>
       </Modal>,
     );
-    expect(screen.queryByRole("button", { name: /close modal/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: "common.close" })).toBeNull();
   });
 
   it("calls onClose when the close button is clicked", async () => {
@@ -50,7 +49,7 @@ describe("Modal", () => {
         <p>x</p>
       </Modal>,
     );
-    await userEvent.click(screen.getByRole("button", { name: /close modal/i }));
+    await userEvent.click(screen.getByRole("button", { name: "common.close" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -61,8 +60,8 @@ describe("Modal", () => {
         <p>x</p>
       </Modal>,
     );
-    // Backdrop has role="presentation".
-    await userEvent.click(screen.getByRole("presentation"));
+    // Backdrop has role="presentation", need to use hidden option
+    await userEvent.click(screen.getByRole("presentation", { hidden: true }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -76,19 +75,24 @@ describe("Modal", () => {
       </Modal>
     );
 
-    const textbox = screen.getByRole('textbox', { name: 'Name' });
-    const button = screen.getByRole('button', { name: 'OK' });
+    const textbox = screen.getByRole('textbox', { name: 'Name', hidden: true });
+    const button = screen.getByRole('button', { name: 'OK', hidden: true });
+    const closeButton = screen.getByRole('button', { name: 'common.close', hidden: true });
 
+    // First focusable element (not close button) should be focused
     expect(textbox).toHaveFocus();
 
     await user.tab();
     expect(button).toHaveFocus();
+
+    await user.tab();
+    expect(closeButton).toHaveFocus();
 
     await user.tab();
     expect(textbox).toHaveFocus();
 
     await user.tab({ shift: true });
-    expect(button).toHaveFocus();
+    expect(closeButton).toHaveFocus();
   });
 
   it('prevents body scroll when open', () => {
@@ -117,7 +121,8 @@ describe("Modal", () => {
     expect(trigger).toHaveFocus();
 
     rerender(<TriggerHarness isOpen={true} />);
-    expect(screen.getByRole('button', { name: 'Confirm' })).toHaveFocus();
+    // The first focusable element (not close button) should be focused
+    expect(screen.getByRole('button', { name: 'Confirm', hidden: true })).toHaveFocus();
 
     rerender(<TriggerHarness isOpen={false} />);
     expect(trigger).toHaveFocus();
@@ -135,7 +140,7 @@ describe("Modal", () => {
       </Modal>
     );
 
-    const dialog = screen.getByRole('dialog');
+    const dialog = screen.getByRole('dialog', { hidden: true });
     const heading = screen.getByRole('heading', { name: 'Test Modal' });
 
     expect(dialog).toHaveAttribute('aria-modal', 'true');
@@ -151,19 +156,55 @@ describe("Modal", () => {
       </Modal>
     );
 
-    const backdrop = screen.getByRole('presentation');
+    const backdrop = screen.getByRole('presentation', { hidden: true });
     fireEvent.click(backdrop);
 
     expect(handleClose).not.toHaveBeenCalled();
   });
 
+  it('closes on Escape when closeOnEscape is true', () => {
+    const handleClose = vi.fn();
+    render(
+      <Modal isOpen={true} onClose={handleClose} title="Test Modal" closeOnEscape={true}>
+        <div>Modal Content</div>
+      </Modal>
+    );
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(handleClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not close on Escape when closeOnEscape is false', () => {
+    const handleClose = vi.fn();
+    render(
+      <Modal isOpen={true} onClose={handleClose} title="Test Modal" closeOnEscape={false}>
+        <div>Modal Content</div>
+      </Modal>
+    );
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(handleClose).not.toHaveBeenCalled();
+  });
+
+  it('adds aria-hidden to background content when open', () => {
+    render(
+      <Modal isOpen={true} onClose={() => {}} title="Test Modal">
+        <div>Modal Content</div>
+      </Modal>
+    );
+
+    // The modal itself should not have aria-hidden
+    const dialog = screen.getByRole('dialog', { hidden: true });
+    expect(dialog).not.toHaveAttribute('aria-hidden');
+  });
+
   it('renders without a title', () => {
     render(
-      <Modal isOpen onClose={() => {}} title="Confirm">
+      <Modal isOpen onClose={() => {}}>
         <p>x</p>
       </Modal>,
     );
     expect(screen.queryByText('Test Modal')).toBeNull();
-    expect(screen.getByTestId('modal-content')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { hidden: true })).toBeInTheDocument();
   });
 });

@@ -41,7 +41,7 @@ const AchievementNotification: React.FC<AchievementNotificationProps> = ({
           role="status"
           aria-live="polite"
           aria-label={`Achievement unlocked: ${achievement.label}`}
-          className="fixed bottom-6 right-6 z-50 flex max-w-xs items-start gap-4 border-4 border-black bg-yellow-300 p-4 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]"
+          className="fixed bottom-safe right-safe z-50 flex max-w-xs items-start gap-4 border-4 border-black bg-yellow-300 p-4 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]"
         >
           {/* Emoji */}
           <span className="text-3xl leading-none" aria-hidden="true">

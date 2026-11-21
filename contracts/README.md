@@ -77,6 +77,16 @@ See [docs/CONTRACT_SPEC.md](../docs/CONTRACT_SPEC.md) for the full specification
 ## Tip History & Event-Based Indexing
 
 Individual tip records are stored in **temporary storage** with a ~7-day TTL.
+
+### Storage key TTL and rent strategy
+
+| Tier | Keys | TTL strategy |
+|---|---|---|
+| `instance()` | Contract configuration, counters, and cached runtime state | Extended at the start of state-changing calls with the instance minimum/maximum TTL policy. |
+| `persistent()` | Profiles, username mappings, subscriptions and subscription indexes, goals, and withdrawals | Extended on writes and relevant reads. Subscription records, indexes, and counters are bumped together so charge and cancel flows remain enumerable beyond the default ledger window. |
+| `temporary()` | Individual tip records and bounded history entries | Written with `TIP_TTL_LEDGERS` (about seven days at five seconds per ledger); expired records are skipped while reading retained indexes. |
+
+The long-lived persistent entries use the same target TTL as profiles. This keeps active user state available while allowing unused state to age out under Soroban rent rules.
 After expiry the on-chain record is gone, but the **`TipSent` event** emitted
 with every tip contains all fields needed to reconstruct the full history:
 

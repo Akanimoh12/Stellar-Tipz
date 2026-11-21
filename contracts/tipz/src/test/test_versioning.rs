@@ -9,7 +9,7 @@
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
 use crate::errors::ContractError;
-use crate::storage::DataKey;
+use crate::storage::{DataKey, ExtendedDataKey};
 use crate::TipzContract;
 use crate::TipzContractClient;
 use crate::CONTRACT_VERSION;
@@ -141,5 +141,5 @@ fn test_non_admin_upgrade_does_not_change_version() {
 
 #[test]
 fn test_contract_version_constant_is_2() {
-    assert_eq!(CONTRACT_VERSION, 2);
+    assert_eq!(CONTRACT_VERSION, 3);
 }

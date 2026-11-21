@@ -11,6 +11,10 @@ vi.mock('../src/modules/auth/auth.service.js', () => ({
   verifyChallenge: vi.fn(),
   refreshToken: vi.fn(),
   revokeRefreshToken: vi.fn(),
+  listSessions: vi.fn(),
+  revokeSession: vi.fn(),
+  revokeOtherSessions: vi.fn(),
+  getSessionMetadata: vi.fn(() => ({ device: 'Unknown device', ipAddress: 'unknown' })),
   verifyAccessToken: vi.fn(),
 }));
 
@@ -28,6 +32,9 @@ import {
   verifyChallenge,
   refreshToken as refreshTokens,
   revokeRefreshToken,
+  listSessions,
+  revokeSession,
+  revokeOtherSessions,
   verifyAccessToken,
 } from '../src/modules/auth/auth.service.js';
 
@@ -245,6 +252,60 @@ describe('Auth Flow End-to-End', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toHaveProperty('code');
+    });
+  });
+
+  describe('Session management', () => {
+    beforeEach(() => {
+      vi.mocked(verifyAccessToken).mockReturnValue({
+        userId: 'user_123',
+        stellarAddress,
+        role: 'user',
+        scopes: [],
+        sessionId: 'session_current',
+      });
+    });
+
+    it('lists active sessions and marks the current session', async () => {
+      vi.mocked(listSessions).mockResolvedValue([
+        {
+          id: 'session_current',
+          device: 'Chrome on Windows',
+          ip: '192.0.2.0',
+          lastUsedAt: '2026-08-26T00:00:00.000Z',
+          createdAt: '2026-08-25T00:00:00.000Z',
+          current: true,
+        },
+      ]);
+
+      const res = await request(app)
+        .get('/api/v1/auth/sessions')
+        .set('Authorization', 'Bearer valid_token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.sessions[0].current).toBe(true);
+      expect(listSessions).toHaveBeenCalledWith('user_123', 'session_current');
+    });
+
+    it('revokes one session for the authenticated user', async () => {
+      const res = await request(app)
+        .delete('/api/v1/auth/sessions/session_other')
+        .set('Authorization', 'Bearer valid_token');
+
+      expect(res.status).toBe(204);
+      expect(revokeSession).toHaveBeenCalledWith('user_123', 'session_other');
+    });
+
+    it('revokes all other sessions while preserving the current session', async () => {
+      const res = await request(app)
+        .delete('/api/v1/auth/sessions')
+        .set('Authorization', 'Bearer valid_token');
+
+      expect(res.status).toBe(204);
+      expect(revokeOtherSessions).toHaveBeenCalledWith(
+        'user_123',
+        'session_current',
+      );
     });
   });
 

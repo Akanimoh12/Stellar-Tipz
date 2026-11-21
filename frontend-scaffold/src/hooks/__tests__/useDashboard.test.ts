@@ -6,7 +6,7 @@ import { useContract } from "../useContract";
 import { useToastStore } from "../../store/toastStore";
 import { env } from "../helpers/env";
 import { logger } from "../services/logger";
-import { mockProfile, mockTips } from "../../features/mockData";
+import { mockProfile, mockTips } from "../../test/fixtures/mockData";
 
 vi.mock("../../store/walletStore");
 vi.mock("../useContract");
@@ -85,15 +85,19 @@ describe("useDashboard", () => {
     expect(mockGetRecentTips).toHaveBeenCalledWith(PUBLIC_KEY, 10, 0);
   });
 
-  it("uses mock data when env.useMockData is true (success)", () => {
+  it("loads from the contract even when env.useMockData is true", async () => {
     mockEnv.useMockData = true;
 
     const { result } = renderHook(() => useDashboard());
 
-    expect(result.current.profile).toBeDefined();
-    expect(result.current.tips.length).toBeGreaterThan(0);
-    expect(result.current.stats).toBeDefined();
-    expect(result.current.loading).toBe(false);
+    await waitFor(() => {
+      expect(result.current.profile).toEqual(mockProfile);
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(mockGetProfile).toHaveBeenCalledWith(PUBLIC_KEY);
+    expect(result.current.tips).toEqual(mockTips);
+    expect(result.current.stats).toEqual(mockStats);
     expect(result.current.error).toBeNull();
   });
 
@@ -132,10 +136,10 @@ describe("useDashboard", () => {
     await waitFor(() => expect(mockGetProfile).toHaveBeenCalledTimes(2));
   });
 
-  it("applyOptimisticWithdrawal reduces the profile balance", () => {
-    mockEnv.useMockData = true;
-
+  it("applyOptimisticWithdrawal reduces the profile balance", async () => {
     const { result } = renderHook(() => useDashboard());
+
+    await waitFor(() => expect(result.current.profile).toEqual(mockProfile));
 
     const initial = result.current.profile?.balance;
     expect(initial).toBeDefined();
@@ -149,10 +153,10 @@ describe("useDashboard", () => {
     );
   });
 
-  it("revertOptimisticWithdrawal restores the previous balance", () => {
-    mockEnv.useMockData = true;
-
+  it("revertOptimisticWithdrawal restores the previous balance", async () => {
     const { result } = renderHook(() => useDashboard());
+
+    await waitFor(() => expect(result.current.profile).toEqual(mockProfile));
 
     const initial = result.current.profile?.balance;
 

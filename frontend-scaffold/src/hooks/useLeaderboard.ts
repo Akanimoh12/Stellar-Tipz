@@ -3,8 +3,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useWallet } from "./";
 import { LeaderboardEntry } from "../types/contract";
 import { env } from "../helpers/env";
-import { mockLeaderboard } from "../features/mockData";
-import { NetworkDetails } from "../helpers/network";
+import { getNetworkDetails, NetworkDetails } from "../helpers/network";
 import { useWalletStore } from "../store/walletStore";
 import {
   getServer,
@@ -45,41 +44,22 @@ export const useLeaderboard = (): LeaderboardData => {
   const isFetchingRef = useRef(false);
   const hasDataRef = useRef(false);
 
-  const networkDetails: NetworkDetails = useMemo(
-    () => ({
-      network,
-      networkUrl:
-        network === "TESTNET" ? env.horizonUrl : "https://horizon.stellar.org",
-      networkPassphrase:
-        network === "TESTNET"
-          ? "Test SDF Network ; September 2015"
-          : "Public Global Stellar Network ; September 2015",
-    }),
-    [network],
-  );
+  const networkDetails: NetworkDetails = useMemo(() => getNetworkDetails(network), [network]);
 
   const buildFetchContext = useCallback((): LeaderboardFetchContext => {
     const server = getServer(networkDetails);
     return {
       contractId: env.contractId,
-      network,
+      network: networkDetails.network,
       networkPassphrase: networkDetails.networkPassphrase,
       sourcePublicKey: wallet.publicKey ?? READ_ONLY_SOURCE,
       server,
     };
-  }, [network, networkDetails.networkPassphrase, wallet.publicKey]);
+  }, [network, networkDetails.network, networkDetails.networkPassphrase, wallet.publicKey]);
 
   const fetchLeaderboard = useCallback(
     async (options?: { background?: boolean; reset?: boolean }) => {
       if (isFetchingRef.current) {
-        return;
-      }
-
-      if (env.useMockData) {
-        fullBatchRef.current = mockLeaderboard;
-        setEntries(mockLeaderboard);
-        setLoading(false);
-        setError(null);
         return;
       }
 
@@ -126,10 +106,6 @@ export const useLeaderboard = (): LeaderboardData => {
   }, [fetchLeaderboard]);
 
   useEffect(() => {
-    if (env.useMockData) {
-      return;
-    }
-
     const intervalId = setInterval(() => {
       void fetchLeaderboard({ background: true, reset: false });
     }, LEADERBOARD_CACHE_TTL_MS);

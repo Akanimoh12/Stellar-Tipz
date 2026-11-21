@@ -1,0 +1,9 @@
+{
+  "_comment": "Coverage ratchet baseline. `scripts/check-coverage.mjs` fails a PR when total or per-module coverage drops more than its tolerance below these values. The backend is measured in CI with Postgres/Redis (commit 181aaa2) because its database-backed tests do not run without that infrastructure; measuring locally without it produces a much lower, non-comparable number. Update only when coverage genuinely improves.",
+  "backend": {
+    "totalLines": 62.49
+  },
+  "frontend": {
+    "totalLines": 57.81
+  }
+}

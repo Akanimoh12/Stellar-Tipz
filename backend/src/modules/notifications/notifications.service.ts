@@ -1,143 +1,333 @@
-import { prisma } from "../../db/prisma.js";
-import { logger } from "../../common/utils/logger.js";
-import { NotFoundError } from "../../common/errors/AppError.js";
-import type { PaginatedNotifications } from "./notifications.types.js";
+import { BATCHABLE, NEVER_BATCH, enqueueTipBatch } from './batching.js';
+import type { Prisma, Notification } from '@prisma/client';
+import { prisma } from '../../db/prisma.js';
+import { NotFoundError } from '../../common/errors/AppError.js';
+import { emitNotificationCreated } from '../../realtime/index.js';
+import type { UpdateNotificationPreferencesInput } from './notifications.schema.js';
+import type {
+  NotificationListResponse,
+  NotificationPreferenceResponse,
+  NotificationResponse,
+  NotificationType,
+  SystemNotificationType,
+  UnreadCountResponse,
+} from './notifications.types.js';
+import {
+  createCursorScope,
+  descendingCursorCondition,
+  toCursorPage,
+} from '../../common/pagination/cursor.js';
 
-const DEFAULT_PAGE_SIZE = 20;
+/** Maps a notification type to the preference field gating its delivery. */
+const PREFERENCE_FIELD_BY_TYPE: Partial<
+  Record<NotificationType, 'tipReceived' | 'goalReached' | 'subscriptionCharged' | 'payoutFailed'>
+> = {
+  tip_received: 'tipReceived',
+  goal_reached: 'goalReached',
+  subscription_charged: 'subscriptionCharged',
+  payout_failed: 'payoutFailed',
+};
 
-/**
- * Encodes a cursor from a notification ID and timestamp.
- * Cursor is base64-encoded for transport.
- */
-function encodeCursor(id: string, timestamp: Date): string {
-  const cursorData = `${id}:${timestamp.getTime()}`;
-  return Buffer.from(cursorData).toString("base64");
-}
-
-/**
- * Decodes a cursor to retrieve the notification ID and timestamp.
- */
-function decodeCursor(cursor: string): { id: string; timestamp: number } {
-  try {
-    const cursorData = Buffer.from(cursor, "base64").toString("utf-8");
-    const [id, timestamp] = cursorData.split(":");
-    return { id, timestamp: parseInt(timestamp, 10) };
-  } catch {
-    throw new Error("Invalid cursor format");
-  }
-}
-
-/**
- * Fetches paginated notifications for a user using cursor-based pagination.
- * Returns notifications in reverse chronological order (newest first).
- * Issue #1653
- */
-export async function getNotificationsPaginated(
+export async function createSystemNotification(
   userId: string,
-  cursor?: string,
-  limit: number = DEFAULT_PAGE_SIZE,
-): Promise<PaginatedNotifications> {
-  logger.info({ userId, cursor, limit }, "Fetching paginated notifications");
-
-  // Verify user exists
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new NotFoundError(`User ${userId} not found`);
-
-  let cursorFilter: { createdAt?: { lt: Date }; id?: { not: string } } = {};
-
-  // If cursor provided, decode it and use it as the starting point
-  if (cursor) {
-    try {
-      const { id: cursorId, timestamp } = decodeCursor(cursor);
-      cursorFilter = {
-        createdAt: { lt: new Date(timestamp) },
-        id: { not: cursorId },
-      };
-    } catch (err) {
-      logger.warn({ cursor, error: err }, "Failed to decode cursor, ignoring");
-    }
-  }
-
-  // Fetch one extra item to determine if there are more results
-  const notifications = await prisma.notification.findMany({
-    where: {
-      userId,
-      ...cursorFilter,
-    },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: limit + 1,
+  type: SystemNotificationType,
+  payload: Record<string, unknown>,
+): Promise<NotificationResponse> {
+  const notification = await prisma.notification.create({
+    data: { userId, type, payload: payload as Prisma.InputJsonValue,
+      deliveries: { create: { userId, channel: 'in_app', status: 'delivered' } } },
   });
 
-  logger.info(
-    { userId, fetchedCount: notifications.length, limit },
-    "Notifications fetched"
-  );
+  const formatted = formatNotification(notification);
+  emitNotificationCreated({
+    id: formatted.id,
+    userId,
+    type: formatted.type,
+    payload: formatted.payload,
+    createdAt: formatted.createdAt,
+  });
+  return formatted;
+}
 
-  // Check if there are more results
-  const hasMore = notifications.length > limit;
-  const items = hasMore ? notifications.slice(0, limit) : notifications;
-
-  // Generate next cursor from the last item
-  let nextCursor: string | null = null;
-  if (hasMore && items.length > 0) {
-    const lastItem = items[items.length - 1];
-    nextCursor = encodeCursor(lastItem.id, lastItem.createdAt);
-  }
-
+function formatNotification(n: {
+  id: string
+  type: string
+  payload: unknown
+  readAt: Date | null
+  createdAt: Date
+}): NotificationResponse {
   return {
-    items: items.map((n) => ({
-      id: n.id,
-      userId: n.userId,
-      type: n.type,
-      payload: n.payload as Record<string, unknown>,
-      readAt: n.readAt,
-      createdAt: n.createdAt,
-    })),
-    cursor: nextCursor,
-    hasMore,
+    id: n.id,
+    type: n.type,
+    payload: n.payload,
+    readAt: n.readAt?.toISOString() ?? null,
+    createdAt: n.createdAt.toISOString(),
   };
 }
 
-/**
- * Marks a notification as read.
- */
-export async function markNotificationAsRead(
-  notificationId: string,
+export async function listNotifications(
   userId: string,
-): Promise<void> {
-  logger.info({ notificationId, userId }, "Marking notification as read");
+  unreadOnly: boolean,
+  limit: number,
+  cursor?: string,
+  offset?: number,
+): Promise<NotificationListResponse> {
+  const baseWhere: Prisma.NotificationWhereInput = {
+    userId,
+    deletedAt: null,
+    ...(unreadOnly ? { readAt: null } : {}),
+  };
+  const scope = createCursorScope('notifications', { userId, unreadOnly });
+  const cursorCondition = descendingCursorCondition('createdAt', cursor, scope);
+  const where: Prisma.NotificationWhereInput = cursorCondition
+    ? { AND: [baseWhere, cursorCondition as Prisma.NotificationWhereInput] }
+    : baseWhere;
+  const rows = await prisma.notification.findMany({
+    where,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    ...(offset !== undefined ? { skip: offset } : {}),
+    take: limit + 1,
+  });
+  const page = toCursorPage(rows, limit, scope, (notification) => notification.createdAt);
 
-  const notification = await prisma.notification.findUnique({
-    where: { id: notificationId },
+  return {
+    data: page.data.map(formatNotification),
+    nextCursor: page.nextCursor,
+  };
+}
+
+export async function getNotification(
+  userId: string,
+  notificationId: string,
+): Promise<NotificationResponse> {
+  const notification = await prisma.notification.findFirst({
+    where: { id: notificationId, userId, deletedAt: null },
   });
 
   if (!notification) {
-    throw new NotFoundError(`Notification ${notificationId} not found`);
+    throw new NotFoundError('Notification not found');
   }
 
-  if (notification.userId !== userId) {
-    throw new Error("Not authorized to modify this notification");
+  return formatNotification(notification);
+}
+
+export async function markAsRead(
+  userId: string,
+  notificationId: string,
+): Promise<NotificationResponse> {
+  const notification = await prisma.notification.findFirst({
+    where: { id: notificationId, userId, deletedAt: null },
+  });
+
+  if (!notification) {
+    throw new NotFoundError('Notification not found');
   }
 
-  await prisma.notification.update({
+  const updated = await prisma.notification.update({
     where: { id: notificationId },
     data: { readAt: new Date() },
   });
 
-  logger.info({ notificationId, userId }, "Notification marked as read");
+  return formatNotification(updated);
 }
 
-/**
- * Marks all notifications as read for a user.
- */
-export async function markAllNotificationsAsRead(userId: string): Promise<number> {
-  logger.info({ userId }, "Marking all notifications as read");
-
+export async function markAllAsRead(userId: string): Promise<{ count: number }> {
   const result = await prisma.notification.updateMany({
-    where: { userId, readAt: null },
+    where: { userId, readAt: null, deletedAt: null },
     data: { readAt: new Date() },
   });
 
-  logger.info({ userId, count: result.count }, "All notifications marked as read");
-  return result.count;
+  return { count: result.count };
+}
+
+/** GET /notifications/unread-count — count of unread, non-deleted notifications. */
+export async function getUnreadCount(userId: string): Promise<UnreadCountResponse> {
+  const count = await prisma.notification.count({
+    where: { userId, readAt: null, deletedAt: null },
+  });
+
+  return { count };
+}
+
+function formatPreferences(pref: {
+  tipReceived: boolean
+  goalReached: boolean
+  subscriptionCharged: boolean
+  batchingEnabled: boolean
+  batchingWindowSeconds: number
+  updatedAt: Date
+}): NotificationPreferenceResponse {
+  return {
+    tipReceived: pref.tipReceived,
+    goalReached: pref.goalReached,
+    subscriptionCharged: pref.subscriptionCharged,
+    batchingEnabled: pref.batchingEnabled,
+    batchingWindowSeconds: pref.batchingWindowSeconds,
+    updatedAt: pref.updatedAt.toISOString(),
+  };
+}
+
+/** GET /notifications/preferences — defaults to all-enabled when no row exists yet. */
+export async function getPreferences(userId: string): Promise<NotificationPreferenceResponse> {
+  const pref = await prisma.notificationPreference.findUnique({ where: { userId } });
+  if (!pref) {
+    return {
+      tipReceived: true,
+      goalReached: true,
+      subscriptionCharged: true,
+      batchingEnabled: false,
+      batchingWindowSeconds: 300,
+      updatedAt: new Date(0).toISOString(),
+    };
+  }
+  return formatPreferences(pref);
+}
+
+/** PATCH /notifications/preferences — upserts the caller's preference row. */
+export async function updatePreferences(
+  userId: string,
+  patch: UpdateNotificationPreferencesInput,
+): Promise<NotificationPreferenceResponse> {
+  const pref = await prisma.notificationPreference.upsert({
+    where: { userId },
+    create: {
+      userId,
+      tipReceived: patch.tipReceived,
+      goalReached: patch.goalReached,
+      subscriptionCharged: patch.subscriptionCharged,
+      batchingEnabled: patch.batchingEnabled,
+      batchingWindowSeconds: patch.batchingWindowSeconds,
+    },
+    update: {
+      tipReceived: patch.tipReceived,
+      goalReached: patch.goalReached,
+      subscriptionCharged: patch.subscriptionCharged,
+      batchingEnabled: patch.batchingEnabled,
+      batchingWindowSeconds: patch.batchingWindowSeconds,
+    },
+  });
+  return formatPreferences(pref);
+}
+
+/**
+ * Create a notification for a user and broadcast it over the realtime gateway,
+ * unless the user has disabled this notification type in their preferences.
+ * Used by the tip and goal modules to notify creators of relevant events.
+ */
+export async function createNotification(
+  userId: string,
+  type: Exclude<NotificationType, SystemNotificationType>,
+  payload: Record<string, unknown>,
+): Promise<NotificationResponse | null> {
+  const notification = await persistNotification(prisma, userId, type, payload);
+  if (!notification) return null;
+
+  const formatted = formatNotification(notification);
+  emitNotificationCreated({
+    id: formatted.id,
+    userId,
+    type: formatted.type,
+    payload: formatted.payload,
+    createdAt: formatted.createdAt,
+  });
+
+  return formatted;
+}
+
+/** Persist notification or digest in the caller's transaction; publish only after commit. */
+export async function persistNotification(
+  tx: Pick<
+    Prisma.TransactionClient,
+    'notificationPreference' | 'notificationBatch' | 'notification'
+  >,
+  userId: string,
+  type: NotificationType,
+  payload: Record<string, unknown>,
+): Promise<Notification | null> {
+  const preferenceField = PREFERENCE_FIELD_BY_TYPE[type];
+  const pref = await tx.notificationPreference.findUnique({ where: { userId } });
+  if (!NEVER_BATCH.has(type) && pref && preferenceField && !pref[preferenceField]) {
+    return null;
+  }
+
+  if (!NEVER_BATCH.has(type) && BATCHABLE.has(type) && pref?.batchingEnabled) {
+    await enqueueTipBatch(userId, payload, pref.batchingWindowSeconds, new Date(), tx);
+    return null;
+  }
+
+  return tx.notification.create({
+    data: {
+      userId,
+      type,
+      payload: payload as Prisma.InputJsonValue,
+      deliveries: { create: { userId, channel: 'in_app', status: 'delivered' } },
+    },
+  });
+}
+
+/**
+ * Atomically disables an active webhook subscription and stores one mandatory
+ * owner notification. Concurrent or repeated terminal failures do not duplicate it.
+ */
+export async function disableWebhookSubscriptionAndNotify(
+  subscriptionId: string,
+  deliveryId: string,
+  reason: string,
+): Promise<boolean> {
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const subscription = await tx.webhookSubscription.findUnique({
+      where: { id: subscriptionId },
+      select: { ownerId: true, status: true },
+    });
+
+    if (!subscription || subscription.status === 'DISABLED') {
+      return null;
+    }
+
+    const disabled = await tx.webhookSubscription.updateMany({
+      where: { id: subscriptionId, status: 'ACTIVE' },
+      data: { status: 'DISABLED' },
+    });
+
+    if (disabled.count === 0) {
+      return null;
+    }
+
+    const notification = await tx.notification.create({
+      data: {
+        userId: subscription.ownerId,
+        type: 'webhook_disabled',
+        payload: {
+          subscriptionId,
+          deliveryId,
+          reason,
+        } as Prisma.InputJsonValue,
+        deliveries: {
+          create: {
+            userId: subscription.ownerId,
+            channel: 'in_app',
+            status: 'delivered',
+          },
+        },
+      },
+    });
+
+    return { ownerId: subscription.ownerId, notification };
+  });
+
+  if (!result) {
+    return false;
+  }
+
+  const formatted = formatNotification(result.notification);
+
+  emitNotificationCreated({
+    id: formatted.id,
+    userId: result.ownerId,
+    type: formatted.type,
+    payload: formatted.payload,
+    createdAt: formatted.createdAt,
+  });
+
+  return true;
 }

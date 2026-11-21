@@ -3,11 +3,12 @@ import { Lock, Unlock } from 'lucide-react';
 
 import AmountDisplay from '@/components/shared/AmountDisplay';
 import EmptyState from '@/components/ui/EmptyState';
+import SkeletonWrapper from '@/components/ui/SkeletonWrapper';
 import { useTips } from '@/hooks/useTips';
 import { useWalletStore } from '@/store/walletStore';
 import { decryptMessage } from '@/helpers/encryption';
 
-import Loader from '@/components/ui/Loader';
+import RecentTipsSkeleton from './RecentTipsSkeleton';
 
 interface RecentTipsProps {
   address: string;
@@ -41,15 +42,18 @@ const RecentTips: React.FC<RecentTipsProps> = ({ address }) => {
     }
   };
 
-  if (loading && tips.length === 0) {
-    return <div className="py-10 flex justify-center"><Loader size="sm" /></div>;
-  }
-
-  if (tips.length === 0) {
-    return <EmptyState title="No recent tips" description="Recent tip activity will appear here." />;
+  if (tips.length === 0 && !loading) {
+    return (
+      <EmptyState
+        title="No recent tips"
+        description="Share your profile to receive your first tip."
+        action={{ label: "Go to profile", to: "/dashboard" }}
+      />
+    );
   }
 
   return (
+    <SkeletonWrapper loading={loading && tips.length === 0} skeleton={<RecentTipsSkeleton />}>
     <div className="space-y-3">
       {tips.map((tip) => {
         const isEncrypted = tip.isEncrypted && tip.message.length > 0;
@@ -96,6 +100,7 @@ const RecentTips: React.FC<RecentTipsProps> = ({ address }) => {
         );
       })}
     </div>
+    </SkeletonWrapper>
   );
 };
 

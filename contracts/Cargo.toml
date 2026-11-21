@@ -32,7 +32,6 @@ exclude_globs = [
     "tipz/src/streaks.rs",
     "tipz/src/lib.rs",
     "tipz/src/errors.rs",
-    "tipz/src/validation_clean.rs",
 ]
 # Soroban tests spin up a mock ledger; allow 3× the default timeout.
 timeout_multiplier = 3.0

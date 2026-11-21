@@ -159,11 +159,38 @@ fn test_withdraw_insufficient_balance() {
 
 #[test]
 fn test_withdraw_zero_amount() {
-    let (_env, client, _contract_id, creator, _fee_collector, _sac) = setup_env();
+    let (env, client, contract_id, creator, _fee_collector, _sac) = setup_env();
 
-    let result = client.try_withdraw_tips(&creator, &0);
+    client.withdraw_tips(&creator, &0);
 
-    assert_eq!(result, Err(Ok(ContractError::InvalidAmount)));
+    env.as_contract(&contract_id, || {
+        assert_eq!(storage::get_profile(&env, &creator).balance, 0);
+    });
+}
+
+#[test]
+fn test_withdraw_below_minimum_fails() {
+    let (env, client, contract_id, creator, _fee_collector, _sac) = setup_env();
+    let minimum = client.get_min_withdrawal_amount();
+    assert_eq!(minimum, 1_000_000);
+
+    let result = client.try_withdraw_tips(&creator, &(minimum - 1));
+    assert_eq!(result, Err(Ok(ContractError::WdrBelowMin)));
+
+    env.as_contract(&contract_id, || {
+        assert_eq!(storage::get_profile(&env, &creator).balance, 100_000_000);
+    });
+}
+
+#[test]
+fn test_withdraw_exact_minimum_leaves_balance() {
+    let (env, client, contract_id, creator, _fee_collector, _sac) = setup_env();
+    let minimum = client.get_min_withdrawal_amount();
+    client.withdraw_tips(&creator, &minimum);
+
+    env.as_contract(&contract_id, || {
+        assert_eq!(storage::get_profile(&env, &creator).balance, 99_000_000);
+    });
 }
 
 #[test]

@@ -9,6 +9,19 @@ import { initRealtime, closeRealtime } from './realtime/index.js';
 
 /** Process entry point: starts the HTTP server and the WebSocket realtime gateway. */
 async function bootstrap(): Promise<void> {
+  // Initialize OpenTelemetry tracing (issue #1349)
+  initTracing();
+  registerClosable({
+    name: 'OpenTelemetry',
+    close: shutdownTracing,
+  });
+  // Do not serve production requests against a wrong or incompatible contract.
+  if (env.NODE_ENV === 'production') {
+    await assertContractVersion(env.CONTRACT_ID, env.NETWORK_PASSPHRASE, env.EXPECTED_CONTRACT_VERSION);
+  }
+  // Prometheus registry + internal /metrics listener (issue #1346)
+  await startProcessMetrics('api');
+
   const app = createApp();
   const httpServer = createServer(app);
 

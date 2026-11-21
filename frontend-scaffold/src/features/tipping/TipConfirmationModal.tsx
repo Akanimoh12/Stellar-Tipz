@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { HeartHandshake, Info, Lock } from 'lucide-react';
+import { AlertCircle, HeartHandshake, Info, Lock, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import Avatar from '../../components/ui/Avatar';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import type { Profile } from '../../types';
+import { useFeeBreakdown } from '../../hooks/useFeeBreakdown';
 
-const ESTIMATED_TX_FEE = '0.00001';
 const PLATFORM_FEE_PERCENT = 0.02;
 
 interface TipConfirmationModalProps {
@@ -33,18 +33,27 @@ export const TipConfirmationModal: React.FC<TipConfirmationModalProps> = ({
 }) => {
   const [dontShowAgain, setDontShowAgain] = useState(false);
 
-  const numAmount = parseFloat(amount) || 0;
-  const platformFee = numAmount * PLATFORM_FEE_PERCENT;
-  const total = numAmount + platformFee + parseFloat(ESTIMATED_TX_FEE);
+  const {
+    breakdown,
+    isEstimating,
+    estimationError,
+    canSign,
+    refresh,
+  } = useFeeBreakdown({
+    amount,
+    platformFeePercent: PLATFORM_FEE_PERCENT,
+    isOpen,
+  });
 
   useEffect(() => {
     const saved = localStorage.getItem('tipz_skip_confirmation');
-    if (saved === 'true' && isOpen && !submitting) {
+    if (saved === 'true' && isOpen && !submitting && canSign) {
       onConfirm();
     }
-  }, [isOpen, onConfirm, submitting]);
+  }, [isOpen, onConfirm, submitting, canSign]);
 
   const handleConfirm = () => {
+    if (!canSign) return;
     if (dontShowAgain) {
       localStorage.setItem('tipz_skip_confirmation', 'true');
     }
@@ -69,26 +78,77 @@ export const TipConfirmationModal: React.FC<TipConfirmationModalProps> = ({
           </div>
         </div>
 
+        {estimationError && (
+          <div
+            className="p-3 border-2 border-red-500 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-sm font-bold"
+            role="alert"
+          >
+            <div className="flex items-start gap-2">
+              <AlertCircle size={18} className="flex-shrink-0 mt-0.5" />
+              <div>
+                <p>{estimationError}</p>
+                <button
+                  type="button"
+                  onClick={() => void refresh()}
+                  className="mt-2 inline-flex items-center gap-1 text-xs font-black uppercase underline hover:text-black dark:hover:text-white"
+                >
+                  <RefreshCw size={12} className={isEstimating ? "animate-spin" : ""} /> Retry Estimation
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-3 bg-gray-50 dark:bg-gray-900 border-2 border-black p-4">
           <div className="flex justify-between items-center">
             <span className="text-sm font-bold uppercase text-gray-800 dark:text-gray-200">Tip Amount</span>
-            <span className="font-black">{numAmount.toFixed(2)} XLM</span>
+            <div className="text-right">
+              <span className="font-black">{breakdown.amountXLM} XLM</span>
+              {breakdown.amountFiat && (
+                <span className="text-xs font-bold text-gray-600 dark:text-gray-400 block">
+                  ≈ {breakdown.amountFiat}
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-sm font-bold uppercase text-gray-800 dark:text-gray-200 flex items-center gap-1">
-              Platform Fee (2%) <Info size={14} className="text-gray-700 dark:text-gray-300" />
+              Platform Fee ({breakdown.platformFeePercent}%) <Info size={14} className="text-gray-700 dark:text-gray-300" />
             </span>
-            <span className="font-bold">{platformFee.toFixed(4)} XLM</span>
+            <div className="text-right">
+              <span className="font-bold">{breakdown.platformFeeXLM} XLM</span>
+              {breakdown.platformFeeFiat && (
+                <span className="text-xs font-bold text-gray-600 dark:text-gray-400 block">
+                  ≈ {breakdown.platformFeeFiat}
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-sm font-bold uppercase text-gray-800 dark:text-gray-200">Network Fee</span>
-            <span className="font-bold text-gray-700 dark:text-gray-300">{ESTIMATED_TX_FEE} XLM</span>
+            <div className="text-right">
+              <span className="font-bold text-gray-700 dark:text-gray-300">
+                {isEstimating ? "Estimating..." : `${breakdown.networkFeeXLM} XLM`}
+              </span>
+              {breakdown.networkFeeFiat && !isEstimating && (
+                <span className="text-xs font-bold text-gray-600 dark:text-gray-400 block">
+                  ≈ {breakdown.networkFeeFiat}
+                </span>
+              )}
+            </div>
           </div>
           <div className="border-t border-dashed border-black pt-2 flex justify-between items-center">
             <span className="text-lg font-black uppercase">Total</span>
-            <span className="text-xl font-black text-black dark:text-white">
-              {total.toFixed(5)} XLM
-            </span>
+            <div className="text-right">
+              <span className="text-xl font-black text-black dark:text-white">
+                {breakdown.totalXLM} XLM
+              </span>
+              {breakdown.totalFiat && (
+                <span className="text-sm font-bold text-gray-700 dark:text-gray-300 block">
+                  ≈ {breakdown.totalFiat}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -124,7 +184,8 @@ export const TipConfirmationModal: React.FC<TipConfirmationModalProps> = ({
           </Button>
           <Button
             type="button"
-            loading={submitting}
+            loading={submitting || isEstimating}
+            disabled={submitting || !canSign || Boolean(estimationError)}
             onClick={handleConfirm}
             icon={<HeartHandshake size={18} />}
             className="flex-1"

@@ -96,10 +96,10 @@ describe('GET /api/v1/auth/me (issue #845)', () => {
       .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.data.id).toBe('user_01');
-    expect(res.body.data.stellarAddress).toBe('GABC123');
-    expect(res.body.data.username).toBe('alice');
-    expect(res.body.data.createdAt).toBe('2024-01-01T00:00:00.000Z');
+    expect(res.body.id).toBe('user_01');
+    expect(res.body.stellarAddress).toBe('GABC123');
+    expect(res.body.username).toBe('alice');
+    expect(res.body.createdAt).toBe('2024-01-01T00:00:00.000Z');
   });
 
   // ── auth failures ─────────────────────────────────────────────────────────

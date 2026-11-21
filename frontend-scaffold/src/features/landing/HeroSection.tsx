@@ -10,9 +10,11 @@ const HeroSection: React.FC = () => {
   const { t } = useI18n();
 
   const handleLearnMore = () => {
-    const featuresSection = document.getElementById("features");
+    const featuresSection = document.getElementById("features") || document.getElementById("how-it-works");
     if (featuresSection) {
       featuresSection.scrollIntoView({ behavior: "smooth" });
+      featuresSection.setAttribute("tabindex", "-1");
+      featuresSection.focus({ preventScroll: true });
     }
   };
 
@@ -68,7 +70,8 @@ const HeroSection: React.FC = () => {
           className="mb-16 flex flex-col items-center justify-center gap-4 sm:flex-row"
         >
           <button
-            className="btn-brutalist group text-lg"
+            type="button"
+            className="btn-brutalist group text-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-black focus-visible:ring-offset-2"
             data-tour-id="tour-wallet-connect"
             onClick={() => connect()}
           >
@@ -79,7 +82,8 @@ const HeroSection: React.FC = () => {
             />
           </button>
           <button
-            className="btn-brutalist-outline text-lg"
+            type="button"
+            className="btn-brutalist-outline text-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-black focus-visible:ring-offset-2"
             onClick={handleLearnMore}
           >
             {t("landing.hero.learnMore")}

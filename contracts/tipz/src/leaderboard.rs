@@ -12,9 +12,28 @@
 //! Updates use binary search for O(log n) insertion position finding.
 //!
 //! ## Tie-breaking
-//! When two creators have equal `amount`, the one who reached
-//! that amount first keeps the higher rank. This is achieved by using
-//! binary search that finds the index *after* existing entries with the same amount.
+//! When two creators have equal `amount`, the one who reached that amount
+//! **first** keeps the higher rank (earlier insertion in the list).
+//!
+//! The implementation uses a stable binary search that finds the insertion
+//! index **after** existing entries with the same amount. This ensures that
+//! if two creators have the same `amount`, the one inserted earlier maintains
+//! a better position. This tie-breaking order is deterministic and independent
+//! of insertion order into the leaderboard, making it safe for consensus across
+//! multiple nodes.
+//!
+//! ### Example
+//! If creators A, B, and C all have `amount = 100`, and they reached that
+//! amount in order (A → B → C), the leaderboard will maintain the order
+//! `[A, B, C, ...]` regardless of the order in which subsequent tips update
+//! the leaderboard.
+//!
+//! ### Off-chain mirror
+//! The backend leaderboard API (`backend/src/modules/leaderboard/leaderboard.service.ts`)
+//! applies the same rule: equal amounts are ordered by the ledger of each
+//! creator's latest counted tip, ascending (reached the amount first), with the
+//! address as a final key so its keyset pagination has a total order (#1269).
+//! Keep the two in sync when changing either.
 
 use soroban_sdk::{Address, Env, Vec};
 
@@ -42,8 +61,12 @@ fn find_insertion_index(entries: &Vec<LeaderboardEntry>, amount: i128) -> u32 {
     let mut high = entries.len();
     while low < high {
         let mid = low + (high - low) / 2;
-        if entries.get(mid).unwrap().amount >= amount {
-            low = mid + 1;
+        if let Some(entry) = entries.get(mid) {
+            if entry.amount >= amount {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
         } else {
             high = mid;
         }
@@ -66,12 +89,19 @@ fn find_insertion_index(entries: &Vec<LeaderboardEntry>, amount: i128) -> u32 {
 /// 4. **Evict** the now-lowest entry if the insert pushed the list over the
 ///    cap, keeping exactly the top `MAX_LEADERBOARD_SIZE`.
 fn update_entries(entries: &mut Vec<LeaderboardEntry>, profile: &Profile, amount: i128) {
+    // Step 0 — trim any pre-existing oversized list to the cap.
+    while entries.len() > MAX_LEADERBOARD_SIZE {
+        entries.pop_back();
+    }
+
     // Step 1 — drop the creator's stale entry if they are already ranked.
     let mut i: u32 = 0;
     while i < entries.len() {
-        if entries.get(i).unwrap().address == profile.owner {
-            entries.remove(i);
-            break;
+        if let Some(entry) = entries.get(i) {
+            if entry.address == profile.owner {
+                entries.remove(i);
+                break;
+            }
         }
         i += 1;
     }
@@ -225,7 +255,9 @@ pub fn get_leaderboard(env: &Env, period: LeaderboardPeriod, limit: u32) -> Vec<
     let mut result = Vec::new(env);
     let mut i: u32 = 0;
     while i < limit && i < entries.len() {
-        result.push_back(entries.get(i).unwrap().clone());
+        if let Some(entry) = entries.get(i) {
+            result.push_back(entry.clone());
+        }
         i += 1;
     }
     result
@@ -309,7 +341,7 @@ mod tests {
             domain: String::from_str(env, ""),
             domain_verified: false,
             domain_verified_at: None,
-        custom_min_tip: None,
+            custom_min_tip: None,
         }
     }
 
@@ -384,10 +416,19 @@ mod tests {
             assert_eq!(result.len(), 50);
             assert_eq!(result.get(0).unwrap().address, addr_new);
 
-            // Lowest (10) should be gone
+            // Highest old score (500) should be evicted; lowest old (10) should remain
+            let mut min_amount = i128::MAX;
+            let mut found_500 = false;
             for e in result.iter() {
-                assert!(e.amount > 10 || e.address == addr_new);
+                if e.amount < min_amount {
+                    min_amount = e.amount;
+                }
+                if e.amount == 500 {
+                    found_500 = true;
+                }
             }
+            assert_eq!(min_amount, 10);
+            assert!(!found_500);
         });
     }
 }

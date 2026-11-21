@@ -4,7 +4,6 @@
   "app.reloadNow": "Reload now",
   "app.skipToMain": "Skip to main content",
   "app.updateAvailable": "Update available",
-  "app.criticalUpdateRequired": "Critical update required to continue",
   "offline.description": "You appear to be offline. Reconnect to continue using live features.",
   "offline.title": "Offline",
   "common.auto": "Auto",
@@ -35,6 +34,10 @@
   "error.requestTimedOutMessage": "The request timed out. Please try again.",
   "error.somethingWrong": "Something went wrong",
   "error.tooManyRequests": "Too Many Requests",
+  "error.appTitle": "The app hit a problem",
+  "error.appMessage": "You can try again without losing your place, or reload the page.",
+  "error.sectionTitle": "This section couldn't load",
+  "error.sectionMessage": "The rest of the page is still available. Retry this section without reloading.",
   "error.unexpected": "Unexpected Error",
   "error.unexpectedMessage": "An unexpected error occurred. Please try again.",
   "error.walletNotFound": "Wallet Not Found",
@@ -236,5 +239,8 @@
   "wallet.connect": "Connect Wallet",
   "wallet.connecting": "Connecting...",
   "wallet.disconnect": "Disconnect",
-  "wallet.disconnectWithAddress": "Disconnect {{address}}"
+  "wallet.disconnectWithAddress": "Disconnect {{address}}",
+  "common": {
+    "close": "Close"
+  }
 }

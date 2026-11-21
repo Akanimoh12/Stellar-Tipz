@@ -12,20 +12,11 @@ const prisma = new PrismaClient();
  */
 export async function resetDb(): Promise<void> {
   await prisma.$transaction([
-    prisma.withdrawal.deleteMany(),
-    prisma.creditScoreHistory.deleteMany(),
-    prisma.creditScore.deleteMany(),
-    prisma.leaderboardSnapshot.deleteMany(),
-    prisma.streak.deleteMany(),
-    prisma.notification.deleteMany(),
     prisma.refund.deleteMany(),
     prisma.tip.deleteMany(),
-    prisma.refreshToken.deleteMany(),
-    prisma.apiKey.deleteMany(),
-    prisma.authChallenge.deleteMany(),
+    prisma.eventLog.deleteMany(),
     prisma.indexerCursor.deleteMany(),
     prisma.xAccount.deleteMany(),
-    prisma.user.deleteMany(),
   ]);
 }
 

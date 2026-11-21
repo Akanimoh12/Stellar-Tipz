@@ -1,26 +1,50 @@
-import { useState, useEffect, useCallback } from 'react';
-import { isFeatureEnabled, getFeatureValue } from '@/services/featureFlags';
-
-type FlagValue = boolean | number | string;
+import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
+import {
+  isFeatureEnabled,
+  getFeatureValue,
+  subscribeToFlagChanges,
+  getFlagDebugInfo,
+  type FlagValue,
+  type FlagDebugInfo,
+} from '@/services/featureFlags';
 
 export function useFeatureFlag(name: string, defaultValue: boolean = false): boolean {
-  const [enabled, setEnabled] = useState(() => isFeatureEnabled(name, defaultValue));
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => subscribeToFlagChanges(onStoreChange),
+    [],
+  );
+  const getSnapshot = useCallback(
+    () => isFeatureEnabled(name, defaultValue),
+    [name, defaultValue],
+  );
 
-  useEffect(() => {
-    setEnabled(isFeatureEnabled(name, defaultValue));
-  }, [name, defaultValue]);
-
-  return enabled;
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 export function useFeatureValue(name: string, defaultValue?: FlagValue): FlagValue | undefined {
-  const [value, setValue] = useState(() => getFeatureValue(name, defaultValue));
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => subscribeToFlagChanges(onStoreChange),
+    [],
+  );
+  const getSnapshot = useCallback(
+    () => getFeatureValue(name, defaultValue),
+    [name, defaultValue],
+  );
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+export function useFeatureFlagDebug(): FlagDebugInfo {
+  const [info, setInfo] = useState(() => getFlagDebugInfo());
 
   useEffect(() => {
-    setValue(getFeatureValue(name, defaultValue));
-  }, [name, defaultValue]);
+    const unsub = subscribeToFlagChanges(() => {
+      setInfo(getFlagDebugInfo());
+    });
+    return unsub;
+  }, []);
 
-  return value;
+  return info;
 }
 
 const listeners: Record<string, Set<() => void>> = {};

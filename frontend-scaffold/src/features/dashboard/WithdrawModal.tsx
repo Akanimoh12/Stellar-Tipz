@@ -6,7 +6,7 @@ import Button from "../../components/ui/Button";
 import Input from "../../components/ui/Input";
 import Modal from "../../components/ui/Modal";
 import { stroopToXlmBigNumber, xlmToStroop } from "../../helpers/format";
-import { useTipz } from "../../hooks";
+import { useTipz, useFeeBreakdown } from "../../hooks";
 import { logger } from '../../services/logger';
 
 interface WithdrawModalProps {
@@ -115,6 +115,18 @@ const WithdrawModal: React.FC<WithdrawModalProps> = ({
     onClose();
   };
 
+  const {
+    breakdown,
+    isEstimating,
+    estimationError,
+    canSign,
+    refresh,
+  } = useFeeBreakdown({
+    amount: parsedAmount ? parsedAmount.toFixed() : "0",
+    platformFeePercent: (feeBps || 200) / 10000,
+    isOpen,
+  });
+
   const { fee, net } = useMemo(() => {
     const rawAmount = BigInt(requestedStroops);
     const feeAmount = (rawAmount * BigInt(feeBps)) / BigInt(10_000);
@@ -133,6 +145,22 @@ const WithdrawModal: React.FC<WithdrawModalProps> = ({
           Choose how much of your current balance you want to withdraw. The fee
           and estimated net payout update before you confirm.
         </p>
+
+        {estimationError && (
+          <div
+            className="p-3 border-2 border-red-500 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-sm font-bold"
+            role="alert"
+          >
+            <p>{estimationError}</p>
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              className="mt-2 text-xs font-black uppercase underline hover:text-black"
+            >
+              Retry Fee Estimation
+            </button>
+          </div>
+        )}
 
         {error && (
           <div
@@ -194,12 +222,35 @@ const WithdrawModal: React.FC<WithdrawModalProps> = ({
               amount={requestedStroops}
               className="mt-2 block text-xl"
             />
+            {breakdown.amountFiat && (
+              <span className="text-xs font-bold text-gray-500 block mt-1">
+                ≈ {breakdown.amountFiat}
+              </span>
+            )}
           </div>
           <div className="border-2 border-black bg-white p-4">
             <p className="text-xs font-black uppercase tracking-[0.2em] text-gray-800 dark:text-gray-200">
-              Estimated fee
+              Platform Fee ({(feeBps / 100).toFixed(1)}%)
             </p>
             <AmountDisplay amount={fee} className="mt-2 block text-xl" />
+            {breakdown.platformFeeFiat && (
+              <span className="text-xs font-bold text-gray-500 block mt-1">
+                ≈ {breakdown.platformFeeFiat}
+              </span>
+            )}
+          </div>
+          <div className="border-2 border-black bg-white p-4">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-gray-800 dark:text-gray-200">
+              Network Fee
+            </p>
+            <span className="mt-2 block text-xl font-bold">
+              {isEstimating ? "Estimating..." : `${breakdown.networkFeeXLM} XLM`}
+            </span>
+            {breakdown.networkFeeFiat && !isEstimating && (
+              <span className="text-xs font-bold text-gray-500 block mt-1">
+                ≈ {breakdown.networkFeeFiat}
+              </span>
+            )}
           </div>
           <div className="border-2 border-black bg-black p-4 text-white">
             <p className="text-xs font-black uppercase tracking-[0.2em] text-white/70">
@@ -218,7 +269,7 @@ const WithdrawModal: React.FC<WithdrawModalProps> = ({
           </Button>
           <Button
             onClick={handleWithdraw}
-            disabled={withdrawing || Boolean(amountError)}
+            disabled={withdrawing || Boolean(amountError) || !canSign || Boolean(estimationError)}
           >
             {withdrawing ? "Withdrawing..." : "Confirm withdrawal"}
           </Button>
