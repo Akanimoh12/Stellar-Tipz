@@ -7,33 +7,39 @@ interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement
   rows?: number;
   warnAt?: number;
   dangerAt?: number;
+  showRemaining?: boolean;
 }
 
 const Textarea: React.FC<TextareaProps> = ({
   label, error, maxLength, rows = 4, className = '', id,
-  onChange, value, defaultValue, warnAt, dangerAt, required, ...props
+  onChange, value, defaultValue, warnAt, dangerAt, showRemaining = false, required, ...props
 }) => {
   const generatedId = React.useId();
   const textareaId = id || label?.toLowerCase().replace(/\s+/g, '-') || generatedId;
   const errorId = error ? `${textareaId}-error` : undefined;
   const counterId = maxLength ? `${textareaId}-counter` : undefined;
-  const [charCount, setCharCount] = useState(() => {
-    const initialValue = value?.toString() || defaultValue?.toString() || '';
+  const [uncontrolledCount, setUncontrolledCount] = useState(() => {
+    const initialValue = defaultValue?.toString() || '';
     return initialValue.length;
   });
+  const charCount = value !== undefined ? String(value).length : uncontrolledCount;
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setCharCount(e.target.value.length);
+    if (value === undefined) {
+      setUncontrolledCount(e.target.value.length);
+    }
     onChange?.(e);
   };
 
   const getCounterColor = () => {
     if (!maxLength) return 'text-gray-800 dark:text-gray-200';
-    if (charCount >= maxLength) return 'text-red-600';
-    if (dangerAt !== undefined && charCount >= dangerAt) return 'text-red-600';
-    if (warnAt !== undefined && charCount >= warnAt) return 'text-yellow-500';
+    if (charCount >= maxLength) return 'text-red-600 dark:text-red-400';
+    if (dangerAt !== undefined && charCount >= dangerAt) return 'text-red-600 dark:text-red-400';
+    if (warnAt !== undefined && charCount >= warnAt) return 'text-amber-700 dark:text-amber-300';
     return 'text-gray-800 dark:text-gray-200';
   };
+
+  const remaining = maxLength ? Math.max(0, maxLength - charCount) : 0;
 
   return (
     <div className="w-full">
@@ -65,7 +71,9 @@ const Textarea: React.FC<TextareaProps> = ({
         ) : <div />}
         {maxLength && (
           <p id={counterId} data-testid="char-counter" className={`text-sm font-medium ${getCounterColor()}`}>
-            {charCount} / {maxLength}
+            {showRemaining
+              ? `${remaining} ${remaining === 1 ? 'character' : 'characters'} remaining`
+              : `${charCount} / ${maxLength}`}
           </p>
         )}
       </div>

@@ -91,10 +91,10 @@ export const UsernameField: React.FC<UsernameFieldProps> = ({
           </p>
         )}
         {!checking && available === true && (
-          <p className="text-xs text-green-600">Username is available!</p>
+          <p className="text-xs text-green-700 dark:text-green-400">Username is available!</p>
         )}
         {!checking && available === false && (
-          <p className="text-xs text-red-600">
+          <p className="text-xs text-red-600 dark:text-red-400">
             Username is taken. Try:{" "}
             {[`${value}1`, `${value}_`, `${value}x`].map((s, i) => (
               <button
@@ -109,7 +109,7 @@ export const UsernameField: React.FC<UsernameFieldProps> = ({
           </p>
         )}
         {availabilityError && (
-          <p className="text-xs text-yellow-600">{availabilityError}</p>
+          <p className="text-xs text-amber-700 dark:text-amber-300">{availabilityError}</p>
         )}
       </div>
     )}

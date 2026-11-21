@@ -38,11 +38,11 @@ const RootErrorFallback: React.FC<FallbackProps> = ({ onRetry, onReload }) => {
       role="alert"
       aria-live="assertive"
     >
-      <div className="max-w-md w-full border-4 border-black bg-white p-8 shadow-brutalist text-center">
+      <div className="max-w-md w-full border-4 border-black dark:border-white bg-white dark:bg-black text-black dark:text-white p-8 shadow-brutalist text-center">
         <h1 className="text-2xl font-black uppercase mb-3 tracking-tight">
           {t('error.appTitle')}
         </h1>
-        <p className="font-bold text-gray-600 mb-8 leading-relaxed">
+        <p className="font-bold text-gray-600 dark:text-gray-300 mb-8 leading-relaxed">
           {t('error.appMessage')}
         </p>
         <div className="space-y-3">
@@ -82,7 +82,7 @@ const FeatureErrorFallback: React.FC<FallbackProps> = ({ onRetry, name }) => {
 
   return (
     <div
-      className="border-4 border-black bg-white p-6 shadow-brutalist"
+      className="border-4 border-black dark:border-white bg-white dark:bg-black text-black dark:text-white p-6 shadow-brutalist"
       role="alert"
       aria-live="assertive"
       data-error-boundary={name ?? 'feature'}
@@ -90,7 +90,7 @@ const FeatureErrorFallback: React.FC<FallbackProps> = ({ onRetry, name }) => {
       <h3 className="text-lg font-black uppercase mb-2 tracking-tight">
         {t('error.sectionTitle')}
       </h3>
-      <p className="font-bold text-gray-600 mb-4 leading-relaxed">
+      <p className="font-bold text-gray-600 dark:text-gray-300 mb-4 leading-relaxed">
         {t('error.sectionMessage')}
       </p>
       <Button

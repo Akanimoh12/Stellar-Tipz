@@ -321,6 +321,7 @@ const TipPage: React.FC = () => {
                 maxLength={MAX_MESSAGE_LENGTH}
                 warnAt={250}
                 dangerAt={270}
+                showRemaining
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
               />

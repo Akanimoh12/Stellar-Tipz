@@ -76,72 +76,94 @@ const NotFoundPage = lazyRoute(() => import("@/features/not-found/NotFoundPage")
 export const routes: RouteObject[] = [
   {
     path: "/",
-    element: wrap(<LandingPage />, <ContentRouteSkeleton label="Loading home" />),
+    element: wrap(<LandingPage />, <ContentRouteSkeleton label="Loading home" />, "route:/"),
   },
   {
     path: "/register",
-    element: wrap(<RegisterPage />, <FormRouteSkeleton label="Loading registration" />),
+    element: wrap(
+      <RegisterPage />,
+      <FormRouteSkeleton label="Loading registration" />,
+      "route:/register",
+    ),
   },
   {
     path: "/@:username",
-    element: wrap(<TipPage />, <TipRouteSkeleton />),
+    element: wrap(<TipPage />, <TipRouteSkeleton />, "route:/@:username"),
   },
   {
     path: "/embed/@:username",
-    element: wrap(<EmbedWidget />, <EmbedRouteSkeleton />),
+    element: wrap(<EmbedWidget />, <EmbedRouteSkeleton />, "route:/embed/@:username"),
   },
   {
     path: "/receipt",
-    element: wrap(<TipReceipt />, <FormRouteSkeleton label="Loading receipt" />),
+    element: wrap(<TipReceipt />, <FormRouteSkeleton label="Loading receipt" />, "route:/receipt"),
   },
   {
     path: "/leaderboard",
-    element: wrap(<LeaderboardPage />, <ListRouteSkeleton label="Loading leaderboard" />),
+    element: wrap(
+      <LeaderboardPage />,
+      <ListRouteSkeleton label="Loading leaderboard" />,
+      "route:/leaderboard",
+    ),
   },
   {
     path: "/profile",
-    element: protect(<ProfilePage />, <ProfileRouteSkeleton />),
+    element: protect(<ProfilePage />, <ProfileRouteSkeleton />, "route:/profile"),
   },
   {
     path: "/profile/edit",
-    element: protect(<ProfileEditPage />, <FormRouteSkeleton label="Loading profile editor" />),
+    element: protect(
+      <ProfileEditPage />,
+      <FormRouteSkeleton label="Loading profile editor" />,
+      "route:/profile/edit",
+    ),
   },
   {
     path: "/dashboard",
-    element: protect(<DashboardPage />, <DashboardRouteSkeleton />),
+    element: protect(<DashboardPage />, <DashboardRouteSkeleton />, "route:/dashboard"),
   },
   {
     path: "/transactions",
     element: protect(
       <TransactionsPage />,
       <ListRouteSkeleton label="Loading transactions" />,
+      "route:/transactions",
     ),
   },
   {
     path: "/settings",
-    element: protect(<SettingsPage />, <FormRouteSkeleton label="Loading settings" />),
+    element: protect(
+      <SettingsPage />,
+      <FormRouteSkeleton label="Loading settings" />,
+      "route:/settings",
+    ),
   },
   {
     path: "/subscriptions",
     element: protect(
       <SubscribePage />,
       <ListRouteSkeleton label="Loading subscriptions" />,
+      "route:/subscriptions",
     ),
   },
   {
     path: "/admin",
-    element: protect(<AdminDashboard />, <DashboardRouteSkeleton />),
+    element: protect(<AdminDashboard />, <DashboardRouteSkeleton />, "route:/admin"),
   },
   {
     path: "/help",
-    element: wrap(<HelpPage />, <ContentRouteSkeleton label="Loading help" />),
+    element: wrap(<HelpPage />, <ContentRouteSkeleton label="Loading help" />, "route:/help"),
   },
   {
     path: "/health",
-    element: wrap(<HealthPage />, <ListRouteSkeleton label="Loading health status" />),
+    element: wrap(
+      <HealthPage />,
+      <ListRouteSkeleton label="Loading health status" />,
+      "route:/health",
+    ),
   },
   {
     path: "*",
-    element: wrap(<NotFoundPage />, <ContentRouteSkeleton />),
+    element: wrap(<NotFoundPage />, <ContentRouteSkeleton />, "route:*"),
   },
 ];

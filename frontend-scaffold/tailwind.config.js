@@ -19,6 +19,22 @@ export default {
           light: "#111111",
           dark: "#F5F5F5",
         },
+        muted: {
+          light: "#525866", // 7.09:1 on #FFFFFF (WCAG AA pass)
+          dark: "#A3AAB8",  // 8.95:1 on #000000 (WCAG AA pass)
+        },
+        danger: {
+          light: "#B91C1C", // 6.47:1 on #FFFFFF (WCAG AA pass)
+          dark: "#F87171",  // 7.56:1 on #000000 (WCAG AA pass)
+        },
+        warning: {
+          light: "#B45309", // 5.02:1 on #FFFFFF (WCAG AA pass)
+          dark: "#FCD34D",  // 14.3:1 on #000000 (WCAG AA pass)
+        },
+        success: {
+          light: "#15803D", // 5.14:1 on #FFFFFF (WCAG AA pass)
+          dark: "#4ADE80",  // 11.9:1 on #000000 (WCAG AA pass)
+        },
         gray: {
           50: '#F9FAFB',
           100: '#F3F4F6',
