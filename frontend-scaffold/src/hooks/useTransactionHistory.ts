@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useContract } from "./useContract";
 import { Tip } from "../types/contract";
-import { env } from "../helpers/env";
-import { mockTips } from "../features/mockData";
-import { logger } from '../services/logger';
+import { logger } from "../services/logger";
 
 export type TransactionType = "sent" | "received" | "withdrawal";
 
@@ -44,6 +42,8 @@ const PAGE_SIZE = 20;
 
 /**
  * Converts a Tip (received) to a Transaction.
+ * Direction is determined by which contract API returned the tip
+ * (getRecentTips → received).
  */
 function tipToReceived(tip: Tip): Transaction {
   return {
@@ -58,6 +58,8 @@ function tipToReceived(tip: Tip): Transaction {
 
 /**
  * Converts a Tip (sent) to a Transaction.
+ * Direction is determined by which contract API returned the tip
+ * (getTipsByTipper → sent).
  */
 function tipToSent(tip: Tip): Transaction {
   return {
@@ -71,35 +73,22 @@ function tipToSent(tip: Tip): Transaction {
 }
 
 /**
- * Builds mock withdrawal transactions from a set of tips.
- */
-function buildMockWithdrawals(tips: Tip[], feeBps: number): Transaction[] {
-  return tips.slice(0, 3).map((tip, i) => {
-    const gross = BigInt(tip.amount) * BigInt(i + 2);
-    const fee = (gross * BigInt(feeBps)) / BigInt(10_000);
-    const net = gross - fee;
-    return {
-      id: `withdrawal-${tip.id}-${i}`,
-      type: "withdrawal" as TransactionType,
-      amount: gross.toString(),
-      counterparty: "",
-      date: tip.timestamp - (i + 1) * 12 * 60 * 60,
-      message: "",
-      fee: fee.toString(),
-      net: net.toString(),
-    };
-  });
-}
-
-/**
  * Hook that fetches and manages the full transaction history for the connected wallet.
- * Combines received tips, sent tips, and (simulated) withdrawals into a unified list.
+ *
+ *   - Received tips are fetched via getRecentTips(publicKey, ...) — tips where
+ *     the connected wallet is the creator.
+ *   - Sent tips are fetched via getTipsByTipper(publicKey, ...) — tips where
+ *     the connected wallet is the tipper.
+ *   - Direction is determined by which API returned the tip, not guessed.
+ *   - Withdrawals are omitted (not yet exposed by the contract API).
+ *
+ * Pagination is cursor-based via offset: loadMore() fetches the next page of
+ * received and/or sent tips depending on the active tab.
  */
 export function useTransactionHistory(
   publicKey: string | null,
   tab: TabFilter,
   dateRange: DateRange,
-  feeBps = 200,
 ): TransactionHistoryData {
   const {
     getRecentTips,
@@ -123,21 +112,6 @@ export function useTransactionHistory(
   const fetchAll = useCallback(async () => {
     if (!publicKey || isFetchingRef.current) return;
 
-    if (env.useMockData) {
-      const received = mockTips.filter((t) => t.creator === publicKey);
-      const sent = mockTips.filter((t) => t.tipper === publicKey);
-      // If no exact match in mock data, show all as received for demo purposes
-      const displayReceived = received.length > 0 ? received : mockTips;
-      setReceivedTips(displayReceived);
-      setSentTips(sent);
-      setReceivedTotal(displayReceived.length);
-      setSentTotal(sent.length);
-      setReceivedOffset(displayReceived.length);
-      setSentOffset(sent.length);
-      setLoading(false);
-      return;
-    }
-
     isFetchingRef.current = true;
     setLoading(true);
     setError(null);
@@ -159,10 +133,12 @@ export function useTransactionHistory(
         setSentTips(sentResult.value);
         setSentOffset(sentResult.value.length);
       }
-      if (receivedCountResult.status === "fulfilled")
+      if (receivedCountResult.status === "fulfilled") {
         setReceivedTotal(receivedCountResult.value);
-      if (sentCountResult.status === "fulfilled")
+      }
+      if (sentCountResult.status === "fulfilled") {
         setSentTotal(sentCountResult.value);
+      }
 
       if (
         receivedResult.status === "rejected" &&
@@ -195,9 +171,9 @@ export function useTransactionHistory(
     fetchAll();
   }, [publicKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Load more ─────────────────────────────────────────────────────────────
+  // ── Load more (cursor-based pagination) ───────────────────────────────────
   const loadMore = useCallback(async () => {
-    if (!publicKey || isFetchingRef.current || env.useMockData) return;
+    if (!publicKey || isFetchingRef.current) return;
 
     isFetchingRef.current = true;
     try {
@@ -220,7 +196,12 @@ export function useTransactionHistory(
         }
       }
     } catch (err) {
-      logger.error('hooks/useTransactionHistory', 'loadMore failed', undefined, err instanceof Error ? err : new Error(String(err)));
+      logger.error(
+        "hooks/useTransactionHistory",
+        "loadMore failed",
+        undefined,
+        err instanceof Error ? err : new Error(String(err)),
+      );
     } finally {
       isFetchingRef.current = false;
     }
@@ -236,10 +217,10 @@ export function useTransactionHistory(
   ]);
 
   // ── Derived data ──────────────────────────────────────────────────────────
-  const withdrawals = useMemo(
-    () => buildMockWithdrawals(receivedTips, feeBps),
-    [receivedTips, feeBps],
-  );
+
+  // The contract API does not yet expose a withdrawal history endpoint, so
+  // the withdrawals list is always empty for now.
+  const withdrawals = useMemo<Transaction[]>(() => [], []);
 
   const allTransactions = useMemo<Transaction[]>(() => {
     const list: Transaction[] = [

@@ -1,235 +1,249 @@
-import { prisma } from "../../db/prisma.js";
-import { logger } from "../../common/utils/logger.js";
-import { computeCreditScore } from "../credit/credit.service.js";
-import { fetchOnChainLeaderboard, fetchOnChainLeaderboardPosition } from "./onchain.service.js";
+import { Prisma } from '@prisma/client';
+import { z } from 'zod';
+import { prisma } from '../../db/prisma.js';
+import { utcTimestamp } from '../../db/sql.js';
+import { NotFoundError } from '../../common/errors/AppError.js';
+import {
+  createCursorScope,
+  decodeKeysetCursor,
+  encodeKeysetCursor,
+} from '../../common/pagination/cursor.js';
+import type { SnapshotPeriod, TimeWindow } from './leaderboard.schema.js';
 import type {
   LeaderboardEntry,
   LeaderboardResponse,
-  LeaderboardPeriod,
-  LeaderboardVariant,
-} from "./leaderboard.types.js";
+  LeaderboardSnapshotResult,
+} from './leaderboard.types.js';
 
-// ── Tips leaderboard ──────────────────────────────────────────────────────────
+const WINDOW_MS: Record<Exclude<TimeWindow, 'all'>, number> = {
+  '24h': 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+};
 
-/**
- * Returns leaderboard entries ranked by total tips received (stroops).
- * Uses pre-computed LeaderboardSnapshot rows for WEEKLY / MONTHLY views;
- * fetches from on-chain contract for ALL_TIME.
- *
- * Issue #933, #1617
- */
-async function getTipsLeaderboard(
-  period: LeaderboardPeriod,
-  page: number,
-  limit: number,
-): Promise<{ entries: LeaderboardEntry[]; total: number }> {
-  if (period !== "ALL_TIME") {
-    // Use periodic snapshots for fast pre-aggregated reads.
-    const skip = (page - 1) * limit;
+const SNAPSHOT_WINDOW_MS: Record<Exclude<SnapshotPeriod, 'ALL_TIME'>, number> = {
+  WEEKLY: 7 * 24 * 60 * 60 * 1000,
+  MONTHLY: 30 * 24 * 60 * 60 * 1000,
+};
 
-    const [snapshots, total] = await Promise.all([
-      prisma.leaderboardSnapshot.findMany({
-        where: { period },
-        orderBy: { rank: "asc" },
-        skip,
-        take: limit,
-        include: {
-          user: {
-            select: {
-              id: true,
-              stellarAddress: true,
-              username: true,
-              displayName: true,
-            },
-          },
-        },
-      }),
-      prisma.leaderboardSnapshot.count({ where: { period } }),
-    ]);
-
-    const entries: LeaderboardEntry[] = snapshots.map((s) => ({
-      rank: s.rank,
-      userId: s.user.id,
-      stellarAddress: s.user.stellarAddress,
-      username: s.user.username,
-      displayName: s.user.displayName,
-      totalTipsStroops: s.totalTips.toString(),
-    }));
-
-    return { entries, total };
-  }
-
-  // ALL_TIME: fetch from on-chain contract.
-  const skip = (page - 1) * limit;
-  
-  try {
-    const onChainEntries = await fetchOnChainLeaderboard(limit * 2);
-    const paginatedEntries = onChainEntries.slice(skip, skip + limit);
-
-    const entries: LeaderboardEntry[] = await Promise.all(
-      paginatedEntries.map(async (entry, index) => {
-        const user = await prisma.user.findUnique({
-          where: { stellarAddress: entry.address },
-          select: { id: true, stellarAddress: true, username: true, displayName: true },
-        });
-        return {
-          rank: skip + index + 1,
-          userId: user?.id ?? "",
-          stellarAddress: entry.address,
-          username: user?.username ?? entry.username,
-          displayName: user?.displayName ?? null,
-          totalTipsStroops: entry.amount,
-        };
-      }),
-    );
-
-    return { entries, total: onChainEntries.length };
-  } catch (error) {
-    logger.error({ error, period }, 'Failed to fetch on-chain leaderboard, falling back to database');
-    
-    // Fallback to database aggregate if contract call fails.
-    const grouped = await prisma.tip.groupBy({
-      by: ["toAddress"],
-      _sum: { amountStroops: true },
-      orderBy: { _sum: { amountStroops: "desc" } },
-      skip,
-      take: limit,
-    });
-
-    const total = (await prisma.tip.groupBy({ by: ["toAddress"] })).length;
-
-    const entries: LeaderboardEntry[] = await Promise.all(
-      grouped.map(async (row, index) => {
-        const user = await prisma.user.findUnique({
-          where: { stellarAddress: row.toAddress },
-          select: { id: true, stellarAddress: true, username: true, displayName: true },
-        });
-        return {
-          rank: skip + index + 1,
-          userId: user?.id ?? "",
-          stellarAddress: row.toAddress,
-          username: user?.username ?? null,
-          displayName: user?.displayName ?? null,
-          totalTipsStroops: (row._sum.amountStroops ?? 0n).toString(),
-        };
-      }),
-    );
-
-    return { entries, total };
-  }
+function getSince(window: TimeWindow, now = new Date()): Date | undefined {
+  if (window === 'all') return undefined;
+  return new Date(now.getTime() - WINDOW_MS[window]);
 }
 
-// ── Credit score leaderboard (issue #933 variant) ────────────────────────────
-
-/**
- * Returns leaderboard entries ranked by live credit score (descending).
- * Scores are computed on the fly using the credit formula (issue #920/#922).
- *
- * NOTE: This is intentionally simple – a production system would cache scores
- * in a CreditScore table and run a background recompute job (issue #919).
- *
- * Issue #933
- */
-async function getCreditLeaderboard(
-  page: number,
-  limit: number,
-): Promise<{ entries: LeaderboardEntry[]; total: number }> {
-  const skip = (page - 1) * limit;
-
-  const [users, total] = await Promise.all([
-    prisma.user.findMany({
-      skip,
-      take: limit,
-      select: {
-        id: true,
-        stellarAddress: true,
-        username: true,
-        displayName: true,
-        xHandle: true,
-      },
-      orderBy: { createdAt: "asc" }, // stable pagination order before re-ranking
-    }),
-    prisma.user.count(),
-  ]);
-
-  // Compute credit scores for this page in parallel.
-  const scored = await Promise.all(
-    users.map(async (user) => {
-      try {
-        const [tipsSent, tipsReceived, selfTips, streak, xAccount] =
-          await Promise.all([
-            prisma.tip.count({ where: { fromAddress: user.stellarAddress } }),
-            prisma.tip.count({ where: { toAddress: user.stellarAddress } }),
-            prisma.tip.count({
-              where: {
-                fromAddress: user.stellarAddress,
-                toAddress: user.stellarAddress,
-              },
-            }),
-            prisma.streak.findUnique({ where: { userId: user.id } }),
-            user.xHandle
-              ? prisma.xAccount.findUnique({ where: { handle: user.xHandle } })
-              : null,
-          ]);
-
-        const washTipRatio = tipsSent > 0 ? Math.min(selfTips / tipsSent, 1) : 0;
-
-        const result = computeCreditScore(user.id, {
-          tipsSent,
-          tipsReceived,
-          streak: streak?.currentStreak ?? 0,
-          xFollowers: xAccount?.followers ?? 0,
-          xEngagement: xAccount?.engagement ?? null,
-          selfTips,
-          washTipRatio,
-        });
-
-        return { user, creditScore: result.score };
-      } catch {
-        return { user, creditScore: 0 };
-      }
-    }),
-  );
-
-  // Sort descending by credit score, then assign ranks.
-  scored.sort((a, b) => b.creditScore - a.creditScore);
-
-  const entries: LeaderboardEntry[] = scored.map((item, index) => ({
-    rank: skip + index + 1,
-    userId: item.user.id,
-    stellarAddress: item.user.stellarAddress,
-    username: item.user.username,
-    displayName: item.user.displayName,
-    creditScore: item.creditScore,
-  }));
-
-  return { entries, total };
+function getSnapshotSince(period: SnapshotPeriod, now = new Date()): Date | undefined {
+  if (period === 'ALL_TIME') return undefined;
+  return new Date(now.getTime() - SNAPSHOT_WINDOW_MS[period]);
 }
 
-// ── Public service function ───────────────────────────────────────────────────
+/**
+ * Leaderboard ordering (issue #1269). The sort is total, so keyset pagination
+ * can never duplicate or skip an entry:
+ *
+ *   1. confirmed volume, descending;
+ *   2. the ledger of the creator's latest counted tip, ascending — the creator
+ *      who *reached* their total first ranks higher, which is the on-chain rule
+ *      in `contracts/tipz/src/leaderboard.rs` (stable insert after equal amounts);
+ *   3. `toAddress` in byte order (`COLLATE "C"`), ascending — unique, so two
+ *      creators can never compare equal. On-chain, a same-ledger tie is decided
+ *      by transaction order, which the Tip table does not record.
+ */
+const RANKED_ORDER = Prisma.sql`"total" DESC, "reachedAtLedger" ASC, "toAddress" COLLATE "C" ASC`;
+const RANKED_ORDER_AGGREGATE = Prisma.sql`SUM("amountStroops") DESC, MAX("ledger") ASC, "toAddress" COLLATE "C" ASC`;
+
+/** Position of the last entry on a page; the next page starts strictly after it. */
+const leaderboardKeysetSchema = z.object({
+  total: z.string().regex(/^\d+$/),
+  ledger: z.number().int(),
+  address: z.string().min(1),
+  rank: z.number().int().min(1),
+});
+
+type LeaderboardKeyset = z.infer<typeof leaderboardKeysetSchema>;
+
+interface RankedRow {
+  toAddress: string;
+  total: bigint;
+  reachedAtLedger: number;
+}
+
+function confirmedTipsFilter(since: Date | undefined): Prisma.Sql {
+  return since
+    ? Prisma.sql`"status" = 'CONFIRMED' AND "createdAt" >= ${utcTimestamp(since)}`
+    : Prisma.sql`"status" = 'CONFIRMED'`;
+}
+
+async function getRankedRows(
+  since: Date | undefined,
+  page: { limit?: number; offset?: number; after?: LeaderboardKeyset } = {},
+): Promise<RankedRow[]> {
+  // (-total, ledger, address) ascending is exactly the ranked order, so one
+  // row comparison expresses "strictly after the cursor".
+  const after = page.after
+    ? Prisma.sql`HAVING (-SUM("amountStroops"), MAX("ledger"), "toAddress" COLLATE "C") > (${-BigInt(page.after.total)}, ${page.after.ledger}, ${page.after.address} COLLATE "C")`
+    : Prisma.empty;
+  const limit = page.limit === undefined ? Prisma.empty : Prisma.sql`LIMIT ${page.limit}`;
+  const offset = page.offset ? Prisma.sql`OFFSET ${page.offset}` : Prisma.empty;
+
+  return prisma.$queryRaw<RankedRow[]>`
+    SELECT "toAddress", SUM("amountStroops")::bigint AS "total", MAX("ledger") AS "reachedAtLedger"
+    FROM "Tip"
+    WHERE ${confirmedTipsFilter(since)}
+    GROUP BY "toAddress"
+    ${after}
+    ORDER BY ${RANKED_ORDER}
+    ${limit}
+    ${offset}
+  `;
+}
+
+async function countRankedRows(since: Date | undefined): Promise<number> {
+  // A hashed GROUP BY avoids COUNT(DISTINCT)'s sort of every tip.
+  const [row] = await prisma.$queryRaw<Array<{ count: bigint }>>`
+    SELECT COUNT(*) AS "count" FROM (
+      SELECT 1 FROM "Tip" WHERE ${confirmedTipsFilter(since)} GROUP BY "toAddress"
+    ) AS "creators"
+  `;
+  return Number(row?.count ?? 0);
+}
+
+async function hydrateEntries(rows: RankedRow[], firstRank: number): Promise<LeaderboardEntry[]> {
+  const addresses = rows.map((row) => row.toAddress);
+  const users = await prisma.user.findMany({
+    where: { stellarAddress: { in: addresses } },
+    select: { id: true, username: true, stellarAddress: true },
+  });
+  const userMap = new Map(users.map((user) => [user.stellarAddress, user]));
+
+  return rows.map((row, index) => {
+    const user = userMap.get(row.toAddress);
+    return {
+      rank: firstRank + index,
+      userId: user?.id ?? '',
+      username: user?.username ?? null,
+      stellarAddress: row.toAddress,
+      totalTips: row.total.toString(),
+    };
+  });
+}
 
 /**
- * Returns a paginated leaderboard in the requested variant and period.
- *
- * - `variant = "tips"` → ranked by total tips received (stroops).
- * - `variant = "credit"` → ranked by live credit score (issue #933).
- *
- * Issue #933
+ * Returns creators ranked by confirmed tip volume. Pages with an opaque
+ * `cursor` (keyset, stable under ties); `offset` is still accepted for
+ * existing clients but deprecated.
  */
 export async function getLeaderboard(
-  variant: LeaderboardVariant,
-  period: LeaderboardPeriod,
-  page: number,
+  window: TimeWindow,
   limit: number,
+  offset: number,
+  cursor?: string,
 ): Promise<LeaderboardResponse> {
-  logger.info({ variant, period, page, limit }, "Fetching leaderboard");
+  const since = getSince(window);
+  const scope = createCursorScope('leaderboard', { window });
+  const after = cursor ? decodeKeysetCursor(cursor, scope, leaderboardKeysetSchema) : undefined;
+  const startOffset = after ? after.rank : offset;
 
-  const { entries, total } =
-    variant === "credit"
-      ? await getCreditLeaderboard(page, limit)
-      : await getTipsLeaderboard(period, page, limit);
+  const [rows, total] = await Promise.all([
+    getRankedRows(since, { limit: limit + 1, offset: after ? undefined : offset, after }),
+    countRankedRows(since),
+  ]);
+  const hasMore = rows.length > limit;
+  const pageRows = hasMore ? rows.slice(0, limit) : rows;
+  const data = await hydrateEntries(pageRows, startOffset + 1);
+  const last = pageRows[pageRows.length - 1];
 
-  return { variant, period, entries, total, page, limit };
+  return {
+    data,
+    window,
+    pagination: {
+      limit,
+      offset: startOffset,
+      total,
+      hasMore,
+      nextCursor:
+        hasMore && last
+          ? encodeKeysetCursor(
+              {
+                total: last.total.toString(),
+                ledger: last.reachedAtLedger,
+                address: last.toAddress,
+                rank: startOffset + pageRows.length,
+              },
+              scope,
+            )
+          : null,
+    },
+  };
+}
+
+/** Returns a single user's rank for the requested leaderboard window, using the leaderboard's total order. */
+export async function getUserRank(
+  userId: string,
+  window: TimeWindow,
+): Promise<{ rank: number; totalTips: string; window: TimeWindow }> {
+  const since = getSince(window);
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { stellarAddress: true },
+  });
+
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  const [ranked] = await prisma.$queryRaw<Array<{ rank: bigint; total: bigint }>>`
+    SELECT "rank", "total" FROM (
+      SELECT "toAddress",
+             SUM("amountStroops")::bigint AS "total",
+             ROW_NUMBER() OVER (ORDER BY ${RANKED_ORDER_AGGREGATE}) AS "rank"
+      FROM "Tip"
+      WHERE ${confirmedTipsFilter(since)}
+      GROUP BY "toAddress"
+    ) AS "ranked"
+    WHERE "toAddress" = ${user.stellarAddress}
+  `;
+
+  if (!ranked) {
+    throw new NotFoundError('User not found on the leaderboard for this window');
+  }
+
+  return {
+    rank: Number(ranked.rank),
+    totalTips: ranked.total.toString(),
+    window,
+  };
+}
+
+/** Rebuilds stored leaderboard snapshots for a period from confirmed tip volume. */
+export async function createLeaderboardSnapshot(
+  period: SnapshotPeriod,
+  now = new Date(),
+): Promise<LeaderboardSnapshotResult> {
+  const since = getSnapshotSince(period, now);
+  const rows = await getRankedRows(since);
+  const addresses = rows.map((row) => row.toAddress);
+  const users = await prisma.user.findMany({
+    where: { stellarAddress: { in: addresses } },
+    select: { id: true, stellarAddress: true },
+  });
+  const userMap = new Map(users.map((user) => [user.stellarAddress, user]));
+
+  const data = rows.flatMap((row, index) => {
+    const user = userMap.get(row.toAddress);
+    if (!user) return [];
+    return {
+      period,
+      rank: index + 1,
+      userId: user.id,
+      totalTips: row.total,
+    };
+  });
+
+  await prisma.$transaction([
+    prisma.leaderboardSnapshot.deleteMany({ where: { period } }),
+    ...(data.length > 0 ? [prisma.leaderboardSnapshot.createMany({ data })] : []),
+  ]);
+
+  return { period, entriesCreated: data.length };
 }
 
 /**

@@ -8,26 +8,40 @@ export interface UseUsernameCheckResult {
   error: string | null;
 }
 
-export const useUsernameCheck = (username: string): UseUsernameCheckResult => {
+export const DEFAULT_USERNAME_DEBOUNCE_MS = 500;
+
+export const useUsernameCheck = (
+  username: string,
+  delayMs: number = DEFAULT_USERNAME_DEBOUNCE_MS,
+): UseUsernameCheckResult => {
   const [available, setAvailable] = useState<boolean | null>(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [debouncedUsername, setDebouncedUsername] = useState('');
   const cache = useRef<Map<string, boolean>>(new Map());
+  const requestIdRef = useRef(0);
   const { getProfileByUsername } = useContract();
 
-  // Debounce username input (500ms)
+  // Debounce username input to avoid a request on every keystroke
   useEffect(() => {
+    const trimmed = username.trim();
+    if (!trimmed) {
+      setDebouncedUsername('');
+      return;
+    }
+
     const timer = setTimeout(() => {
-      setDebouncedUsername(username.trim());
-    }, 500);
+      setDebouncedUsername(trimmed);
+    }, delayMs);
 
     return () => clearTimeout(timer);
-  }, [username]);
+  }, [username, delayMs]);
 
-  // Reset state when username changes
+  // Reset state immediately when username changes
   useEffect(() => {
+    requestIdRef.current += 1;
     setAvailable(null);
+    setChecking(false);
     setError(null);
   }, [username]);
 
@@ -49,21 +63,27 @@ export const useUsernameCheck = (username: string): UseUsernameCheckResult => {
       return;
     }
 
-    const checkAvailability = async () => {
-      if (cache.current.has(debouncedUsername)) {
-        setAvailable(cache.current.get(debouncedUsername)!);
-        return;
-      }
+    if (cache.current.has(debouncedUsername)) {
+      setAvailable(cache.current.get(debouncedUsername)!);
+      setChecking(false);
+      return;
+    }
 
+    let cancelled = false;
+    const currentRequestId = ++requestIdRef.current;
+
+    const checkAvailability = async () => {
       setChecking(true);
       setError(null);
 
       try {
         await getProfileByUsername(debouncedUsername);
+        if (cancelled || currentRequestId !== requestIdRef.current) return;
         // Profile found - username is taken
         cache.current.set(debouncedUsername, false);
         setAvailable(false);
       } catch (err) {
+        if (cancelled || currentRequestId !== requestIdRef.current) return;
         // Profile not found or other error
         // Check if it's a "not found" error vs network error
         if (err && typeof err === 'object' && 'message' in err) {
@@ -90,11 +110,17 @@ export const useUsernameCheck = (username: string): UseUsernameCheckResult => {
           setAvailable(null);
         }
       } finally {
-        setChecking(false);
+        if (!cancelled && currentRequestId === requestIdRef.current) {
+          setChecking(false);
+        }
       }
     };
 
-    checkAvailability();
+    void checkAvailability();
+
+    return () => {
+      cancelled = true;
+    };
   }, [debouncedUsername, getProfileByUsername]);
 
   return {

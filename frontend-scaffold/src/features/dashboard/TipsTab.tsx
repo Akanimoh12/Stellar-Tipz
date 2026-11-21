@@ -3,12 +3,13 @@ import React, { useMemo, useState } from "react";
 import EmptyState from "../../components/ui/EmptyState";
 import Input from "../../components/ui/Input";
 import Table from "../../components/ui/Table";
+import SkeletonWrapper from "../../components/ui/SkeletonWrapper";
 import { useTips } from "../../hooks/useTips";
 import { useWalletStore } from "../../store/walletStore";
-import Loader from "../../components/ui/Loader";
 import Pagination from "../../components/ui/Pagination";
 import { stroopToXlm } from "../../helpers/format";
 import ExportButton from "./ExportButton";
+import TipsTabSkeleton from "./TipsTabSkeleton";
 
 const PAGE_SIZE = 20;
 
@@ -77,14 +78,6 @@ const TipsTab: React.FC = () => {
     { key: "message", label: "Message" },
   ];
 
-  if (loading && tips.length === 0) {
-    return (
-      <div className="flex justify-center py-20">
-        <Loader size="lg" text="Loading tips history..." />
-      </div>
-    );
-  }
-
   if (error && tips.length === 0) {
     return (
       <div className="py-20">
@@ -94,6 +87,7 @@ const TipsTab: React.FC = () => {
   }
 
    return (
+     <SkeletonWrapper loading={loading && tips.length === 0} skeleton={<TipsTabSkeleton />}>
      <div className="space-y-5">
        <ExportButton />
        {/* Filter row */}
@@ -149,10 +143,25 @@ const TipsTab: React.FC = () => {
 
       {/* Responsive table */}
       {paginated.length === 0 ? (
-        <EmptyState
-          title="No tips found"
-          description={tips.length === 0 ? "You haven't received any tips yet." : "Try adjusting your filters."}
-        />
+        tips.length === 0 ? (
+          <EmptyState
+            title="No tips yet"
+            description="Share your profile to receive your first tip."
+            action={{ label: "Go to profile", to: "/dashboard" }}
+          />
+        ) : (
+          <EmptyState
+            title="No tips match your filters"
+            description="Try adjusting your date range or sender search."
+            variant="filtered"
+            onClearFilters={() => {
+              setStartDate("");
+              setEndDate("");
+              setSenderSearch("");
+              setCurrentPage(1);
+            }}
+          />
+        )
       ) : (
         <div className="overflow-x-auto">
           <Table columns={columns} data={tableData} />
@@ -166,6 +175,7 @@ const TipsTab: React.FC = () => {
         onPageChange={setCurrentPage}
       />
     </div>
+    </SkeletonWrapper>
   );
 };
 

@@ -1,0 +1,21 @@
+rule_files:
+  - ../rules/slo-alerts.yml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'app_http_requests_total{service="api",environment="production",code="200"}'
+        values: '0+100x65'
+      - series: 'app_http_requests_total{service="api",environment="production",code="500"}'
+        values: '0+20x65'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: ApiAvailabilityBudgetFastBurn
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: api
+              slo: api-availability
+            exp_annotations:
+              summary: API availability is rapidly consuming its error budget
+              runbook_url: https://github.com/Akanimoh12/Stellar-Tipz/blob/main/docs/runbooks/api-slo-burn.md

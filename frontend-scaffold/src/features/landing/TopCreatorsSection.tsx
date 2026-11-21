@@ -11,7 +11,6 @@ import ErrorState from "@/components/shared/ErrorState";
 import { categorizeError } from "@/helpers/error";
 import { env } from "@/helpers/env";
 import { logger } from "../../services/logger";
-import { mockLeaderboard } from "@/features/mockData";
 import { useI18n } from "@/i18n";
 
 export default function TopCreatorsSection() {
@@ -28,9 +27,8 @@ export default function TopCreatorsSection() {
     setLoading(true);
     setError(null);
 
-    // Use mock data when flag is set or contract is not configured
-    if (env.useMockData || !env.contractId) {
-      setCreators(env.useMockData ? mockLeaderboard.slice(0, 5) : []);
+    if (!env.contractId) {
+      setCreators([]);
       setLoading(false);
       return;
     }
@@ -39,7 +37,12 @@ export default function TopCreatorsSection() {
       const data = await getLeaderboard(5);
       setCreators(data);
     } catch (err) {
-      logger.error('features/landing/TopCreatorsSection', 'Failed to fetch leaderboard', undefined, err instanceof Error ? err : new Error(String(err)));
+      logger.error(
+        'features/landing/TopCreatorsSection',
+        'Failed to fetch leaderboard',
+        undefined,
+        err instanceof Error ? err : new Error(String(err)),
+      );
       setError(String(err));
     } finally {
       setLoading(false);
@@ -53,7 +56,6 @@ export default function TopCreatorsSection() {
   const handleRetry = useCallback(() => {
     if (
       !env.contractId &&
-      !env.useMockData &&
       import.meta.env.MODE !== "test"
     ) {
       setCreators([]);
@@ -124,8 +126,7 @@ export default function TopCreatorsSection() {
           </div>
         ) : error ? (
           <ErrorState
-            category={categorizeError(error).category}
-            message={categorizeError(error).message}
+            errorData={categorizeError(error)}
             onRetry={handleRetry}
           />
         ) : creators.length === 0 ? (

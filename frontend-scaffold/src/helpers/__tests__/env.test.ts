@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { getEnv, validateEnv } from '../env';
+import { logger } from '../../services/logger';
+
+const VALID_CONTRACT_ID = 'C'.padEnd(56, 'A');
 
 describe('env helper', () => {
   it('uses default config when variables are missing', () => {
@@ -45,6 +48,21 @@ describe('env helper', () => {
       useMockData: true,
     });
   });
+
+  it('accepts the local Quickstart network configuration', () => {
+    expect(
+      getEnv({
+        VITE_SOROBAN_RPC_URL: 'http://localhost:8000/rpc',
+        VITE_HORIZON_URL: 'http://localhost:8000',
+        VITE_NETWORK_PASSPHRASE: 'Standalone Network ; February 2017',
+        VITE_CONTRACT_ID: 'C'.padEnd(56, 'A'),
+        VITE_NETWORK: 'LOCAL',
+      }),
+    ).toMatchObject({
+      network: 'LOCAL',
+      networkPassphrase: 'Standalone Network ; February 2017',
+    });
+  });
 });
 
 describe('validateEnv', () => {
@@ -58,26 +76,29 @@ describe('validateEnv', () => {
 
   it('validates RPC URL format', () => {
     expect(() =>
-      validateEnv({ VITE_CONTRACT_ID: 'ABC', VITE_SOROBAN_RPC_URL: 'not-a-url' }),
+      validateEnv({ VITE_CONTRACT_ID: VALID_CONTRACT_ID, VITE_SOROBAN_RPC_URL: 'not-a-url' }),
     ).toThrow(/must be a valid URL/);
   });
 
   it('validates Horizon URL format', () => {
     expect(() =>
-      validateEnv({ VITE_CONTRACT_ID: 'ABC', VITE_HORIZON_URL: 'not-a-url' }),
+      validateEnv({ VITE_CONTRACT_ID: VALID_CONTRACT_ID, VITE_HORIZON_URL: 'not-a-url' }),
     ).toThrow(/must be a valid URL/);
   });
 
   it('warns on missing optional VITE_SENTRY_DSN', () => {
-    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    validateEnv({ VITE_CONTRACT_ID: 'ABC' });
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining('VITE_SENTRY_DSN'));
+    const spy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    validateEnv({ VITE_CONTRACT_ID: VALID_CONTRACT_ID });
+    expect(spy).toHaveBeenCalledWith(
+      'helpers/env',
+      'VITE_SENTRY_DSN is not set – error tracking will be disabled',
+    );
     spy.mockRestore();
   });
 
   it('does not warn when VITE_SENTRY_DSN is set', () => {
-    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    validateEnv({ VITE_CONTRACT_ID: 'ABC', VITE_SENTRY_DSN: 'https://sentry.example/1' });
+    const spy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    validateEnv({ VITE_CONTRACT_ID: VALID_CONTRACT_ID, VITE_SENTRY_DSN: 'https://sentry.example/1' });
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });
@@ -85,7 +106,7 @@ describe('validateEnv', () => {
   it('passes with valid required and optional vars', () => {
     expect(() =>
       validateEnv({
-        VITE_CONTRACT_ID: 'ABC123',
+        VITE_CONTRACT_ID: VALID_CONTRACT_ID,
         VITE_SOROBAN_RPC_URL: 'https://soroban-testnet.stellar.org',
         VITE_SENTRY_DSN: 'https://sentry.example/1',
       }),

@@ -1,0 +1,6 @@
+{
+  "contract": "tipz_contract",
+  "source": "generated from contracts/target/wasm32-unknown-unknown/release/tipz_contract.wasm",
+  "generator": "scripts/generate-contract-spec.sh",
+  "note": "Run scripts/generate-contract-spec.sh after contract interface changes to refresh this machine-readable ABI artifact."
+}

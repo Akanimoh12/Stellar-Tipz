@@ -1,0 +1,18 @@
+# Run this alongside the production API/indexer/jobs host.
+# See backend/docs/LOG_MANAGEMENT.md before enabling it.
+services:
+  otel-collector-logs:
+    image: otel/opentelemetry-collector-contrib:0.114.0
+    command: [--config=/etc/otelcol-contrib/logs.yml]
+    restart: unless-stopped
+    environment:
+      LOGS_BACKEND_OTLP_ENDPOINT: ${LOGS_BACKEND_OTLP_ENDPOINT:?set in the deployment secret manager}
+      LOGS_BACKEND_OTLP_HEADERS: ${LOGS_BACKEND_OTLP_HEADERS:?set in the deployment secret manager}
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./logs.yml:/etc/otelcol-contrib/logs.yml:ro
+    ports:
+      # Scrape this endpoint with the existing Prometheus deployment. The
+      # collector exposes otelcol_exporter_sent_log_records and queue metrics.
+      - '127.0.0.1:8888:8888'
+      - '127.0.0.1:13133:13133'

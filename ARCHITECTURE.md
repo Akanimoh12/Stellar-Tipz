@@ -241,6 +241,26 @@ React SPA that talks to the contract through the Stellar SDK.
 
 ---
 
+## Cross-Cutting Concerns
+
+### JWT Key Rotation (Overlapping Keys)
+
+`JWT_SECRET` alone forces a hard rotation that invalidates all sessions. The backend now supports overlapping keys via `JWT_SECRETS` (`kid→secret` map) and `JWT_CURRENT_KID`. New tokens carry `kid` in the header (`keyid`); verification accepts the full set, unknown `kid` is rejected, and legacy tokens without `kid` fall back to `JWT_SECRET` for backward compatibility. Rotation is zero-downtime: add new `kid`, set `JWT_CURRENT_KID` to it, keep old key for 2× `JWT_EXPIRES_IN` (7-day window), then remove old. See `backend/docs/AUTH_ROTATION.md` and `src/modules/auth/jwt.ts`.
+
+### Transactional Boundaries
+
+Every multi-row write is wrapped in `prisma.$transaction` with `timeout`/`maxWait` and an explicit `isolationLevel`. Reads/signing and external RPC (Soroban, webhooks) happen outside the transaction. Idempotent handling via unique `txHash` and deterministic history ids. See `backend/docs/TRANSACTIONS.md` for the full audit matrix (Auth, Tips, Credit, Leaderboard, Indexer). A test in `src/modules/tips/tips.transaction.test.ts` simulates mid-transaction failure and asserts full rollback.
+
+### Index Audit
+
+All `where`/`orderBy`/`groupBy` combos are mapped to composite indexes with equality columns before range/sort. Indexes are added in `prisma/migrations/20260828000000_add_audit_indexes_concurrency` and documented in `backend/docs/INDEXES_AUDIT.md` (mapping + redundancy analysis) and `backend/docs/INDEX_EXPLAIN.md` (EXPLAIN before/after on 200k-row seed, showing Seq Scan → Index Scan with 50–500× speedup). Production should use `CREATE INDEX CONCURRENTLY`.
+
+### Concurrency: Lost-Update Prevention
+
+Balances and counters use **atomic increment/decrement** (`{ increment: N }`) — never read-then-write. Where read-modify-write is unavoidable (Streak `currentStreak`/`longestStreak` based on `lastTipDate`), a `version` column (on `Goal`, `Streak`, `AnalyticsDaily`) guards the update with `WHERE version = oldVersion` and bounded retries (`MAX_OPTIMISTIC_RETRIES=3`). The helpers live in `src/common/utils/concurrency.ts` (`atomicIncrementGoalRaised`, `atomicIncrementAnalyticsDaily`, `updateStreakForTip`). A concurrency test (`src/common/utils/concurrency.test.ts`) runs 100 parallel increments and asserts the exact final total (e.g., 100×1 XLM = 100 XLM, no lost update). Parallel-increment proof is the deliverable.
+
+---
+
 ## Environment Variables
 
 | Variable | Location | Purpose |

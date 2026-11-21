@@ -14,6 +14,20 @@ The project runs automated vulnerability scans weekly via GitHub Actions:
 - **JavaScript Dependencies**: `npm audit --audit-level=high` scans frontend and contract npm packages
 - **Schedule**: Every Monday at 00:00 UTC
 
+### Static Analysis (SAST)
+
+`npm audit` and `cargo audit` only cover dependencies. Static analysis of our own
+code is handled separately by CodeQL:
+
+- **Languages**: TypeScript (frontend + backend) and Rust (contracts)
+- **Ruleset**: the tuned high-confidence `security` suite — injection, hardcoded
+  secrets, unsafe deserialisation, path traversal, SSRF, XSS, crypto misuse
+- **Schedule**: every push and PR to the default branch, plus weekly on Monday
+- **Results**: GitHub Security → Code scanning
+
+See [`docs/SAST.md`](SAST.md) for scan scope, the ruleset rationale, the
+suppression policy, and how high-severity findings block merges.
+
 ### Dependabot
 
 Dependabot automatically creates pull requests for dependency updates:

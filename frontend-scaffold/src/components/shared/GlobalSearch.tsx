@@ -234,7 +234,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) => {
                 Search for creators by username or display name
               </p>
               <p className="mt-2 text-xs text-gray-700 dark:text-gray-300">
-                Try: "stellarjane" or "orbitmax"
+                You can also search by wallet address
               </p>
             </div>
           )}

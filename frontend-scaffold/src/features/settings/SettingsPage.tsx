@@ -163,7 +163,7 @@ export const SettingsPage: React.FC = () => {
                 type="checkbox"
                 checked={settings.tipNotifications}
                 onChange={() => handleToggle("tipNotifications")}
-                className="w-4 h-4"
+                className="w-4 h-4 rounded border-2 border-black accent-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
               />
             </label>
             <label className="flex items-center justify-between">
@@ -172,7 +172,7 @@ export const SettingsPage: React.FC = () => {
                 type="checkbox"
                 checked={settings.leaderboardNotifications}
                 onChange={() => handleToggle("leaderboardNotifications")}
-                className="w-4 h-4"
+                className="w-4 h-4 rounded border-2 border-black accent-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
               />
             </label>
             <label className="flex items-center justify-between">
@@ -181,7 +181,7 @@ export const SettingsPage: React.FC = () => {
                 type="checkbox"
                 checked={settings.systemNotifications}
                 onChange={() => handleToggle("systemNotifications")}
-                className="w-4 h-4"
+                className="w-4 h-4 rounded border-2 border-black accent-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
               />
             </label>
           </div>
@@ -210,7 +210,7 @@ export const SettingsPage: React.FC = () => {
                 onChange={(e) =>
                   handleChange("theme", e.target.value as Settings["theme"])
                 }
-                className="w-full px-3 py-2 border rounded-lg"
+                className="w-full px-3 py-2 border-2 border-black rounded-lg bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-1"
               >
                 <option value="light">{t("common.light")}</option>
                 <option value="dark">{t("common.dark")}</option>
@@ -227,7 +227,7 @@ export const SettingsPage: React.FC = () => {
                 onChange={(e) =>
                   handleChange("language", e.target.value as Language)
                 }
-                className="w-full px-3 py-2 border rounded-lg"
+                className="w-full px-3 py-2 border-2 border-black rounded-lg bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-1"
               >
                 {languages.map((option) => (
                   <option key={option} value={option}>
@@ -246,7 +246,7 @@ export const SettingsPage: React.FC = () => {
                 onChange={(e) =>
                   handleChange("currency", e.target.value as Settings["currency"])
                 }
-                className="w-full px-3 py-2 border rounded-lg"
+                className="w-full px-3 py-2 border-2 border-black rounded-lg bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-1"
               >
                 <option value="USD">USD</option>
                 <option value="EUR">EUR</option>
@@ -276,7 +276,7 @@ export const SettingsPage: React.FC = () => {
                 value="auto"
                 checked={settings.reduceMotion === "auto"}
                 onChange={() => handleChange("reduceMotion", "auto")}
-                className="h-4 w-4 border-2 border-black accent-black"
+                className="h-4 w-4 border-2 border-black accent-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
               />
             </label>
             <label className="flex items-center justify-between gap-3 border-2 border-black px-3 py-2">
@@ -287,7 +287,7 @@ export const SettingsPage: React.FC = () => {
                 value="always"
                 checked={settings.reduceMotion === "always"}
                 onChange={() => handleChange("reduceMotion", "always")}
-                className="h-4 w-4 border-2 border-black accent-black"
+                className="h-4 w-4 border-2 border-black accent-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
               />
             </label>
           </div>
@@ -336,7 +336,7 @@ export const SettingsPage: React.FC = () => {
                 type="checkbox"
                 checked={settings.publicProfile}
                 onChange={() => handleToggle("publicProfile")}
-                className="w-4 h-4"
+                className="w-4 h-4 rounded border-2 border-black accent-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
               />
             </label>
             <label className="flex items-center justify-between">
@@ -345,7 +345,7 @@ export const SettingsPage: React.FC = () => {
                 type="checkbox"
                 checked={settings.showOnLeaderboard}
                 onChange={() => handleToggle("showOnLeaderboard")}
-                className="w-4 h-4"
+                className="w-4 h-4 rounded border-2 border-black accent-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
               />
             </label>
           </div>
@@ -371,7 +371,7 @@ export const SettingsPage: React.FC = () => {
             onClick={handleReset}
             className="px-4 py-2 border rounded-lg hover:bg-gray-50 transition flex items-center gap-2"
           >
-            <RotateCcw className="w-4 h-4" />
+            <RotateCcw className="w-4 h-4 rounded border-2 border-black accent-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2" />
             {t("common.resetToDefaults")}
           </button>
         </div>

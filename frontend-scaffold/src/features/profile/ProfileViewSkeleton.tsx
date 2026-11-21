@@ -7,7 +7,12 @@ import Skeleton from "@/components/ui/Skeleton";
  */
 const ProfileViewSkeleton: React.FC = () => {
   return (
-    <div className="w-full bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] overflow-hidden">
+    <div
+      role="status"
+      aria-label="Loading profile"
+      aria-busy="true"
+      className="w-full bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] overflow-hidden"
+    >
       <div className="flex flex-col md:flex-row">
         {/* Left: Avatar and Tier */}
         <div className="md:w-72 flex flex-col items-center justify-center p-8 bg-amber-400 border-b-4 md:border-b-0 md:border-r-4 border-black">

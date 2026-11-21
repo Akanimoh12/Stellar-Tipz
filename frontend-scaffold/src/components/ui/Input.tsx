@@ -12,29 +12,44 @@ const Input: React.FC<InputProps> = ({
   helperText,
   className = '',
   id,
+  type,
+  inputMode,
+  required,
   ...props
 }) => {
   const generatedId = React.useId();
   const inputId = id || label?.toLowerCase().replace(/\s+/g, '-') || generatedId;
   const errorId = error ? `${inputId}-error` : undefined;
-  const helperTextId = helperText ? `${inputId}-helper` : undefined;
+  // Only include helperTextId when the helper is actually rendered (i.e. no error).
+  const helperTextId = helperText && !error ? `${inputId}-helper` : undefined;
   const describedBy = [errorId, helperTextId].filter(Boolean).join(' ') || undefined;
+
+  // #1338: number inputs open the numeric keyboard on mobile. An explicit
+  // inputMode from the caller still wins.
+  const resolvedInputMode = inputMode ?? (type === 'number' ? 'decimal' : undefined);
 
   return (
     <div className="w-full">
       {label && (
         <label htmlFor={inputId} className="block text-sm font-bold uppercase tracking-wide mb-2">
           {label}
+          {required && (
+            <span aria-hidden="true" className="ml-1 text-red-500">*</span>
+          )}
         </label>
       )}
       <input
         id={inputId}
+        type={type}
+        inputMode={resolvedInputMode}
+        required={required}
+        aria-required={required ? 'true' : undefined}
         className={`w-full px-4 py-3 border-2 bg-white text-black font-medium transition-colors duration-150
           focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:shadow-brutalist focus:border-gray-500
           placeholder:text-gray-700 dark:text-gray-300 dark:placeholder:text-gray-400 ${
             error ? 'border-red-500' : 'border-black'
           } ${className}`}
-        aria-invalid={error ? 'true' : 'false'}
+        aria-invalid={error ? 'true' : undefined}
         aria-describedby={describedBy}
         {...props}
       />

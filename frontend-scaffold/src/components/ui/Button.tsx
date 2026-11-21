@@ -36,10 +36,13 @@ const Button: React.FC<ButtonProps> = ({
     ghost: "bg-transparent text-black border-transparent hover:border-black active:translate-y-[1px]",
   };
 
+  // #1338: every interactive control keeps a 44x44px minimum touch target.
+  // `sm` was ~32px tall (px-3 py-1.5) which failed the WCAG 2.5.5 target size
+  // guideline on the quick-amount buttons in the tip form.
   const sizes: Record<string, string> = {
-    sm: "px-3 py-1.5 text-sm",
-    md: "px-6 py-3 text-base",
-    lg: "px-8 py-4 text-lg",
+    sm: "px-3 py-1.5 text-sm min-h-[44px] min-w-[44px]",
+    md: "px-6 py-3 text-base min-h-[44px] min-w-[44px]",
+    lg: "px-8 py-4 text-lg min-h-[44px] min-w-[44px]",
   };
 
   const shadow = variant !== "ghost" ? "4px 4px 0px 0px rgba(0,0,0,1)" : "none";

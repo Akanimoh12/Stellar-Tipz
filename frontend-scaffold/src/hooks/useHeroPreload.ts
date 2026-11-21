@@ -1,25 +1,40 @@
-import { useEffect } from 'react';
+import { useEffect } from "react";
 
-export function useHeroPreload(heroSrc = '/img/hero.webp'): void {
+interface PreloadOptions {
+  srcSet?: string;
+  sizes?: string;
+  type?: string;
+}
+
+/** Preload the same responsive candidate as the image, not its full-size original. */
+export function useHeroPreload(
+  heroSrc?: string,
+  options: PreloadOptions = {},
+): void {
+  const { srcSet, sizes, type } = options;
   useEffect(() => {
-    const existing = document.querySelector(
-      `link[rel="preload"][as="image"]`
+    if (!heroSrc) return;
+    const existing = Array.from(
+      document.querySelectorAll<HTMLLinkElement>(
+        'link[rel="preload"][as="image"]',
+      ),
+    ).some(
+      (link) =>
+        link.getAttribute("href") === heroSrc &&
+        link.getAttribute("imagesrcset") === (srcSet ?? null) &&
+        link.getAttribute("imagesizes") === (srcSet && sizes ? sizes : null) &&
+        link.getAttribute("type") === (type ?? null),
     );
     if (existing) return;
-
-    const link = document.createElement('link');
-    link.setAttribute('rel', 'preload');
-    link.setAttribute('as', 'image');
-    link.setAttribute('href', heroSrc);
-    link.setAttribute('type', 'image/webp');
-    link.setAttribute('fetchpriority', 'high');
-
+    const link = document.createElement("link");
+    link.rel = "preload";
+    link.setAttribute("as", "image");
+    link.href = heroSrc;
+    if (srcSet) link.setAttribute("imagesrcset", srcSet);
+    if (srcSet && sizes) link.setAttribute("imagesizes", sizes);
+    if (type) link.type = type;
+    link.setAttribute("fetchpriority", "high");
     document.head.appendChild(link);
-
-    return () => {
-      if (document.head.contains(link)) {
-        document.head.removeChild(link);
-      }
-    };
-  }, [heroSrc]);
+    return () => link.remove();
+  }, [heroSrc, srcSet, sizes, type]);
 }

@@ -1,56 +1,75 @@
-import React from 'react';
+import React, { useState } from "react";
+import { normalizeAvatarSrc } from "../../helpers/avatarImage";
+import { imageSrcSet, ImageSource } from "../../helpers/imageDelivery";
+import { useHeroPreload } from "../../hooks/useHeroPreload";
 
-interface OptimizedImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
+interface OptimizedImageProps
+  extends React.ImgHTMLAttributes<HTMLImageElement> {
   src: string;
   alt: string;
-  width?: number;
-  height?: number;
+  width: number;
+  height: number;
   priority?: boolean;
-  className?: string;
+  /** Actual generated local variants, in preferred format order (AVIF, WebP). */
+  sources?: ImageSource[];
 }
 
-const WIDTHS = [320, 640, 1024, 1920];
+const OptimizedImage: React.FC<OptimizedImageProps> = (props) => (
+  <ImageContent key={props.src} {...props} />
+);
 
-function toWebp(src: string): string {
-  return src.replace(/\.(png|jpe?g)$/i, '.webp');
-}
-
-function buildSrcSet(src: string): string {
-  const base = src.replace(/\.[^.]+$/, '');
-  const ext = src.match(/\.[^.]+$/)?.[0] ?? '.webp';
-  return WIDTHS.map((w) => `${base}-${w}${ext} ${w}w`).join(', ');
-}
-
-const OptimizedImage: React.FC<OptimizedImageProps> = ({
+const ImageContent: React.FC<OptimizedImageProps> = ({
   src,
   alt,
   width,
   height,
   priority = false,
-  className,
-  sizes = '(max-width: 320px) 320px, (max-width: 640px) 640px, (max-width: 1024px) 1024px, 1920px',
+  sources,
+  srcSet,
+  sizes = `(max-width: ${width}px) 100vw, ${width}px`,
+  onError,
   ...rest
 }) => {
-  const webpSrc = toWebp(src);
-
+  const [failed, setFailed] = useState(false);
+  const normalizedSrc = normalizeAvatarSrc(src) ?? src;
+  const widths = [...new Set([320, 640, 1024, width, width * 2])]
+    .filter((value) => value <= width * 2)
+    .sort((a, b) => a - b);
+  const webp = imageSrcSet(normalizedSrc, widths, width / height, "webp");
+  const variants = failed
+    ? []
+    : sources ?? (webp ? [{ type: "image/webp", srcSet: webp }] : []);
+  const fallbackSet = failed
+    ? undefined
+    : srcSet ?? imageSrcSet(normalizedSrc, widths, width / height, "jpg");
+  const preferred = variants[0];
+  useHeroPreload(priority && !failed ? normalizedSrc : undefined, {
+    srcSet: preferred?.srcSet ?? fallbackSet,
+    sizes,
+    type: preferred?.type,
+  });
   return (
     <picture>
-      <source type="image/webp" srcSet={buildSrcSet(webpSrc)} sizes={sizes} />
-      <source srcSet={buildSrcSet(src)} sizes={sizes} />
+      {variants.map((source) => (
+        <source key={source.type} {...source} sizes={sizes} />
+      ))}
       <img
-        src={src}
+        {...rest}
+        src={normalizedSrc}
+        srcSet={fallbackSet}
+        sizes={fallbackSet ? sizes : undefined}
         alt={alt}
         width={width}
         height={height}
-        loading={priority ? 'eager' : 'lazy'}
-        // @ts-expect-error fetchpriority not yet in React types
-        fetchpriority={priority ? 'high' : 'auto'}
-        decoding={priority ? 'sync' : 'async'}
-        className={className}
-        {...rest}
+        loading={priority ? "eager" : "lazy"}
+        {...{ fetchpriority: priority ? "high" : "auto" }}
+        decoding="async"
+        onError={(event) => {
+          if (!failed && (variants.length || fallbackSet)) setFailed(true);
+          else onError?.(event);
+        }}
       />
     </picture>
   );
 };
-
 export default OptimizedImage;

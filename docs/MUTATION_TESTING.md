@@ -147,6 +147,55 @@ final score.  These are inherent to the integer-rounding design and are **by des
 
 ---
 
+## Arithmetic Totality Property Tests (issue #042)
+
+> Issue #042 — `overflow-checks = true` means an overflow panics (DoS) in
+> release. These tests *prove* the arithmetic is total over its full input
+> domain rather than merely "not overflowing on the cases we tried".
+
+The contract release profile enables `overflow-checks`, so any wrapping
+arithmetic is a hard panic — and a permanent denial of service for that code
+path. The property suite in `contracts/tipz/src/test/test_property.rs` now
+exercises the three named domains over the **entire `i128` range** (via
+`proptest!`'s `any::<i128>()`), not just a bounded subset:
+
+| Property | Domain | Guarantee |
+|----------|--------|-----------|
+| `property_fee_total_over_full_i128` | `amount: i128`, `fee_bps: u32` | `calculate_fee` never panics; returns `Ok((fee, net))` or `OverflowError`. For non-negative amounts `fee + net == amount` exactly. |
+| `property_credit_score_total_over_full_i128` | `tips: i128`, X metrics `u32`, `age_days: u64` | `calculate_credit_score` stays within `[BASE_SCORE, MAX_SCORE]` for **any** tip volume, including `i128::MIN`/`i128::MAX`. |
+| `property_volume_accumulation_total_over_full_i128` | `Vec<i128>` of arbitrary tips | `add_creator_period_volumes` accumulates with `saturating_add` — total over the whole i128 domain, never panics. |
+| `property_leaderboard_lifetime_total_extreme` | `amount: i128` as a creator's lifetime total | `update_all_leaderboards_for_active` handles the extreme `i128::MIN`/`i128::MAX` lifetime total without overflow/panic — the "creator's lifetime total grows past a naive bound" risk. |
+
+### Fixed panic paths (saturating/checked where rejection is not appropriate)
+
+The property tests targeted real accumulator paths that previously used
+plain `+=` on `i128`, which would panic under `overflow-checks = true`:
+
+- `multitoken.rs` — `profile.total_tips_received` (a creator's **lifetime
+  total**, the highest-risk accumulator) now uses `saturating_add`.
+- `multitoken.rs` / `tips.rs` — the 24h `volume_last_24h` accumulator now uses
+  `saturating_add`.
+- `tips.rs` — the 24h `tips_last_24h` counter now uses `saturating_add`.
+
+Paths that *can* be rejected by validation (e.g. `add_to_tips_volume`,
+`profile.balance`, `profile.total_tips_received` in `tips.rs`) already return
+`ContractError::OverflowError` via `checked_add`, satisfying "rejected by
+validation first". The saturating changes above are for accumulators where
+rejection would be the wrong behaviour (a long-running creator should not have
+their tip rejected just because their lifetime total is enormous).
+
+### Running
+
+```sh
+cd contracts
+cargo test -p tipz-contract --lib property_
+```
+
+Each `proptest!` block runs 256 cases by default, satisfying the issue's
+"256+ iterations in CI" requirement.
+
+---
+
 ## Tests Added for Mutation Coverage
 
 All new tests live in `contracts/tipz/src/test/test_mutation_coverage.rs`.

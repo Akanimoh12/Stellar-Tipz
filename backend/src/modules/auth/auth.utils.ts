@@ -5,14 +5,13 @@
  * as claims. Expiry is driven by `JWT_EXPIRES_IN` from the validated env config.
  */
 
-import jwt from "jsonwebtoken";
-import { env } from "@/config/env.js";
 import { BadRequestError } from "@/common/errors/AppError.js";
 import {
   SignAccessTokenInputSchema,
   type SignAccessTokenInput,
 } from "./auth.schema.js";
 import type { AuthPayload } from "./auth.types.js";
+import { signAccessToken as signJwt } from "./jwt.js";
 
 /**
  * Signs a short-lived JWT access token for the given user.
@@ -37,7 +36,5 @@ export function signAccessToken(user: SignAccessTokenInput): string {
     scopes: [],
   };
 
-  return jwt.sign(payload, env.JWT_SECRET, {
-    expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions["expiresIn"],
-  });
+  return signJwt(payload);
 }

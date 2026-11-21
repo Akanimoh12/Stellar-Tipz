@@ -61,7 +61,8 @@ const Podium: React.FC<PodiumProps> = ({ creators }) => {
           >
             <Link
               to={`/@${creator.username}`}
-              className="block h-full border-[4px] border-black bg-white p-6 transition-transform duration-200 hover:-translate-x-1 hover:-translate-y-1"
+              aria-label={`#${slot.rank} ${slot.badgeLabel} podium: ${creator.username}`}
+              className="block h-full border-[4px] border-black bg-white p-6 transition-transform duration-200 hover:-translate-x-1 hover:-translate-y-1 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-black focus-visible:ring-offset-2"
               style={{ boxShadow: "8px 8px 0px 0px rgba(0,0,0,1)" }}
             >
               <div className="flex items-start justify-between gap-4">
