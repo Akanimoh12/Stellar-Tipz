@@ -164,4 +164,13 @@ describe('getSimilar', () => {
     mockUserFindUnique.mockResolvedValue(null);
     await expect(getSimilar('ghost', 20)).rejects.toThrow();
   });
+
+  it('returns 404 when target creator profile is soft-deleted (#1644)', async () => {
+    mockUserFindUnique.mockResolvedValue({
+      id: 'deleted-1',
+      stellarAddress: 'GA_DEL',
+      deletedAt: new Date(),
+    });
+    await expect(getSimilar('deleted_user', 20)).rejects.toThrow('Creator not found');
+  });
 });

@@ -336,10 +336,54 @@ describe("apiKeys.service (issue #1218)", () => {
 
       expect(result.id).toBe("key_01");
       expect(result.lastUsedAt).toBeDefined();
+      expect(result.usageCount).toBe(1);
       expect(prisma.apiKey.update).toHaveBeenCalledWith({
         where: { id: "key_01" },
-        data: { lastUsedAt: expect.any(Date) },
+        data: {
+          lastUsedAt: expect.any(Date),
+          usageCount: { increment: 1 },
+        },
       });
+    });
+
+    it("records usageCount increments, lastUsedAt, and lastUsedIp across requests (#1643)", async () => {
+      const t1 = new Date("2026-06-01T10:00:00.000Z");
+      const fakeKey = {
+        id: "key_track_01",
+        hashedKey: hashApiKeySecret("tracked-secret"),
+        scopes: ["read:tips"],
+        expiresAt: null,
+        lastUsedAt: null,
+        lastUsedIp: null,
+        usageCount: 4,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+        deletedAt: null,
+      };
+
+      vi.mocked(prisma.apiKey.findFirst).mockResolvedValueOnce(fakeKey as never);
+      vi.mocked(prisma.apiKey.update).mockResolvedValueOnce({
+        ...fakeKey,
+        lastUsedAt: t1,
+        lastUsedIp: "203.0.113.42",
+        usageCount: 5,
+      } as never);
+
+      const result = await verifyApiKey("tracked-secret", {
+        ipAddress: "203.0.113.42",
+      });
+
+      expect(prisma.apiKey.update).toHaveBeenCalledWith({
+        where: { id: "key_track_01" },
+        data: {
+          lastUsedAt: expect.any(Date),
+          usageCount: { increment: 1 },
+          lastUsedIp: "203.0.113.42",
+        },
+      });
+      expect(result.usageCount).toBe(5);
+      expect(result.lastUsedIp).toBe("203.0.113.42");
+      expect(result.lastUsedAt).toBeDefined();
     });
 
     it("accepts the previous key within the grace period", async () => {
