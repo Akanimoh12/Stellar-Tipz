@@ -1,5 +1,10 @@
 # Security Vulnerability Remediation Process
 
+> **Reporting a vulnerability?** Do not open a public issue. Follow the policy in the
+> [root SECURITY.md](../SECURITY.md), which also holds the severity SLAs and the dependency
+> vulnerability policy. This file describes the day-to-day remediation process for findings that
+> automated scanning raises.
+
 ## Overview
 
 This document outlines the process for identifying, assessing, and remediating security vulnerabilities in the Stellar Tipz project dependencies.
