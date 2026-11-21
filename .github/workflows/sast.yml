@@ -46,12 +46,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Only needed so CodeQL can resolve the npm workspace layout; the analysis
       # itself is compiled from source by the extractor, not run.
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
           cache: npm
@@ -81,7 +81,7 @@ jobs:
         continue-on-error: true
 
       - name: Initialize CodeQL (JavaScript/TypeScript)
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@d2aacf54c2fbc910db8d7ec338fdb54ea48c692d # v3
         with:
           languages: javascript-typescript
           # Ruleset lives in a config file rather than inline: the
@@ -90,10 +90,10 @@ jobs:
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@d2aacf54c2fbc910db8d7ec338fdb54ea48c692d # v3
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@d2aacf54c2fbc910db8d7ec338fdb54ea48c692d # v3
         with:
           # Upload even when the analysis finds problems, so they appear in the
           # Security tab. `category` keeps TS and Rust results distinguishable
@@ -104,7 +104,7 @@ jobs:
 
       - name: Upload SARIF artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sast-sarif-typescript
           # `output: sarif-results` writes to the workspace root, not under the
@@ -120,23 +120,23 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable resolved 2026-11-20
 
       - name: Initialize CodeQL (Rust)
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@d2aacf54c2fbc910db8d7ec338fdb54ea48c692d # v3
         with:
           languages: rust
           # Same shared ruleset as the TypeScript job.
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@d2aacf54c2fbc910db8d7ec338fdb54ea48c692d # v3
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@d2aacf54c2fbc910db8d7ec338fdb54ea48c692d # v3
         with:
           category: "/language:rust"
           output: sarif-results
@@ -144,10 +144,19 @@ jobs:
 
       - name: Upload SARIF artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sast-sarif-rust
           # Workspace-relative for the same reason as the TypeScript job.
           path: sarif-results/*.sarif
           if-no-files-found: warn
           retention-days: 30
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/secrets-scan.yml: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/security-audit.yml: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/storybook.yml: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/synthetic-testnet.yml: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/visual-baselines.yml: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/visual-regression.yml: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/Dockerfile.contract: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/Dockerfile.frontend: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/backend/Dockerfile: text/plain (text)

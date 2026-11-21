@@ -1,19 +1,21 @@
 FROM rust:1.88.0-bookworm AS builder
 
 RUN rustup target add wasm32-unknown-unknown
-
 WORKDIR /app
 COPY contracts/ .
-
 RUN cargo build --target wasm32-unknown-unknown --release
 
 FROM rust:1.88.0-bookworm AS dev
 
-RUN rustup target add wasm32-unknown-unknown
-
-RUN cargo install cargo-watch --version ^8
+RUN rustup target add wasm32-unknown-unknown \
+    && cargo install cargo-watch --version ^8 \
+    && useradd --create-home --uid 10001 appuser
 
 WORKDIR /app
-COPY contracts/ .
+COPY --chown=appuser:appuser contracts/ .
+USER appuser
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD test -f /app/Cargo.toml && cargo --version >/dev/null || exit 1
 
 CMD ["cargo", "watch", "-x", "test", "-x", "build"]
