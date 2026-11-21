@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { E2E_CONTRACT_ID, E2E_RPC_URL } from './e2e/fixtures/constants';
 
 /**
  * Playwright configuration for Stellar Tipz E2E tests (./e2e).
@@ -50,6 +51,10 @@ export default defineConfig({
 
   webServer: {
     command: process.env.CI ? 'npm run build && npx vite preview --port 3000' : 'npm run dev',
+    env: {
+      VITE_CONTRACT_ID: E2E_CONTRACT_ID,
+      VITE_SOROBAN_RPC_URL: E2E_RPC_URL,
+    },
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 120000,

@@ -21,8 +21,13 @@ export function useSentryRouteTracking(): void {
   const location = useLocation();
 
   useEffect(() => {
-    // Update Sentry transaction name based on route
-    const transaction = Sentry.getActiveTransaction();
+    const sentry = Sentry as typeof Sentry & {
+      getActiveTransaction?: () => { setName: (name: string) => void } | undefined;
+    };
+    const transaction =
+      typeof sentry.getActiveTransaction === "function"
+        ? sentry.getActiveTransaction()
+        : undefined;
     if (transaction) {
       transaction.setName(location.pathname);
     }
