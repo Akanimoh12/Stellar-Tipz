@@ -6,7 +6,7 @@ import {
   listAuditLogsQuerySchema,
   platformStatsResponseSchema,
 } from './admin.schema.js'
-import { getPlatformStats, listAuditLogs, logAuditAction } from './admin.service.js'
+import { exportAuditLogs, getPlatformStats, listAuditLogs, logAuditAction } from './admin.service.js'
 import { MANUAL_JOB_NAMES, triggerManualJob } from './manual-jobs.service.js'
 
 /**
@@ -18,10 +18,46 @@ export async function listAuditLogsController(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { limit, offset, action, actor } = listAuditLogsQuerySchema.parse(req.query)
-    const logs = await listAuditLogs(limit, offset, action, actor)
+    const { limit, offset, action, actor, from, to } = listAuditLogsQuerySchema.parse(req.query)
+    const logs = await listAuditLogs(limit, offset, action, actor, from, to)
 
     res.status(200).json({ data: logs })
+  } catch (err) {
+    next(err)
+  }
+}
+
+function csvCell(value: string): string {
+  const safeValue = /^[\t\r=+\-@]/.test(value) ? `'${value}` : value
+  return `"${safeValue.replaceAll('"', '""')}"`
+}
+
+export async function exportAuditLogsController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const { action, actor, from, to } = listAuditLogsQuerySchema.parse(req.query)
+    const logs = await exportAuditLogs(action, actor, from, to)
+    const rows = [
+      ['id', 'actor', 'action', 'target', 'metadata', 'createdAt'],
+      ...logs.map((log) => [
+        log.id,
+        log.actor,
+        log.action,
+        log.target ?? '',
+        JSON.stringify(log.metadata),
+        log.createdAt.toISOString(),
+      ]),
+    ]
+    const csv = rows.map((row) => row.map(csvCell).join(',')).join('\r\n')
+
+    res
+      .status(200)
+      .type('text/csv')
+      .setHeader('content-disposition', 'attachment; filename="audit-logs.csv"')
+      .send(csv)
   } catch (err) {
     next(err)
   }

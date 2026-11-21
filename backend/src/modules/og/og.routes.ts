@@ -16,7 +16,7 @@ const paths: OpenApiPaths = {
       tags: ['OG Images'],
       summary: 'Get a creator OG image',
       description:
-        'Returns a PNG preview image for a creator profile (name, avatar, credit tier, total tips). Images are cached and only regenerated when the underlying data changes. Unknown or errored creators receive a default image rather than a broken response.',
+        'Returns a PNG preview image for a creator profile (name, avatar, credit tier, total tips). Images include an ETag and cache headers for conditional requests. Unknown or errored creators receive a cached default image rather than a broken response.',
       parameters: [
         {
           name: 'username',
@@ -30,7 +30,12 @@ const paths: OpenApiPaths = {
         '200': {
           description: 'PNG image',
           content: { 'image/png': { schema: { type: 'string', format: 'binary' } } },
+          headers: {
+            ETag: { schema: { type: 'string' }, description: 'Content-based entity tag.' },
+            'Cache-Control': { schema: { type: 'string' } },
+          },
         },
+        '304': { description: 'Image has not changed since the cached version.' },
         '400': { description: 'Missing username' },
       },
     },
