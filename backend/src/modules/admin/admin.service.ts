@@ -62,19 +62,49 @@ export async function listAuditLogs(
   offset: number,
   action?: string,
   actor?: string,
+  from?: Date,
+  to?: Date,
 ): Promise<AuditLogEntry[]> {
-  const where: Prisma.AuditLogWhereInput = {};
-  if (action) where.action = action;
-  if (actor) where.actor = actor;
-
   const logs = await prisma.auditLog.findMany({
-    where,
+    where: buildAuditLogWhere(action, actor, from, to),
     orderBy: { createdAt: 'desc' },
     skip: offset,
     take: limit,
   });
 
   return logs.map(toAuditLogEntry);
+}
+
+export async function exportAuditLogs(
+  action?: string,
+  actor?: string,
+  from?: Date,
+  to?: Date,
+): Promise<AuditLogEntry[]> {
+  const logs = await prisma.auditLog.findMany({
+    where: buildAuditLogWhere(action, actor, from, to),
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return logs.map(toAuditLogEntry);
+}
+
+function buildAuditLogWhere(
+  action?: string,
+  actor?: string,
+  from?: Date,
+  to?: Date,
+): Prisma.AuditLogWhereInput {
+  const where: Prisma.AuditLogWhereInput = {};
+  if (action) where.action = action;
+  if (actor) where.actor = actor;
+  if (from || to) {
+    where.createdAt = {
+      ...(from && { gte: from }),
+      ...(to && { lte: to }),
+    };
+  }
+  return where;
 }
 
 /**

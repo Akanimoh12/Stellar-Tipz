@@ -44,6 +44,7 @@ model User {
   tipperSubscriptions  Subscription[]        @relation("SubscriptionTipper")
   creatorSubscriptions Subscription[]        @relation("SubscriptionCreator")
   webhookSubscriptions WebhookSubscription[]
+  moderationAppeals    ModerationAppeal[]
 }
 
 /// API key for service/admin access and webhook integrations.
@@ -405,6 +406,28 @@ model AuditLog {
   @@index([outcome])
   @@index([createdAt])
   @@index([resourceId])
+}
+
+/// A user's request to contest an action taken by moderation.
+model ModerationAppeal {
+  id                 String   @id @default(cuid())
+  appellantId        String
+  appellant          User     @relation(fields: [appellantId], references: [id], onDelete: Cascade)
+  moderationActionId String
+  reason             String
+  details            String?
+  status             String   @default("pending")
+  decision           String?
+  reviewNotes        String?
+  reviewedBy         String?
+  reviewedAt         DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([appellantId, createdAt])
+  @@index([status, createdAt])
+  @@index([moderationActionId])
+  @@unique([appellantId, moderationActionId])
 }
 
 /// Queue metrics snapshot for monitoring and autoscaling (issue #1287).

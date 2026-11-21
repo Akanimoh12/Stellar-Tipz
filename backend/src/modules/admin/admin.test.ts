@@ -157,6 +157,62 @@ describe('GET /api/v1/admin/audit-logs', () => {
     )
   })
 
+  it('filters audit logs by inclusive date range', async () => {
+    mockAuth()
+    mockAuditLogFindMany.mockResolvedValue([])
+
+    await request(createApp())
+      .get('/api/v1/admin/audit-logs?from=2024-01-01T00:00:00.000Z&to=2024-01-31T23:59:59.999Z')
+      .set('Authorization', 'Bearer valid-token')
+
+    expect(mockAuditLogFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          createdAt: {
+            gte: new Date('2024-01-01T00:00:00.000Z'),
+            lte: new Date('2024-01-31T23:59:59.999Z'),
+          },
+        },
+      }),
+    )
+  })
+
+  it('exports matching audit logs as spreadsheet-safe CSV', async () => {
+    mockAuth()
+    mockAuditLogFindMany.mockResolvedValue([{
+      ...AUDIT_ROW,
+      action: '=HYPERLINK("https://example.test")',
+    }])
+
+    const res = await request(createApp())
+      .get('/api/v1/admin/audit-logs/export?action=suspend_user&actor=admin-1&from=2024-01-01T00:00:00.000Z')
+      .set('Authorization', 'Bearer valid-token')
+
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toContain('text/csv')
+    expect(res.headers['content-disposition']).toContain('audit-logs.csv')
+    expect(res.text).toContain('"id","actor","action","target","metadata","createdAt"')
+    expect(res.text).toContain(`"'=HYPERLINK(""https://example.test"")"`)
+    expect(mockAuditLogFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        action: 'suspend_user',
+        actor: 'admin-1',
+        createdAt: { gte: new Date('2024-01-01T00:00:00.000Z') },
+      },
+    }))
+  })
+
+  it('rejects an inverted audit-log date range', async () => {
+    mockAuth()
+
+    const res = await request(createApp())
+      .get('/api/v1/admin/audit-logs?from=2024-02-01T00:00:00.000Z&to=2024-01-01T00:00:00.000Z')
+      .set('Authorization', 'Bearer valid-token')
+
+    expect(res.status).toBe(400)
+    expect(mockAuditLogFindMany).not.toHaveBeenCalled()
+  })
+
   it('uses default pagination values', async () => {
     mockAuth()
     mockAuditLogFindMany.mockResolvedValue([])

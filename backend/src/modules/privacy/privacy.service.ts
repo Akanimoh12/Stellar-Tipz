@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { redis } from '../../db/redis.js';
@@ -44,10 +45,17 @@ export async function exportUserData(userId: string): Promise<SerializableRecord
       tipperSubscriptions: true,
       creatorSubscriptions: true,
       webhookSubscriptions: true,
+      apiKeys: true,
+      refreshTokens: true,
+      notificationBatches: true,
+      notificationDeliveries: true,
+      notificationChannels: true,
+      leaderboardSnapshots: true,
       payoutSchedule: true,
       creditScore: true,
       creditScoreHistory: true,
       streak: true,
+      moderationAppeals: true,
     },
   });
 
@@ -107,6 +115,7 @@ export async function deleteAccount(userId: string): Promise<SerializableRecord>
   });
 
   const deletedAt = new Date();
+  const anonymizedStellarAddress = `deleted:${randomUUID()}`;
   await prisma.$transaction([
     prisma.refreshToken.updateMany({
       where: { userId, revokedAt: null },
@@ -126,7 +135,19 @@ export async function deleteAccount(userId: string): Promise<SerializableRecord>
     }),
     prisma.user.update({
       where: { id: userId },
-      data: { deletedAt, deactivatedAt: deletedAt },
+      data: {
+        deletedAt,
+        deactivatedAt: deletedAt,
+        stellarAddress: anonymizedStellarAddress,
+        username: null,
+        displayName: null,
+        bio: null,
+        imageUrl: null,
+        avatarCid: null,
+        xHandle: null,
+        role: 'user',
+        scopes: [],
+      },
     }),
     prisma.auditLog.create({
       data: {
@@ -150,6 +171,7 @@ export async function deleteAccount(userId: string): Promise<SerializableRecord>
       pendingWithdrawals,
       pendingTips,
       requiresOnChainFollowUp: pendingWithdrawals.length > 0 || pendingTips.length > 0,
+      profileAnonymized: true,
     },
   }) as SerializableRecord;
 }
