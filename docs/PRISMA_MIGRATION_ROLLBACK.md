@@ -131,9 +131,9 @@ The database is disposable. Do not try to hand-reverse a bad local migration.
 docker compose down -v
 docker compose up        # `migrate` service re-runs migrate deploy + db:seed
 
-# Backend-only stack (backend/docker-compose.yml)
-docker compose -f backend/docker-compose.yml down -v
-docker compose -f backend/docker-compose.yml up -d postgres
+# Shared root compose stack
+docker compose down -v
+docker compose up -d postgres
 ```
 
 If you are using `prisma migrate dev` against your own local Postgres, reset

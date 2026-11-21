@@ -56,7 +56,7 @@ it('starts empty', async () => {
 });
 ```
 
-> **Note:** `resetDb` requires a running PostgreSQL instance (see `make -C backend db-up`).
+> **Note:** `resetDb` requires a running PostgreSQL instance (see `make backend-db-up`).
 > Unit tests that mock the Prisma client do not need it.
 
 ## N+1 query guard (issue #1243)

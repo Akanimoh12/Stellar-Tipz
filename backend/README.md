@@ -124,7 +124,7 @@ If a migration is broken, CI fails before the code reaches production.
 git checkout test-implement-drips
 
 # 2. Start Postgres + Redis
-docker compose -f backend/docker-compose.yml up -d
+docker compose up -d postgres redis
 
 # 3. Install deps
 cd backend
@@ -237,9 +237,9 @@ Behaviour (issue #1259):
 **Convenience via Makefile**
 
 ```bash
-make -C backend dev      # same as npm run dev
-make -C backend db-up    # docker compose up (Postgres + Redis)
-make -C backend migrate  # run Prisma migrations
+make backend-dev      # same as npm run dev
+make backend-db-up    # docker compose up (Postgres + Redis)
+make backend-migrate  # run Prisma migrations
 ```
 
 ---
