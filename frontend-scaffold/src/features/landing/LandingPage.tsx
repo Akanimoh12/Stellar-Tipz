@@ -8,7 +8,7 @@ import CreatorShowcaseSection from "./CreatorShowcaseSection";
 import TopCreatorsSection from "./TopCreatorsSection";
 import TrendingCreatorsSection from "./TrendingCreatorsSection";
 import CTASection from "./CTASection";
-import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePageMeta } from "@/hooks/usePageMeta";
 import { useI18n } from "@/i18n";
 
 import { FeatureErrorBoundary } from "@/components/shared/ErrorBoundary";
@@ -20,7 +20,7 @@ import { FeatureErrorBoundary } from "@/components/shared/ErrorBoundary";
  */
 const LandingPage: React.FC = () => {
   const { t } = useI18n();
-  usePageTitle(t("landing.title"));
+  usePageMeta({ title: t("landing.title") });
 
   return (
     <main

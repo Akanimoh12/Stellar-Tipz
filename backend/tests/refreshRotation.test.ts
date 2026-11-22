@@ -170,6 +170,7 @@ describe('Refresh token rotation and reuse detection (issue #080)', () => {
     mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
       const tx = {
         refreshToken: {
+          findUnique: mockFindUnique,
           update: mockUpdate,
           create: mockCreate,
         },
@@ -369,6 +370,116 @@ describe('Refresh token rotation and reuse detection (issue #080)', () => {
       for (const call of calls) {
         expect(call[0].where.revokedAt).toBeNull();
       }
+    });
+
+    it('revokes the entire token family when a rotated token is replayed in a stateful multi-step chain (#1639)', async () => {
+      type StoredToken = {
+        id: string;
+        userId: string;
+        sessionId: string;
+        familyId: string;
+        hashedToken: string;
+        expiresAt: Date;
+        revokedAt: Date | null;
+        lastUsedAt: Date;
+        user: typeof user;
+      };
+
+      const store = new Map<string, StoredToken>();
+      const initialRaw = 'initial_family_token_t1';
+      const t1Record: StoredToken = {
+        id: 'tok_1',
+        userId: user.id,
+        sessionId,
+        familyId,
+        hashedToken: hashToken(initialRaw),
+        expiresAt: future,
+        revokedAt: null,
+        lastUsedAt: now,
+        user,
+      };
+      store.set(t1Record.id, t1Record);
+
+      let seq = 2;
+      mockFindUnique.mockImplementation(async ({ where }: { where: { id?: string; hashedToken?: string } }) => {
+        if (where.id) {
+          return store.get(where.id) ?? null;
+        }
+        if (where.hashedToken) {
+          for (const rec of store.values()) {
+            if (rec.hashedToken === where.hashedToken) return rec;
+          }
+        }
+        return null;
+      });
+
+      mockUpdate.mockImplementation(async ({ where, data }: { where: { id: string }; data: Partial<StoredToken> }) => {
+        const existing = store.get(where.id);
+        if (!existing) throw new Error('Token not found');
+        const updated = { ...existing, ...data };
+        store.set(where.id, updated);
+        return updated;
+      });
+
+      mockCreate.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+        const id = `tok_${seq++}`;
+        const created: StoredToken = {
+          id,
+          userId: String(data.userId),
+          sessionId: String(data.sessionId),
+          familyId: String(data.familyId),
+          hashedToken: String(data.hashedToken),
+          expiresAt: data.expiresAt as Date,
+          revokedAt: null,
+          lastUsedAt: (data.lastUsedAt as Date) ?? new Date(),
+          user,
+        };
+        store.set(id, created);
+        return created;
+      });
+
+      mockUpdateMany.mockImplementation(
+        async ({ where, data }: { where: { familyId?: string; sessionId?: string; revokedAt?: null }; data: { revokedAt: Date } }) => {
+          let count = 0;
+          for (const [id, rec] of store.entries()) {
+            const matchesFamily = where.familyId ? rec.familyId === where.familyId : true;
+            const matchesSession = where.sessionId ? rec.sessionId === where.sessionId : true;
+            const matchesRevoked = where.revokedAt === null ? rec.revokedAt === null : true;
+            if (matchesFamily && matchesSession && matchesRevoked) {
+              store.set(id, { ...rec, revokedAt: data.revokedAt });
+              count += 1;
+            }
+          }
+          return { count };
+        },
+      );
+
+      // Step 1: Legitimate refresh rotates T1 -> T2
+      const firstRotation = await refreshToken(initialRaw, { device: 'Browser', ipAddress: '10.0.0.1' });
+      const t2Raw = firstRotation.refreshToken;
+      expect(store.get('tok_1')?.revokedAt).toBeInstanceOf(Date);
+      expect(store.get('tok_2')?.revokedAt).toBeNull();
+
+      // Step 2: Legitimate refresh rotates T2 -> T3 in the same family
+      const secondRotation = await refreshToken(t2Raw, { device: 'Browser', ipAddress: '10.0.0.1' });
+      const t3Raw = secondRotation.refreshToken;
+      expect(store.get('tok_2')?.revokedAt).toBeInstanceOf(Date);
+      expect(store.get('tok_3')?.revokedAt).toBeNull();
+
+      // Step 3: Attacker replays the already-rotated T1 token
+      await expect(
+        refreshToken(initialRaw, { device: 'Attacker', ipAddress: '203.0.113.5' }),
+      ).rejects.toThrow(/reuse detected/i);
+
+      // Every token in the family (including the active T3) is now revoked
+      for (const rec of store.values()) {
+        expect(rec.revokedAt).toBeInstanceOf(Date);
+      }
+
+      // Step 4: Even the latest descendant token T3 is now rejected because the whole family was revoked
+      await expect(
+        refreshToken(t3Raw, { device: 'Browser', ipAddress: '10.0.0.1' }),
+      ).rejects.toThrow(/reuse detected/i);
     });
   });
 

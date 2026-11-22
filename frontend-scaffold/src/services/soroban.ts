@@ -17,30 +17,19 @@ import {
   contractQueryCache,
 } from "./cache";
 
-// Re-export helpers from sub-modules for backward compatibility.
-export {
-  BASE_FEE,
-  baseFeeXlm,
-  getEstimatedFee,
-} from "./soroban.fees";
+// Soroban simulation requires a fee to build the unsigned transaction.
+// prepareTx adds the network-estimated resource fee before the transaction is signed.
+export const BASE_FEE = "100";
+export const baseFeeXlm = stroopToXlm(BASE_FEE).toString();
 
-export {
-  accountToScVal,
-  getTxBuilder,
-  getSimulationTxBuilder,
-  makePayment,
-  numberToI128,
-  simulateTx,
-} from "./soroban.build";
-
-export {
-  SendTxStatus,
-  submitTx,
-} from "./soroban.submit";
-
-// Keep BASE_FEE accessible locally for the leaderboard simulation helper.
-import { BASE_FEE } from "./soroban.fees";
-import { getSimulationTxBuilder, simulateTx } from "./soroban.build";
+export const SendTxStatus: {
+  [index: string]: SorobanRpc.Api.SendTransactionStatus;
+} = {
+  Pending: "PENDING",
+  Duplicate: "DUPLICATE",
+  Retry: "TRY_AGAIN_LATER",
+  Error: "ERROR",
+};
 
 export const XLM_DECIMALS = 7;
 
@@ -236,6 +225,114 @@ export const getServer = (networkDetails: NetworkDetails) => {
   });
 };
 
+// Get a TransactionBuilder configured with our public key
+export const getTxBuilder = async (
+  pubKey: string,
+  fee: string,
+  server: SorobanRpc.Server,
+  networkPassphrase: string,
+) => {
+  const source = await server.getAccount(pubKey);
+  return new TransactionBuilder(source, {
+    fee,
+    networkPassphrase,
+  });
+};
+
+/**
+ * Build a TransactionBuilder for simulation-only (read-only) contract calls.
+ *
+ * Soroban simulation does not require the source account to exist on Horizon.
+ * Using a minimal in-memory Account avoids 404s when no wallet is connected.
+ */
+export const getSimulationTxBuilder = (
+  pubKey: string,
+  fee: string,
+  networkPassphrase: string,
+) => {
+  const source = new Account(pubKey, "0");
+  return new TransactionBuilder(source, { fee, networkPassphrase });
+};
+
+//  Can be used whenever we need to perform a "read-only" operation
+//  Used in getTokenSymbol, getTokenName, getTokenDecimals, and getTokenBalance
+export const simulateTx = async <ArgType>(
+  tx: Transaction<Memo<MemoType>, Operation[]>,
+  server: SorobanRpc.Server,
+): Promise<ArgType> => {
+  const response = await server.simulateTransaction(tx);
+
+  if (
+    SorobanRpc.Api.isSimulationSuccess(response) &&
+    response.result !== undefined
+  ) {
+    const raw = scValToNative(response.result.retval);
+    return mapContractResponse<ArgType>(raw);
+  }
+
+  throw new Error("cannot simulate transaction");
+};
+
+/**
+ * Simulate a contract transaction and apply the network-estimated resource fee.
+ * The returned transaction must be signed instead of the original transaction.
+ */
+export const prepareTx = (
+  tx: Transaction<Memo<MemoType>, Operation[]>,
+  server: SorobanRpc.Server,
+): Promise<Transaction<Memo<MemoType>, Operation[]>> =>
+  server.prepareTransaction(tx);
+
+// Build and submits a transaction to the Soroban RPC
+// Polls for non-pending state, returns result after status is updated
+export const submitTx = async (
+  signedXDR: string,
+  networkPassphrase: string,
+  server: SorobanRpc.Server,
+  timeoutSeconds: number = 60,
+) => {
+  const tx = TransactionBuilder.fromXDR(signedXDR, networkPassphrase);
+
+  const sendResponse = await server.sendTransaction(tx);
+
+  if (sendResponse.errorResult) {
+    throw new Error(ERRORS.UNABLE_TO_SUBMIT_TX);
+  }
+
+  if (sendResponse.status === SendTxStatus.Pending) {
+    let txResponse = await server.getTransaction(sendResponse.hash);
+    const startTime = Date.now();
+    const timeoutMs = timeoutSeconds * 1000;
+
+    while (
+      txResponse.status === SorobanRpc.Api.GetTransactionStatus.NOT_FOUND
+    ) {
+      // Check if timeout exceeded
+      if (Date.now() - startTime > timeoutMs) {
+        throw new Error(
+          `Transaction polling timeout after ${timeoutSeconds} seconds. Hash: ${sendResponse.hash}`
+        );
+      }
+
+      // See if the transaction is complete
+      txResponse = await server.getTransaction(sendResponse.hash);
+      // Wait a second
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+
+    if (txResponse.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
+      // Any write invalidates the read cache — the only safe default is to
+      // drop balance reads for both ends of the transaction. Callers that
+      // know more (e.g. a profile update) can call additional prefix
+      // invalidations themselves.
+      contractQueryCache.invalidateByPrefix('["balance"');
+      return txResponse.resultXdr.toXDR("base64");
+    }
+  }
+  throw new Error(
+    `Unable to submit transaction, status: ${sendResponse.status}`,
+  );
+};
 
 // Get the tokens symbol, decoded as a string
 export const getTokenSymbol = async (
@@ -319,3 +416,67 @@ export const getTokenBalance = async (
   );
 };
 
+// Build a "transfer" operation, and prepare the corresponding XDR
+// https://github.com/stellar/soroban-examples/blob/main/token/src/contract.rs#L27
+export const makePayment = async (
+  tokenId: string,
+  amount: number,
+  to: string,
+  pubKey: string,
+  memo: string,
+  txBuilder: TransactionBuilder,
+  server: SorobanRpc.Server,
+) => {
+  const contract = new Contract(tokenId);
+  const tx = txBuilder
+    .addOperation(
+      contract.call(
+        "transfer",
+        ...[
+          accountToScVal(pubKey), // from
+          accountToScVal(to), // to
+          numberToI128(amount), // amount
+        ],
+      ),
+    )
+    .setTimeout(TimeoutInfinite);
+
+  if (memo.length > 0) {
+    tx.addMemo(Memo.text(memo));
+  }
+
+  const preparedTransaction = await prepareTx(tx.build(), server);
+
+  return preparedTransaction.toXDR();
+};
+
+export const getEstimatedFee = async (
+  tokenId: string,
+  amount: number,
+  to: string,
+  pubKey: string,
+  memo: string,
+  txBuilder: TransactionBuilder,
+  server: SorobanRpc.Server,
+) => {
+  const contract = new Contract(tokenId);
+  const tx = txBuilder
+    .addOperation(
+      contract.call(
+        "transfer",
+        ...[
+          accountToScVal(pubKey), // from
+          accountToScVal(to), // to
+          numberToI128(amount), // amount
+        ],
+      ),
+    )
+    .setTimeout(TimeoutInfinite);
+
+  if (memo.length > 0) {
+    tx.addMemo(Memo.text(memo));
+  }
+
+  const preparedTransaction = await prepareTx(tx.build(), server);
+  return preparedTransaction.fee;
+};

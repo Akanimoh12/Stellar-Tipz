@@ -3,10 +3,10 @@ import { FileSearch, Home, Trophy } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PageContainer from '../../components/layout/PageContainer';
 import Button from '../../components/ui/Button';
-import { usePageTitle } from '@/hooks/usePageTitle';
+import { usePageMeta } from '@/hooks/usePageMeta';
 
 const NotFoundPage: React.FC = () => {
-  usePageTitle('Page Not Found');
+  usePageMeta({ title: 'Page Not Found' });
 
   return (
     <PageContainer maxWidth="md">

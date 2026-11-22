@@ -1,6 +1,8 @@
 import React from "react";
+import { Star } from "lucide-react";
 import { ACHIEVEMENTS, AchievementId } from "@/hooks/useAchievements";
 import AchievementCard from "./AchievementCard";
+import EmptyState from "@/components/ui/EmptyState";
 
 interface AchievementGalleryProps {
   /** IDs of achievements the user has unlocked */
@@ -35,9 +37,11 @@ const AchievementGallery: React.FC<AchievementGalleryProps> = ({
       </div>
 
       {earned === 0 && (
-        <p className="mb-4 text-sm font-bold text-gray-500">
-          No achievements yet — keep tipping to unlock badges!
-        </p>
+        <EmptyState
+          icon={<Star size={32} />}
+          title="No achievements yet"
+          description="Keep tipping to unlock badges and earn recognition!"
+        />
       )}
 
       <div
