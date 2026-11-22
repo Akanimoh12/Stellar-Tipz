@@ -197,12 +197,14 @@ const EarningsChart: React.FC<EarningsChartProps> = ({ tips, earningsData }) => 
           </div>
         </div>
 
-        <div className="flex border-2 border-black bg-white">
+        <div className="flex border-2 border-black bg-white" role="group" aria-label="Time period selection">
           {(["daily", "weekly", "monthly"] as const).map((v, idx, arr) => (
             <button
               key={v}
               type="button"
               onClick={() => setView(v)}
+              aria-pressed={view === v}
+              aria-label={`View ${v} earnings`}
               className={`px-4 py-2 text-xs font-black uppercase transition-colors ${
                 view === v ? "bg-black text-white" : "hover:bg-gray-100"
               } ${idx !== arr.length - 1 ? "border-r-2 border-black" : ""}`}
@@ -216,39 +218,68 @@ const EarningsChart: React.FC<EarningsChartProps> = ({ tips, earningsData }) => 
       <div className="border-2 border-black bg-white p-4 sm:p-6">
         {!hasData ? (
           <div className="flex h-56 flex-col items-center justify-center gap-3 bg-gray-50 text-gray-800 dark:text-gray-200">
-            <Coins size={32} />
+            <Coins size={32} aria-hidden="true" />
             <p className="text-sm font-black uppercase tracking-widest">No earnings yet</p>
           </div>
         ) : (
-          <div className="h-56 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={series} margin={{ top: 10, right: 10, left: -10, bottom: 10 }}>
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 10, fontWeight: 900 }}
-                  interval="preserveStartEnd"
-                />
-                <YAxis tick={{ fontSize: 10, fontWeight: 900 }} width={44} />
-                <Tooltip
-                  formatter={(value: number | string) => [`${Number(value).toFixed(2)} XLM`, "Earnings"]}
-                  contentStyle={{
-                    border: "2px solid #000",
-                    borderRadius: 0,
-                    fontWeight: 900,
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  stroke="#000"
-                  strokeWidth={3}
-                  dot={false}
-                  isAnimationActive
-                  animationDuration={600}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <>
+            <div className="h-56 w-full" role="img" aria-label={`Earnings chart showing ${total.toFixed(2)} XLM for ${title.toLowerCase()}`}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={series} margin={{ top: 10, right: 10, left: -10, bottom: 10 }}>
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 10, fontWeight: 900 }}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis tick={{ fontSize: 10, fontWeight: 900 }} width={44} />
+                  <Tooltip
+                    formatter={(value: number | string) => [`${Number(value).toFixed(2)} XLM`, "Earnings"]}
+                    contentStyle={{
+                      border: "2px solid #000",
+                      borderRadius: 0,
+                      fontWeight: 900,
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#000"
+                    strokeWidth={3}
+                    dot={false}
+                    isAnimationActive
+                    animationDuration={600}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <details className="mt-4">
+              <summary className="cursor-pointer text-sm font-bold text-gray-700 hover:text-black">
+                View data table
+              </summary>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full border-2 border-black text-sm">
+                  <thead>
+                    <tr className="border-b-2 border-black bg-gray-100">
+                      <th className="border-r-2 border-black px-3 py-2 text-left font-black">Period</th>
+                      <th className="px-3 py-2 text-right font-black">Earnings (XLM)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {series.map((point, idx) => (
+                      <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="border-r-2 border-black px-3 py-2 font-bold">{point.label}</td>
+                        <td className="px-3 py-2 text-right font-mono">{point.value.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t-2 border-black bg-gray-200 font-black">
+                      <td className="border-r-2 border-black px-3 py-2">Total</td>
+                      <td className="px-3 py-2 text-right font-mono">{total.toFixed(2)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </>
         )}
       </div>
     </div>
