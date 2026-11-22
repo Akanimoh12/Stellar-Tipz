@@ -27,8 +27,8 @@ vi.mock('@/hooks/useLeaderboard', () => ({
   useLeaderboard: () => leaderboardHookState,
 }));
 
-vi.mock('@/hooks/usePageTitle', () => ({
-  usePageTitle: vi.fn(),
+vi.mock('@/hooks/usePageMeta', () => ({
+  usePageMeta: vi.fn(),
 }));
 
 const mockUseWalletStore = vi.fn();
