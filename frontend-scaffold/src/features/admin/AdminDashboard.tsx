@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { AlertCircle, BarChart3, Settings, Users, Lock, Loader } from 'lucide-react';
+import { AlertCircle, BarChart3, Settings, Users, Lock } from 'lucide-react';
 import StatsPanel from './StatsPanel';
+import AdminSkeleton from './AdminSkeleton';
 import PageContainer from '@/components/layout/PageContainer';
 
 interface AdminDashboardProps {
@@ -115,9 +116,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* Tab Content */}
         <section role="region" aria-label="Admin section content" className="bg-white rounded-lg shadow p-6">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader className="w-6 h-6 animate-spin text-blue-600" />
-            </div>
+            <AdminSkeleton />
           ) : activeTab === 'stats' ? (
             <StatsPanel />
           ) : activeTab === 'verification' ? (

@@ -10,6 +10,7 @@ import {
 } from "@/hooks/useReducedMotion";
 import { startOnboardingTour } from "@/hooks/useOnboarding";
 import { logger } from "../../services/logger";
+import SettingsPageSkeleton from "./SettingsPageSkeleton";
 
 interface Settings {
   tipNotifications: boolean;
@@ -43,6 +44,7 @@ export const SettingsPage: React.FC = () => {
   });
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const saved = localStorage.getItem("tipz_settings");
@@ -71,6 +73,7 @@ export const SettingsPage: React.FC = () => {
         );
       }
     }
+    setIsLoading(false);
     // Load persisted settings once; language changes are handled below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -127,6 +130,10 @@ export const SettingsPage: React.FC = () => {
       [key]: value,
     }));
   };
+
+  if (isLoading) {
+    return <SettingsPageSkeleton />;
+  }
 
   return (
     <PageContainer
