@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { TrendingUp, Users, Zap, DollarSign } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { TrendingUp, Users, Zap, DollarSign, RefreshCcw } from 'lucide-react';
 
 interface PlatformStats {
   totalUsers: number;
@@ -28,38 +28,38 @@ export const StatsPanel: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchStats = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await fetch('/api/admin/stats');
-        if (!response.ok) {
-          throw new Error(`Failed to fetch stats: ${response.statusText}`);
-        }
-        const data = await response.json();
-        const platformStats: PlatformStats = data.data;
-
-        setStats({
-          totalUsers: platformStats.totalUsers,
-          totalCreators: platformStats.totalCreators,
-          totalTipsCount: platformStats.totalTips,
-          totalTipsVolume: Number(platformStats.totalTipAmountStroops),
-          totalFeesCollected: Number(platformStats.totalTipAmountStroops) * 0.02,
-          feeBps: 200,
-          activeUsersLast30Days: platformStats.activeUsersLast30Days,
-          totalSubscriptions: platformStats.totalSubscriptions,
-        });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-        setStats(null);
-      } finally {
-        setLoading(false);
+  const fetchStats = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/admin/stats');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch stats: ${response.statusText}`);
       }
-    };
+      const data = await response.json();
+      const platformStats: PlatformStats = data.data;
 
-    void fetchStats();
+      setStats({
+        totalUsers: platformStats.totalUsers,
+        totalCreators: platformStats.totalCreators,
+        totalTipsCount: platformStats.totalTips,
+        totalTipsVolume: Number(platformStats.totalTipAmountStroops),
+        totalFeesCollected: Number(platformStats.totalTipAmountStroops) * 0.02,
+        feeBps: 200,
+        activeUsersLast30Days: platformStats.activeUsersLast30Days,
+        totalSubscriptions: platformStats.totalSubscriptions,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+      setStats(null);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void fetchStats();
+  }, [fetchStats]);
 
   const formatStroops = (stroops: number) => {
     const xlm = stroops / 10000000;
@@ -91,6 +91,14 @@ export const StatsPanel: React.FC = () => {
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <p className="text-red-800 font-semibold">Error loading statistics</p>
           <p className="text-red-600 text-sm mt-1">{error}</p>
+          <button
+            type="button"
+            onClick={() => void fetchStats()}
+            className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 text-sm font-semibold border border-red-300 rounded bg-white text-red-700 hover:bg-red-50 transition-colors"
+          >
+            <RefreshCcw className="w-3.5 h-3.5" />
+            Retry
+          </button>
         </div>
       </div>
     );
