@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 
 import EmptyState from "../../components/ui/EmptyState";
+import ErrorState from "../../components/shared/ErrorState";
 import Input from "../../components/ui/Input";
 import Table from "../../components/ui/Table";
 import SkeletonWrapper from "../../components/ui/SkeletonWrapper";
@@ -8,6 +9,7 @@ import { useTips } from "../../hooks/useTips";
 import { useWalletStore } from "../../store/walletStore";
 import Pagination from "../../components/ui/Pagination";
 import { stroopToXlm } from "../../helpers/format";
+import { categorizeError } from "../../helpers/error";
 import ExportButton from "./ExportButton";
 import TipsTabSkeleton from "./TipsTabSkeleton";
 
@@ -36,7 +38,7 @@ const TipsTab: React.FC = () => {
   const [endDate, setEndDate] = useState("");
   const [senderSearch, setSenderSearch] = useState("");
 
-  const { tips, totalCount, loading, error } = useTips(publicKey || "", "creator", 100);
+  const { tips, totalCount, loading, error, refetch } = useTips(publicKey || "", "creator", 100);
 
   const filtered = useMemo(() => {
     return tips.filter((tip) => {
@@ -80,8 +82,8 @@ const TipsTab: React.FC = () => {
 
   if (error && tips.length === 0) {
     return (
-      <div className="py-20">
-        <EmptyState title="Error fetching tips" description={error} />
+      <div className="py-8">
+        <ErrorState errorData={categorizeError(error)} onRetry={refetch} />
       </div>
     );
   }

@@ -1,3 +1,5 @@
+import { logger } from "../services/logger";
+
 export const ERRORS = {
   UNSUPPORTED_NETWORK:
     "Unsupported network selected, please use Futurenet in Freighter",
@@ -149,7 +151,7 @@ export async function reportUnmappedError(
       : SentryModule;
     
     if (!Sentry || !Sentry.captureException) {
-      console.warn('Sentry not available for error reporting');
+      logger.warn('helpers/error', 'Sentry not available for error reporting');
       return;
     }
     

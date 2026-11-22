@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
+  AlertTriangle,
   ArrowRight,
   HeartHandshake,
   Lock,
@@ -44,6 +45,8 @@ import { logger } from "../../services/logger";
 import TipCreatorCard from "./TipCreatorCard";
 import TipPageContext from "./TipPageContext";
 import TipCreatorAchievements from "./TipCreatorAchievements";
+import { useWalletStore } from "@/store/walletStore";
+import { env } from "@/helpers/env";
 
 const TipPage: React.FC = () => {
   const { username } = useParams<{ username: string }>();
@@ -62,6 +65,13 @@ const TipPage: React.FC = () => {
   const creatorGoal = creator
     ? goals.find((g) => g.creator === creator.owner && g.active)
     : undefined;
+
+  // Detect a mismatch between the wallet's reported network and the app's
+  // configured network. LOCAL is treated as equivalent to TESTNET for this
+  // check because local devnets use the testnet passphrase.
+  const walletNetwork = useWalletStore((s) => s.network);
+  const appNetwork = env.network === "LOCAL" ? "TESTNET" : env.network;
+  const isNetworkMismatch = connected && walletNetwork !== appNetwork;
 
   const fetchCreator = useCallback(async () => {
     if (!username) return;
@@ -183,6 +193,20 @@ const TipPage: React.FC = () => {
       return;
     }
 
+    // Block signing when the wallet is on a different network than the app.
+    if (isNetworkMismatch) {
+      const msg = `Network mismatch: your wallet is on ${walletNetwork} but this app is configured for ${appNetwork}. Switch your wallet to ${appNetwork} before signing.`;
+      setAddressError(msg);
+      setTipFormErrors([
+        {
+          fieldId: "tip-address-error",
+          label: "Network",
+          message: msg,
+        },
+      ]);
+      return;
+    }
+
     goToConfirm(amount, message, isEncrypted);
   };
 
@@ -245,6 +269,21 @@ const TipPage: React.FC = () => {
           {!connected && (
             <div className="border-2 border-black bg-orange-100 p-4 text-sm font-bold">
               Connect a wallet before signing the transaction.
+            </div>
+          )}
+
+          {isNetworkMismatch && (
+            <div
+              role="alert"
+              className="border-2 border-black bg-orange-100 p-4 text-sm font-bold flex items-start gap-2"
+            >
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+              <span>
+                Network mismatch: your wallet is on{" "}
+                <strong>{walletNetwork}</strong> but this app requires{" "}
+                <strong>{appNetwork}</strong>. Switch your wallet network before
+                signing.
+              </span>
             </div>
           )}
 
@@ -321,6 +360,7 @@ const TipPage: React.FC = () => {
                 maxLength={MAX_MESSAGE_LENGTH}
                 warnAt={250}
                 dangerAt={270}
+                showRemaining
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
               />
@@ -343,6 +383,7 @@ const TipPage: React.FC = () => {
                   <Button
                     type="submit"
                     loading={step === "signing" || step === "submitting"}
+                    disabled={isNetworkMismatch}
                     icon={<HeartHandshake size={18} />}
                     iconRight={<ArrowRight size={18} />}
                     className="sm:flex-1"

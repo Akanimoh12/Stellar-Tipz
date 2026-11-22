@@ -11,7 +11,12 @@ export const listAuditLogsQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
   action: z.string().optional(),
   actor: z.string().optional(),
-}).strict();
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+}).strict().refine(
+  ({ from, to }) => from === undefined || to === undefined || from <= to,
+  { message: 'from must be earlier than or equal to to' },
+);
 
 export const platformStatsResponseSchema = z.object({
   totalUsers: z.number(),

@@ -199,6 +199,17 @@ describe('GET /api/v1/profiles/by-username/:username', () => {
     expect(res.status).toBe(404);
   });
 
+  it('returns 404 when profile is soft-deleted (#1644)', async () => {
+    mockFindUnique.mockResolvedValue(
+      makeUser({ username: 'deleted_creator', deletedAt: new Date() }),
+    );
+
+    const app = createApp();
+    const res = await request(app).get('/api/v1/profiles/by-username/deleted_creator');
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
   it('returns profile when found', async () => {
     mockFindUnique.mockResolvedValue(
       makeUser({ username: 'testuser', creditScore: { value: 850 } }),

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/wallet';
 
 /**
  * #1335 — the transactions list virtualizes long histories: only a window of
@@ -6,16 +6,9 @@ import { test, expect } from '@playwright/test';
  */
 test.describe('Virtualized transactions list (#1335)', () => {
   test('renders a window of rows and keeps the full list size for screen readers', async ({
-    page,
+    connectedWallet: page,
   }) => {
-    await page.goto('/transactions');
-
     const list = page.getByRole('list', { name: 'Transactions' });
-    if ((await list.count()) === 0) {
-      test.skip(true, 'transactions list not reachable without a connected wallet');
-      return;
-    }
-
     await expect(list).toBeVisible();
 
     const rows = list.getByRole('listitem');
@@ -35,15 +28,8 @@ test.describe('Virtualized transactions list (#1335)', () => {
     expect(spacerHeight).toBeGreaterThan(0);
   });
 
-  test('keeps the list scrollable', async ({ page }) => {
-    await page.goto('/transactions');
-
+  test('keeps the list scrollable', async ({ connectedWallet: page }) => {
     const list = page.getByRole('list', { name: 'Transactions' });
-    if ((await list.count()) === 0) {
-      test.skip(true, 'transactions list not reachable without a connected wallet');
-      return;
-    }
-
     await expect(list).toBeVisible();
     const overflowY = await list.evaluate((el) => getComputedStyle(el).overflowY);
     expect(['auto', 'scroll']).toContain(overflowY);

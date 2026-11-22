@@ -76,6 +76,10 @@ describe('privacy service', () => {
       ...user,
       createdAt: new Date('2025-01-01T00:00:00.000Z'),
       sentTips: [{ amountStroops: 123n }],
+      moderationAppeals: [{
+        id: 'appeal-1',
+        createdAt: new Date('2025-01-02T00:00:00.000Z'),
+      }],
     });
 
     const result = await exportUserData('user-1');
@@ -84,7 +88,36 @@ describe('privacy service', () => {
     expect(result.data).toMatchObject({
       createdAt: '2025-01-01T00:00:00.000Z',
       sentTips: [{ amountStroops: '123' }],
+      moderationAppeals: [{
+        id: 'appeal-1',
+        createdAt: '2025-01-02T00:00:00.000Z',
+      }],
     });
+    expect(mockUserFindUnique).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'user-1' },
+      include: expect.objectContaining({
+        sentTips: true,
+        receivedTips: true,
+        withdrawals: true,
+        notifications: true,
+        notificationPreference: true,
+        goals: true,
+        tipperSubscriptions: true,
+        creatorSubscriptions: true,
+        webhookSubscriptions: true,
+        apiKeys: true,
+        refreshTokens: true,
+        notificationBatches: true,
+        notificationDeliveries: true,
+        notificationChannels: true,
+        leaderboardSnapshots: true,
+        payoutSchedule: true,
+        creditScore: true,
+        creditScoreHistory: true,
+        streak: true,
+        moderationAppeals: true,
+      }),
+    }));
     expect(mockAuditCreate).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         actor: 'user-1',
@@ -113,6 +146,7 @@ describe('privacy service', () => {
       pendingWithdrawals: [{ id: 'wd-1' }],
       pendingTips: [{ id: 'tip-1' }],
       requiresOnChainFollowUp: true,
+      profileAnonymized: true,
     });
     expect(mockTransaction).toHaveBeenCalledOnce();
     expect(mockRefreshTokenUpdateMany).toHaveBeenCalledOnce();
@@ -121,7 +155,35 @@ describe('privacy service', () => {
     expect(mockWebhookUpdateMany).toHaveBeenCalledOnce();
     expect(mockUserUpdate).toHaveBeenCalledWith({
       where: { id: 'user-1' },
-      data: { deletedAt: expect.any(Date), deactivatedAt: expect.any(Date) },
+      data: {
+        deletedAt: expect.any(Date),
+        deactivatedAt: expect.any(Date),
+        stellarAddress: expect.stringMatching(/^deleted:/),
+        username: null,
+        displayName: null,
+        bio: null,
+        imageUrl: null,
+        avatarCid: null,
+        xHandle: null,
+        role: 'user',
+        scopes: [],
+      },
+    });
+    expect(mockRefreshTokenUpdateMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1', revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(mockApiKeyUpdateMany).toHaveBeenCalledWith({
+      where: { createdById: 'user-1', deletedAt: null },
+      data: { deletedAt: expect.any(Date) },
+    });
+    expect(mockNotificationUpdateMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1', deletedAt: null },
+      data: { deletedAt: expect.any(Date) },
+    });
+    expect(mockWebhookUpdateMany).toHaveBeenCalledWith({
+      where: { ownerId: 'user-1', deletedAt: null },
+      data: { deletedAt: expect.any(Date) },
     });
     expect(mockAuditCreate).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ action: 'privacy.account_deleted' }),

@@ -44,19 +44,26 @@ model User {
   tipperSubscriptions  Subscription[]        @relation("SubscriptionTipper")
   creatorSubscriptions Subscription[]        @relation("SubscriptionCreator")
   webhookSubscriptions WebhookSubscription[]
+  moderationAppeals    ModerationAppeal[]
 }
 
 /// API key for service/admin access and webhook integrations.
 model ApiKey {
-  deletedAt           DateTime?
-  id                  String                @id @default(cuid())
-  hashedKey           String                @unique
-  scopes              String[]
-  createdById         String
-  createdBy           User                  @relation(fields: [createdById], references: [id], onDelete: Cascade)
-  webhookSubscriptions WebhookSubscription[]
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
+  deletedAt              DateTime?
+  id                     String                @id @default(cuid())
+  hashedKey              String                @unique
+  previousHashedKey      String?               @unique
+  previousGraceExpiresAt DateTime?
+  scopes                 String[]
+  expiresAt              DateTime?
+  lastUsedAt             DateTime?
+  lastUsedIp             String?
+  usageCount             Int                   @default(0)
+  createdById            String
+  createdBy              User                  @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  webhookSubscriptions   WebhookSubscription[]
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
 
   @@index([createdById])
 }
@@ -405,6 +412,28 @@ model AuditLog {
   @@index([outcome])
   @@index([createdAt])
   @@index([resourceId])
+}
+
+/// A user's request to contest an action taken by moderation.
+model ModerationAppeal {
+  id                 String   @id @default(cuid())
+  appellantId        String
+  appellant          User     @relation(fields: [appellantId], references: [id], onDelete: Cascade)
+  moderationActionId String
+  reason             String
+  details            String?
+  status             String   @default("pending")
+  decision           String?
+  reviewNotes        String?
+  reviewedBy         String?
+  reviewedAt         DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([appellantId, createdAt])
+  @@index([status, createdAt])
+  @@index([moderationActionId])
+  @@unique([appellantId, moderationActionId])
 }
 
 /// Queue metrics snapshot for monitoring and autoscaling (issue #1287).

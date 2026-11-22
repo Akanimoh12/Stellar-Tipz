@@ -288,6 +288,7 @@ export async function deactivateProfile(userId: string): Promise<void> {
     where: { id: userId },
     data: { deletedAt: new Date() },
   });
+  await redis.del(cacheKey(user.stellarAddress));
   await invalidateCreatorSearch([user.username, user.displayName]);
 
   logger.info({ userId }, "Profile deactivated successfully");

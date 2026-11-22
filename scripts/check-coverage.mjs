@@ -31,7 +31,7 @@ const component = args[0];
 if (!policies[component]) {
   console.error(`Usage: node scripts/check-coverage.mjs <${Object.keys(policies).join('|')}> [--summary <path>]`);
   console.error('  --summary <path>   path to coverage-summary.json (default: <component>/coverage/coverage-summary.json)');
-  console.error('  --baseline <path>  path to the ratchet baseline json (default: coverage-baseline.json)');
+  console.error('  --baseline <path>  path to the ratchet baseline json (default: config/coverage-baseline.json)');
   process.exit(2);
 }
 
@@ -43,7 +43,7 @@ function flagValue(name) {
 const policy = policies[component];
 const tolerance = policy.tolerance ?? 0.5;
 const summaryPath = resolve(repoRoot, flagValue('--summary') ?? `${policy.dir}/coverage/coverage-summary.json`);
-const baselinePath = resolve(repoRoot, flagValue('--baseline') ?? 'coverage-baseline.json');
+const baselinePath = resolve(repoRoot, flagValue('--baseline') ?? 'config/coverage-baseline.json');
 const reportPath = resolve(repoRoot, flagValue('--report') ?? `coverage-${component}-report.md`);
 
 if (!existsSync(summaryPath)) {

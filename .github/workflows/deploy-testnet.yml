@@ -17,22 +17,22 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable resolved 2026-11-20
         with:
           targets: wasm32-unknown-unknown
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry
@@ -42,7 +42,7 @@ jobs:
 
       - name: Cache soroban CLI
         id: cache-soroban
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cargo/bin/soroban
           key: ${{ runner.os }}-soroban
@@ -124,11 +124,10 @@ jobs:
           git push
 
       - name: Store deployment artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: deployment-artifacts
           path: |
             contracts/target/wasm32-unknown-unknown/release/*.wasm
             contracts/target/wasm32-unknown-unknown/release/*.optimized.wasm
           retention-days: 30
-

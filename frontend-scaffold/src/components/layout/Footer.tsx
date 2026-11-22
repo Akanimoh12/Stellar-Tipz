@@ -1,5 +1,5 @@
 import React from "react";
-import { Github, Twitter } from "lucide-react";
+import { Github, Keyboard, Twitter } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Language, useI18n } from "@/i18n";
@@ -104,6 +104,14 @@ const Footer: React.FC = () => {
             >
               {t("footer.contractSpec")}
             </a>
+            <button
+              type="button"
+              onClick={() => document.dispatchEvent(new CustomEvent("tipz:open-shortcuts"))}
+              className="flex w-fit items-center gap-1 text-sm text-gray-600 transition-opacity hover:opacity-60 dark:text-gray-700 dark:text-gray-300"
+            >
+              <Keyboard size={14} />
+              {t("shortcuts.show")}
+            </button>
           </nav>
 
           <section aria-label={t("footer.communityAria")} className="flex flex-col gap-2">

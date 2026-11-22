@@ -10,15 +10,17 @@ import PullToRefresh from "../../components/shared/PullToRefresh";
 import PrefetchLink from "../../components/shared/PrefetchLink";
 import Avatar from "../../components/ui/Avatar";
 import Card from "../../components/ui/Card";
+import VirtualizedList from "../../components/ui/VirtualizedList";
 import { categorizeError } from "@/helpers/error";
 import { useI18n } from "@/i18n";
 import { useLeaderboard } from "@/hooks/useLeaderboard";
-import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePageMeta } from "@/hooks/usePageMeta";
 import LeaderboardSkeleton from "./LeaderboardSkeleton";
+import LeaderboardFilters from "./LeaderboardFilters";
 
 const LeaderboardPage: React.FC = () => {
   const { t } = useI18n();
-  usePageTitle(t("leaderboard.title"));
+  usePageMeta({ title: t("leaderboard.title") });
 
   const PAGE_SIZE = 20;
   const { entries, loading, hasMore, error, loadMore, refetch } =
@@ -135,38 +137,47 @@ const LeaderboardPage: React.FC = () => {
               </Link>
             </div>
 
-            {remainingEntries.length > 0 ? (
-              <div className="divide-y-2 divide-black border-2 border-black" role="list">
-                {remainingEntries.map((entry, index) => (
-                  <PrefetchLink
-                    key={entry.address}
-                    to={`/@${entry.username}`}
-                    className="grid gap-4 bg-white p-4 transition-colors hover:bg-yellow-50 sm:grid-cols-[72px_1fr_auto] sm:items-center"
-                    role="listitem"
-                  >
-                    <span className="text-xl font-black tabular-nums">
-                      #{index + 4}
-                    </span>
-                    <span className="flex items-center gap-3">
-                      <Avatar address={entry.address} alt={entry.username} fallback={entry.username} size="md" />
-                      <span className="min-w-0">
-                        <span className="block truncate text-base font-black uppercase">
-                          {entry.username}
+            <LeaderboardFilters entries={remainingEntries} loading={loading}>
+              {(filtered) => (
+                filtered.length > 0 ? (
+                  <VirtualizedList
+                    items={filtered}
+                    height={560}
+                    estimatedItemHeight={72}
+                    ariaLabel={t("leaderboard.fullRankings")}
+                    scrollRestoreKey="leaderboard-rankings"
+                    getItemKey={(entry) => entry.address}
+                    renderItem={(entry, index) => (
+                      <PrefetchLink
+                        to={`/@${entry.username}`}
+                        className="grid gap-4 bg-white p-4 transition-colors hover:bg-yellow-50 sm:grid-cols-[72px_1fr_auto] sm:items-center border-b-2 border-black"
+                      >
+                        <span className="text-xl font-black tabular-nums">
+                          #{index + 4}
                         </span>
-                        <AmountDisplay amount={entry.totalTipsReceived} className="text-sm" />
-                      </span>
-                    </span>
-                    <CreditBadge score={entry.creditScore} showScore />
-                  </PrefetchLink>
-                ))}
-              </div>
-            ) : (
-              !error && (
-                <p className="border-2 border-dashed border-gray-300 p-6 text-center text-sm font-bold uppercase text-gray-600">
-                  {t("leaderboard.empty")}
-                </p>
-              )
-            )}
+                        <span className="flex items-center gap-3">
+                          <Avatar address={entry.address} alt={entry.username} fallback={entry.username} size="md" />
+                          <span className="min-w-0">
+                            <span className="block truncate text-base font-black uppercase">
+                              {entry.username}
+                            </span>
+                            <AmountDisplay amount={entry.totalTipsReceived} className="text-sm" />
+                          </span>
+                        </span>
+                        <CreditBadge score={entry.creditScore} showScore />
+                      </PrefetchLink>
+                    )}
+                    className="border-2 border-black"
+                  />
+                ) : (
+                  !error && (
+                    <p className="border-2 border-dashed border-gray-300 p-6 text-center text-sm font-bold uppercase text-gray-600">
+                      {t("leaderboard.empty")}
+                    </p>
+                  )
+                )
+              )}
+            </LeaderboardFilters>
 
             {loading && (
               <div className="flex items-center justify-center gap-2 p-8 text-gray-600">

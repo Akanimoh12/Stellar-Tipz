@@ -17,6 +17,12 @@ adminRouter.get(
   adminController.listAuditLogsController,
 )
 adminRouter.get(
+  '/audit-logs/export',
+  ...adminGuard,
+  auditAdminAction('admin.audit_logs.export'),
+  adminController.exportAuditLogsController,
+)
+adminRouter.get(
   '/stats',
   ...adminGuard,
   auditAdminAction('admin.stats.read'),
@@ -100,6 +106,20 @@ mergeOpenApiPaths({
           required: false,
           schema: { type: 'string' },
         },
+        {
+          name: 'from',
+          in: 'query',
+          required: false,
+          schema: { type: 'string', format: 'date-time' },
+          description: 'Include entries created at or after this timestamp.',
+        },
+        {
+          name: 'to',
+          in: 'query',
+          required: false,
+          schema: { type: 'string', format: 'date-time' },
+          description: 'Include entries created at or before this timestamp.',
+        },
       ],
       responses: {
         '200': {
@@ -115,6 +135,39 @@ mergeOpenApiPaths({
             },
           },
         },
+        '401': { description: 'Unauthorized' },
+        '403': { description: 'Forbidden - requires admin role' },
+      },
+    },
+  },
+  [`${base}/audit-logs/export`]: {
+    get: {
+      tags: ['Admin'],
+      summary: 'Export audit logs as CSV',
+      description: 'Exports all audit logs matching the optional filters. Admin only.',
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        { name: 'action', in: 'query', schema: { type: 'string' } },
+        { name: 'actor', in: 'query', schema: { type: 'string' } },
+        {
+          name: 'from',
+          in: 'query',
+          schema: { type: 'string', format: 'date-time' },
+          description: 'Include entries created at or after this timestamp.',
+        },
+        {
+          name: 'to',
+          in: 'query',
+          schema: { type: 'string', format: 'date-time' },
+          description: 'Include entries created at or before this timestamp.',
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'CSV audit log export',
+          content: { 'text/csv': { schema: { type: 'string' } } },
+        },
+        '400': { description: 'Invalid filters' },
         '401': { description: 'Unauthorized' },
         '403': { description: 'Forbidden - requires admin role' },
       },

@@ -67,9 +67,10 @@ interface RankedRow {
 }
 
 function confirmedTipsFilter(since: Date | undefined): Prisma.Sql {
+  const activeCreatorClause = Prisma.sql`NOT EXISTS (SELECT 1 FROM "User" u WHERE u."stellarAddress" = "Tip"."toAddress" AND u."deletedAt" IS NOT NULL)`;
   return since
-    ? Prisma.sql`"status" = 'CONFIRMED' AND "createdAt" >= ${utcTimestamp(since)}`
-    : Prisma.sql`"status" = 'CONFIRMED'`;
+    ? Prisma.sql`"status" = 'CONFIRMED' AND "createdAt" >= ${utcTimestamp(since)} AND ${activeCreatorClause}`
+    : Prisma.sql`"status" = 'CONFIRMED' AND ${activeCreatorClause}`;
 }
 
 async function getRankedRows(
@@ -109,10 +110,14 @@ async function countRankedRows(since: Date | undefined): Promise<number> {
 async function hydrateEntries(rows: RankedRow[], firstRank: number): Promise<LeaderboardEntry[]> {
   const addresses = rows.map((row) => row.toAddress);
   const users = await prisma.user.findMany({
-    where: { stellarAddress: { in: addresses } },
-    select: { id: true, username: true, stellarAddress: true },
+    where: { stellarAddress: { in: addresses }, deletedAt: null },
+    select: { id: true, username: true, stellarAddress: true, deletedAt: true },
   });
-  const userMap = new Map(users.map((user) => [user.stellarAddress, user]));
+  const userMap = new Map(
+    users
+      .filter((user) => (user as { deletedAt?: Date | null }).deletedAt == null)
+      .map((user) => [user.stellarAddress, user]),
+  );
 
   return rows.map((row, index) => {
     const user = userMap.get(row.toAddress);
@@ -183,10 +188,10 @@ export async function getUserRank(
   const since = getSince(window);
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { stellarAddress: true },
+    select: { stellarAddress: true, deletedAt: true },
   });
 
-  if (!user) {
+  if (!user || (user as { deletedAt?: Date | null }).deletedAt != null) {
     throw new NotFoundError('User not found');
   }
 
@@ -222,10 +227,14 @@ export async function createLeaderboardSnapshot(
   const rows = await getRankedRows(since);
   const addresses = rows.map((row) => row.toAddress);
   const users = await prisma.user.findMany({
-    where: { stellarAddress: { in: addresses } },
-    select: { id: true, stellarAddress: true },
+    where: { stellarAddress: { in: addresses }, deletedAt: null },
+    select: { id: true, stellarAddress: true, deletedAt: true },
   });
-  const userMap = new Map(users.map((user) => [user.stellarAddress, user]));
+  const userMap = new Map(
+    users
+      .filter((user) => (user as { deletedAt?: Date | null }).deletedAt == null)
+      .map((user) => [user.stellarAddress, user]),
+  );
 
   const data = rows.flatMap((row, index) => {
     const user = userMap.get(row.toAddress);
@@ -244,4 +253,24 @@ export async function createLeaderboardSnapshot(
   ]);
 
   return { period, entriesCreated: data.length };
+}
+
+/**
+ * Returns the on-chain leaderboard rank for a specific address.
+ * Returns null if the address is not on the leaderboard.
+ *
+ * Issue #1616
+ */
+export async function getLeaderboardPosition(
+  address: string,
+): Promise<number | null> {
+  logger.info({ address }, "Fetching leaderboard position");
+
+  try {
+    const rank = await fetchOnChainLeaderboardPosition(address);
+    return rank;
+  } catch (error) {
+    logger.error({ error, address }, 'Failed to fetch on-chain position');
+    return null;
+  }
 }

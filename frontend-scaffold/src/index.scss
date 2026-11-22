@@ -125,27 +125,82 @@
 }
 
 @layer utilities {
-  /* #1338: notched-device safe area insets. Requires `viewport-fit=cover` in
-     index.html for the insets to be non-zero on iOS. */
-  .pb-safe {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+  [dir="rtl"] .text-left {
+    text-align: right;
   }
 
-  .mb-safe {
-    margin-bottom: env(safe-area-inset-bottom, 0px);
+  [dir="rtl"] .text-right {
+    text-align: left;
   }
 
-  .bottom-safe {
-    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  [dir="rtl"] .ml-auto {
+    margin-left: 0;
+    margin-right: auto;
   }
 
-  .right-safe {
-    right: calc(1rem + env(safe-area-inset-right, 0px));
+  [dir="rtl"] .mr-auto {
+    margin-right: 0;
+    margin-left: auto;
   }
 
-  /* Keeps a focused field clear of fixed bottom bars and the on-screen keyboard */
-  .scroll-safe-bottom {
-    scroll-margin-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+  [dir="rtl"] .left-0 {
+    left: auto;
+    right: 0;
+  }
+
+  [dir="rtl"] .right-0 {
+    right: auto;
+    left: 0;
+  }
+
+  [dir="rtl"] .left-6 {
+    left: auto;
+    right: 1.5rem;
+  }
+
+  [dir="rtl"] .right-3 {
+    right: auto;
+    left: 0.75rem;
+  }
+
+  [dir="rtl"] .right-4 {
+    right: auto;
+    left: 1rem;
+  }
+
+  [dir="rtl"] .right-6 {
+    right: auto;
+    left: 1.5rem;
+  }
+
+  [dir="rtl"] .left-full {
+    left: auto;
+    right: 100%;
+  }
+
+  [dir="rtl"] .right-full {
+    right: auto;
+    left: 100%;
+  }
+
+  [dir="rtl"] .border-l-3 {
+    border-left-width: 0;
+    border-right-width: 3px;
+  }
+
+  [dir="rtl"] .border-r-3 {
+    border-right-width: 0;
+    border-left-width: 3px;
+  }
+
+  [dir="rtl"] .\-right-1 {
+    right: auto;
+    left: -0.25rem;
+  }
+
+  [dir="rtl"] .\-right-2 {
+    right: auto;
+    left: -0.5rem;
   }
 
   /* Hide scrollbar while keeping scroll functionality */

@@ -5,7 +5,7 @@ import en from "./en.json";
 
 export const LANGUAGE_STORAGE_KEY = "tipz_lang";
 export const fallbackLanguage = "en";
-export const supportedLanguages = ["en", "es", "fr", "pt", "zh"] as const;
+export const supportedLanguages = ["en", "es", "fr", "pt", "zh", "ar"] as const;
 
 export type Language = (typeof supportedLanguages)[number];
 
@@ -15,6 +15,7 @@ export const languageNames: Record<Language, string> = {
   fr: "Français",
   pt: "Português",
   zh: "中文",
+  ar: "العربية",
 };
 
 const rtlLanguages = new Set<string>(["ar", "fa", "he", "ur"]);
@@ -25,6 +26,7 @@ const languageLoaders: Record<Language, () => Promise<{ default: ResourceKey }>>
   fr: () => import("./fr.json"),
   pt: () => import("./pt.json"),
   zh: () => import("./zh.json"),
+  ar: () => import("./ar.json"),
 };
 
 export const isSupportedLanguage = (

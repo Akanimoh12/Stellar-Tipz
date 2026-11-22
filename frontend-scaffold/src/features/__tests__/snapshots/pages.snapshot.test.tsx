@@ -33,8 +33,8 @@ vi.mock('framer-motion', () => ({
   useAnimation: () => ({ start: vi.fn() }),
 }));
 
-// Silence usePageTitle side-effects (sets document.title).
-vi.mock('@/hooks/usePageTitle', () => ({ usePageTitle: vi.fn() }));
+// Silence usePageMeta side-effects (sets document.title).
+vi.mock('@/hooks/usePageMeta', () => ({ usePageMeta: vi.fn() }));
 
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
 

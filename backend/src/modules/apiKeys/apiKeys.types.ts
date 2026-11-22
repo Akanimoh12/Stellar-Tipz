@@ -3,8 +3,14 @@ export interface ApiKeyResponse {
   scopes: string[];
   expiresAt?: string;
   lastUsedAt?: string;
+  lastUsedIp?: string;
+  usageCount?: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface VerifyApiKeyOptions {
+  ipAddress?: string;
 }
 
 export interface CreateApiKeyInput {

@@ -1,5 +1,5 @@
 import React from "react";
-import { render, waitFor } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { BrowserRouter } from "react-router-dom";
 
@@ -7,8 +7,8 @@ import LeaderboardPage from "../../features/leaderboard/LeaderboardPage";
 import * as soroban from "../../services/soroban";
 import type { LeaderboardEntry } from "../../types/contract";
 
-vi.mock("../../hooks/usePageTitle", () => ({
-  usePageTitle: vi.fn(),
+vi.mock("../../hooks/usePageMeta", () => ({
+  usePageMeta: vi.fn(),
 }));
 
 vi.mock("../../hooks", () => ({
@@ -70,22 +70,26 @@ describe("Leaderboard optimization", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
-  it.skip("refreshes after TTL", async () => {
-    vi.useFakeTimers();
+  it("refreshes after TTL", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
     vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
 
-    render(
-      <BrowserRouter>
-        <LeaderboardPage />
-      </BrowserRouter>,
-    );
+    await act(async () => {
+      render(
+        <BrowserRouter>
+          <LeaderboardPage />
+        </BrowserRouter>,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
-    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
-    await fetchSpy.mock.results[0]?.value;
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
 
-    vi.advanceTimersByTime(60_000);
-    await Promise.resolve();
-    await Promise.resolve();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(soroban.LEADERBOARD_CACHE_TTL_MS);
+    });
+
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   }, 15_000);
 });

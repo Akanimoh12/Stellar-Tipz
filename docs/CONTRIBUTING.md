@@ -70,7 +70,7 @@ The full branch protection configuration is documented in [`.github/branch-prote
 
 ## Code of Conduct
 
-Be respectful, constructive, and inclusive. We follow the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
+Be respectful, constructive, and inclusive. We follow the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/); see the root [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md).
 
 ---
 

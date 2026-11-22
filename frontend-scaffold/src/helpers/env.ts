@@ -1,3 +1,5 @@
+import { logger } from "../services/logger";
+
 type NetworkType = "LOCAL" | "TESTNET" | "FUTURENET" | "MAINNET";
 
 interface EnvConfig {
@@ -87,6 +89,9 @@ export function validateEnv(envVars?: Record<string, string | undefined>): void 
   }
 
   if (!source.VITE_SENTRY_DSN) {
-    console.warn("[env] VITE_SENTRY_DSN is not set – error tracking will be disabled");
+    logger.warn(
+      "helpers/env",
+      "VITE_SENTRY_DSN is not set – error tracking will be disabled",
+    );
   }
 }

@@ -4,8 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import HelpPage from "./HelpPage";
 
-vi.mock("@/hooks/usePageTitle", () => ({
-  usePageTitle: vi.fn(),
+vi.mock("@/hooks/usePageMeta", () => ({
+  usePageMeta: vi.fn(),
 }));
 
 const renderPage = () =>

@@ -111,11 +111,19 @@ export async function refreshToken(
   if (tokenRecord.revokedAt) {
     const familyId =
       (tokenRecord as { familyId?: string }).familyId ?? tokenRecord.sessionId;
+    const revokedAt = new Date();
 
     await prisma.refreshToken.updateMany({
       where: { familyId, revokedAt: null },
-      data: { revokedAt: new Date() },
+      data: { revokedAt },
     });
+
+    if (tokenRecord.sessionId && tokenRecord.sessionId !== familyId) {
+      await prisma.refreshToken.updateMany({
+        where: { sessionId: tokenRecord.sessionId, revokedAt: null },
+        data: { revokedAt },
+      });
+    }
 
     logger.warn(
       {

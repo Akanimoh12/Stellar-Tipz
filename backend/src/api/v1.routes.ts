@@ -8,6 +8,7 @@ import { authRouter } from '../modules/auth/auth.routes.js';
 import { creditRouter } from '../modules/credit/credit.routes.js';
 import { discoveryRouter } from '../modules/discovery/discovery.routes.js';
 import { emailRouter } from '../modules/email/email.routes.js';
+import { financialRouter } from '../modules/financial/index.js';
 import { goalsRouter } from '../modules/goals/goals.routes.js';
 import { registerGoalsDocs } from '../modules/goals/goals.openapi.js';
 import { ipfsRouter } from '../modules/ipfs/ipfs.routes.js';
@@ -42,6 +43,7 @@ export function createV1Router(): Router {
   router.use('/profiles', profileTipsRouter);
   router.use('/users', userTipsRouter);
   router.use('/credit', creditRouter);
+  router.use('/financial', financialRouter);
   router.use('/leaderboard', leaderboardRouter);
   router.use('/ipfs', ipfsRouter);
   router.use('/tips', tipsRouter);

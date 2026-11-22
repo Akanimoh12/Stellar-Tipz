@@ -13,6 +13,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
+      '@stellar-tipz/sdk': path.resolve(__dirname, 'src/services/api/__tests__/sdk-client-stub.ts'),
       'framer-motion': path.resolve(__dirname, 'node_modules/framer-motion/dist/cjs/index.js')
     }
   },

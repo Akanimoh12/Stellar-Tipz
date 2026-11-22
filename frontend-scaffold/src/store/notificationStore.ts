@@ -33,6 +33,18 @@ export const useNotificationStore = create<NotificationStore>()(
       notifications: [],
 
       addNotification: (n) => {
+        // Respect per-type preferences saved to localStorage by SettingsPage.
+        try {
+          const raw = localStorage.getItem('tipz_settings');
+          if (raw) {
+            const prefs = JSON.parse(raw) as Record<string, unknown>;
+            if (n.type === 'tip' && prefs.tipNotifications === false) return '';
+            if (n.type === 'achievement' && prefs.leaderboardNotifications === false) return '';
+            if (n.type === 'system' && prefs.systemNotifications === false) return '';
+          }
+        } catch {
+          // Ignore parse errors; default to allowing all notifications.
+        }
         const id = crypto.randomUUID();
         const notification: AppNotification = {
           ...n,

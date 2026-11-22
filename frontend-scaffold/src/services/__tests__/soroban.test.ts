@@ -20,6 +20,7 @@ import {
   getTokenName,
   getTokenDecimals,
   getTokenBalance,
+  prepareTx,
   makePayment,
   getEstimatedFee,
   BASE_FEE,
@@ -187,7 +188,7 @@ describe('soroban service', () => {
       mockServer.simulateTransaction.mockResolvedValue({
         result: mockResult,
       });
-      
+
       vi.mocked(SorobanRpc.Api.isSimulationSuccess).mockReturnValue(true);
 
       const result = await simulateTx<string>(tx, mockServer);
@@ -228,6 +229,24 @@ describe('soroban service', () => {
       await expect(simulateTx<string>(tx, mockServer)).rejects.toThrow(
         /timeout/i
       );
+    });
+  });
+
+  describe('prepareTx', () => {
+    it('prepares the transaction with the network fee estimate', async () => {
+      const tx = getSimulationTxBuilder(
+        mockPubKey,
+        BASE_FEE,
+        mockNetworkPassphrase,
+      )
+        .addOperation(new Contract(mockContractId).call('transfer'))
+        .setTimeout(4294967295)
+        .build();
+      const preparedTx = { toXDR: vi.fn(() => 'prepared-xdr') };
+      mockServer.prepareTransaction.mockResolvedValue(preparedTx);
+
+      await expect(prepareTx(tx, mockServer)).resolves.toBe(preparedTx);
+      expect(mockServer.prepareTransaction).toHaveBeenCalledWith(tx);
     });
   });
 
@@ -413,14 +432,7 @@ describe('soroban service', () => {
   describe('getEstimatedFee', () => {
     it('calculates estimated fee', async () => {
       const txBuilder = getSimulationTxBuilder(mockPubKey, BASE_FEE, mockNetworkPassphrase);
-      
-      const mockSimResponse = {
-        minResourceFee: '500',
-        result: { retval: xdr.ScVal.scvVoid() },
-      };
-      mockServer.simulateTransaction.mockResolvedValue(mockSimResponse);
-      
-      vi.mocked(SorobanRpc.Api.isSimulationError).mockReturnValue(false);
+      mockServer.prepareTransaction.mockResolvedValue({ fee: '600' });
 
       const fee = await getEstimatedFee(
         mockContractId,
@@ -432,19 +444,15 @@ describe('soroban service', () => {
         mockServer
       );
 
-      expect(fee).toBeDefined();
-      expect(parseInt(fee)).toBeGreaterThan(0);
+      expect(fee).toBe('600');
+      expect(mockServer.prepareTransaction).toHaveBeenCalledTimes(1);
     });
 
     it('throws error on simulation failure', async () => {
       const txBuilder = getSimulationTxBuilder(mockPubKey, BASE_FEE, mockNetworkPassphrase);
       
       const mockError = new Error('Simulation failed');
-      mockServer.simulateTransaction.mockResolvedValue({
-        error: mockError,
-      });
-      
-      vi.mocked(SorobanRpc.Api.isSimulationError).mockReturnValue(true);
+      mockServer.prepareTransaction.mockRejectedValue(mockError);
 
       await expect(
         getEstimatedFee(
