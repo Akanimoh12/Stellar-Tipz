@@ -2,11 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Loader from '@/components/ui/Loader';
 
+interface PageLoaderProps {
+  /**
+   * Route-shaped skeleton shown while the chunk loads (#1337). Falls back to
+   * the generic spinner when omitted.
+   */
+  skeleton?: React.ReactNode;
+}
+
 /**
- * Enhanced centered loader for lazy-loaded pages.
+ * Enhanced loader for lazy-loaded pages.
  * Includes timeout protection and failure recovery mechanisms.
  */
-const PageLoader: React.FC = () => {
+const PageLoader: React.FC<PageLoaderProps> = ({ skeleton }) => {
   const [isTimedOut, setIsTimedOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,6 +83,8 @@ const PageLoader: React.FC = () => {
       </div>
     );
   }
+
+  if (skeleton) return <>{skeleton}</>;
 
   return (
     <div

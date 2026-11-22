@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { BadRequestError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
@@ -46,18 +47,43 @@ export async function updateStreakOnTip(tipperId: string): Promise<StreakUpdateR
   const existing = await prisma.streak.findUnique({ where: { userId: tipperId } });
 
   if (!existing) {
-    await prisma.streak.create({
-      data: {
-        userId: tipperId,
-        currentStreak: 1,
-        longestStreak: 1,
-        lastTipDate: today,
-      },
-    });
-    logger.info({ userId: tipperId }, 'Streak started at 1');
-    return { currentStreak: 1, longestStreak: 1, streakUpdated: true };
+    try {
+      await prisma.streak.create({
+        data: {
+          userId: tipperId,
+          currentStreak: 1,
+          longestStreak: 1,
+          lastTipDate: today,
+        },
+      });
+      logger.info({ userId: tipperId }, 'Streak started at 1');
+      return { currentStreak: 1, longestStreak: 1, streakUpdated: true };
+    } catch (err) {
+      // P2002 means another concurrent request created the streak first
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        // Fetch the newly created streak and proceed with update logic
+        const newStreak = await prisma.streak.findUnique({ where: { userId: tipperId } });
+        if (!newStreak) {
+          throw new Error('Failed to create or find streak after P2002 error');
+        }
+        // Fall through to the update logic below with the existing streak
+        // (we'll set existing to newStreak and continue)
+        return updateExistingStreak(newStreak, today);
+      }
+      throw err;
+    }
   }
 
+  return updateExistingStreak(existing, today);
+}
+
+/**
+ * Helper function to update an existing streak based on the last tip date.
+ */
+async function updateExistingStreak(
+  existing: { currentStreak: number; longestStreak: number; lastTipDate: Date | null; userId: string },
+  today: Date,
+): Promise<StreakUpdateResult> {
   if (existing.lastTipDate && isToday(existing.lastTipDate)) {
     return {
       currentStreak: existing.currentStreak,
@@ -76,7 +102,7 @@ export async function updateStreakOnTip(tipperId: string): Promise<StreakUpdateR
   const newLongest = Math.max(newCurrent, existing.longestStreak);
 
   await prisma.streak.update({
-    where: { userId: tipperId },
+    where: { userId: existing.userId },
     data: {
       currentStreak: newCurrent,
       longestStreak: newLongest,
@@ -85,7 +111,7 @@ export async function updateStreakOnTip(tipperId: string): Promise<StreakUpdateR
   });
 
   logger.info(
-    { userId: tipperId, currentStreak: newCurrent, longestStreak: newLongest },
+    { userId: existing.userId, currentStreak: newCurrent, longestStreak: newLongest },
     'Streak updated',
   );
 

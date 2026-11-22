@@ -1,13 +1,15 @@
 import { defineConfig, devices } from '@playwright/test';
+import { E2E_CONTRACT_ID, E2E_RPC_URL } from './e2e/fixtures/constants';
 
 /**
- * Playwright configuration for Stellar Tipz E2E tests.
- * Covers both e2e (./e2e) and visual regression (./tests/visual) suites.
+ * Playwright configuration for Stellar Tipz E2E tests (./e2e).
+ * Visual regression tests live in ./tests/visual and run through
+ * playwright.visual.config.ts, which pins a deterministic build and browser.
  * Configured to work with Vite dev server on port 3000.
  */
 export default defineConfig({
   testDir: '.',
-  testMatch: ['e2e/**/*.spec.ts', 'tests/visual/**/*.spec.ts'],
+  testMatch: ['e2e/**/*.spec.ts'],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
@@ -49,6 +51,10 @@ export default defineConfig({
 
   webServer: {
     command: process.env.CI ? 'npm run build && npx vite preview --port 3000' : 'npm run dev',
+    env: {
+      VITE_CONTRACT_ID: E2E_CONTRACT_ID,
+      VITE_SOROBAN_RPC_URL: E2E_RPC_URL,
+    },
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 120000,

@@ -1,4 +1,4 @@
-import { prisma } from "../../db/prisma.js";
+import { prisma, prismaIncludingDeleted } from "../../db/prisma.js";
 import { redis } from "../../db/redis.js";
 import { logger } from "../../common/utils/logger.js";
 import {
@@ -11,6 +11,7 @@ import type {
 } from "./profiles.types.js";
 import type { ProfileResponseDto, PaginatedProfilesDto } from "./profiles.dto.js";
 import { serializeProfile } from "./profiles.serializer.js";
+import { invalidateCreatorSearch } from "../search/search.cache.js";
 
 /**
  * Helper to fetch aggregate tip stats for a user.
@@ -173,8 +174,8 @@ export async function updateProfile(
 
   // Check if username is already taken
   if (data.username) {
-    const existingUser = await prisma.user.findUnique({
-      where: { username: data.username },
+    const existingUser = await prisma.user.findFirst({
+      where: { username: data.username, deletedAt: null },
     });
 
     if (existingUser && existingUser.id !== userId) {
@@ -204,6 +205,12 @@ export async function updateProfile(
     });
 
     await redis.del(cacheKey(user.stellarAddress));
+    await invalidateCreatorSearch([
+      user.username,
+      user.displayName,
+      updatedUser.username,
+      updatedUser.displayName,
+    ]);
 
     logger.info({ userId }, "Profile updated successfully");
     const stats = await getTipStats(updatedUser.id);
@@ -281,19 +288,23 @@ export async function deactivateProfile(userId: string): Promise<void> {
     where: { id: userId },
     data: { deletedAt: new Date() },
   });
+  await invalidateCreatorSearch([user.username, user.displayName]);
 
   logger.info({ userId }, "Profile deactivated successfully");
 }
 
 export async function checkUsernameAvailability(username: string): Promise<{ available: boolean }> {
   const user = await prisma.user.findFirst({
-    where: { username: { equals: username, mode: "insensitive" } },
+    where: {
+      username: { equals: username, mode: "insensitive" },
+      deletedAt: null,
+    },
   });
   return { available: !user };
 }
 
 export async function reactivateProfile(userId: string): Promise<ProfileResponseDto> {
-  const user = await prisma.user.findUnique({
+  const user = await prismaIncludingDeleted.user.findUnique({
     where: { id: userId },
   });
 
@@ -305,7 +316,7 @@ export async function reactivateProfile(userId: string): Promise<ProfileResponse
     throw new BadRequestError("Profile is not deactivated");
   }
 
-  const updatedUser = await prisma.user.update({
+  const updatedUser = await prismaIncludingDeleted.user.update({
     where: { id: userId },
     data: { deletedAt: null },
     select: {
@@ -326,6 +337,7 @@ export async function reactivateProfile(userId: string): Promise<ProfileResponse
   });
 
   await redis.del(cacheKey(user.stellarAddress));
+  await invalidateCreatorSearch([user.username, user.displayName]);
 
   const stats = await getTipStats(updatedUser.id);
   return serializeProfile(updatedUser, stats);

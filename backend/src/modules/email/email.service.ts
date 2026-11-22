@@ -1,3 +1,5 @@
+import { env } from '../../config/env.js';
+import { queueDelivery, transitionDelivery, acknowledgeDeliverySent } from '../notifications/delivery.js';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { BadGatewayError, BadRequestError } from '../../common/errors/AppError.js';
@@ -11,15 +13,19 @@ export type EmailNotificationInput = {
   html?: string;
   type?: string;
   metadata?: Record<string, unknown>;
+  unsubscribeUrl?: string;
 };
 
 export type EmailDeliveryResult = {
-  status: 'sent' | 'queued';
-  provider: 'webhook' | 'audit-log';
+  status: 'sent' | 'queued' | 'suppressed';
+  provider: 'webhook' | 'audit-log' | 'suppression';
   auditId: string;
+  deliveryId: string;
 };
 
-const EMAIL_WEBHOOK_URL = process.env.EMAIL_WEBHOOK_URL;
+function getEmailWebhookUrl(): string | undefined {
+  return env.EMAIL_WEBHOOK_URL;
+}
 
 function assertValidRecipient(to: string): void {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
@@ -28,20 +34,33 @@ function assertValidRecipient(to: string): void {
 }
 
 async function postToEmailWebhook(input: EmailNotificationInput): Promise<void> {
-  if (!EMAIL_WEBHOOK_URL) {
+  const webhookUrl = getEmailWebhookUrl();
+  if (!webhookUrl) {
     return;
   }
 
-  const response = await fetch(EMAIL_WEBHOOK_URL, {
+  // Include unsubscribe handling and headers/payload (refs #1647)
+  const unsubscribeUrl = input.unsubscribeUrl ?? (input.metadata?.unsubscribeUrl as string | undefined);
+  const textContent = unsubscribeUrl
+    ? `${input.text}\n\nUnsubscribe: ${unsubscribeUrl}`
+    : input.text;
+  const htmlContent = unsubscribeUrl && input.html
+    ? `${input.html}<p><a href="${unsubscribeUrl}">Unsubscribe</a></p>`
+    : input.html;
+
+  const response = await fetch(webhookUrl, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...(unsubscribeUrl ? { 'List-Unsubscribe': `<${unsubscribeUrl}>` } : {}),
+    },
     body: JSON.stringify({
       to: input.to,
       subject: input.subject,
-      text: input.text,
-      html: input.html,
+      text: textContent,
+      html: htmlContent,
       type: input.type ?? 'notification',
-      metadata: input.metadata ?? {},
+      metadata: { ...input.metadata, ...(unsubscribeUrl ? { unsubscribeUrl } : {}) },
     }),
   });
 
@@ -57,11 +76,19 @@ export async function sendEmailNotification(
 ): Promise<EmailDeliveryResult> {
   assertValidRecipient(input.to);
 
-  const provider = EMAIL_WEBHOOK_URL ? 'webhook' : 'audit-log';
-  const status = EMAIL_WEBHOOK_URL ? 'sent' : 'queued';
+  const webhookUrl = getEmailWebhookUrl();
+  const provider = webhookUrl ? 'webhook' : 'audit-log';
+  const status = webhookUrl ? 'sent' : 'queued';
 
-  if (EMAIL_WEBHOOK_URL) {
-    await postToEmailWebhook(input);
+  const delivery = await queueDelivery(input.userId, 'email');
+  if (webhookUrl) {
+    try {
+      await postToEmailWebhook({ ...input, metadata: { ...input.metadata, deliveryId: delivery.id } });
+      await acknowledgeDeliverySent(delivery.id);
+    } catch (err) {
+      await transitionDelivery(delivery.id, 'failed', err instanceof Error ? err.message : 'Provider request failed');
+      throw err;
+    }
   } else {
     logger.info(
       { userId: input.userId, type: input.type, to: input.to },
@@ -71,10 +98,13 @@ export async function sendEmailNotification(
 
   const audit = await prisma.auditLog.create({
     data: {
-      actor: input.userId,
+      actorId: input.userId,
+      actorType: 'user',
+      outcome: 'success',
       action: 'email.notification.delivery',
-      target: input.to,
-      metadata: {
+      resourceId: delivery.id,
+      resourceType: 'notification_delivery',
+      input: {
         provider,
         status,
         type: input.type ?? 'notification',
@@ -84,5 +114,5 @@ export async function sendEmailNotification(
     },
   });
 
-  return { status, provider, auditId: audit.id };
+  return { status, provider, auditId: audit.id, deliveryId: delivery.id };
 }

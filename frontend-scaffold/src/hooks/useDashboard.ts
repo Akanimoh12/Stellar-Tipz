@@ -5,8 +5,6 @@ import { useContract } from './useContract';
 import { useToastStore } from '../store/toastStore';
 import { Profile, ContractStats, Tip } from '../types/contract';
 import { categorizeError, ERRORS } from '@/helpers/error';
-import { env } from '../helpers/env';
-import { mockProfile, mockTips } from '../features/mockData';
 import { logger } from '../services/logger';
 
 const REFETCH_INTERVAL_MS = 30_000;
@@ -86,23 +84,6 @@ export const useDashboard = (): DashboardData => {
 
   const fetchDashboard = useCallback(async () => {
     if (!publicKey || !connected || isFetchingRef.current || !isRegisteredRef.current) return;
-
-    // Mock Fallback
-    if (env.useMockData) {
-      setProfile(mockProfile);
-      setTips(mockTips);
-      setStats({
-        totalCreators: 120,
-        totalTipsCount: 1540,
-        totalTipsVolume: "45000000000",
-        totalFeesCollected: "900000000",
-        feeBps: 200
-      });
-      setLoading(false);
-      isRegisteredRef.current = true;
-      hasDataRef.current = true;
-      return;
-    }
 
     isFetchingRef.current = true;
     if (!hasDataRef.current) {

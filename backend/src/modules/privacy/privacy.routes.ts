@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { env } from '../../config/env.js';
-import { mergeOpenApiPaths } from '../../docs/openapi.js';
+import { mergeOpenApiPaths } from '../../../docs/openapi.js';
 import { requireAuth } from '../auth/auth.middleware.js';
 import * as privacyController from './privacy.controller.js';
 
@@ -32,7 +32,7 @@ mergeOpenApiPaths({
       tags: ['Privacy'],
       summary: 'Delete authenticated account',
       description:
-        'Soft-deletes the account, revokes local credentials, disables user-owned webhook/API surfaces, and returns pending on-chain tips/withdrawals that require reconciliation.',
+        'Soft-deletes the account, anonymizes its profile identifiers, revokes local credentials, disables user-owned webhook/API surfaces, and returns pending on-chain tips/withdrawals that require reconciliation.',
       security: [{ bearerAuth: [] }],
       responses: {
         '202': { description: 'Account deletion accepted with reconciliation summary' },

@@ -22,6 +22,7 @@ interface CreditScoreConfig {
     xSub: number;
     ageSub: number;
     tipSub: number;
+    streakBonus: number;
   };
   cacheTtlSeconds: number;
 }
@@ -52,6 +53,11 @@ export function loadCreditScoreConfig(): CreditScoreConfig {
       xSub: parseEnvNumber(process.env.CREDIT_SCORE_CAP_X_SUB, 50),
       ageSub: parseEnvNumber(process.env.CREDIT_SCORE_CAP_AGE_SUB, 100),
       tipSub: parseEnvNumber(process.env.CREDIT_SCORE_CAP_TIP_SUB, 100),
+      // Maximum number of points the streak bonus may ever contribute. Bounded
+      // so that a long streak cannot dominate the weighted signals (tips, X,
+      // account age) inside the 0-100 score. Must stay in sync with
+      // STREAK_BONUS_CAP in contracts/tipz/src/credit.rs.
+      streakBonus: parseEnvNumber(process.env.CREDIT_SCORE_CAP_STREAK_BONUS, 10),
     },
     cacheTtlSeconds: parseEnvNumber(process.env.CREDIT_SCORE_CACHE_TTL_SECONDS, 5 * 60),
   };

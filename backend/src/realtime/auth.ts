@@ -1,43 +1,67 @@
-import type { Socket, ExtendedError } from 'socket.io';
-import { verifyAccessToken } from '../modules/auth/auth.service.js';
+import type { Socket } from 'socket.io';
 import { logger } from '../common/utils/logger.js';
+import type { AuthPayload, AuthUser } from '../modules/auth/auth.types.js';
+import { verifyAccessToken } from '../modules/auth/jwt.js';
 import type {
   ClientToServerEvents,
-  ServerToClientEvents,
   InterServerEvents,
+  RealtimeAuthPayload,
+  ServerToClientEvents,
   SocketData,
 } from './types.js';
 
-type AuthSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
+interface JwtPayload {
+  exp?: number;
+  sub?: string;
+  userId?: string;
+}
 
-/**
- * Socket.IO handshake middleware: authenticates a connecting socket using the
- * same JWT access token issued by the REST auth module.
- *
- * The client must send the token as `socket.handshake.auth.token`, e.g.:
- *   io(url, { auth: { token: accessToken } })
- *
- * On success, the decoded payload is attached to `socket.data.auth`.
- * On failure, the connection is rejected before `connection` fires.
- */
-export function socketAuth(socket: AuthSocket, next: (err?: ExtendedError) => void): void {
-  const token = socket.handshake.auth?.['token'] as string | undefined;
+export interface AuthenticatedSocket extends Socket<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+> {
+  authUser?: AuthUser;
+}
 
-  if (!token) {
+declare module 'socket.io' {
+  interface Socket {
+    authUser?: AuthUser;
+  }
+}
+
+export function socketAuth(socket: AuthenticatedSocket, next: (err?: Error) => void): void {
+  const token: unknown = socket.handshake.auth?.token;
+
+  if (typeof token !== 'string' || token.length === 0) {
     logger.warn({ socketId: socket.id }, 'Socket connection rejected: no token');
     next(new Error('Authentication token is required'));
     return;
   }
 
   try {
-    socket.data.auth = verifyAccessToken(token);
-    logger.debug(
-      { socketId: socket.id, userId: socket.data.auth.userId },
-      'Socket authenticated',
-    );
+    const payload = verifyAccessToken(token) as AuthPayload & JwtPayload;
+    const uid = payload.sub ?? payload.userId;
+    if (!uid || typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) {
+      throw new Error('Access token is missing required claims');
+    }
+
+    const auth: RealtimeAuthPayload = {
+      ...payload,
+      userId: uid,
+      exp: payload.exp,
+    };
+    socket.data.auth = auth;
+    socket.authUser = {
+      id: uid,
+      stellarAddress: payload.stellarAddress,
+      username: null,
+    };
+    logger.debug({ socketId: socket.id, userId: uid }, 'Socket authenticated');
     next();
-  } catch {
-    logger.warn({ socketId: socket.id }, 'Socket connection rejected: invalid token');
+  } catch (err) {
+    logger.warn({ socketId: socket.id, err }, 'Socket connection rejected: invalid token');
     next(new Error('Invalid or expired token'));
   }
 }

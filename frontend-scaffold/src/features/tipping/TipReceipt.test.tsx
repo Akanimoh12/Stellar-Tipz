@@ -12,6 +12,12 @@ vi.mock('html2canvas', () => {
   };
 });
 
+// Mock canvas-confetti (TipResult fires a celebration burst on success;
+// jsdom has no 2D canvas so the real implementation would throw).
+vi.mock('canvas-confetti', () => ({
+  default: vi.fn(),
+}));
+
 // Mock qrcode.react
 vi.mock('qrcode.react', () => {
   return {

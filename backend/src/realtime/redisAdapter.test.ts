@@ -24,6 +24,7 @@ describe('Socket.IO Redis adapter wiring (#948)', () => {
   beforeEach(() => {
     vi.resetModules();
     mockDuplicate.mockReset();
+    mockDuplicate.mockReturnValue({ on: vi.fn(), subscribe: vi.fn().mockResolvedValue(undefined), quit: vi.fn().mockResolvedValue(undefined) });
     mockCreateAdapter.mockClear();
   });
 
@@ -41,7 +42,7 @@ describe('Socket.IO Redis adapter wiring (#948)', () => {
     const httpServer = createServer();
     initRealtime(httpServer);
 
-    expect(mockDuplicate).toHaveBeenCalledTimes(2);
+    expect(mockDuplicate).toHaveBeenCalledTimes(3);
     expect(mockCreateAdapter).toHaveBeenCalledWith(pubClient, subClient);
 
     httpServer.close();
@@ -54,7 +55,7 @@ describe('Socket.IO Redis adapter wiring (#948)', () => {
     const httpServer = createServer();
     initRealtime(httpServer);
 
-    expect(mockDuplicate).not.toHaveBeenCalled();
+    expect(mockDuplicate).toHaveBeenCalledTimes(1);
     expect(mockCreateAdapter).not.toHaveBeenCalled();
 
     httpServer.close();

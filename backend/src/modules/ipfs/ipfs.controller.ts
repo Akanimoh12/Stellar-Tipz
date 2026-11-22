@@ -22,12 +22,15 @@ export async function uploadImageController(
       );
     }
 
-    const result = await pinImageToIpfs({
-      buffer: file.buffer,
-      mimetype: file.mimetype,
-      size: file.size,
-      originalname: file.originalname,
-    });
+    const result = await pinImageToIpfs(
+      {
+        buffer: file.buffer,
+        mimetype: file.mimetype,
+        size: file.size,
+        originalname: file.originalname,
+      },
+      { signal: req.signal },
+    );
 
     res.status(201).json({
       status: "success",

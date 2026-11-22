@@ -4,33 +4,55 @@ import { config } from '../../config/index.js';
 import { prisma } from '../../db/prisma.js';
 import { BadRequestError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
+import { rpcCall } from '../../common/stellar/rpcClient.js';
+import {
+  classifyFailure,
+  markFailureClass,
+  observeWithdrawal,
+} from '../../common/observability/businessMetrics.js';
 import type {
   WithdrawalResponse,
   WithdrawableBalanceResponse,
   SubmitWithdrawalResult,
 } from './withdrawals.types.js';
+import {
+  createCursorScope,
+  descendingCursorCondition,
+  toCursorPage,
+} from '../../common/pagination/cursor.js';
 
 export async function getWithdrawalHistory(
   userId: string,
   limit: number,
-  offset: number,
-): Promise<WithdrawalResponse[]> {
+  cursor?: string,
+  offset?: number,
+): Promise<{ data: WithdrawalResponse[]; nextCursor: string | null }> {
+  const scope = createCursorScope('withdrawals', { userId });
+  const cursorCondition = descendingCursorCondition('requestedAt', cursor, scope);
+  const baseWhere: Prisma.WithdrawalWhereInput = { userId };
+  const where: Prisma.WithdrawalWhereInput = cursorCondition
+    ? { AND: [baseWhere, cursorCondition as Prisma.WithdrawalWhereInput] }
+    : baseWhere;
   const withdrawals = await prisma.withdrawal.findMany({
-    where: { userId },
-    orderBy: { requestedAt: 'desc' },
-    skip: offset,
-    take: limit,
+    where,
+    orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
+    ...(offset !== undefined ? { skip: offset } : {}),
+    take: limit + 1,
   });
+  const page = toCursorPage(withdrawals, limit, scope, (withdrawal) => withdrawal.requestedAt);
 
-  return withdrawals.map((withdrawal) => ({
-    id: withdrawal.id,
-    amount: withdrawal.amount.toString(),
-    fee: withdrawal.fee.toString(),
-    txHash: withdrawal.txHash,
-    status: withdrawal.status,
-    requestedAt: withdrawal.requestedAt.toISOString(),
-    confirmedAt: withdrawal.confirmedAt ? withdrawal.confirmedAt.toISOString() : null,
-  }));
+  return {
+    data: page.data.map((withdrawal) => ({
+      id: withdrawal.id,
+      amount: withdrawal.amount.toString(),
+      fee: withdrawal.fee.toString(),
+      txHash: withdrawal.txHash,
+      status: withdrawal.status,
+      requestedAt: withdrawal.requestedAt.toISOString(),
+      confirmedAt: withdrawal.confirmedAt ? withdrawal.confirmedAt.toISOString() : null,
+    })),
+    nextCursor: page.nextCursor,
+  };
 }
 
 export async function getWithdrawableBalance(userId: string): Promise<WithdrawableBalanceResponse> {
@@ -97,6 +119,7 @@ export interface PreparedWithdrawal {
 export async function prepareWithdrawal(
   userId: string,
   amount: string,
+  opts: { signal?: AbortSignal } = {},
 ): Promise<PreparedWithdrawal> {
   const contractId = config.stellar.contractId;
   if (!contractId) {
@@ -117,11 +140,10 @@ export async function prepareWithdrawal(
 
   const { fee, netAmount } = calculateWithdrawalFee(parsedAmount);
 
-  const server = new SorobanRpc.Server(config.stellar.rpcUrl, {
-    allowHttp: config.stellar.rpcUrl.startsWith('http://'),
-  });
-
-  const sourceAccount = await server.getAccount(user.stellarAddress).catch(() => {
+  const sourceAccount = await rpcCall((server) => server.getAccount(user.stellarAddress), {
+    signal: opts.signal,
+    operationName: 'getAccount',
+  }).catch(() => {
     throw new BadRequestError('Source account not found on network');
   });
   const networkPassphrase =
@@ -142,7 +164,10 @@ export async function prepareWithdrawal(
     .setTimeout(30)
     .build();
 
-  const simulateResponse = await server.simulateTransaction(tx).catch((err: Error) => {
+  const simulateResponse = await rpcCall((server) => server.simulateTransaction(tx), {
+    signal: opts.signal,
+    operationName: 'simulateTransaction',
+  }).catch((err: Error) => {
     logger.error({ err }, 'Transaction simulation failed');
     throw new BadRequestError('Transaction simulation failed');
   });
@@ -186,7 +211,24 @@ export async function submitWithdrawal(
   userId: string,
   amount: string,
   signedTxXdr: string,
+  opts: { signal?: AbortSignal } = {},
 ): Promise<SubmitWithdrawalResult> {
+  try {
+    const outcome = await performWithdrawalSubmission(userId, amount, signedTxXdr, opts);
+    observeWithdrawal('submit', outcome.created ? 'success' : 'duplicate', outcome.created ? BigInt(amount) : undefined);
+    return outcome.result;
+  } catch (err) {
+    observeWithdrawal('submit', classifyFailure(err));
+    throw err;
+  }
+}
+
+async function performWithdrawalSubmission(
+  userId: string,
+  amount: string,
+  signedTxXdr: string,
+  opts: { signal?: AbortSignal },
+): Promise<{ result: SubmitWithdrawalResult; created: boolean }> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new BadRequestError('User not found');
 
@@ -205,13 +247,13 @@ export async function submitWithdrawal(
     Networks[config.stellar.network as keyof typeof Networks] ?? config.stellar.networkPassphrase;
   const tx = TransactionBuilder.fromXDR(signedTxXdr, networkPassphrase);
 
-  const server = new SorobanRpc.Server(config.stellar.rpcUrl, {
-    allowHttp: config.stellar.rpcUrl.startsWith('http://'),
-  });
-
-  const sendResponse = await server.sendTransaction(tx).catch((err: Error) => {
+  const sendResponse = await rpcCall((server) => server.sendTransaction(tx), {
+    signal: opts.signal,
+    operationName: 'sendTransaction',
+  }).catch((err: Error) => {
     logger.error({ err }, 'Withdrawal transaction submission failed');
-    throw new BadRequestError('Failed to submit withdrawal transaction');
+    // The RPC is the platform's dependency, not the user's mistake.
+    throw markFailureClass(new BadRequestError('Failed to submit withdrawal transaction'), 'system_error');
   });
 
   if (sendResponse.status === 'ERROR') {
@@ -223,7 +265,7 @@ export async function submitWithdrawal(
 
   const existing = await prisma.withdrawal.findUnique({ where: { txHash } });
   if (existing) {
-    return serializeSubmittedWithdrawal(existing, netAmount);
+    return { result: serializeSubmittedWithdrawal(existing, netAmount), created: false };
   }
 
   try {
@@ -236,11 +278,11 @@ export async function submitWithdrawal(
         status: 'PENDING',
       },
     });
-    return serializeSubmittedWithdrawal(withdrawal, netAmount);
+    return { result: serializeSubmittedWithdrawal(withdrawal, netAmount), created: true };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       const withdrawal = await prisma.withdrawal.findUnique({ where: { txHash } });
-      if (withdrawal) return serializeSubmittedWithdrawal(withdrawal, netAmount);
+      if (withdrawal) return { result: serializeSubmittedWithdrawal(withdrawal, netAmount), created: false };
     }
     throw err;
   }

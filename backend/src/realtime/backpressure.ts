@@ -1,0 +1,198 @@
+import { Server as SocketIOServer, Socket } from 'socket.io';
+import { env } from '../config/env.js';
+import { logger } from '../common/utils/logger.js';
+
+interface ConnectionMetrics {
+  bufferedBytes: number;
+  lastEventTime: number;
+  eventFrequency: number;
+}
+
+/** Shape of a socket.io transport's underlying writable stream. */
+interface SocketTransport {
+  writable?: {
+    writableLength?: number;
+  };
+}
+
+/**
+ * Reads the internal write-buffer length from a socket.io transport.
+ * The transport object is not publicly typed, so we narrow it safely here
+ * rather than casting to `any` at each call site.
+ */
+function getTransportWritableLength(transport: unknown): number {
+  const t = transport as SocketTransport | null | undefined;
+  return t?.writable?.writableLength ?? 0;
+}
+
+const connectionMetrics = new Map<string, ConnectionMetrics>();
+
+export function configureBackpressure(io: SocketIOServer): void {
+  const maxBufferSize = env?.SOCKET_IO_MAX_BUFFER_SIZE ?? 1048576;
+  const connectionTimeout = env?.SOCKET_IO_CONNECTION_TIMEOUT_MS ?? 30000;
+
+  io.on('connection', (socket: Socket) => {
+    logger.debug({ clientId: socket.id }, 'Client connected');
+
+    connectionMetrics.set(socket.id, {
+      bufferedBytes: 0,
+      lastEventTime: Date.now(),
+      eventFrequency: 0,
+    });
+
+    socket.on('disconnect', () => {
+      connectionMetrics.delete(socket.id);
+      logger.debug({ clientId: socket.id }, 'Client disconnected');
+    });
+
+    socket.on('error', (error) => {
+      logger.error({ clientId: socket.id, error }, 'Socket error');
+    });
+  });
+
+  io.engine.on('connection', (rawSocket) => {
+    const clientId = rawSocket.id;
+    let lastBufferCheck = Date.now();
+
+    const checkBackpressure = setInterval(() => {
+      const socket = io.sockets.sockets.get(clientId);
+      if (!socket) {
+        clearInterval(checkBackpressure);
+        return;
+      }
+
+      const writableLength = getTransportWritableLength(socket.conn?.transport);
+      const bufferSize = writableLength;
+
+      if (bufferSize > maxBufferSize) {
+        logger.warn(
+          {
+            clientId,
+            bufferSize,
+            maxBufferSize,
+            excess: bufferSize - maxBufferSize,
+          },
+          'Client buffer exceeded limit, disconnecting'
+        );
+
+        socket.emit('backpressure_disconnect', {
+          reason: 'client_buffer_exceeded',
+          bufferSize,
+          maxBufferSize,
+        });
+
+        socket.disconnect(true);
+        clearInterval(checkBackpressure);
+      } else if (bufferSize > maxBufferSize * 0.8) {
+        logger.warn(
+          {
+            clientId,
+            bufferSize,
+            maxBufferSize,
+            utilization: ((bufferSize / maxBufferSize) * 100).toFixed(1) + '%',
+          },
+          'Client buffer pressure high'
+        );
+      }
+
+      lastBufferCheck = Date.now();
+    }, 1000);
+
+    // Prevent interval from keeping event loop alive in test environments
+    if (typeof checkBackpressure?.unref === 'function') {
+      checkBackpressure.unref();
+    }
+
+    rawSocket.on('close', () => {
+      clearInterval(checkBackpressure);
+      connectionMetrics.delete(clientId);
+    });
+  });
+}
+
+export function throttleEventPerConnection(
+  socket: Socket,
+  event: string,
+  data: any,
+  throttleMs: number = 100
+): boolean {
+  const metrics = connectionMetrics.get(socket.id);
+  if (!metrics) {
+    socket.emit(event, data);
+    return true;
+  }
+
+  const now = Date.now();
+  const timeSinceLastEvent = now - metrics.lastEventTime;
+
+  if (timeSinceLastEvent < throttleMs) {
+    logger.debug(
+      { clientId: socket.id, event, throttledMs: timeSinceLastEvent },
+      'Event throttled'
+    );
+    return false;
+  }
+
+  metrics.lastEventTime = now;
+  socket.emit(event, data);
+  return true;
+}
+
+export function broadcastWithBackpressure(
+  io: SocketIOServer,
+  event: string,
+  data: any,
+  options?: {
+    throttleMs?: number;
+    filterSockets?: (socket: Socket) => boolean;
+  }
+): void {
+  const sockets = Array.from(io.sockets.sockets.values());
+
+  for (const socket of sockets) {
+    if (options?.filterSockets && !options.filterSockets(socket)) {
+      continue;
+    }
+
+    const shouldEmit = throttleEventPerConnection(
+      socket,
+      event,
+      data,
+      options?.throttleMs || 100
+    );
+
+    if (!shouldEmit) {
+      logger.debug({ event, clientId: socket.id }, 'Event throttled in broadcast');
+    }
+  }
+}
+
+export function getConnectionMetrics(): {
+  totalConnections: number;
+  highPressureConnections: number;
+  averageBufferSize: number;
+} {
+  const metrics = Array.from(connectionMetrics.values());
+  const totalConnections = metrics.length;
+
+  if (totalConnections === 0) {
+    return {
+      totalConnections: 0,
+      highPressureConnections: 0,
+      averageBufferSize: 0,
+    };
+  }
+
+  const highPressureThreshold = (env?.SOCKET_IO_MAX_BUFFER_SIZE ?? 1048576) * 0.8;
+  const highPressureConnections = metrics.filter(
+    (m) => m.bufferedBytes > highPressureThreshold
+  ).length;
+  const averageBufferSize =
+    metrics.reduce((sum, m) => sum + m.bufferedBytes, 0) / totalConnections;
+
+  return {
+    totalConnections,
+    highPressureConnections,
+    averageBufferSize,
+  };
+}

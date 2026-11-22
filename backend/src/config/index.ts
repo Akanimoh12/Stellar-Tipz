@@ -30,23 +30,55 @@ export const config = {
 
   auth: {
     jwtSecret: env.JWT_SECRET,
+    jwtSecrets: env.JWT_SECRETS,
+    jwtCurrentKid: env.JWT_CURRENT_KID,
     jwtExpiresIn: env.JWT_EXPIRES_IN,
     refreshTokenExpiresIn: env.REFRESH_TOKEN_EXPIRES_IN,
     challengeTtlSeconds: env.AUTH_CHALLENGE_TTL_SECONDS,
+    challengeCleanupCron: env.AUTH_CHALLENGE_CLEANUP_CRON,
+    rateLimitPerIp: env.AUTH_RATE_LIMIT_PER_IP,
+    rateLimitPerAddress: env.AUTH_RATE_LIMIT_PER_ADDRESS,
+    rateLimitWindowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
+  },
+
+  retention: {
+    pruneCron: env.RETENTION_PRUNE_CRON,
+    batchSize: env.RETENTION_BATCH_SIZE,
   },
 
   stellar: {
     network: env.STELLAR_NETWORK,
     rpcUrl: env.SOROBAN_RPC_URL,
     horizonUrl: env.HORIZON_URL,
+    rpcFallbackUrls: env.SOROBAN_RPC_FALLBACK_URLS,
+    horizonFallbackUrls: env.HORIZON_FALLBACK_URLS,
     networkPassphrase: env.NETWORK_PASSPHRASE,
     contractId: env.CONTRACT_ID,
-    explorerBaseUrl: `https://stellar.expert/explorer/${env.STELLAR_NETWORK === 'MAINNET' ? 'public' : env.STELLAR_NETWORK.toLowerCase()}`,
+    explorerBaseUrl: `https://stellar.expert/explorer/${env.STELLAR_NETWORK === 'MAINNET' ? 'public' : (env.STELLAR_NETWORK ?? 'TESTNET').toLowerCase()}`,
   },
 
   indexer: {
     pollIntervalMs: env.INDEXER_POLL_INTERVAL_MS,
     startLedger: env.INDEXER_START_LEDGER,
+    lagThresholdLedgers: env.INDEXER_LAG_THRESHOLD_LEDGERS,
+    stallIntervals: env.INDEXER_STALL_INTERVALS,
+    /** Confirmation depth before an event is projected (issue #1257). */
+    finalityDepth: env.INDEXER_FINALITY_DEPTH,
+    /** Recent ledger hashes retained for reorg detection (issue #1257). */
+    reorgLookback: env.INDEXER_REORG_LOOKBACK,
+    /** Redis lease-based leader election across indexer instances (issue #1263). */
+    leaderElection: {
+      enabled: env.INDEXER_LEADER_ELECTION_ENABLED,
+      key: env.INDEXER_LEADER_KEY,
+      leaseMs: env.INDEXER_LEADER_LEASE_MS,
+      renewIntervalMs: env.INDEXER_LEADER_RENEW_INTERVAL_MS,
+    },
+  },
+
+  treasury: {
+    address: env.TREASURY_ADDRESS,
+    openingBalanceStroops: env.TREASURY_OPENING_BALANCE_STROOPS,
+    monitorCron: env.TREASURY_MONITOR_CRON,
   },
 
   twitter: {
@@ -60,59 +92,22 @@ export const config = {
     gatewayUrl: env.IPFS_GATEWAY_URL,
   },
 
-  credit: {
-    recomputeCron: env.CREDIT_RECOMPUTE_CRON,
-  },
-
-  analytics: {
-    dailyCron: env.ANALYTICS_DAILY_CRON,
-  },
-
-  leaderboard: {
-    snapshotCron: env.LEADERBOARD_SNAPSHOT_CRON,
-  },
-
-  withdrawals: {
-    minAmountStroops: env.WITHDRAWAL_MIN_AMOUNT_STROOPS,
-    feeBps: env.WITHDRAWAL_FEE_BPS,
-  },
-
-  subscriptions: {
-    keeperSecretKey: env.SUBSCRIPTION_KEEPER_SECRET_KEY,
-    chargeCron: env.SUBSCRIPTION_CHARGE_CRON,
-  },
-
-  discovery: {
-    trendingWindowDays: env.DISCOVERY_TRENDING_WINDOW_DAYS,
-    trendingHalflifeDays: env.DISCOVERY_TRENDING_HALFLIFE_DAYS,
-    trendingTopN: env.DISCOVERY_TRENDING_TOP_N,
-    similarTopN: env.DISCOVERY_SIMILAR_TOP_N,
-    cacheTtlSeconds: env.DISCOVERY_CACHE_TTL_SECONDS,
-    scheduleCron: env.DISCOVERY_SCHEDULE_CRON,
-  },
-
-  platformStats: {
-    cacheTtlSeconds: env.PLATFORM_STATS_CACHE_TTL_SECONDS,
-    scheduleCron: env.PLATFORM_STATS_SCHEDULE_CRON,
-  },
-
-  payouts: {
-    keeperSecretKey: env.PAYOUT_KEEPER_SECRET_KEY,
-    scheduleCron: env.PAYOUT_SCHEDULE_CRON,
-    maxAttempts: env.PAYOUT_MAX_ATTEMPTS,
-    backoffBaseSeconds: env.PAYOUT_BACKOFF_BASE_SECONDS,
-    minAmountStroops: env.PAYOUT_MIN_AMOUNT_STROOPS,
-  },
-
-  og: {
-    timeoutMs: env.OG_IMAGE_TIMEOUT_MS,
-    cacheTtlSeconds: env.OG_IMAGE_CACHE_TTL_SECONDS,
-    concurrency: env.OG_IMAGE_CONCURRENCY,
+  realtime: {
+    pingIntervalMs: env.REALTIME_PING_INTERVAL_MS ?? 25_000,
+    pingTimeoutMs: env.REALTIME_PING_TIMEOUT_MS ?? 20_000,
+    redisAdapterEnabled: env.REALTIME_REDIS_ADAPTER_ENABLED === 'true',
   },
 
   logging: {
     level: env.LOG_LEVEL,
     sentryDsn: env.SENTRY_DSN,
+  },
+
+  tracing: {
+    enabled: env.OTEL_ENABLED,
+    serviceName: env.OTEL_SERVICE_NAME,
+    otlpEndpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT,
+    sampleRate: env.OTEL_SAMPLE_RATE,
   },
 } as const;
 

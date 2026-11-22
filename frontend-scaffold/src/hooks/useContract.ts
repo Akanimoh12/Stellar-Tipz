@@ -35,84 +35,34 @@ import {
 import { ProfileFormData } from "../types/profile";
 import { xlmToStroop } from "../helpers/format";
 import { logger } from "../services/logger";
-
-/**
- * Valid Stellar placeholder address used as the source account for
- * read-only (simulation-only) contract calls when no wallet is connected.
- * This is the well-known zero-account on Stellar.
- */
-const READ_ONLY_SOURCE =
-  "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
-
-/**
- * Safely converts a numeric string to a BigInt.
- * Validates that the input is a non-empty string of digits.
- * @param amount The string to convert.
- * @returns The converted BigInt.
- * @throws Error if the amount format is invalid.
- */
-function safeStringToBigInt(amount: string): bigint {
-  if (!amount || !/^\d+$/.test(amount)) {
-    throw new Error("Invalid amount format");
-  }
-  return BigInt(amount);
-}
+import { useAdminContract } from "./contract/admin";
+import { useContractCore } from "./contract/core";
+import { useProfileContract } from "./contract/profile";
+import { useSubscriptionsContract } from "./contract/subscriptions";
+import { useTipsContract } from "./contract/tips";
 
 /**
  * Hook providing typed methods for all Tipz contract operations.
+ *
+ * The implementation is split by domain under `hooks/contract/`:
+ * - `profile.ts`       — profile reads/writes, domains, credit tier
+ * - `tips.ts`          — tip reads/writes, min-tip config, streaks
+ * - `subscriptions.ts` — create/cancel/execute/read subscriptions
+ * - `admin.ts`         — platform stats and leaderboard
+ *
+ * Every slice shares a single `loading` flag through `useContractCore`,
+ * so the public API of this hook is unchanged.
  */
 export const useContract = () => {
-  const wallet = useWallet();
-  const { network } = useWalletStore();
-  const [loading, setLoading] = useState(false);
+  const core = useContractCore();
 
-  const networkDetails: NetworkDetails = useMemo(
-    () => ({
-      network,
-      networkUrl:
-        network === "TESTNET" ? env.horizonUrl : "https://horizon.stellar.org",
-      networkPassphrase:
-        network === "TESTNET"
-          ? "Test SDF Network ; September 2015"
-          : "Public Global Stellar Network ; September 2015",
-    }),
-    [network],
-  );
-
-  const server = useMemo(() => getServer(networkDetails), [networkDetails]);
-  const contractId = env.contractId;
-
-  const withLoading = useCallback(
-    async <T>(operation: () => Promise<T>): Promise<T> => {
-      setLoading(true);
-      try {
-        return await operation();
-      } finally {
-        setLoading(false);
-      }
-    },
-    [],
-  );
-
-  const withRetry = useCallback(
-    async <T>(operation: () => Promise<T>, attempts = 2): Promise<T> => {
-      let lastError: unknown;
-      for (let attempt = 0; attempt < attempts; attempt += 1) {
-        try {
-          return await operation();
-        } catch (error) {
-          lastError = error;
-        }
-      }
-      throw lastError instanceof Error
-        ? lastError
-        : new Error(String(lastError));
-    },
-    [],
-  );
+  const profile = useProfileContract(core);
+  const tips = useTipsContract(core);
+  const subscriptions = useSubscriptionsContract(core);
+  const admin = useAdminContract(core);
 
   // Warn once in development when contract ID is not configured
-  if (!contractId) {
+  if (!core.contractId) {
     logger.warn(
       "[hooks/useContract]",
       "VITE_CONTRACT_ID is not set — contract calls will be skipped.",
@@ -956,29 +906,10 @@ export const useContract = () => {
   );
 
   return {
-    loading,
-    getProfile,
-    getProfileByUsername,
-    getLeaderboard,
-    getStats,
-    getMinTipAmount,
-    getCreatorMinTip,
-    getRecentTips,
-    getCreatorTipCount,
-    getTipsByTipper,
-    getTipperTipCount,
-    getCreditTier,
-    getStreak,
-    registerProfile,
-    updateProfile,
-    setDomain,
-    verifyDomain,
-    sendTip,
-    withdrawTips,
-    deregisterProfile,
-    createSubscription,
-    cancelSubscription,
-    executeDueSubscription,
-    getSubscriptions,
+    loading: core.loading,
+    ...profile,
+    ...tips,
+    ...subscriptions,
+    ...admin,
   };
 };

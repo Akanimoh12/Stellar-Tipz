@@ -1,8 +1,10 @@
 import { pathToFileURL } from 'node:url';
+import { startNotificationDigests } from './notificationDigest.worker.js';
 import { logger } from '../common/utils/logger.js';
-import { registerClosable, closeAll } from '../common/utils/lifecycle.js';
-import { prisma } from '../db/prisma.js';
+import { registerClosable, closeAllWithTimeout } from '../common/utils/lifecycle.js';
+import { prisma, prismaIncludingDeleted } from '../db/prisma.js';
 import { redis } from '../db/redis.js';
+import { startProcessMetrics } from '../common/observability/metricsServer.js';
 import {
   createCreditRecomputeWorker,
   scheduleCreditRecompute,
@@ -20,15 +22,35 @@ import {
   schedulePlatformStats,
   createPayoutWorker,
   schedulePayouts,
+  createAuthChallengeCleanupWorker,
+  scheduleAuthChallengeCleanup,
+  createRetentionWorker,
+  scheduleRetentionPrune,
+  createTreasuryMonitorWorker,
+  scheduleTreasuryMonitor,
+  createFinancialReconciliationWorker,
+  scheduleFinancialReconciliation,
 } from './index.js';
+import { initTracing, shutdownTracing } from '../common/observability/tracing.js';
 
 /**
  * Standalone jobs process bootstrap. Starts all BullMQ workers and registers
  * graceful shutdown for Prisma, Redis, and every worker.
  */
 export async function bootstrapJobs(): Promise<void> {
+  // Initialize OpenTelemetry tracing (issue #1349)
+  initTracing();
+  registerClosable({
+    name: 'OpenTelemetry',
+    close: shutdownTracing,
+  });
+  await startProcessMetrics('jobs');
+
   registerClosable({ name: 'Prisma', close: () => prisma.$disconnect() });
+  registerClosable({ name: 'PrismaIncludingDeleted', close: () => prismaIncludingDeleted.$disconnect() });
   registerClosable({ name: 'Redis', close: async () => { await redis.quit(); } });
+
+  await startNotificationDigests();
 
   const creditWorker = createCreditRecomputeWorker();
   registerClosable({
@@ -102,13 +124,44 @@ export async function bootstrapJobs(): Promise<void> {
   });
   await schedulePayouts();
 
+  const authChallengeCleanupWorker = createAuthChallengeCleanupWorker();
+  registerClosable({
+    name: 'AuthChallengeCleanupWorker',
+    close: async () => {
+      await authChallengeCleanupWorker.close();
+    },
+  });
+  await scheduleAuthChallengeCleanup();
+
+  const retentionWorker = createRetentionWorker();
+  registerClosable({
+    name: 'RetentionWorker',
+    close: async () => {
+      await retentionWorker.close();
+    },
+  });
+  await scheduleRetentionPrune();
+
+  const treasuryWorker = createTreasuryMonitorWorker();
+  registerClosable({ name: 'TreasuryMonitorWorker', close: () => treasuryWorker.close() });
+  await scheduleTreasuryMonitor();
+
+  const financialWorker = createFinancialReconciliationWorker();
+  registerClosable({ name: 'FinancialReconciliationWorker', close: () => financialWorker.close() });
+  await scheduleFinancialReconciliation();
+
   logger.info('Jobs process started');
 
+  let shuttingDown = false;
   const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info(`${signal} received, shutting down jobs...`);
-    await closeAll();
-    logger.info('Jobs shutdown complete');
-    process.exit(0);
+    const completed = await closeAllWithTimeout(30_000, () => process.exit(1));
+    if (completed) {
+      logger.info('Jobs shutdown complete');
+      process.exit(0);
+    }
   };
 
   process.on('SIGINT', () => void shutdown('SIGINT'));

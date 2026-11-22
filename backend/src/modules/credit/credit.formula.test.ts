@@ -4,6 +4,7 @@ import {
   computeTipSubScore,
   computeXSubScore,
   computeAgeSubScore,
+  computeStreakBonus,
   applyWeight,
   computeCreditScore,
   getTierForScore,
@@ -29,6 +30,7 @@ const defaultConfig: CreditScoreFormula = {
     xSub: 50,
     ageSub: 100,
     tipSub: 100,
+    streakBonus: 10,
   },
 };
 
@@ -259,12 +261,13 @@ describe('computeCreditScore (full formula)', () => {
   });
 
   it('assigns Gold tier for mid-range scores', () => {
+    // Mirrors the "Established creator" row in docs/CREDIT_SCORE.md.
     const result = computeCreditScore(
       {
-        totalTipsReceived: BigInt(100_000_000),
-        xFollowers: 1000,
-        xEngagementAvg: 100,
-        accountAgeDays: 180,
+        totalTipsReceived: BigInt(500_000_000),
+        xFollowers: 2500,
+        xEngagementAvg: 200,
+        accountAgeDays: 365,
         streakBonus: 5,
       },
       defaultConfig,
@@ -331,7 +334,7 @@ describe('computeCreditScore (full formula)', () => {
     expect(result.components.streakBonus).toBe(0);
   });
 
-  it('clamps excessive streak bonus to max', () => {
+  it('clamps excessive streak bonus to the configured streak cap', () => {
     const result = computeCreditScore(
       {
         totalTipsReceived: BigInt(0),
@@ -344,8 +347,50 @@ describe('computeCreditScore (full formula)', () => {
       tiers,
     );
 
-    expect(result.components.streakBonus).toBe(100);
-    expect(result.score).toBe(100);
+    expect(result.components.streakBonus).toBe(defaultConfig.caps.streakBonus);
+    expect(result.score).toBe(defaultConfig.weights.base + defaultConfig.caps.streakBonus);
+  });
+
+  it('does not let a long streak alone dominate the score', () => {
+    // Regression for #1188: before the cap, base (40) + an unbounded streak
+    // pushed the score to 100 with zero tips, zero X presence and a new account.
+    const result = computeCreditScore(
+      {
+        totalTipsReceived: BigInt(0),
+        xFollowers: 0,
+        xEngagementAvg: 0,
+        accountAgeDays: 0,
+        streakBonus: 10_000,
+      },
+      defaultConfig,
+      tiers,
+    );
+
+    expect(result.score).toBeLessThan(defaultConfig.caps.max);
+    expect(result.components.streakBonus).toBe(defaultConfig.caps.streakBonus);
+    expect(result.tier).toBe('Silver');
+  });
+
+  it('honours a config-driven streak cap override', () => {
+    const config: CreditScoreFormula = {
+      ...defaultConfig,
+      caps: { ...defaultConfig.caps, streakBonus: 3 },
+    };
+
+    const result = computeCreditScore(
+      {
+        totalTipsReceived: BigInt(0),
+        xFollowers: 0,
+        xEngagementAvg: 0,
+        accountAgeDays: 0,
+        streakBonus: 50,
+      },
+      config,
+      tiers,
+    );
+
+    expect(result.components.streakBonus).toBe(3);
+    expect(result.score).toBe(43);
   });
 });
 
@@ -377,5 +422,143 @@ describe('getTierForScore', () => {
 
   it('returns New for unmatched scores', () => {
     expect(getTierForScore(101, tiers)).toBe('New');
+  });
+});
+
+describe('computeStreakBonus', () => {
+  it('returns the raw bonus when below the cap', () => {
+    expect(computeStreakBonus(4, defaultConfig)).toBe(4);
+  });
+
+  it('caps the bonus at caps.streakBonus', () => {
+    expect(computeStreakBonus(defaultConfig.caps.streakBonus + 1, defaultConfig)).toBe(
+      defaultConfig.caps.streakBonus,
+    );
+    expect(computeStreakBonus(1_000_000, defaultConfig)).toBe(defaultConfig.caps.streakBonus);
+  });
+
+  it('floors the cap at caps.max so a misconfigured cap cannot break the total', () => {
+    const config: CreditScoreFormula = {
+      ...defaultConfig,
+      caps: { ...defaultConfig.caps, streakBonus: 5_000 },
+    };
+
+    expect(computeStreakBonus(5_000, config)).toBe(config.caps.max);
+  });
+
+  it('clamps negative bonuses and negative caps to 0', () => {
+    expect(computeStreakBonus(-5, defaultConfig)).toBe(0);
+
+    const config: CreditScoreFormula = {
+      ...defaultConfig,
+      caps: { ...defaultConfig.caps, streakBonus: -1 },
+    };
+
+    expect(computeStreakBonus(50, config)).toBe(0);
+  });
+
+  it('truncates fractional bonuses and handles non-finite input', () => {
+    expect(computeStreakBonus(3.9, defaultConfig)).toBe(3);
+    expect(computeStreakBonus(Number.NaN, defaultConfig)).toBe(0);
+    expect(computeStreakBonus(Number.POSITIVE_INFINITY, defaultConfig)).toBe(
+      defaultConfig.caps.streakBonus,
+    );
+    expect(computeStreakBonus(Number.NEGATIVE_INFINITY, defaultConfig)).toBe(0);
+  });
+});
+
+/**
+ * Deterministic 32-bit PRNG (mulberry32) so the property run below sweeps a
+ * wide input space while staying reproducible in CI.
+ */
+function makeRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+describe('computeCreditScore property: 0 <= score <= 100', () => {
+  it('never leaves the 0-100 range over randomized inputs including extreme streaks', () => {
+    const random = makeRandom(1188);
+    const pick = <T>(values: T[]): T => values[Math.floor(random() * values.length)]!;
+    const int = (max: number): number => Math.floor(random() * (max + 1));
+
+    // Boundary values are drawn explicitly so the sweep always hits the
+    // saturation points rather than relying on the uniform draw.
+    const extremeStreaks = [0, 1, 10, 11, 100, 1_000, 10_000, Number.MAX_SAFE_INTEGER];
+    const extremeTips = [
+      BigInt(0),
+      BigInt(1),
+      BigInt(1_000_000_000),
+      BigInt('9007199254740991'),
+      BigInt('100000000000000000000'),
+    ];
+
+    for (let i = 0; i < 5_000; i += 1) {
+      const config: CreditScoreFormula = {
+        ...defaultConfig,
+        caps: {
+          ...defaultConfig.caps,
+          // Sweep sane, zero and deliberately misconfigured (oversized) caps.
+          streakBonus: pick([0, 1, 5, 10, 25, 100, 10_000]),
+        },
+      };
+
+      const input = {
+        totalTipsReceived: random() < 0.5 ? pick(extremeTips) : BigInt(int(2_000_000_000)),
+        xFollowers: random() < 0.5 ? pick([0, 1, 2_500, 1_000_000]) : int(500_000),
+        xEngagementAvg: random() < 0.5 ? pick([0, 1, 500, 1_000_000]) : int(100_000),
+        accountAgeDays: random() < 0.5 ? pick([0, 1, 1_000, 500_000]) : int(50_000),
+        streakBonus: random() < 0.5 ? pick(extremeStreaks) : int(100_000),
+      };
+
+      const result = computeCreditScore(input, config, tiers);
+      const effectiveCap = Math.min(Math.max(config.caps.streakBonus, 0), config.caps.max);
+      const describeInput = JSON.stringify(input, (_key, value) =>
+        typeof value === 'bigint' ? value.toString() : value,
+      );
+
+      expect(result.score, `score out of range for ${describeInput}`).toBeGreaterThanOrEqual(0);
+      expect(result.score, `score out of range for ${describeInput}`).toBeLessThanOrEqual(
+        config.caps.max,
+      );
+      expect(Number.isInteger(result.score)).toBe(true);
+
+      // The streak contribution itself is always bounded by the documented cap.
+      expect(result.components.streakBonus).toBeGreaterThanOrEqual(0);
+      expect(result.components.streakBonus).toBeLessThanOrEqual(effectiveCap);
+
+      expect(getTierForScore(result.score, tiers)).toBe(result.tier);
+    }
+  });
+
+  it('keeps the streak from being the only signal that matters', () => {
+    const random = makeRandom(42);
+
+    // With no tips, no X presence and a brand-new account, the score can never
+    // reach the top tier on streak alone, whatever the streak length.
+    for (let i = 0; i < 1_000; i += 1) {
+      const result = computeCreditScore(
+        {
+          totalTipsReceived: BigInt(0),
+          xFollowers: 0,
+          xEngagementAvg: 0,
+          accountAgeDays: 0,
+          streakBonus: Math.floor(random() * 1_000_000),
+        },
+        defaultConfig,
+        tiers,
+      );
+
+      expect(result.score).toBeLessThanOrEqual(
+        defaultConfig.weights.base + defaultConfig.caps.streakBonus,
+      );
+      expect(result.score).toBeLessThan(80);
+    }
   });
 });

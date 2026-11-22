@@ -7,6 +7,6 @@ export const payoutScheduleSchema = z.object({
     .regex(/^\d+$/, 'Must be a non-negative integer string (stroops)')
     .optional(),
   cadence: z.enum(['MANUAL', 'DAILY', 'WEEKLY', 'MONTHLY']).optional(),
-});
+}).strict();
 
 export type PayoutScheduleInput = z.infer<typeof payoutScheduleSchema>;

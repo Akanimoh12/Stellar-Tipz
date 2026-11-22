@@ -1,8 +1,17 @@
-import { Contract, TransactionBuilder, SorobanRpc, nativeToScVal, Networks, Keypair } from '@stellar/stellar-sdk';
+import {
+  Contract,
+  TransactionBuilder,
+  SorobanRpc,
+  nativeToScVal,
+  Networks,
+  Keypair,
+} from '@stellar/stellar-sdk';
 import { config } from '../../config/index.js';
 import { prisma } from '../../db/prisma.js';
+import type { Prisma } from '@prisma/client';
 import { BadRequestError, NotFoundError } from '../../common/errors/AppError.js';
 import { logger } from '../../common/utils/logger.js';
+import { rpcCall } from '../../common/stellar/rpcClient.js';
 import type {
   SubscriptionResponse,
   PreparedSubscriptionTx,
@@ -10,6 +19,11 @@ import type {
   SubmittedSubscriptionCancel,
   SubscriptionIntervalName,
 } from './subscriptions.types.js';
+import {
+  createCursorScope,
+  descendingCursorCondition,
+  toCursorPage,
+} from '../../common/pagination/cursor.js';
 
 /** Maps the API's interval name onto the raw day count the contract expects. */
 export const INTERVAL_DAYS: Record<SubscriptionIntervalName, number> = {
@@ -33,16 +47,19 @@ function subscriptionId(tipperId: string, creatorId: string): string {
 }
 
 function serializeSubscription(sub: {
-  id: string;
-  tipperId: string;
-  creatorId: string;
-  amountStroops: bigint;
-  interval: string;
-  nextChargeAt: Date;
-  status: string;
-  createdAt: Date;
-  tipper: { stellarAddress: string };
-  creator: { stellarAddress: string };
+  id: string
+  tipperId: string
+  creatorId: string
+  amountStroops: bigint
+  interval: string
+  nextChargeAt: Date
+  status: string
+  createdAt: Date
+  pendingAmountStroops?: bigint | null
+  pendingInterval?: string | null
+  changeEffectiveAt?: Date | null
+  tipper: { stellarAddress: string }
+  creator: { stellarAddress: string }
 }): SubscriptionResponse {
   return {
     id: sub.id,
@@ -55,6 +72,16 @@ function serializeSubscription(sub: {
     nextChargeAt: sub.nextChargeAt.toISOString(),
     status: sub.status as SubscriptionResponse['status'],
     createdAt: sub.createdAt.toISOString(),
+    pendingChange:
+      sub.pendingAmountStroops != null && sub.pendingInterval && sub.changeEffectiveAt
+        ? {
+            amountStroops: sub.pendingAmountStroops.toString(),
+            interval: sub.pendingInterval as SubscriptionIntervalName,
+            effectiveAt: sub.changeEffectiveAt.toISOString(),
+          }
+        : null,
+    changePolicy: 'next_period',
+    cancellationPolicy: 'stop_future_charges_no_automatic_refund',
   };
 }
 
@@ -64,21 +91,32 @@ export async function listMySubscriptions(
   role: 'tipper' | 'creator',
   status: SubscriptionResponse['status'] | undefined,
   limit: number,
-  offset: number,
-): Promise<SubscriptionResponse[]> {
+  cursor?: string,
+  offset?: number,
+): Promise<{ data: SubscriptionResponse[]; nextCursor: string | null }> {
+  const scope = createCursorScope('subscriptions', { userId, role, status });
+  const cursorCondition = descendingCursorCondition('createdAt', cursor, scope);
+  const baseWhere: Prisma.SubscriptionWhereInput = {
+    ...(role === 'tipper' ? { tipperId: userId } : { creatorId: userId }),
+    deletedAt: null,
+    ...(status ? { status } : {}),
+  };
+  const where: Prisma.SubscriptionWhereInput = cursorCondition
+    ? { AND: [baseWhere, cursorCondition as Prisma.SubscriptionWhereInput] }
+    : baseWhere;
   const subscriptions = await prisma.subscription.findMany({
-    where: {
-      ...(role === 'tipper' ? { tipperId: userId } : { creatorId: userId }),
-      deletedAt: null,
-      ...(status ? { status } : {}),
-    },
+    where,
     include: { tipper: true, creator: true },
-    orderBy: { createdAt: 'desc' },
-    skip: offset,
-    take: limit,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    ...(offset !== undefined ? { skip: offset } : {}),
+    take: limit + 1,
   });
+  const page = toCursorPage(subscriptions, limit, scope, (subscription) => subscription.createdAt);
 
-  return subscriptions.map(serializeSubscription);
+  return {
+    data: page.data.map(serializeSubscription),
+    nextCursor: page.nextCursor,
+  };
 }
 
 async function loadCreatorByAddress(creatorStellarAddress: string) {
@@ -87,14 +125,10 @@ async function loadCreatorByAddress(creatorStellarAddress: string) {
   return creator;
 }
 
-function getServer(): SorobanRpc.Server {
-  return new SorobanRpc.Server(config.stellar.rpcUrl, {
-    allowHttp: config.stellar.rpcUrl.startsWith('http://'),
-  });
-}
-
 function getNetworkPassphrase(): string {
-  return Networks[config.stellar.network as keyof typeof Networks] ?? config.stellar.networkPassphrase;
+  return (
+    Networks[config.stellar.network as keyof typeof Networks] ?? config.stellar.networkPassphrase
+  );
 }
 
 /**
@@ -119,8 +153,9 @@ export async function prepareCreateSubscription(
   const parsedAmount = BigInt(amountStroops);
   if (parsedAmount <= 0) throw new BadRequestError('Amount must be positive');
 
-  const server = getServer();
-  const sourceAccount = await server.getAccount(tipper.stellarAddress).catch(() => {
+  const sourceAccount = await rpcCall((server) => server.getAccount(tipper.stellarAddress), {
+    operationName: 'getAccount',
+  }).catch(() => {
     throw new BadRequestError('Source account not found on network');
   });
   const networkPassphrase = getNetworkPassphrase();
@@ -139,7 +174,9 @@ export async function prepareCreateSubscription(
     .setTimeout(30)
     .build();
 
-  const simulateResponse = await server.simulateTransaction(tx).catch((err: Error) => {
+  const simulateResponse = await rpcCall((server) => server.simulateTransaction(tx), {
+    operationName: 'simulateTransaction',
+  }).catch((err: Error) => {
     logger.error({ err }, 'Subscription creation simulation failed');
     throw new BadRequestError('Transaction simulation failed');
   });
@@ -182,13 +219,14 @@ export async function submitCreateSubscription(
   const networkPassphrase = getNetworkPassphrase();
   const tx = TransactionBuilder.fromXDR(signedTxXdr, networkPassphrase);
 
-  const server = getServer();
-  const sendResponse = await server.sendTransaction(tx).catch((err: Error) => {
+  const sendResponse = await rpcCall((server) => server.sendTransaction(tx), {
+    operationName: 'sendTransaction',
+  }).catch((err: Error) => {
     logger.error({ err }, 'Subscription creation submission failed');
     throw new BadRequestError('Failed to submit subscription transaction');
   });
 
-  if (sendResponse.status === 'ERROR') {
+  if (sendResponse.status !== 'PENDING' && sendResponse.status !== 'DUPLICATE') {
     logger.error(
       { hash: sendResponse.hash },
       'Subscription creation transaction rejected by the network',
@@ -197,6 +235,16 @@ export async function submitCreateSubscription(
   }
 
   const id = subscriptionId(tipperId, creator.id);
+  const existing = await prisma.subscription.findUnique({ where: { id } });
+  const changing = existing?.status === 'ACTIVE' && !existing.deletedAt;
+  // A submitted transaction is not confirmation. The ordered sub_change event
+  // records pending terms; never overwrite them from unverified request fields.
+  if (changing)
+    return {
+      id: existing.id,
+      status: existing.status,
+      nextChargeAt: existing.nextChargeAt.toISOString(),
+    };
   const nextChargeAt = addDays(new Date(), INTERVAL_DAYS[interval]);
 
   const subscription = await prisma.subscription.upsert({
@@ -213,7 +261,16 @@ export async function submitCreateSubscription(
     update: {
       amountStroops: parsedAmount,
       interval,
+      nextChargeAt,
+      pendingAmountStroops: null,
+      pendingInterval: null,
+      changeEffectiveAt: null,
       status: 'ACTIVE',
+      chargeFailureCount: 0,
+      dunningStartedAt: null,
+      nextChargeRetryAt: null,
+      lastChargeFailureReason: null,
+      chargeAttemptStartedAt: null,
       deletedAt: null,
     },
   });
@@ -254,8 +311,9 @@ export async function prepareCancelSubscription(
 
   await loadOwnedActiveSubscription(tipperId, creatorStellarAddress);
 
-  const server = getServer();
-  const sourceAccount = await server.getAccount(tipper.stellarAddress).catch(() => {
+  const sourceAccount = await rpcCall((server) => server.getAccount(tipper.stellarAddress), {
+    operationName: 'getAccount',
+  }).catch(() => {
     throw new BadRequestError('Source account not found on network');
   });
   const networkPassphrase = getNetworkPassphrase();
@@ -272,7 +330,9 @@ export async function prepareCancelSubscription(
     .setTimeout(30)
     .build();
 
-  const simulateResponse = await server.simulateTransaction(tx).catch((err: Error) => {
+  const simulateResponse = await rpcCall((server) => server.simulateTransaction(tx), {
+    operationName: 'simulateTransaction',
+  }).catch((err: Error) => {
     logger.error({ err }, 'Subscription cancellation simulation failed');
     throw new BadRequestError('Transaction simulation failed');
   });
@@ -305,13 +365,14 @@ export async function submitCancelSubscription(
   const networkPassphrase = getNetworkPassphrase();
   const tx = TransactionBuilder.fromXDR(signedTxXdr, networkPassphrase);
 
-  const server = getServer();
-  const sendResponse = await server.sendTransaction(tx).catch((err: Error) => {
+  const sendResponse = await rpcCall((server) => server.sendTransaction(tx), {
+    operationName: 'sendTransaction',
+  }).catch((err: Error) => {
     logger.error({ err }, 'Subscription cancellation submission failed');
     throw new BadRequestError('Failed to submit cancellation transaction');
   });
 
-  if (sendResponse.status === 'ERROR') {
+  if (sendResponse.status !== 'PENDING' && sendResponse.status !== 'DUPLICATE') {
     logger.error(
       { hash: sendResponse.hash },
       'Subscription cancellation transaction rejected by the network',
@@ -321,7 +382,14 @@ export async function submitCancelSubscription(
 
   const updated = await prisma.subscription.update({
     where: { id: subscription.id },
-    data: { status: 'CANCELLED' },
+    data: {
+      status: 'CANCELLED',
+      pendingAmountStroops: null,
+      pendingInterval: null,
+      changeEffectiveAt: null,
+      nextChargeRetryAt: null,
+      chargeAttemptStartedAt: null,
+    },
   });
 
   return { id: updated.id, status: updated.status };
@@ -338,6 +406,7 @@ export async function submitCancelSubscription(
 export async function chargeSubscriptionOnChain(
   subscriberAddress: string,
   creatorAddress: string,
+  confirmation: SubscriptionChargeConfirmationOptions = {},
 ): Promise<void> {
   const contractId = config.stellar.contractId;
   if (!contractId) throw new Error('Contract ID is not configured');
@@ -346,10 +415,11 @@ export async function chargeSubscriptionOnChain(
   if (!keeperSecretKey) throw new Error('Subscription keeper secret key is not configured');
 
   const keeperKeypair = Keypair.fromSecret(keeperSecretKey);
-  const server = getServer();
   const networkPassphrase = getNetworkPassphrase();
 
-  const keeperAccount = await server.getAccount(keeperKeypair.publicKey());
+  const keeperAccount = await rpcCall((server) => server.getAccount(keeperKeypair.publicKey()), {
+    operationName: 'getAccount',
+  });
   const contract = new Contract(contractId);
 
   const tx = new TransactionBuilder(keeperAccount, { fee: '100', networkPassphrase })
@@ -363,7 +433,9 @@ export async function chargeSubscriptionOnChain(
     .setTimeout(30)
     .build();
 
-  const simulateResponse = await server.simulateTransaction(tx);
+  const simulateResponse = await rpcCall((server) => server.simulateTransaction(tx), {
+    operationName: 'simulateTransaction',
+  });
   if (SorobanRpc.Api.isSimulationError(simulateResponse)) {
     throw new Error(`Simulation error: ${simulateResponse.error}`);
   }
@@ -371,8 +443,68 @@ export async function chargeSubscriptionOnChain(
   const prepared = SorobanRpc.assembleTransaction(tx, simulateResponse).build();
   prepared.sign(keeperKeypair);
 
-  const sendResponse = await server.sendTransaction(prepared);
-  if (sendResponse.status === 'ERROR') {
+  const sendResponse = await rpcCall((server) => server.sendTransaction(prepared), {
+    operationName: 'sendTransaction',
+  });
+  if (sendResponse.status === 'TRY_AGAIN_LATER') {
+    throw new Error('Subscription charge transaction submission is temporarily unavailable');
+  }
+
+  if (sendResponse.status !== 'PENDING' && sendResponse.status !== 'DUPLICATE') {
     throw new Error('Subscription charge transaction rejected by the network');
+  }
+
+  // DUPLICATE means this exact transaction was already submitted. It is not
+  // proof of execution, but its hash can be confirmed in the same way as a
+  // newly accepted PENDING transaction.
+  await confirmSubscriptionCharge(sendResponse.hash, confirmation);
+}
+
+const DEFAULT_CONFIRMATION_TIMEOUT_MS = 60_000;
+const DEFAULT_CONFIRMATION_POLL_INTERVAL_MS = 1_000;
+
+interface SubscriptionChargeConfirmationOptions {
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  now?: () => number;
+  sleep?: (milliseconds: number) => Promise<void>;
+}
+
+async function confirmSubscriptionCharge(
+  transactionHash: string,
+  options: SubscriptionChargeConfirmationOptions,
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_CONFIRMATION_TIMEOUT_MS;
+  const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_CONFIRMATION_POLL_INTERVAL_MS;
+  const now = options.now ?? Date.now;
+  const sleep = options.sleep ??
+    ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  const deadline = now() + timeoutMs;
+
+  while (true) {
+    const remainingBeforeCallMs = deadline - now();
+    if (remainingBeforeCallMs <= 0) {
+      throw new Error('Subscription charge confirmation timed out');
+    }
+
+    const response = await rpcCall((server) => server.getTransaction(transactionHash), {
+      operationName: 'getTransaction',
+      timeoutMs: remainingBeforeCallMs,
+    });
+
+    if (response.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
+      return;
+    }
+
+    if (response.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
+      throw new Error('Subscription charge transaction failed on-chain');
+    }
+
+    const remainingAfterCallMs = deadline - now();
+    if (remainingAfterCallMs <= 0) {
+      throw new Error('Subscription charge confirmation timed out');
+    }
+
+    await sleep(Math.min(pollIntervalMs, remainingAfterCallMs));
   }
 }

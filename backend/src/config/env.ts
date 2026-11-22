@@ -1,138 +1,134 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import {
+  serverEnvSchema,
+  databaseEnvSchema,
+  authEnvSchema,
+  stellarEnvSchema,
+  indexerEnvSchema,
+  servicesEnvSchema,
+  observabilityEnvSchema,
+} from './schemas/index.js';
+
+export * from './schemas/index.js';
 
 /**
  * Centralised, validated environment configuration.
  * Every module should import `env` from here rather than reading process.env directly.
- * See backend/.env.example for the full list of variables.
+ * Broken up by subsystem schema per section (#1629).
  */
+export const envBaseSchema = serverEnvSchema
+  .merge(databaseEnvSchema)
+  .merge(authEnvSchema)
+  .merge(stellarEnvSchema)
+  .merge(indexerEnvSchema)
+  .merge(servicesEnvSchema)
+  .merge(observabilityEnvSchema);
 
-/**
- * Validates a duration string like "15m", "7d", "30s", "2h".
- * Accepted units: s (seconds), m (minutes), h (hours), d (days).
- */
-const durationString = z
-  .string()
-  .regex(/^\d+[smhd]$/, 'Must be a positive integer followed by s, m, h, or d (e.g. "15m", "7d")');
+export const envSchema = envBaseSchema.superRefine((data, ctx) => {
+  // A leader must get at least two renewal attempts per lease, or one slow
+  // Redis round trip would hand leadership over (issue #1263).
+  if (data.INDEXER_LEADER_RENEW_INTERVAL_MS * 2 >= data.INDEXER_LEADER_LEASE_MS) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['INDEXER_LEADER_RENEW_INTERVAL_MS'],
+      message: 'INDEXER_LEADER_RENEW_INTERVAL_MS must be less than half of INDEXER_LEADER_LEASE_MS',
+    });
+  }
 
-/** Accepts the literal strings "true"/"false" and coerces to a boolean (unlike z.coerce.boolean, which treats any non-empty string as true). */
-const booleanString = z
-  .enum(['true', 'false'])
-  .default('true')
-  .transform((value) => value === 'true');
+  // Production-specific hardening (issue #098) — dev ergonomics untouched,
+  // but production reports ALL violations together for actionable startup failure.
+  if (data.NODE_ENV !== 'production') return;
 
-const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  PORT: z.coerce.number().default(4000),
-  API_BASE_PATH: z.string().default('/api/v1'),
-  CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  const issues: { path: (string | number)[]; message: string }[] = [];
 
-  DATABASE_URL: z.string().url(),
-  REDIS_URL: z.string().url(),
-  /** Attaches the Socket.IO Redis adapter so realtime rooms are shared across horizontally scaled instances. */
-  REALTIME_REDIS_ADAPTER_ENABLED: booleanString,
+  // ── JWT_SECRET: substantially stronger in production ───────────────────
+  const weakSecrets = new Set([
+    'change-me-in-production',
+    'changeme',
+    'secret',
+    'password',
+    'test-secret-key-for-testing',
+    'test-secret-key-for-vitest',
+    'supersecretkey',
+    'your_jwt_secret',
+    '12345678',
+  ]);
+  const jwtLower = data.JWT_SECRET.toLowerCase();
+  if (data.JWT_SECRET.length < 32) {
+    issues.push({
+      path: ['JWT_SECRET'],
+      message: `JWT_SECRET must be at least 32 characters in production (got ${data.JWT_SECRET.length}). Generate with: openssl rand -hex 32`,
+    });
+  }
+  if (weakSecrets.has(data.JWT_SECRET) || weakSecrets.has(jwtLower)) {
+    issues.push({
+      path: ['JWT_SECRET'],
+      message: 'JWT_SECRET uses a known default/weak value — generate a unique secret (openssl rand -hex 32) and do not use the example placeholder',
+    });
+  }
+  if (jwtLower.includes('change-me') || jwtLower.includes('changeme') || jwtLower === 'test-secret-key-for-testing' || jwtLower === 'test-secret-key-for-vitest') {
+    if (!weakSecrets.has(data.JWT_SECRET) && !weakSecrets.has(jwtLower)) {
+      issues.push({
+        path: ['JWT_SECRET'],
+        message: 'JWT_SECRET must not be a default placeholder value in production',
+      });
+    }
+  }
 
-  JWT_SECRET: z.string().min(8),
-  /** Access token TTL — must be a duration string like "15m" or "1h". */
-  JWT_EXPIRES_IN: durationString.default('15m'),
-  /** Refresh token TTL — must be a duration string like "7d" or "30d". */
-  REFRESH_TOKEN_EXPIRES_IN: durationString.default('7d'),
-  AUTH_CHALLENGE_TTL_SECONDS: z.coerce.number().default(300),
+  // ── CONTRACT_ID required in production ────────────────────────────────
+  if (!data.CONTRACT_ID || data.CONTRACT_ID.trim().length === 0) {
+    issues.push({
+      path: ['CONTRACT_ID'],
+      message: 'CONTRACT_ID is required in production — set the deployed Soroban contract address (starts with C, 56 chars)',
+    });
+  }
 
-  STELLAR_NETWORK: z.enum(['TESTNET', 'FUTURENET', 'MAINNET']).default('TESTNET'),
-  SOROBAN_RPC_URL: z.string().url(),
-  HORIZON_URL: z.string().url(),
-  NETWORK_PASSPHRASE: z.string(),
-  CONTRACT_ID: z.string().optional(),
+  // ── MAINNET consistency checks ────────────────────────────────────────
+  if (data.STELLAR_NETWORK === 'MAINNET') {
+    const MAINNET_PASSPHRASE = 'Public Global Stellar Network ; September 2015';
+    const MAINNET_HORIZON = 'https://horizon.stellar.org';
 
-  INDEXER_POLL_INTERVAL_MS: z.coerce.number().default(5000),
-  INDEXER_START_LEDGER: z.coerce.number().optional(),
+    if (data.NETWORK_PASSPHRASE !== MAINNET_PASSPHRASE) {
+      issues.push({
+        path: ['NETWORK_PASSPHRASE'],
+        message: `STELLAR_NETWORK=MAINNET requires NETWORK_PASSPHRASE="${MAINNET_PASSPHRASE}" (got "${data.NETWORK_PASSPHRASE}")`,
+      });
+    }
+    if (data.HORIZON_URL !== MAINNET_HORIZON) {
+      if (data.HORIZON_URL.includes('testnet') || data.HORIZON_URL.includes('futurenet')) {
+        issues.push({
+          path: ['HORIZON_URL'],
+          message: `STELLAR_NETWORK=MAINNET requires HORIZON_URL="${MAINNET_HORIZON}" (got "${data.HORIZON_URL}" — looks like testnet/futurenet)`,
+        });
+      } else {
+        issues.push({
+          path: ['HORIZON_URL'],
+          message: `STELLAR_NETWORK=MAINNET requires HORIZON_URL="${MAINNET_HORIZON}" (got "${data.HORIZON_URL}")`,
+        });
+      }
+    }
+    const rpcLower = data.SOROBAN_RPC_URL.toLowerCase();
+    if (rpcLower.includes('testnet') || rpcLower.includes('futurenet')) {
+      issues.push({
+        path: ['SOROBAN_RPC_URL'],
+        message: `STELLAR_NETWORK=MAINNET requires a mainnet Soroban RPC URL (got "${data.SOROBAN_RPC_URL}" — contains testnet/futurenet)`,
+      });
+    } else if (!rpcLower.includes('mainnet') && data.SOROBAN_RPC_URL !== MAINNET_HORIZON) {
+      issues.push({
+        path: ['SOROBAN_RPC_URL'],
+        message: `STELLAR_NETWORK=MAINNET requires a mainnet SOROBAN_RPC_URL containing "mainnet" (got "${data.SOROBAN_RPC_URL}")`,
+      });
+    }
+  }
 
-  CREDIT_RECOMPUTE_CRON: z.string().default('0 */6 * * *'),
-  /** Cron expression for the daily analytics rollup job. Runs at 00:05 UTC daily by default. */
-  ANALYTICS_DAILY_CRON: z.string().default('5 0 * * *'),
-  /** Cron expression for the leaderboard snapshot job. Runs at 00:15 UTC daily by default. */
-  LEADERBOARD_SNAPSHOT_CRON: z.string().default('15 0 * * *'),
-  /** Cron expression for the X metrics refresh job. Runs at 00:30 UTC daily by default. */
-  X_METRICS_REFRESH_CRON: z.string().default('30 0 * * *'),
-  /** Credit score weights (must sum to <= 100) */
-  CREDIT_SCORE_WEIGHT_BASE: z.coerce.number().int().min(0).max(100).optional(),
-  CREDIT_SCORE_WEIGHT_TIP: z.coerce.number().int().min(0).max(100).optional(),
-  CREDIT_SCORE_WEIGHT_X: z.coerce.number().int().min(0).max(100).optional(),
-  CREDIT_SCORE_WEIGHT_AGE: z.coerce.number().int().min(0).max(100).optional(),
-  /** Credit score divisors */
-  CREDIT_SCORE_DIVISOR_TIP: z.coerce.number().int().positive().optional(),
-  CREDIT_SCORE_DIVISOR_FOLLOWER: z.coerce.number().int().positive().optional(),
-  CREDIT_SCORE_DIVISOR_ENGAGEMENT: z.coerce.number().int().positive().optional(),
-  CREDIT_SCORE_DIVISOR_AGE: z.coerce.number().int().positive().optional(),
-  /** Credit score caps */
-  CREDIT_SCORE_CAP_BASE: z.coerce.number().int().min(0).optional(),
-  CREDIT_SCORE_CAP_MAX: z.coerce.number().int().min(0).optional(),
-  CREDIT_SCORE_CAP_X_SUB: z.coerce.number().int().min(0).optional(),
-  CREDIT_SCORE_CAP_AGE_SUB: z.coerce.number().int().min(0).optional(),
-  CREDIT_SCORE_CAP_TIP_SUB: z.coerce.number().int().min(0).optional(),
-  /** Credit score cache TTL in seconds */
-  CREDIT_SCORE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional(),
-  /** Search results cache TTL in seconds */
-  SEARCH_CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional(),
-  /** Minimum withdrawal amount, in stroops (1 XLM = 10,000,000 stroops). */
-  WITHDRAWAL_MIN_AMOUNT_STROOPS: z.coerce.number().int().positive().default(10_000_000),
-  /** Withdrawal fee, in basis points (1/100th of a percent). 200 = 2%. */
-  WITHDRAWAL_FEE_BPS: z.coerce.number().int().min(0).max(10_000).default(200),
-
-  /**
-   * Secret key for the platform's subscription-charge keeper account. Used
-   * only by the subscription-charge job to sign `execute_due_subscription`
-   * calls server-side (that contract function doesn't require the
-   * subscriber's own signature). Optional so the app/tests can run without
-   * it; the job itself throws a clear error per-subscription if it's unset.
-   */
-  SUBSCRIPTION_KEEPER_SECRET_KEY: z.string().optional(),
-  /** Cron expression for the subscription-charge processing job. */
-  SUBSCRIPTION_CHARGE_CRON: z.string().default('0 * * * *'),
-
-  X_API_BEARER_TOKEN: z.string().optional(),
-  X_API_BASE_URL: z.string().default('https://api.twitter.com/2'),
-
-  IPFS_API_URL: z.string().optional(),
-  IPFS_GATEWAY_URL: z.string().default('https://ipfs.io/ipfs/'),
-
-  /** Creator discovery — trending formula tuning. */
-  DISCOVERY_TRENDING_WINDOW_DAYS: z.coerce.number().int().positive().default(14),
-  /** Exponential-decay half-life (in days) for recency weighting. */
-  DISCOVERY_TRENDING_HALFLIFE_DAYS: z.coerce.number().int().positive().default(7),
-  DISCOVERY_TRENDING_TOP_N: z.coerce.number().int().positive().default(50),
-  DISCOVERY_SIMILAR_TOP_N: z.coerce.number().int().positive().default(20),
-  DISCOVERY_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
-  DISCOVERY_SCHEDULE_CRON: z.string().default('*/15 * * * *'),
-
-  /** Public platform-stats endpoint tuning. */
-  PLATFORM_STATS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
-  PLATFORM_STATS_SCHEDULE_CRON: z.string().default('*/10 * * * *'),
-
-  /**
-   * Secret key for the platform's payout keeper account. Used only by the
-   * scheduled-payout job to invoke the contract's `execute_scheduled_withdrawal`
-   * on behalf of creators who have explicitly opted in (on-chain authorization).
-   * Optional so the app/tests can run without it; the job throws a clear error
-   * per-creator if it is unset. The keeper never holds creator funds or keys.
-   */
-  PAYOUT_KEEPER_SECRET_KEY: z.string().optional(),
-  PAYOUT_SCHEDULE_CRON: z.string().default('*/30 * * * *'),
-  /** Maximum payout attempts before the creator is notified and payout paused. */
-  PAYOUT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
-  /** Base backoff (seconds) for payout retries; grows exponentially. */
-  PAYOUT_BACKOFF_BASE_SECONDS: z.coerce.number().int().positive().default(60),
-  /** Floor on a scheduled payout amount, in stroops. */
-  PAYOUT_MIN_AMOUNT_STROOPS: z.coerce.number().int().positive().default(10_000_000),
-
-  /** OG image generation limits (memory/timeout guardrails). */
-  OG_IMAGE_TIMEOUT_MS: z.coerce.number().int().positive().default(3000),
-  OG_IMAGE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
-  OG_IMAGE_CONCURRENCY: z.coerce.number().int().positive().default(4),
-
-  LOG_LEVEL: z.string().default('info'),
-  SENTRY_DSN: z.string().optional(),
+  for (const issue of issues) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: issue.path,
+      message: issue.message,
+    });
+  }
 });
 
 export const env = envSchema.parse(process.env);

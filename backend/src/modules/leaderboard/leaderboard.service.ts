@@ -1,5 +1,13 @@
+import { Prisma } from '@prisma/client';
+import { z } from 'zod';
 import { prisma } from '../../db/prisma.js';
+import { utcTimestamp } from '../../db/sql.js';
 import { NotFoundError } from '../../common/errors/AppError.js';
+import {
+  createCursorScope,
+  decodeKeysetCursor,
+  encodeKeysetCursor,
+} from '../../common/pagination/cursor.js';
 import type { SnapshotPeriod, TimeWindow } from './leaderboard.schema.js';
 import type {
   LeaderboardEntry,
@@ -27,36 +35,78 @@ function getSnapshotSince(period: SnapshotPeriod, now = new Date()): Date | unde
   return new Date(now.getTime() - SNAPSHOT_WINDOW_MS[period]);
 }
 
-async function getRankedRows(since: Date | undefined, limit?: number, offset?: number) {
-  return prisma.tip.groupBy({
-    by: ['toAddress'],
-    where: {
-      status: 'CONFIRMED',
-      ...(since ? { createdAt: { gte: since } } : {}),
-    },
-    _sum: { amountStroops: true },
-    orderBy: { _sum: { amountStroops: 'desc' } },
-    ...(limit === undefined ? {} : { take: limit }),
-    ...(offset === undefined ? {} : { skip: offset }),
-  });
+/**
+ * Leaderboard ordering (issue #1269). The sort is total, so keyset pagination
+ * can never duplicate or skip an entry:
+ *
+ *   1. confirmed volume, descending;
+ *   2. the ledger of the creator's latest counted tip, ascending — the creator
+ *      who *reached* their total first ranks higher, which is the on-chain rule
+ *      in `contracts/tipz/src/leaderboard.rs` (stable insert after equal amounts);
+ *   3. `toAddress` in byte order (`COLLATE "C"`), ascending — unique, so two
+ *      creators can never compare equal. On-chain, a same-ledger tie is decided
+ *      by transaction order, which the Tip table does not record.
+ */
+const RANKED_ORDER = Prisma.sql`"total" DESC, "reachedAtLedger" ASC, "toAddress" COLLATE "C" ASC`;
+const RANKED_ORDER_AGGREGATE = Prisma.sql`SUM("amountStroops") DESC, MAX("ledger") ASC, "toAddress" COLLATE "C" ASC`;
+
+/** Position of the last entry on a page; the next page starts strictly after it. */
+const leaderboardKeysetSchema = z.object({
+  total: z.string().regex(/^\d+$/),
+  ledger: z.number().int(),
+  address: z.string().min(1),
+  rank: z.number().int().min(1),
+});
+
+type LeaderboardKeyset = z.infer<typeof leaderboardKeysetSchema>;
+
+interface RankedRow {
+  toAddress: string;
+  total: bigint;
+  reachedAtLedger: number;
+}
+
+function confirmedTipsFilter(since: Date | undefined): Prisma.Sql {
+  return since
+    ? Prisma.sql`"status" = 'CONFIRMED' AND "createdAt" >= ${utcTimestamp(since)}`
+    : Prisma.sql`"status" = 'CONFIRMED'`;
+}
+
+async function getRankedRows(
+  since: Date | undefined,
+  page: { limit?: number; offset?: number; after?: LeaderboardKeyset } = {},
+): Promise<RankedRow[]> {
+  // (-total, ledger, address) ascending is exactly the ranked order, so one
+  // row comparison expresses "strictly after the cursor".
+  const after = page.after
+    ? Prisma.sql`HAVING (-SUM("amountStroops"), MAX("ledger"), "toAddress" COLLATE "C") > (${-BigInt(page.after.total)}, ${page.after.ledger}, ${page.after.address} COLLATE "C")`
+    : Prisma.empty;
+  const limit = page.limit === undefined ? Prisma.empty : Prisma.sql`LIMIT ${page.limit}`;
+  const offset = page.offset ? Prisma.sql`OFFSET ${page.offset}` : Prisma.empty;
+
+  return prisma.$queryRaw<RankedRow[]>`
+    SELECT "toAddress", SUM("amountStroops")::bigint AS "total", MAX("ledger") AS "reachedAtLedger"
+    FROM "Tip"
+    WHERE ${confirmedTipsFilter(since)}
+    GROUP BY "toAddress"
+    ${after}
+    ORDER BY ${RANKED_ORDER}
+    ${limit}
+    ${offset}
+  `;
 }
 
 async function countRankedRows(since: Date | undefined): Promise<number> {
-  const rows = await prisma.tip.groupBy({
-    by: ['toAddress'],
-    where: {
-      status: 'CONFIRMED',
-      ...(since ? { createdAt: { gte: since } } : {}),
-    },
-  });
-
-  return rows.length;
+  // A hashed GROUP BY avoids COUNT(DISTINCT)'s sort of every tip.
+  const [row] = await prisma.$queryRaw<Array<{ count: bigint }>>`
+    SELECT COUNT(*) AS "count" FROM (
+      SELECT 1 FROM "Tip" WHERE ${confirmedTipsFilter(since)} GROUP BY "toAddress"
+    ) AS "creators"
+  `;
+  return Number(row?.count ?? 0);
 }
 
-async function hydrateEntries(
-  rows: Awaited<ReturnType<typeof getRankedRows>>,
-  offset: number,
-): Promise<LeaderboardEntry[]> {
+async function hydrateEntries(rows: RankedRow[], firstRank: number): Promise<LeaderboardEntry[]> {
   const addresses = rows.map((row) => row.toAddress);
   const users = await prisma.user.findMany({
     where: { stellarAddress: { in: addresses } },
@@ -67,41 +117,65 @@ async function hydrateEntries(
   return rows.map((row, index) => {
     const user = userMap.get(row.toAddress);
     return {
-      rank: offset + index + 1,
+      rank: firstRank + index,
       userId: user?.id ?? '',
       username: user?.username ?? null,
       stellarAddress: row.toAddress,
-      totalTips: row._sum.amountStroops?.toString() ?? '0',
+      totalTips: row.total.toString(),
     };
   });
 }
 
-/** Returns creators ranked by confirmed tip volume with limit/offset pagination. */
+/**
+ * Returns creators ranked by confirmed tip volume. Pages with an opaque
+ * `cursor` (keyset, stable under ties); `offset` is still accepted for
+ * existing clients but deprecated.
+ */
 export async function getLeaderboard(
   window: TimeWindow,
   limit: number,
   offset: number,
+  cursor?: string,
 ): Promise<LeaderboardResponse> {
   const since = getSince(window);
+  const scope = createCursorScope('leaderboard', { window });
+  const after = cursor ? decodeKeysetCursor(cursor, scope, leaderboardKeysetSchema) : undefined;
+  const startOffset = after ? after.rank : offset;
+
   const [rows, total] = await Promise.all([
-    getRankedRows(since, limit, offset),
+    getRankedRows(since, { limit: limit + 1, offset: after ? undefined : offset, after }),
     countRankedRows(since),
   ]);
-  const data = await hydrateEntries(rows, offset);
+  const hasMore = rows.length > limit;
+  const pageRows = hasMore ? rows.slice(0, limit) : rows;
+  const data = await hydrateEntries(pageRows, startOffset + 1);
+  const last = pageRows[pageRows.length - 1];
 
   return {
     data,
     window,
     pagination: {
       limit,
-      offset,
+      offset: startOffset,
       total,
-      hasMore: offset + data.length < total,
+      hasMore,
+      nextCursor:
+        hasMore && last
+          ? encodeKeysetCursor(
+              {
+                total: last.total.toString(),
+                ledger: last.reachedAtLedger,
+                address: last.toAddress,
+                rank: startOffset + pageRows.length,
+              },
+              scope,
+            )
+          : null,
     },
   };
 }
 
-/** Returns a single user's rank for the requested leaderboard window. */
+/** Returns a single user's rank for the requested leaderboard window, using the leaderboard's total order. */
 export async function getUserRank(
   userId: string,
   window: TimeWindow,
@@ -116,16 +190,25 @@ export async function getUserRank(
     throw new NotFoundError('User not found');
   }
 
-  const rows = await getRankedRows(since);
-  const index = rows.findIndex((row) => row.toAddress === user.stellarAddress);
+  const [ranked] = await prisma.$queryRaw<Array<{ rank: bigint; total: bigint }>>`
+    SELECT "rank", "total" FROM (
+      SELECT "toAddress",
+             SUM("amountStroops")::bigint AS "total",
+             ROW_NUMBER() OVER (ORDER BY ${RANKED_ORDER_AGGREGATE}) AS "rank"
+      FROM "Tip"
+      WHERE ${confirmedTipsFilter(since)}
+      GROUP BY "toAddress"
+    ) AS "ranked"
+    WHERE "toAddress" = ${user.stellarAddress}
+  `;
 
-  if (index === -1) {
+  if (!ranked) {
     throw new NotFoundError('User not found on the leaderboard for this window');
   }
 
   return {
-    rank: index + 1,
-    totalTips: rows[index]._sum.amountStroops?.toString() ?? '0',
+    rank: Number(ranked.rank),
+    totalTips: ranked.total.toString(),
     window,
   };
 }
@@ -151,7 +234,7 @@ export async function createLeaderboardSnapshot(
       period,
       rank: index + 1,
       userId: user.id,
-      totalTips: row._sum.amountStroops ?? BigInt(0),
+      totalTips: row.total,
     };
   });
 

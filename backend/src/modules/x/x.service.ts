@@ -1,5 +1,6 @@
 import { prisma } from "../../db/prisma.js";
 import { env } from "../../config/env.js";
+import { config } from "../../config/index.js";
 import { logger } from "../../common/utils/logger.js";
 import {
   BadRequestError,
@@ -7,6 +8,7 @@ import {
   ServiceUnavailableError,
 } from "../../common/errors/AppError.js";
 import { xCircuitBreaker } from "./x.circuit-breaker.js";
+import { fetchWithTimeout } from "../../common/utils/fetchWithTimeout.js";
 import type {
   XAccountMetrics,
   XApiUserResponse,
@@ -57,10 +59,11 @@ class XApiClient {
   /**
    * Fetches user data from X API by handle.
    * @param handle - X handle (without @ symbol)
+   * @param opts - optional AbortSignal for cancellation (issue #090)
    * @returns X API user response
    * @throws {ServiceUnavailableError} if API is unavailable or token is missing
    */
-  async fetchUserByHandle(handle: string): Promise<XApiUserResponse> {
+  async fetchUserByHandle(handle: string, opts: { signal?: AbortSignal } = {}): Promise<XApiUserResponse> {
     if (!this.bearerToken) {
       throw new ServiceUnavailableError("X API bearer token not configured");
     }
@@ -70,7 +73,7 @@ class XApiClient {
 
       for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
         try {
-          return await this.executeFetch(handle, attempt);
+          return await this.executeFetch(handle, attempt, opts.signal);
         } catch (error) {
           lastError = error;
           if (
@@ -93,18 +96,30 @@ class XApiClient {
   private async executeFetch(
     handle: string,
     attempt: number,
+    parentSignal?: AbortSignal,
   ): Promise<XApiUserResponse> {
     const url = `${this.baseUrl}/users/by/username/${handle}?user.fields=public_metrics`;
+    const timeoutMs = (config as unknown as { timeouts?: { xApiMs: number } })?.timeouts?.xApiMs ?? 10_000;
 
     let response: Response;
     try {
-      response = await fetch(url, {
+      response = await fetchWithTimeout(url, {
         headers: {
           Authorization: `Bearer ${this.bearerToken!}`,
           "Content-Type": "application/json",
         },
+        timeoutMs,
+        parentSignal,
       });
     } catch (error) {
+      if (error instanceof DOMException && error.name === "TimeoutError") {
+        logger.warn({ handle, timeoutMs }, "X API timeout");
+        throw new ServiceUnavailableError("X API request timed out");
+      }
+      if (error instanceof DOMException && error.name === "AbortError") {
+        logger.debug({ handle }, "X API request aborted (client disconnect)");
+        throw new ServiceUnavailableError("X API request cancelled");
+      }
       logger.error({ error, handle }, "Failed to fetch X user data");
       throw new ServiceUnavailableError("Failed to connect to X API");
     }
@@ -169,13 +184,13 @@ function normalizeXMetrics(
  */
 export async function fetchXMetrics(
   handle: string,
-  options: FetchXMetricsOptions = {},
+  options: FetchXMetricsOptions & { signal?: AbortSignal } = {},
 ): Promise<XAccountMetrics> {
-  const { useFallback = true, maxCacheAge = 24 * 60 * 60 * 1000 } = options;
+  const { useFallback = true, maxCacheAge = 24 * 60 * 60 * 1000, signal } = options;
 
   try {
-    // Try to fetch fresh data from X API
-    const apiResponse = await xApiClient.fetchUserByHandle(handle);
+    // Try to fetch fresh data from X API (signal propagates client disconnect, timeout via config)
+    const apiResponse = await xApiClient.fetchUserByHandle(handle, { signal });
     const metrics = normalizeXMetrics(handle, apiResponse);
 
     // Cache the result in database

@@ -7,6 +7,7 @@ import AmountDisplay from "../../components/shared/AmountDisplay";
 import CreditBadge from "../../components/shared/CreditBadge";
 import ErrorState from "../../components/shared/ErrorState";
 import PullToRefresh from "../../components/shared/PullToRefresh";
+import PrefetchLink from "../../components/shared/PrefetchLink";
 import Avatar from "../../components/ui/Avatar";
 import Card from "../../components/ui/Card";
 import { categorizeError } from "@/helpers/error";
@@ -85,7 +86,7 @@ const LeaderboardPage: React.FC = () => {
           <div className="grid gap-4 sm:grid-cols-3">
             {error ? (
               <div className="sm:col-span-3">
-                <ErrorState category={categorizeError(error).category} onRetry={refetch} />
+                <ErrorState errorData={categorizeError(error)} onRetry={refetch} />
               </div>
             ) : (
               topThree.map((entry, index) => {
@@ -109,13 +110,13 @@ const LeaderboardPage: React.FC = () => {
                       </span>
                       <CreditBadge score={entry.creditScore} showScore={false} />
                     </div>
-                    <Link to={`/@${entry.username}`} className="flex items-center gap-3">
+                    <PrefetchLink to={`/@${entry.username}`} className="flex items-center gap-3">
                       <Avatar address={entry.address} alt={entry.username} fallback={entry.username} size="lg" />
                       <div>
                         <p className="text-lg font-black uppercase truncate max-w-[120px]">{entry.username}</p>
                         <AmountDisplay amount={entry.totalTipsReceived} className="text-sm" />
                       </div>
-                    </Link>
+                    </PrefetchLink>
                   </Card>
                 );
               })
@@ -137,7 +138,7 @@ const LeaderboardPage: React.FC = () => {
             {remainingEntries.length > 0 ? (
               <div className="divide-y-2 divide-black border-2 border-black" role="list">
                 {remainingEntries.map((entry, index) => (
-                  <Link
+                  <PrefetchLink
                     key={entry.address}
                     to={`/@${entry.username}`}
                     className="grid gap-4 bg-white p-4 transition-colors hover:bg-yellow-50 sm:grid-cols-[72px_1fr_auto] sm:items-center"
@@ -156,7 +157,7 @@ const LeaderboardPage: React.FC = () => {
                       </span>
                     </span>
                     <CreditBadge score={entry.creditScore} showScore />
-                  </Link>
+                  </PrefetchLink>
                 ))}
               </div>
             ) : (

@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import * as searchController from './search.controller.js';
 import { env } from '../../config/env.js';
-import { mergeOpenApiPaths } from '../../docs/openapi.js';
+import { mergeOpenApiPaths } from '../../../docs/openapi.js';
+import { searchRateLimiter } from '../../common/middleware/rateLimiter.js';
 
 export const searchRouter = Router();
+searchRouter.use(searchRateLimiter);
 
 searchRouter.get('/creators/trending', searchController.getTrendingCreators);
 searchRouter.get('/creators', searchController.searchCreators);

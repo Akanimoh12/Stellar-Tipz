@@ -26,19 +26,31 @@ describe("FavoritesList", () => {
     { address: "G2", username: "bob", addedAt: 2000, tipCount: 5 },
   ];
 
-  beforeEach(() => {
-    vi.clearAllMocks();
+  function mockUseFavorites(partial: Partial<ReturnType<typeof useFavorites>>) {
     vi.mocked(useFavorites).mockReturnValue({
       favorites: mockFavorites,
       sortedFavorites: (sortBy: string) => {
-        if (sortBy === 'alphabetical') return [...mockFavorites].sort((a, b) => a.username.localeCompare(b.username));
-        if (sortBy === 'most_tipped') return [...mockFavorites].sort((a, b) => b.tipCount - a.tipCount);
+        if (sortBy === "alphabetical")
+          return [...mockFavorites].sort((a, b) =>
+            a.username.localeCompare(b.username),
+          );
+        if (sortBy === "most_tipped")
+          return [...mockFavorites].sort((a, b) => b.tipCount - a.tipCount);
         return [...mockFavorites].sort((a, b) => b.addedAt - a.addedAt);
       },
       removeFavorite: mockRemoveFavorite,
       recordTip: mockRecordTip,
-    });
-    
+      isFavorite: () => false,
+      toggleFavorite: vi.fn(),
+      isAuthenticated: true,
+      ...partial,
+    } as ReturnType<typeof useFavorites>);
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseFavorites({});
+
     // Mock window.confirm
     window.confirm = vi.fn(() => true);
   });
@@ -51,15 +63,11 @@ describe("FavoritesList", () => {
     );
 
   it("renders empty state when no favorites", () => {
-    vi.mocked(useFavorites).mockReturnValue({
-      favorites: [],
-      sortedFavorites: () => [],
-      removeFavorite: mockRemoveFavorite,
-      recordTip: mockRecordTip,
-    });
+    mockUseFavorites({ favorites: [], sortedFavorites: () => [] });
     renderComponent();
 
     expect(screen.getByText(/No favorites yet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Sign in to sync/i)).not.toBeInTheDocument();
   });
 
   it("renders list of favorites", () => {
@@ -69,6 +77,7 @@ describe("FavoritesList", () => {
     expect(screen.getByText(/@bob/i)).toBeInTheDocument();
     expect(screen.getByText(/2 tips sent/i)).toBeInTheDocument();
     expect(screen.getByText(/5 tips sent/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Sign in to sync/i)).not.toBeInTheDocument();
   });
 
   it("calls removeFavorite when remove button is clicked and confirmed", () => {
@@ -89,5 +98,26 @@ describe("FavoritesList", () => {
 
     expect(mockRecordTip).toHaveBeenCalledWith("G2");
     expect(mockNavigate).toHaveBeenCalledWith("/@bob");
+  });
+
+  it("shows sign-in prompt when unauthenticated with local favorites", () => {
+    mockUseFavorites({ isAuthenticated: false });
+    renderComponent();
+
+    expect(
+      screen.getByText(/Sign in to sync your favorites/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /sign in/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/@alice/i)).toBeInTheDocument();
+  });
+
+  it("sign-in prompt navigates home", () => {
+    mockUseFavorites({ isAuthenticated: false });
+    renderComponent();
+
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    expect(mockNavigate).toHaveBeenCalledWith("/");
   });
 });

@@ -9,6 +9,7 @@ import {
 import { config } from '../../config/index.js';
 import { logger } from '../../common/utils/logger.js';
 import { BadRequestError } from '../../common/errors/AppError.js';
+import { rpcCall } from '../../common/stellar/rpcClient.js';
 
 export interface ScheduledWithdrawalResult {
   txHash: string;
@@ -41,10 +42,9 @@ export async function submitScheduledWithdrawal(
   }
 
   const keeper = Keypair.fromSecret(secret);
-  const server = new SorobanRpc.Server(config.stellar.rpcUrl, {
-    allowHttp: config.stellar.rpcUrl.startsWith('http://'),
+  const source = await rpcCall((server) => server.getAccount(keeper.publicKey()), {
+    operationName: 'getAccount',
   });
-  const source = await server.getAccount(keeper.publicKey());
   const networkPassphrase =
     Networks[config.stellar.network as keyof typeof Networks] ?? config.stellar.networkPassphrase;
 
@@ -66,7 +66,9 @@ export async function submitScheduledWithdrawal(
 
   tx.sign(keeper);
 
-  const send = await server.sendTransaction(tx);
+  const send = await rpcCall((server) => server.sendTransaction(tx), {
+    operationName: 'sendTransaction',
+  });
   if (send.status === 'ERROR') {
     logger.error({ creatorAddress, hash: send.hash }, 'Scheduled withdrawal rejected by network');
     throw new BadRequestError('Scheduled withdrawal transaction rejected by the network');

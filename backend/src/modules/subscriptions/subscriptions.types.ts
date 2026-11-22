@@ -1,7 +1,16 @@
 export type SubscriptionIntervalName = 'DAILY' | 'WEEKLY' | 'MONTHLY';
-export type SubscriptionStatusName = 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED';
+export type SubscriptionStatusName =
+  | 'ACTIVE'
+  | 'PAST_DUE'
+  | 'FAILED'
+  | 'PAUSED'
+  | 'CANCELLED'
+  | 'EXPIRED';
 
 export interface SubscriptionResponse {
+  pendingChange: { amountStroops: string; interval: SubscriptionIntervalName; effectiveAt: string } | null;
+  changePolicy: 'next_period';
+  cancellationPolicy: 'stop_future_charges_no_automatic_refund';
   id: string;
   tipperId: string;
   tipperStellarAddress: string;

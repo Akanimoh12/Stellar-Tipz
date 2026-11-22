@@ -6,6 +6,7 @@ import {
   userIdParamSchema,
 } from './credit.schema.js';
 import * as creditService from './credit.service.js';
+import { assertOwnership } from '../../common/utils/ownership.js';
 
 export async function getCreditScore(
   req: Request,
@@ -43,6 +44,7 @@ export async function recalculate(
 ): Promise<void> {
   try {
     const { userId } = recalculateSchema.parse(req.body);
+    assertOwnership(req.user!.id, userId, 'You can only recalculate your own credit score');
     const result = await creditService.recalculateCreditScore(userId);
     res.status(200).json({ data: result });
   } catch (err) {

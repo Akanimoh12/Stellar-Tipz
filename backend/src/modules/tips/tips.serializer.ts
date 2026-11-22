@@ -28,6 +28,9 @@ export function serializeTipReceipt(tip: Tip): TipReceiptDto {
     status: tip.status,
     message: tip.message,
     createdAt: tip.createdAt.toISOString(),
-    explorerUrl: `${config.stellar.explorerBaseUrl}/tx/${tip.txHash}`,
+    explorerUrl:
+      config.stellar.network === 'LOCAL'
+        ? `${config.stellar.horizonUrl.replace(/\/+$/, '')}/transactions/${tip.txHash}`
+        : `${config.stellar.explorerBaseUrl}/tx/${tip.txHash}`,
   };
 }

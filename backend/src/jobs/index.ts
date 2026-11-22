@@ -1,5 +1,15 @@
-export { getQueue } from './queueFactory.js';
+export {
+  getQueue,
+  initializeQueues,
+  createWorker,
+  closeAllQueues,
+  getQueueConfigs,
+  queues,
+  type QueueConfig,
+  type QueueOptions,
+} from './queueFactory.js';
 export { scheduleRepeatable } from './scheduler.js';
+export { reportJobProgress, jobIdempotencyKey } from './progress.js';
 
 export {
   CREDIT_RECOMPUTE_QUEUE,
@@ -27,9 +37,14 @@ export {
 } from './subscriptionCharge.queue.js';
 export {
   processDueSubscriptions,
+  getNextDunningRetryAt,
   createSubscriptionChargeWorker,
   scheduleSubscriptionCharge,
 } from './subscriptionCharge.worker.js';
+export {
+  classifySubscriptionChargeFailure,
+  extractContractErrorCode,
+} from './subscriptionCharge.failure.js';
 
 export {
   LEADERBOARD_SNAPSHOT_QUEUE,
@@ -74,4 +89,42 @@ export {
 
 export { recordDeadLetter, attachDeadLetterHandler, listDeadLetterJobs } from './deadLetter.js';
 
+export {
+  AUTH_CHALLENGE_CLEANUP_QUEUE,
+  getAuthChallengeCleanupQueue,
+} from './authChallengeCleanup.queue.js';
+export {
+  cleanupExpiredChallenges,
+  createAuthChallengeCleanupWorker,
+  scheduleAuthChallengeCleanup,
+} from './authChallengeCleanup.worker.js';
+
 export { bootstrapJobs } from './main.js';
+export { TREASURY_MONITOR_QUEUE, getTreasuryMonitorQueue } from './treasuryMonitor.queue.js';
+export { createTreasuryMonitorWorker, scheduleTreasuryMonitor } from './treasuryMonitor.worker.js';
+
+export { RETENTION_QUEUE, getRetentionQueue } from './retention.queue.js';
+export {
+  RETENTION_DAYS,
+  runRetentionPrune,
+  createRetentionWorker,
+  scheduleRetentionPrune,
+} from './retention.worker.js';
+
+export { createFinancialReconciliationWorker, scheduleFinancialReconciliation } from './financialReconciliation.worker.js';
+
+export {
+  runIpfsCleanupJob,
+  handleIpfsCleanupJob,
+  type CleanupJobResult,
+} from './ipfs-cleanup.worker.js';
+export {
+  runIpfsVerifyJob,
+  handleIpfsVerifyJob,
+  type VerifyJobResult,
+} from './ipfs-verify.worker.js';
+export {
+  runXRefreshJob,
+  handleXRefreshJob,
+  type RefreshJobResult,
+} from './x-refresh.worker.js';

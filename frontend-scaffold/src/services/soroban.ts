@@ -2,25 +2,15 @@
 // This enables Vite's tree-shaking to eliminate unused code during build.
 // Only these specific symbols are bundled, reducing Stellar SDK from ~500KB to ~150-200KB.
 import {
-  Account,              // Transaction source account
-  Address,              // Stellar address handling
   Contract,             // Soroban contract interaction
-  Memo,                 // Transaction memo
-  MemoType,             // Memo type definitions
   nativeToScVal,        // Convert JS values to Soroban format
-  Operation,            // Transaction operations
-  scValToNative,        // Convert Soroban values to JS
   SorobanRpc,           // Soroban RPC client
   TimeoutInfinite,      // Transaction timeout constant
-  Transaction,          // Transaction wrapper
   TransactionBuilder,   // Builder pattern for transactions
-  xdr,                  // XDR encoding/decoding
 } from "@stellar/stellar-sdk";
 
 import { logger } from "./logger";
 import { NetworkDetails } from "../helpers/network";
-import { stroopToXlm, mapContractResponse } from "../helpers/format";
-import { ERRORS } from "../helpers/error";
 import { LeaderboardEntry } from "../types/contract";
 import {
   buildContractCacheKey,
@@ -43,9 +33,21 @@ export const SendTxStatus: {
 
 export const XLM_DECIMALS = 7;
 
+
+
 /** Default TTL for leaderboard RPC cache (configurable via env). */
 export const LEADERBOARD_CACHE_TTL_MS = Number(
   import.meta.env.VITE_LEADERBOARD_CACHE_TTL_MS ?? 60_000,
+);
+
+/** Default TTL for token metadata cache (symbol, name, decimals). */
+export const TOKEN_METADATA_TTL_MS = Number(
+  import.meta.env.VITE_TOKEN_METADATA_CACHE_TTL_MS ?? 3_600_000,
+);
+
+/** Default TTL for token balance cache. */
+export const TOKEN_BALANCE_TTL_MS = Number(
+  import.meta.env.VITE_TOKEN_BALANCE_CACHE_TTL_MS ?? 30_000,
 );
 
 /** Target max time for a leaderboard batch fetch (acceptance: load < 2s). */
@@ -188,14 +190,6 @@ export const RPC_URLS: { [key: string]: string } = {
   TESTNET: "https://soroban-testnet.stellar.org/",
   PUBLIC: "https://soroban-rpc.mainnet.stellar.gateway.fm/",
 };
-
-// Can be used whenever you need an Address argument for a contract method
-export const accountToScVal = (account: string) =>
-  new Address(account).toScVal();
-
-// Can be used whenever you need an i128 argument for a contract method
-export const numberToI128 = (value: number | bigint): xdr.ScVal =>
-  nativeToScVal(value, { type: "i128" });
 
 // Get a server configured for a specific network
 export const getServer = (networkDetails: NetworkDetails) => {

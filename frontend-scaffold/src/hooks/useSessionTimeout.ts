@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
-const WARNING_BEFORE_MS = 5 * 60 * 1000;   // warn 5 minutes before expiry
+const WARNING_BEFORE_MS = 5 * 60 * 1000; // warn 5 minutes before expiry
 
 const ACTIVITY_EVENTS = [
   "mousedown",
@@ -39,8 +39,12 @@ export function useSessionTimeout({
   const onWarnRef = useRef(onWarn);
 
   // Keep refs current so timers don't capture stale closures
-  useEffect(() => { onExpireRef.current = onExpire; }, [onExpire]);
-  useEffect(() => { onWarnRef.current = onWarn; }, [onWarn]);
+  useEffect(() => {
+    onExpireRef.current = onExpire;
+  }, [onExpire]);
+  useEffect(() => {
+    onWarnRef.current = onWarn;
+  }, [onWarn]);
 
   const clearTimers = useCallback(() => {
     if (expireTimer.current !== null) clearTimeout(expireTimer.current);
@@ -90,19 +94,15 @@ export function useSessionTimeout({
     };
     document.addEventListener("visibilitychange", handleVisibility);
 
-    // Expire immediately when the page is about to unload
-    const handleBeforeUnload = () => {
-      onExpireRef.current();
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-
+    // Note: expiry on page unload is intentionally NOT wired here. Ending the
+    // session on beforeunload would revoke tokens on every navigation/close
+    // and defeat refresh-token persistence across reloads (issue #1307).
     return () => {
       clearTimers();
       for (const event of ACTIVITY_EVENTS) {
         window.removeEventListener(event, handleActivity);
       }
       document.removeEventListener("visibilitychange", handleVisibility);
-      window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, [isActive, resetTimers, clearTimers, timeoutMs]);
 }

@@ -4,6 +4,7 @@ import { z } from "zod";
 export const WEBHOOK_EVENT_TYPES = [
   "tip.received",
   "tip.sent",
+  "subscription.charged",
   "goal.completed",
   "withdrawal.completed",
   "credit_score.updated",
@@ -12,24 +13,32 @@ export const WEBHOOK_EVENT_TYPES = [
 /** Union of valid webhook event type strings. */
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 
-export const createWebhookSubscriptionSchema = z.object({
-  url: z
-    .string()
-    .url("Must be a valid URL")
-    .startsWith("https://", "Webhook URL must use https"),
-  events: z
-    .array(z.enum(WEBHOOK_EVENT_TYPES))
-    .min(1, "At least one event is required"),
-});
+export const webhookEventTypeSchema = z.enum(WEBHOOK_EVENT_TYPES);
+
+const webhookUrlSchema = z
+  .string()
+  .url("Must be a valid URL")
+  .startsWith("https://", "Webhook URL must use https");
+
+const webhookEventsSchema = z
+  .array(webhookEventTypeSchema)
+  .min(1, "At least one event is required");
+
+export const createWebhookSubscriptionSchema = z
+  .object({
+    url: webhookUrlSchema,
+    events: webhookEventsSchema,
+  })
+  .strict();
 
 export const listWebhookSubscriptionsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
-});
+}).strict();
 
 export const webhookSubscriptionIdParamSchema = z.object({
   id: z.string().min(1, "Webhook subscription ID is required"),
-});
+}).strict();
 
 export type CreateWebhookSubscriptionInput = z.infer<typeof createWebhookSubscriptionSchema>;
 export type ListWebhookSubscriptionsQuery = z.infer<typeof listWebhookSubscriptionsQuerySchema>;
@@ -40,11 +49,11 @@ export const deliveryQuerySchema = z.object({
   status: z.enum(["PENDING", "SUCCESS", "FAILED"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
-});
+}).strict();
 
 export const deliveryIdParamSchema = z.object({
   id: z.string().min(1, "Delivery ID is required"),
-});
+}).strict();
 
 export type DeliveryQuery = z.infer<typeof deliveryQuerySchema>;
 export type DeliveryIdParam = z.infer<typeof deliveryIdParamSchema>;

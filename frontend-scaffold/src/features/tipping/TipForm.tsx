@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { HeartHandshake, Wallet, ArrowRight } from "lucide-react";
 
 import Button from "../../components/ui/Button";
 import { useWallet } from "../../hooks";
 import { Profile } from "../../types/contract";
+import { useLiveRegion } from "../../lib/liveRegion";
 import TipAmountInput from "./TipAmountInput";
 import TipMessageInput from "./TipMessageInput";
 import TipAmountPresets from "./TipAmountPresets";
@@ -22,6 +23,13 @@ const TipForm: React.FC<TipFormProps> = ({
   const { connected, connect } = useWallet();
   const [amount, setAmount] = useState("5");
   const [message, setMessage] = useState("");
+  const { announce } = useLiveRegion();
+
+  useEffect(() => {
+    if (isSubmitting) {
+      announce("Submitting tip to creator");
+    }
+  }, [isSubmitting, announce]);
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();

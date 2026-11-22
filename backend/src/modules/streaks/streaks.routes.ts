@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../../common/middleware/requireAuth.js';
 import { env } from '../../config/env.js';
-import { mergeOpenApiPaths } from '../../docs/openapi.js';
+import { mergeOpenApiPaths } from '../../../docs/openapi.js';
 import * as streaksController from './streaks.controller.js';
 
 export const streaksRouter = Router();

@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq';
-import { redis } from '../db/redis.js';
+import { bullConnection } from '../db/redis.js';
 import { config } from '../config/index.js';
 import { logger } from '../common/utils/logger.js';
 import { cacheSetJSON } from '../common/utils/cache.js';
@@ -27,7 +27,7 @@ export function createPlatformStatsWorker(): Worker {
     async (_job) => {
       await refreshPlatformStats();
     },
-    { connection: redis as any },
+    { connection: bullConnection },
   );
 
   worker.on('failed', (job, err) => {

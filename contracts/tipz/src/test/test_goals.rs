@@ -5,11 +5,16 @@
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Events},
-    Address, Env, String, Symbol,
+    token, Address, Env, String, Symbol,
 };
 
 use crate::test::test_init::setup_test_contract_default;
 use crate::TipzContractClient;
+
+fn fund_tipper(client: &TipzContractClient, env: &Env, tipper: &Address) {
+    let token = client.get_config().native_token;
+    token::StellarAssetClient::new(env, &token).mint(tipper, &100_000_000_000);
+}
 
 /// Find the `goal_completed` event in `env.events().all()` and return its data.
 /// Panics if the event is not found.
@@ -56,6 +61,7 @@ fn test_set_and_track_goal() {
 
     let creator = Address::generate(&env);
     let tipper = Address::generate(&env);
+    fund_tipper(&client, &env, &tipper);
 
     // Register creator
     client.register_profile(
@@ -67,18 +73,18 @@ fn test_set_and_track_goal() {
         &String::from_str(&env, ""),
     );
 
-    // Set goal
+    // Set goal (target > MIN_TIP so the tip doesn't fully reach it)
     let desc = String::from_str(&env, "Raise funds for new equipment");
     let deadline = env.ledger().timestamp() + 86400; // 1 day from now
-    client.set_goal(&creator, &1000, &desc, &deadline);
+    client.set_goal(&creator, &2_000_000, &desc, &deadline);
 
-    // Send tip
-    client.send_tip(&tipper, &creator, &500, &String::from_str(&env, "Good luck!"), &false, &false);
+    // Send tip (must be >= MIN_TIP = 1_000_000)
+    client.send_tip(&tipper, &creator, &1_000_000, &String::from_str(&env, "Good luck!"), &false, &false);
 
     // Check goal progress
     let goal = client.get_goal(&creator);
-    assert_eq!(goal.raised, 500);
-    assert_eq!(goal.target, 1000);
+    assert_eq!(goal.raised, 1_000_000);
+    assert_eq!(goal.target, 2_000_000);
     assert!(goal.active);
     assert!(goal.reached_at.is_none());
 }
@@ -92,6 +98,7 @@ fn test_goal_reached_event() {
 
     let creator = Address::generate(&env);
     let tipper = Address::generate(&env);
+    fund_tipper(&client, &env, &tipper);
 
     // Register creator
     client.register_profile(
@@ -105,14 +112,14 @@ fn test_goal_reached_event() {
 
     // Set goal
     let desc = String::from_str(&env, "Small goal");
-    client.set_goal(&creator, &100, &desc, &0);
+    client.set_goal(&creator, &1_000_000, &desc, &0);
 
     // Send tip that reaches goal
-    client.send_tip(&tipper, &creator, &100, &String::from_str(&env, "Here you go!"), &false, &false);
+    client.send_tip(&tipper, &creator, &1_000_000, &String::from_str(&env, "Here you go!"), &false, &false);
 
     // Check goal is reached
     let goal = client.get_goal(&creator);
-    assert_eq!(goal.raised, 100);
+    assert_eq!(goal.raised, 1_000_000);
     assert!(goal.reached_at.is_some());
 }
 
@@ -137,7 +144,7 @@ fn test_cancel_goal() {
 
     // Set goal
     let desc = String::from_str(&env, "Test goal");
-    client.set_goal(&creator, &1000, &desc, &0);
+    client.set_goal(&creator, &1_000_000, &desc, &0);
 
     // Cancel goal
     client.cancel_goal(&creator);
@@ -148,7 +155,6 @@ fn test_cancel_goal() {
 }
 
 #[test]
-#[should_panic(expected = "NotFound")]
 fn test_get_goal_when_none_exists() {
     let env = Env::default();
     env.mock_all_auths();
@@ -168,7 +174,8 @@ fn test_get_goal_when_none_exists() {
     );
 
     // Try to get goal when none exists
-    client.get_goal(&creator);
+    let result = client.try_get_goal(&creator);
+    assert_eq!(result, Err(Ok(crate::errors::ContractError::NotFound)));
 }
 
 #[test]
@@ -192,15 +199,15 @@ fn test_multiple_sequential_goals() {
 
     // Set first goal
     let desc1 = String::from_str(&env, "First goal");
-    client.set_goal(&creator, &1000, &desc1, &0);
+    client.set_goal(&creator, &1_000_000, &desc1, &0);
 
     // Set second goal (should archive first)
     let desc2 = String::from_str(&env, "Second goal");
-    client.set_goal(&creator, &2000, &desc2, &0);
+    client.set_goal(&creator, &2_000_000, &desc2, &0);
 
     // Check active goal is the second one
     let goal = client.get_goal(&creator);
-    assert_eq!(goal.target, 2000);
+    assert_eq!(goal.target, 2_000_000);
     assert_eq!(goal.description, desc2);
 
     // Check archived goals
@@ -215,7 +222,7 @@ fn test_goal_completed_emitted_on_exact_target_hit() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, _admin, _fee_collector, _native_token) = setup_test_contract_default(&env);
 
     let creator = Address::generate(&env);
     let tipper = Address::generate(&env);
@@ -245,7 +252,7 @@ fn test_goal_completed_emitted_on_overshoot() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, _admin, _fee_collector, _native_token) = setup_test_contract_default(&env);
 
     let creator = Address::generate(&env);
     let tipper = Address::generate(&env);
@@ -275,7 +282,7 @@ fn test_goal_completed_not_re_emitted_after_completion() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _fee_collector, _native_token) = setup_test_contract(&env);
+    let (client, _admin, _fee_collector, _native_token) = setup_test_contract_default(&env);
 
     let creator = Address::generate(&env);
     let tipper1 = Address::generate(&env);

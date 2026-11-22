@@ -16,8 +16,9 @@ This directory contains the background processing architecture for the Stellar T
 Queues are responsible for holding jobs until they are processed. They are initialized utilizing the shared Redis connection located in `src/db/redis.ts`.
 
 ### Best Practices for Queues:
-- **Idempotency:** Ensure that the data payload submitted to a queue is deterministic. Do not pass complex class instances; instead, pass scalar IDs and pure JSON objects.
-- **Backoff & Retries:** Configure queues with standard failure handling. E.g., exponential backoff (`delay: 2000`, `attempts: 5`).
+- **Idempotency:** Queue jobs created through `getQueue()` default to three attempts with exponential backoff. Use deterministic job IDs for externally triggered work (see `jobIdempotencyKey()` in `progress.ts`) and pass scalar IDs or pure JSON payloads.
+- **Progress:** Long-running handlers can call `reportJobProgress(job, { completed, total, message })`; BullMQ stores the latest progress on the job and the shared logger emits each update.
+- **Overlap protection:** Repeatable schedule names use stable job IDs and schedule helpers default to a single concurrent execution. Keep scheduled handlers safe to retry because a worker can still restart after performing an external side effect.
 
 ## 2. Workers
 Workers actively listen to Queues and process jobs as they arrive.
@@ -30,14 +31,14 @@ When you start the local dev server, the workers will automatically begin proces
 ```bash
 npm run dev
 ```
-*(Make sure your local Redis instance is running via `docker compose -f backend/docker-compose.yml up -d`)*
+*(Make sure your local Redis instance is running via `docker compose up -d redis`)*
 
 ### Error Handling
-Workers should **throw** an Error (`throw new Error(...)`) whenever a job fails due to an external factor (e.g., a non-2xx HTTP status from a webhook). Throwing an error natively leverages BullMQ's automatic retry logic.
+Workers should **throw** an Error whenever a job fails due to a transient external factor. Throwing an error natively leverages BullMQ's automatic retry logic. The webhook worker classifies permanent non-429 4xx responses and throws BullMQ's `UnrecoverableError` so they do not consume the remaining retry budget; 429, 5xx, network failures, and timeouts remain retryable.
 Listen for the `failed` event on your worker to log issues via the shared `logger`.
 
 ### Dead Letter Jobs
-Jobs that exhaust all of their BullMQ retry attempts are automatically persisted to the `DeadLetterJob` model by `attachDeadLetterHandler()`, so they remain inspectable after BullMQ prunes them from Redis. Every worker wired in `main.ts` calls this handler, so failed jobs never disappear from the database.
+Jobs that exhaust all of their BullMQ retry attempts are automatically persisted to the `DeadLetterJob` model by `attachDeadLetterHandler()`, so they remain inspectable after BullMQ prunes them from Redis. Every worker calls this handler, including the notification digest and webhook workers.
 
 Query dead-lettered jobs:
 ```typescript
@@ -59,3 +60,46 @@ await myQueue.add(
   { repeat: { pattern: '0 0 * * *' } } // Every midnight
 );
 ```
+
+## Subscription charge dunning
+
+The subscription sweep submits the real on-chain
+`execute_due_subscription(subscriber, creator)` operation. It never creates a
+synthetic confirmed tip; indexed contract events remain the source of truth for
+on-chain activity. A submitted transaction is successful only after RPC
+confirmation reports final `SUCCESS`; pending and duplicate submissions are
+polled by hash for up to 60 seconds, while timeout or final failure enters the
+normal dunning path.
+
+For each billing cycle, the initial attempt happens when `nextChargeAt` is due.
+Retryable failures enter `PAST_DUE` and use persisted retry times anchored to
+`dunningStartedAt`:
+
+- failure 1: retry on day 1;
+- failure 2: retry on day 3;
+- failure 3: retry on day 7;
+- failure 4 (the day-7 retry): transition to `FAILED` with no further retry.
+
+`ACTIVE` means normal recurring billing, `PAST_DUE` means a recoverable charge
+is waiting for a retry, and `FAILED` is terminal and is never selected by the
+sweep. Permanent failures skip the schedule and transition directly to
+`FAILED`.
+
+Insufficient balance (contract code 14), a paused contract (7), rate limiting
+(27), and network/RPC failures are retryable. Missing or revoked authorization
+(3 or 17), invalid amount/configuration (13), and permanently unusable
+subscription state are terminal. Unknown infrastructure and contract failures
+default to the bounded retry schedule.
+
+The subscriber receives `subscription_charge_failed` for every failed attempt.
+The creator receives `subscription_failed` only on the terminal transition.
+These operational notifications are not controlled by the unrelated
+`subscriptionCharged` preference. Notification delivery failures are logged
+after financial state is persisted.
+
+On recovery, dunning fields are cleared, the subscription returns to `ACTIVE`,
+and `nextChargeAt` advances by exactly one interval from its existing billing
+anchor, matching the contract. A sweep performs at most one attempt per
+subscription, so missed intervals are never processed in an in-memory catch-up
+loop. A persisted, expiring claim prevents concurrent sweeps from submitting
+the same selected attempt.

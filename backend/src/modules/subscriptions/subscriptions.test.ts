@@ -37,6 +37,14 @@ vi.mock('../../db/prisma.js', () => ({
   },
 }));
 
+vi.mock('../../db/redis.js', () => ({
+  redis: {
+    zcount: vi.fn().mockResolvedValue(0),
+    zadd: vi.fn().mockResolvedValue(1),
+    expire: vi.fn().mockResolvedValue(1),
+  },
+}));
+
 vi.mock('@stellar/stellar-sdk', () => {
   const mockPreparedTx = {
     build: vi.fn(() => ({
@@ -134,10 +142,10 @@ describe('GET /api/v1/subscriptions/me', () => {
     expect(mockFindMany).toHaveBeenCalledWith({
       where: { tipperId: 'tipper-1', deletedAt: null },
       include: { tipper: true, creator: true },
-      orderBy: { createdAt: 'desc' },
-      skip: 0,
-      take: 20,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 21,
     });
+    expect(res.body.nextCursor).toBeNull();
   });
 
   it('returns 401 with an invalid token', async () => {
@@ -174,13 +182,29 @@ describe('GET /api/v1/subscriptions/me', () => {
       .set('Authorization', 'Bearer valid-token');
 
     expect(res.status).toBe(200);
+    expect(res.headers.deprecation).toMatch(/^@\d+$/);
     expect(mockFindMany).toHaveBeenCalledWith({
       where: { creatorId: 'tipper-1', deletedAt: null, status: 'ACTIVE' },
       include: { tipper: true, creator: true },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: 10,
-      take: 5,
+      take: 6,
     });
+  });
+
+  it.each(['PAST_DUE', 'FAILED'])('accepts the %s status filter', async (status) => {
+    mockAuth();
+    mockFindMany.mockResolvedValue([]);
+
+    const app = createApp();
+    const res = await request(app)
+      .get(`/api/v1/subscriptions/me?status=${status}`)
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(200);
+    expect(mockFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tipperId: 'tipper-1', deletedAt: null, status } }),
+    );
   });
 });
 
@@ -455,7 +479,14 @@ describe('POST /api/v1/subscriptions/submit-cancel', () => {
     expect(res.body.data).toMatchObject({ id: 'sub_tipper-1_creator-1', status: 'CANCELLED' });
     expect(mockUpdate).toHaveBeenCalledWith({
       where: { id: 'sub_tipper-1_creator-1' },
-      data: { status: 'CANCELLED' },
+      data: {
+        status: 'CANCELLED',
+        pendingAmountStroops: null,
+        pendingInterval: null,
+        changeEffectiveAt: null,
+        nextChargeRetryAt: null,
+        chargeAttemptStartedAt: null,
+      },
     });
   });
 

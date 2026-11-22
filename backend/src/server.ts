@@ -2,22 +2,26 @@ import { createServer } from 'node:http';
 import { createApp } from './app.js';
 import { env } from '@/config/env.js';
 import { logger } from './common/utils/logger.js';
-import { initSentry } from './common/observability/sentry.js';
 import { prisma } from './db/prisma.js';
 import { redis } from './db/redis.js';
 import { registerClosable, closeAll } from './common/utils/lifecycle.js';
-import { startIndexer } from './indexer/index.js';
-import {
-  createCreditRecomputeWorker,
-  scheduleCreditRecompute,
-  createAnalyticsDailyWorker,
-  scheduleAnalyticsDaily,
-} from './jobs/index.js';
-import { initRealtime } from './realtime/index.js';
+import { initRealtime, closeRealtime } from './realtime/index.js';
 
-/** Process entry point: starts the HTTP server (and, later, the WebSocket + indexer). */
+/** Process entry point: starts the HTTP server and the WebSocket realtime gateway. */
 async function bootstrap(): Promise<void> {
-  initSentry();
+  // Initialize OpenTelemetry tracing (issue #1349)
+  initTracing();
+  registerClosable({
+    name: 'OpenTelemetry',
+    close: shutdownTracing,
+  });
+  // Do not serve production requests against a wrong or incompatible contract.
+  if (env.NODE_ENV === 'production') {
+    await assertContractVersion(env.CONTRACT_ID, env.NETWORK_PASSPHRASE, env.EXPECTED_CONTRACT_VERSION);
+  }
+  // Prometheus registry + internal /metrics listener (issue #1346)
+  await startProcessMetrics('api');
+
   const app = createApp();
   const httpServer = createServer(app);
 
@@ -33,37 +37,14 @@ async function bootstrap(): Promise<void> {
     },
   });
 
-  // Start the off-chain indexer poll loop and stop it on shutdown.
-  const indexer = startIndexer();
-  registerClosable({
-    name: 'Indexer',
-    close: async () => {
-      indexer.stop();
-    },
-  });
-
-  // Start the credit score recompute worker and schedule the recurring job.
-  const creditWorker = createCreditRecomputeWorker();
-  registerClosable({
-    name: 'CreditRecomputeWorker',
-    close: async () => {
-      await creditWorker.close();
-    },
-  });
-  await scheduleCreditRecompute();
-
-  // Start the daily analytics rollup worker and schedule the recurring job.
-  const analyticsWorker = createAnalyticsDailyWorker();
-  registerClosable({
-    name: 'AnalyticsDailyWorker',
-    close: async () => {
-      await analyticsWorker.close();
-    },
-  });
-  await scheduleAnalyticsDaily();
-
-  // The realtime gateway (Socket.IO) attaches to this httpServer.
+  // Initialize realtime gateway (Socket.IO)
   initRealtime(httpServer);
+  registerClosable({
+    name: 'Realtime',
+    close: async () => {
+      await closeRealtime();
+    },
+  });
 
   httpServer.listen(env.PORT, () => {
     logger.info(`🚀 Stellar Tipz backend listening on http://localhost:${env.PORT}`);

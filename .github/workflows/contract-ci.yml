@@ -5,6 +5,15 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    paths:
+      - 'contracts/**'
+      - 'scripts/generate-contract-spec.sh'
+      - '.github/workflows/contract-ci.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: contract-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -19,16 +28,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.88.0
+        uses: dtolnay/rust-toolchain@5445741acf05630efa19e221cc588ebe0842b13d # 1.88.0
         with:
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
 
       - name: Cache cargo dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry
@@ -43,6 +52,19 @@ jobs:
 
       - name: cargo test
         run: cargo test
+
+      - name: Budget regression report
+        # Run only the budget tests and extract the BASELINE log lines so reviewers
+        # can see the delta between the committed baselines and the current run in
+        # the PR checks output without failing the build.
+        run: |
+          echo "### Budget regression deltas" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo test --features testutils -- budget 2>&1 \
+            | grep -E "BASELINE|regression|ok|FAILED" \
+            | tee -a $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        continue-on-error: false
 
       - name: cargo clippy
         run: cargo clippy -- -D warnings
@@ -70,9 +92,22 @@ jobs:
       - name: Build WASM (soroban)
         run: soroban contract build
 
+      - name: Generate contract ABI spec
+        run: bash ../scripts/generate-contract-spec.sh
+
+      - name: Verify committed ABI spec is current
+        working-directory: .
+        run: git diff --exit-code -- contracts/abi/tipz_contract.spec.json
+
       - name: Upload WASM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: soroban-wasm
           path: |
             contracts/target/wasm32-unknown-unknown/release/*.wasm
+
+      - name: Upload ABI spec artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: contract-abi-spec
+          path: contracts/abi/tipz_contract.spec.json

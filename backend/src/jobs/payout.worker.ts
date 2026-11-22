@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq';
-import { redis } from '../db/redis.js';
+import { bullConnection } from '../db/redis.js';
 import { config } from '../config/index.js';
 import { logger } from '../common/utils/logger.js';
 import { processDuePayouts } from '../modules/withdrawals/payouts.service.js';
@@ -29,7 +29,7 @@ export function createPayoutWorker(): Worker {
       const result = await runPayoutSweep();
       logger.info(result, 'Payout sweep complete');
     },
-    { connection: redis as any },
+    { connection: bullConnection },
   );
 
   worker.on('failed', (job, err) => {

@@ -26,44 +26,44 @@ const stroopsString = z
 export const prepareSetFeeSchema = z.object({
   /** New fee in basis points. Contract bound: 0–1000 (max 10%). */
   feeBps: z.number().int().min(0).max(1000, 'fee_bps must be ≤ 1000 (10%)'),
-});
+}).strict();
 
 export const prepareSetMinTipAmountSchema = z.object({
   /** New minimum tip amount in stroops (>= 0). */
   amount: stroopsString,
-});
+}).strict();
 
 export const prepareSetMinWithdrawalAmountSchema = z.object({
   /** New minimum withdrawal amount in stroops (>= 0). */
   amount: stroopsString,
-});
+}).strict();
 
 export const preparePauseSchema = z.object({
   /** true = pause, false = unpause. */
   paused: z.boolean(),
-});
+}).strict();
 
 // ── Submit schemas ────────────────────────────────────────────────────────────
 
 export const submitSetFeeSchema = z.object({
   feeBps: z.number().int().min(0).max(1000, 'fee_bps must be ≤ 1000 (10%)'),
   signedTxXdr: z.string().min(1, 'signedTxXdr is required'),
-});
+}).strict();
 
 export const submitSetMinTipAmountSchema = z.object({
   amount: stroopsString,
   signedTxXdr: z.string().min(1, 'signedTxXdr is required'),
-});
+}).strict();
 
 export const submitSetMinWithdrawalAmountSchema = z.object({
   amount: stroopsString,
   signedTxXdr: z.string().min(1, 'signedTxXdr is required'),
-});
+}).strict();
 
 export const submitPauseSchema = z.object({
   paused: z.boolean(),
   signedTxXdr: z.string().min(1, 'signedTxXdr is required'),
-});
+}).strict();
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

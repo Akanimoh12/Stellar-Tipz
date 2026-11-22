@@ -1,5 +1,6 @@
 import { prisma } from '../../db/prisma.js';
-import { NotFoundError, ForbiddenError } from '../../common/errors/AppError.js';
+import { NotFoundError } from '../../common/errors/AppError.js';
+import { assertOwnership } from '../../common/utils/ownership.js';
 import type { GoalResponse, GoalListResponse } from './goals.types.js';
 import type { CreateGoalInput, UpdateGoalInput } from './goals.schema.js';
 
@@ -93,9 +94,7 @@ export async function updateGoal(
     throw new NotFoundError('Goal not found');
   }
 
-  if (goal.userId !== userId) {
-    throw new ForbiddenError('You can only update your own goals');
-  }
+  assertOwnership(goal.userId, userId, 'You can only update your own goals');
 
   const updateData: Record<string, unknown> = {};
   if (data.title !== undefined) updateData.title = data.title;
@@ -121,9 +120,7 @@ export async function cancelGoal(
     throw new NotFoundError('Goal not found');
   }
 
-  if (goal.userId !== userId) {
-    throw new ForbiddenError('You can only cancel your own goals');
-  }
+  assertOwnership(goal.userId, userId, 'You can only cancel your own goals');
 
   const updated = await prisma.goal.update({
     where: { id: goalId },

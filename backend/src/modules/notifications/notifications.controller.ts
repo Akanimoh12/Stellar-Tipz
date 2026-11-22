@@ -13,8 +13,14 @@ export async function list(
 ): Promise<void> {
   try {
     const userId = req.auth!.userId;
-    const { unreadOnly, limit, offset } = notificationsQuerySchema.parse(req.query);
-    const result = await notificationsService.listNotifications(userId, unreadOnly, limit, offset);
+    const { unreadOnly, limit, cursor, offset } = notificationsQuerySchema.parse(req.query);
+    const result = await notificationsService.listNotifications(
+      userId,
+      unreadOnly,
+      limit,
+      cursor,
+      offset,
+    );
     res.status(200).json(result);
   } catch (err) {
     next(err);

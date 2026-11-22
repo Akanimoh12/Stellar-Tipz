@@ -39,6 +39,14 @@ vi.mock('../../db/prisma.js', () => ({
   },
 }));
 
+vi.mock('../../db/redis.js', () => ({
+  redis: {
+    zcount: vi.fn().mockResolvedValue(0),
+    zadd: vi.fn().mockResolvedValue(1),
+    expire: vi.fn().mockResolvedValue(1),
+  },
+}));
+
 vi.mock('@stellar/stellar-sdk', () => {
   const mockPreparedTx = {
     build: vi.fn(() => ({
@@ -127,10 +135,10 @@ describe('GET /api/v1/withdrawals/me', () => {
     });
     expect(mockFindMany).toHaveBeenCalledWith({
       where: { userId: 'user-1' },
-      orderBy: { requestedAt: 'desc' },
-      skip: 0,
-      take: 20,
+      orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
+      take: 21,
     });
+    expect(res.body.nextCursor).toBeNull();
   });
 
   it('returns an empty array when the user has no withdrawals', async () => {
@@ -156,11 +164,12 @@ describe('GET /api/v1/withdrawals/me', () => {
       .set('Authorization', 'Bearer valid-token');
 
     expect(res.status).toBe(200);
+    expect(res.headers.deprecation).toMatch(/^@\d+$/);
     expect(mockFindMany).toHaveBeenCalledWith({
       where: { userId: 'user-1' },
-      orderBy: { requestedAt: 'desc' },
+      orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
       skip: 10,
-      take: 5,
+      take: 6,
     });
   });
 

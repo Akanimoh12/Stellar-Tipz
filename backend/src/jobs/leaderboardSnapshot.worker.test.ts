@@ -6,6 +6,7 @@ vi.mock('../modules/leaderboard/leaderboard.service.js', () => ({
 
 vi.mock('../db/redis.js', () => ({
   redis: {},
+  bullConnection: {},
 }));
 
 vi.mock('../common/utils/logger.js', () => ({

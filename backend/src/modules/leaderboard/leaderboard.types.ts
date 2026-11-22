@@ -10,9 +10,12 @@ export interface LeaderboardEntry {
 
 export interface LeaderboardPagination {
   limit: number;
+  /** Rank offset of the first entry on this page (also set when paging by cursor). */
   offset: number;
   total: number;
   hasMore: boolean;
+  /** Opaque cursor for the next page, or null on the last page. */
+  nextCursor: string | null;
 }
 
 export interface LeaderboardResponse {

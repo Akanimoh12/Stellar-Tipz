@@ -5,7 +5,7 @@ import type { FuseResult, FuseResultMatch } from "fuse.js";
 import type { Profile } from "../types";
 import { useContract } from "./useContract";
 import { env } from "../helpers/env";
-import { mockLeaderboard } from "../features/mockData";
+import { announce } from "../lib/liveRegion";
 
 const DEBOUNCE_MS = 300;
 const RECENT_SEARCHES_KEY = "stellar_tipz_recent_searches";
@@ -99,25 +99,10 @@ export const useSearch = () => {
     isFetchingRef.current = true;
 
     try {
-      if (env.useMockData || !env.contractId) {
-        const profiles: Profile[] = mockLeaderboard.map((entry) => ({
-          owner: entry.address,
-          username: entry.username,
-          displayName: entry.username,
-          bio: "",
-          imageUrl: "",
-          xHandle: "",
-          xFollowers: 0,
-          xEngagementAvg: 0,
-          creditScore: entry.creditScore,
-          totalTipsReceived: entry.totalTipsReceived,
-          totalTipsCount: 0,
-          balance: "0",
-          registeredAt: 0,
-          updatedAt: 0,
-        }));
-        allProfilesRef.current = profiles;
-        fuseRef.current = new Fuse(profiles, fuseOptions);
+      if (!env.contractId) {
+        // No contract configured: there is nothing to search.
+        allProfilesRef.current = [];
+        fuseRef.current = new Fuse<Profile>([], fuseOptions);
       } else {
         const leaderboard = await getLeaderboard(50);
         const profilePromises = leaderboard.map((entry) =>
@@ -154,6 +139,7 @@ export const useSearch = () => {
       if (!trimmed) {
         setResults([]);
         setHasSearched(false);
+        announce("");
         return;
       }
 
@@ -189,6 +175,7 @@ export const useSearch = () => {
     if (!query.trim()) {
       setResults([]);
       setHasSearched(false);
+      announce("");
       return;
     }
 

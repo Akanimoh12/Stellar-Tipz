@@ -1,15 +1,17 @@
+/**
+ * Real-time module exports.
+ * Provides Socket.IO gateway, rate limiting, backpressure management, and typed event contracts.
+ */
+
+export * from './types.js';
+export * from './rateLimit.js';
+export * from './backpressure.js';
 export {
   initRealtime,
-  emitTipCreated,
-  emitNotificationCreated,
-  emitBalanceUpdated,
-  emitLeaderboardUpdated,
-  getIO,
-} from "./gateway.js";
-export type {
-  ServerToClientEvents,
-  ClientToServerEvents,
-  NotificationPayload,
-  BalanceUpdatedPayload,
-  LeaderboardUpdatedPayload,
-} from "./types.js";
+  getRealtimeServer,
+  broadcastTipCreated,
+  broadcastCreditUpdated,
+  broadcastLeaderboardUpdated,
+  sendNotificationToUser,
+  closeRealtime,
+} from './gateway.js';

@@ -155,6 +155,8 @@ describe('subscribeToOperations', () => {
   describe('reconnection', () => {
     it('reconnects after an error with backoff', () => {
       vi.useFakeTimers();
+      // Seed deterministic jitter
+      vi.spyOn(Math, 'random').mockReturnValue(0.99);
       const onReconnect = vi.fn();
       const stream = subscribeToOperations(ADDRESS, {
         onEvent: vi.fn(),
@@ -165,7 +167,7 @@ describe('subscribeToOperations', () => {
       MockEventSource.instances[0].simulateError();
       expect(MockEventSource.instances).toHaveLength(1); // not yet reconnected
 
-      vi.advanceTimersByTime(1_100); // past MIN_BACKOFF_MS (1 000 ms)
+      vi.advanceTimersByTime(1_100); // past MIN_BACKOFF_MS with jitter
       expect(MockEventSource.instances).toHaveLength(2); // reconnected
       expect(onReconnect).toHaveBeenCalledOnce();
 
@@ -175,17 +177,18 @@ describe('subscribeToOperations', () => {
 
     it('resets backoff to minimum after a successful message', () => {
       vi.useFakeTimers();
+      vi.spyOn(Math, 'random').mockReturnValue(0.99);
       const stream = subscribeToOperations(ADDRESS, {
         onEvent: vi.fn(),
         maxBackoffMs: 5_000,
       });
 
-      // First error — schedules reconnect at 1 000 ms.
+      // First error — schedules reconnect at ~1 000 ms.
       MockEventSource.instances[0].simulateError();
       vi.advanceTimersByTime(1_100);
 
       const src2 = MockEventSource.instances[1];
-      // Successful message resets backoff.
+      // Successful message resets backoff and retry count.
       src2.simulateMessage({ type: 'op' });
       // Second error — should schedule at MIN_BACKOFF_MS again, not 2 000 ms.
       src2.simulateError();
@@ -193,6 +196,118 @@ describe('subscribeToOperations', () => {
 
       // Third instance should exist (backoff reset, not doubled).
       expect(MockEventSource.instances).toHaveLength(3);
+
+      stream.close();
+      vi.useRealTimers();
+    });
+
+    it('applies jitter so backoff is not deterministic', () => {
+      vi.useFakeTimers();
+      // First call: low jitter (delay = 1000 * 0.5 = 500ms)
+      vi.spyOn(Math, 'random').mockReturnValueOnce(0.0);
+      const stream = subscribeToOperations(ADDRESS, {
+        onEvent: vi.fn(),
+        maxBackoffMs: 30_000,
+      });
+
+      MockEventSource.instances[0].simulateError();
+      // At 500ms with jitter 0.0 → delay = 1000 * 0.5 = 500ms
+      vi.advanceTimersByTime(600);
+      expect(MockEventSource.instances).toHaveLength(2);
+
+      stream.close();
+      vi.useRealTimers();
+    });
+
+    it('gives up after maxRetries consecutive failures', () => {
+      vi.useFakeTimers();
+      vi.spyOn(Math, 'random').mockReturnValue(0.99);
+      const onGiveUp = vi.fn();
+      const stream = subscribeToOperations(ADDRESS, {
+        onEvent: vi.fn(),
+        onGiveUp,
+        maxRetries: 3,
+        maxBackoffMs: 100,
+      });
+
+      // Fire 3 errors
+      for (let i = 0; i < 3; i++) {
+        const idx = MockEventSource.instances.length - 1;
+        MockEventSource.instances[idx].simulateError();
+        vi.advanceTimersByTime(200);
+      }
+
+      expect(onGiveUp).toHaveBeenCalledOnce();
+
+      stream.close();
+      vi.useRealTimers();
+    });
+
+    it('retry() restarts connection after give-up', () => {
+      vi.useFakeTimers();
+      vi.spyOn(Math, 'random').mockReturnValue(0.99);
+      const onGiveUp = vi.fn();
+      const stream = subscribeToOperations(ADDRESS, {
+        onEvent: vi.fn(),
+        onGiveUp,
+        maxRetries: 1,
+        maxBackoffMs: 100,
+      });
+
+      MockEventSource.instances[0].simulateError();
+      vi.advanceTimersByTime(200);
+      expect(onGiveUp).toHaveBeenCalledOnce();
+
+      const countBefore = MockEventSource.instances.length;
+      stream.retry();
+      expect(MockEventSource.instances.length).toBe(countBefore + 1);
+
+      stream.close();
+      vi.useRealTimers();
+    });
+
+    it('calls onConnected when connection opens', () => {
+      const onConnected = vi.fn();
+      const stream = subscribeToOperations(ADDRESS, {
+        onEvent: vi.fn(),
+        onConnected,
+      });
+
+      MockEventSource.instances[0].onopen?.();
+      expect(onConnected).toHaveBeenCalledOnce();
+
+      stream.close();
+    });
+
+    it('resets retry count on successful message', () => {
+      vi.useFakeTimers();
+      vi.spyOn(Math, 'random').mockReturnValue(0.99);
+      const onGiveUp = vi.fn();
+      const stream = subscribeToOperations(ADDRESS, {
+        onEvent: vi.fn(),
+        onGiveUp,
+        maxRetries: 3,
+        maxBackoffMs: 200,
+      });
+
+      // 1st error → retryCount=1, schedules reconnect
+      MockEventSource.instances[0].simulateError();
+      vi.advanceTimersByTime(1_100); // past initial backoff with jitter
+      // 2nd error → retryCount=2
+      MockEventSource.instances[MockEventSource.instances.length - 1].simulateError();
+      vi.advanceTimersByTime(2_200); // past doubled backoff
+
+      // Successful message resets count
+      const latest = MockEventSource.instances[MockEventSource.instances.length - 1];
+      latest.simulateMessage({ type: 'op' });
+
+      // 2 more errors — should NOT give up since count was reset
+      latest.simulateError();
+      vi.advanceTimersByTime(1_100);
+      MockEventSource.instances[MockEventSource.instances.length - 1].simulateError();
+      vi.advanceTimersByTime(2_200);
+
+      expect(onGiveUp).not.toHaveBeenCalled();
 
       stream.close();
       vi.useRealTimers();

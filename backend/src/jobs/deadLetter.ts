@@ -25,9 +25,24 @@ export async function recordDeadLetter(queue: string, job: Job, err: Error): Pro
  * that will be attempted again) are left alone — only truly exhausted jobs
  * are dead-lettered.
  */
-export function attachDeadLetterHandler(worker: Worker, queue: string): void {
+export interface DeadLetterHandlerOptions {
+  /** Leave deliberately non-retryable, domain-handled failures out of the DLQ. */
+  skipUnrecoverable?: boolean;
+  /** Replaces sensitive job data before DLQ persistence. */
+  sanitizeData?: (data: unknown) => unknown;
+}
+
+export function attachDeadLetterHandler(
+  worker: Worker,
+  queue: string,
+  options: DeadLetterHandlerOptions = {},
+): void {
   worker.on('failed', (job, err) => {
     if (!job) {
+      return;
+    }
+
+    if (options.skipUnrecoverable && err.name === 'UnrecoverableError') {
       return;
     }
 
@@ -36,7 +51,16 @@ export function attachDeadLetterHandler(worker: Worker, queue: string): void {
       return;
     }
 
-    recordDeadLetter(queue, job, err).catch((dlqErr) => {
+    const deadLetterJob = options.sanitizeData
+      ? ({
+          id: job.id,
+          name: job.name,
+          data: options.sanitizeData(job.data),
+          attemptsMade: job.attemptsMade,
+        } as unknown as Job)
+      : job;
+
+    recordDeadLetter(queue, deadLetterJob, err).catch((dlqErr) => {
       logger.error({ err: dlqErr, queue, jobId: job.id }, 'Failed to record dead letter job');
     });
   });

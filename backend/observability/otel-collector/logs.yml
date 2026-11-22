@@ -1,0 +1,69 @@
+# Central log pipeline for the API, indexer, and jobs processes.
+#
+# The collector tails Docker JSON logs, unwraps Pino's JSON payload, performs a
+# second redaction pass, and forwards logs using OTLP/HTTP. It deliberately does
+# not contain a vendor endpoint or credential: inject LOGS_BACKEND_OTLP_ENDPOINT
+# and LOGS_BACKEND_OTLP_HEADERS through the deployment secret manager.
+receivers:
+  filelog/docker:
+    include:
+      - /var/lib/docker/containers/*/*-json.log
+    start_at: end
+    include_file_path: true
+    operators:
+      - type: json_parser
+        id: parse_docker_json
+        parse_from: body
+        parse_to: attributes.docker
+      - type: move
+        from: attributes.docker.log
+        to: body
+      - type: json_parser
+        id: parse_pino_json
+        parse_from: body
+        parse_to: attributes
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  batch:
+    send_batch_size: 1024
+    timeout: 5s
+  # Redaction at the collector protects the destination if an application
+  # release regresses source-side Pino redaction. This is defence in depth,
+  # not a replacement for safe application logging.
+  transform/destination_redaction:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - replace_pattern(body, '(?i)(authorization|cookie|password|token|secret|api[_-]?key|private[_-]?key)(["'' ]*[:=]["'' ]*)[^,\\s"''}]+', '$1$2[REDACTED]')
+          - replace_pattern(body, '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}', '[REDACTED_EMAIL]')
+          - replace_pattern(body, 'G[A-Z2-7]{55}', '[REDACTED_STELLAR_ADDRESS]')
+          - delete_key(attributes, 'authorization')
+          - delete_key(attributes, 'cookie')
+          - delete_key(attributes, 'token')
+          - delete_key(attributes, 'password')
+          - delete_key(attributes, 'secret')
+
+exporters:
+  otlphttp/logs_backend:
+    endpoint: ${env:LOGS_BACKEND_OTLP_ENDPOINT}
+    headers:
+      Authorization: ${env:LOGS_BACKEND_OTLP_HEADERS}
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+service:
+  extensions: [health_check, pprof]
+  pipelines:
+    logs/stellar_tipz:
+      receivers: [filelog/docker]
+      processors: [memory_limiter, transform/destination_redaction, batch]
+      exporters: [otlphttp/logs_backend]

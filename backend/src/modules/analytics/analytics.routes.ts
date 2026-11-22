@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import * as analyticsController from './analytics.controller.js';
 import { env } from '../../config/env.js';
-import { mergeOpenApiPaths } from '../../docs/openapi.js';
+import { mergeOpenApiPaths } from '../../../docs/openapi.js';
 
 export const analyticsRouter = Router();
 

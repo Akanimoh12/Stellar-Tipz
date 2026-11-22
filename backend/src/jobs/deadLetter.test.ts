@@ -96,6 +96,31 @@ describe('attachDeadLetterHandler', () => {
     expect(() => failedHandler?.(undefined, new Error('boom'))).not.toThrow();
     expect(mockCreate).not.toHaveBeenCalled();
   });
+
+  it('can omit domain-handled UnrecoverableError failures', async () => {
+    type FailedHandler = (
+      job: { id: string; attemptsMade: number; opts: { attempts: number } },
+      err: Error,
+    ) => void;
+    let failedHandler: FailedHandler | undefined;
+    const worker = {
+      on: vi.fn((event: string, handler: FailedHandler) => {
+        if (event === 'failed') failedHandler = handler;
+      }),
+    } as unknown as Parameters<typeof attachDeadLetterHandler>[0];
+
+    attachDeadLetterHandler(worker, 'webhook-delivery', { skipUnrecoverable: true });
+
+    const error = new Error('HTTP 400');
+    error.name = 'UnrecoverableError';
+    failedHandler?.(
+      { id: 'job-1', attemptsMade: 5, opts: { attempts: 5 } },
+      error,
+    );
+    await Promise.resolve();
+
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
 });
 
 describe('listDeadLetterJobs', () => {

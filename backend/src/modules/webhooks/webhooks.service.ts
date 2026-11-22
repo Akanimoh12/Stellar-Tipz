@@ -1,25 +1,27 @@
-import { prisma } from "../../db/prisma.js";
-import { logger } from "../../common/utils/logger.js";
-import { ForbiddenError, NotFoundError } from "../../common/errors/AppError.js";
-import { generateWebhookSecret } from "./webhooks.signing.js";
+import { prisma } from '../../db/prisma.js'
+import { logger } from '../../common/utils/logger.js'
+import { BadRequestError, NotFoundError } from '../../common/errors/AppError.js'
+import { assertOwnership } from '../../common/utils/ownership.js'
+import { generateWebhookSecret } from './webhooks.signing.js'
+import { assertSafeWebhookUrl } from './webhooks.url-safety.js'
 import type {
   WebhookDeliveryResponse,
   WebhookDeliveryListResponse,
   WebhookSubscriptionCreateResponse,
   WebhookSubscriptionListResponse,
   WebhookSubscriptionResponse,
-} from "./webhooks.types.js";
-import type { CreateWebhookSubscriptionInput } from "./webhooks.schema.js";
+} from './webhooks.types.js'
+import type { CreateWebhookSubscriptionInput } from './webhooks.schema.js'
 
 type WebhookSubscriptionRow = {
-  id: string;
-  ownerId: string;
-  url: string;
-  events: string[];
-  status: string;
-  createdAt: Date;
-  updatedAt: Date;
-};
+  id: string
+  ownerId: string
+  url: string
+  events: string[]
+  status: string
+  createdAt: Date
+  updatedAt: Date
+}
 
 function toSubscription(row: WebhookSubscriptionRow): WebhookSubscriptionResponse {
   return {
@@ -27,10 +29,10 @@ function toSubscription(row: WebhookSubscriptionRow): WebhookSubscriptionRespons
     ownerId: row.ownerId,
     url: row.url,
     events: row.events,
-    status: row.status as WebhookSubscriptionResponse["status"],
+    status: row.status as WebhookSubscriptionResponse['status'],
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
-  };
+  }
 }
 
 /** Creates a webhook subscription for `ownerId`. The secret is returned once. */
@@ -38,9 +40,18 @@ export async function createSubscription(
   ownerId: string,
   data: CreateWebhookSubscriptionInput,
 ): Promise<WebhookSubscriptionCreateResponse> {
-  logger.info({ ownerId, url: data.url, events: data.events }, "Creating webhook subscription");
+  logger.info({ ownerId, url: data.url, events: data.events }, 'Creating webhook subscription')
 
-  const secret = generateWebhookSecret();
+  // Resolve and reject private/loopback/link-local targets at subscription time.
+  // The delivery worker repeats this immediately before every request to defend
+  // against DNS rebinding.
+  try {
+    await assertSafeWebhookUrl(data.url)
+  } catch (error) {
+    throw new BadRequestError(error instanceof Error ? error.message : 'Webhook URL is not allowed')
+  }
+
+  const secret = generateWebhookSecret()
   const row = await prisma.webhookSubscription.create({
     data: {
       ownerId,
@@ -48,76 +59,107 @@ export async function createSubscription(
       events: data.events,
       secret,
     },
-  });
+  })
 
-  return { ...toSubscription(row), secret };
+  return { ...toSubscription(row), secret }
 }
 
 /** Lists webhook subscriptions owned by `ownerId`. */
+export async function rotateSubscriptionSecret(
+  ownerId: string,
+  id: string,
+  overlapSeconds = 3600,
+): Promise<{ secret: string; previousSecretValidUntil: string }> {
+  const existing = await prisma.webhookSubscription.findUnique({ where: { id } })
+  if (!existing || existing.deletedAt) {
+    throw new NotFoundError(`Webhook subscription ${id} not found`)
+  }
+  assertOwnership(
+    existing.ownerId,
+    ownerId,
+    'You can only rotate your own webhook subscription secret',
+  )
+
+  const secret = generateWebhookSecret()
+  const previousSecretExpiresAt = new Date(Date.now() + overlapSeconds * 1000)
+  await prisma.webhookSubscription.update({
+    where: { id },
+    data: {
+      secret,
+      previousSecret: existing.secret,
+      previousSecretExpiresAt,
+    },
+  })
+
+  logger.info({ ownerId, subscriptionId: id, overlapSeconds }, 'Webhook signing secret rotated')
+  return { secret, previousSecretValidUntil: previousSecretExpiresAt.toISOString() }
+}
+
 export async function listSubscriptions(
   ownerId: string,
   page: number,
   limit: number,
 ): Promise<WebhookSubscriptionListResponse> {
-  logger.info({ ownerId, page, limit }, "Listing webhook subscriptions");
+  logger.info({ ownerId, page, limit }, 'Listing webhook subscriptions')
 
-  const where = { ownerId, deletedAt: null };
-  const skip = (page - 1) * limit;
+  const where = { ownerId, deletedAt: null }
+  const skip = (page - 1) * limit
 
   const [rows, total] = await Promise.all([
     prisma.webhookSubscription.findMany({
       where,
-      orderBy: { createdAt: "desc" },
+      orderBy: { createdAt: 'desc' },
       skip,
       take: limit,
     }),
     prisma.webhookSubscription.count({ where }),
-  ]);
+  ])
 
-  return { entries: rows.map(toSubscription), total, page, limit };
+  return { entries: rows.map(toSubscription), total, page, limit }
 }
 
 /** Soft-deletes a webhook subscription. Only the owner may delete it. */
 export async function deleteSubscription(ownerId: string, id: string): Promise<void> {
-  const existing = await prisma.webhookSubscription.findUnique({ where: { id } });
+  const existing = await prisma.webhookSubscription.findUnique({ where: { id } })
   if (!existing || existing.deletedAt) {
-    throw new NotFoundError(`Webhook subscription ${id} not found`);
+    throw new NotFoundError(`Webhook subscription ${id} not found`)
   }
-  if (existing.ownerId !== ownerId) {
-    throw new ForbiddenError("You can only delete your own webhook subscriptions");
-  }
+  assertOwnership(existing.ownerId, ownerId, 'You can only delete your own webhook subscriptions')
 
   await prisma.webhookSubscription.update({
     where: { id },
-    data: { deletedAt: new Date(), status: "DISABLED" },
-  });
+    data: { deletedAt: new Date(), status: 'DISABLED' },
+  })
 
-  logger.info({ ownerId, subscriptionId: id }, "Webhook subscription deleted");
+  logger.info({ ownerId, subscriptionId: id }, 'Webhook subscription deleted')
 }
 
 export async function listDeliveries(
+  ownerId: string,
   page: number,
   limit: number,
   subscriptionId?: string,
   status?: string,
 ): Promise<WebhookDeliveryListResponse> {
-  logger.info({ page, limit, subscriptionId, status }, "Listing webhook deliveries");
+  logger.info({ page, limit, subscriptionId, status }, 'Listing webhook deliveries')
 
-  const where: Record<string, unknown> = {};
-  if (subscriptionId) where.subscriptionId = subscriptionId;
-  if (status) where.status = status;
+  const where: Record<string, unknown> = {
+    subscription: { ownerId, deletedAt: null },
+  }
+  if (subscriptionId) where.subscriptionId = subscriptionId
+  if (status) where.status = status
 
-  const skip = (page - 1) * limit;
+  const skip = (page - 1) * limit
 
   const [deliveries, total] = await Promise.all([
     prisma.webhookDelivery.findMany({
       where,
-      orderBy: { createdAt: "desc" },
+      orderBy: { createdAt: 'desc' },
       skip,
       take: limit,
     }),
     prisma.webhookDelivery.count({ where }),
-  ]);
+  ])
 
   const entries: WebhookDeliveryResponse[] = deliveries.map((d) => ({
     id: d.id,
@@ -128,16 +170,21 @@ export async function listDeliveries(
     nextAttemptAt: d.nextAttemptAt?.toISOString() ?? null,
     createdAt: d.createdAt.toISOString(),
     updatedAt: d.updatedAt.toISOString(),
-  }));
+  }))
 
-  return { entries, total, page, limit };
+  return { entries, total, page, limit }
 }
 
-export async function getDelivery(id: string): Promise<WebhookDeliveryResponse> {
-  logger.info({ id }, "Fetching webhook delivery");
+export async function getDelivery(ownerId: string, id: string): Promise<WebhookDeliveryResponse> {
+  logger.info({ id }, 'Fetching webhook delivery')
 
-  const delivery = await prisma.webhookDelivery.findUnique({ where: { id } });
-  if (!delivery) throw new NotFoundError(`Webhook delivery ${id} not found`);
+  const delivery = await prisma.webhookDelivery.findUnique({
+    where: { id },
+    include: { subscription: { select: { ownerId: true, deletedAt: true } } },
+  })
+  if (!delivery) throw new NotFoundError(`Webhook delivery ${id} not found`)
+  if (delivery.subscription.deletedAt) throw new NotFoundError(`Webhook delivery ${id} not found`)
+  assertOwnership(delivery.subscription.ownerId, ownerId)
 
   return {
     id: delivery.id,
@@ -148,5 +195,5 @@ export async function getDelivery(id: string): Promise<WebhookDeliveryResponse> 
     nextAttemptAt: delivery.nextAttemptAt?.toISOString() ?? null,
     createdAt: delivery.createdAt.toISOString(),
     updatedAt: delivery.updatedAt.toISOString(),
-  };
+  }
 }

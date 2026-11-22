@@ -59,3 +59,15 @@ export class TooManyRequestsError extends AppError {
   }
 }
 
+export class PayloadTooLargeError extends AppError {
+  constructor(message = 'Payload too large', details?: unknown) {
+    super(413, message, 'PAYLOAD_TOO_LARGE', details);
+  }
+}
+
+export class RequestTimeoutError extends AppError {
+  constructor(message = 'Request timeout', details?: unknown) {
+    super(503, message, 'REQUEST_TIMEOUT', details);
+  }
+}
+

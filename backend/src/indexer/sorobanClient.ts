@@ -38,6 +38,25 @@ export async function getLatestLedger(): Promise<number> {
 }
 
 /**
+ * The hash of ledger `sequence` as the chain currently reports it, via
+ * Horizon `/ledgers/{sequence}` (issue #1257 — reorg detection compares a
+ * stored hash against this). `null` when Horizon has no such ledger (pruned
+ * history, or a sequence beyond the head).
+ */
+export async function getLedgerHash(sequence: number): Promise<string | null> {
+  const base = config.stellar.horizonUrl.replace(/\/+$/, '');
+  const res = await fetch(`${base}/ledgers/${sequence}`, {
+    headers: { accept: 'application/json' },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`Horizon /ledgers/${sequence} returned ${res.status}`);
+  }
+  const body = (await res.json()) as { hash?: unknown };
+  return typeof body.hash === 'string' ? body.hash : null;
+}
+
+/**
  * Fetch one page of contract events. Pass `pagingToken` to continue from a
  * previous page; otherwise events are read from `startLedger` forward.
  */

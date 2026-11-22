@@ -22,14 +22,26 @@ const TipMessageInput: React.FC<TipMessageInputProps> = ({
     }
   };
 
+  const remaining = Math.max(0, maxLength - message.length);
+  const counterColor =
+    remaining === 0
+      ? "text-red-600 dark:text-red-400"
+      : remaining <= 30
+        ? "text-amber-700 dark:text-amber-300"
+        : "text-gray-700 dark:text-gray-300";
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <label className="text-xs font-black uppercase tracking-[0.2em] text-gray-600">
+        <label className="text-xs font-black uppercase tracking-[0.2em] text-gray-600 dark:text-gray-300">
           Message (Optional)
         </label>
-        <span className={`text-[10px] font-bold ${message.length >= maxLength ? 'text-red-600' : 'text-gray-700 dark:text-gray-300'}`}>
-          {message.length}/{maxLength}
+        <span
+          data-testid="tip-char-counter"
+          aria-live="polite"
+          className={`text-xs font-bold ${counterColor}`}
+        >
+          {remaining} {remaining === 1 ? "character" : "characters"} remaining
         </span>
       </div>
       <Textarea

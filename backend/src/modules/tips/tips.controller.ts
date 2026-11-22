@@ -20,12 +20,31 @@ import { ForbiddenError, NotFoundError } from '../../common/errors/AppError.js';
 /** GET /tips — filterable, cursor-paginated list of tips. */
 export async function getTips(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { limit, cursor, address, direction, aggregate } = getTipsQuerySchema.parse(req.query);
+    const {
+      limit,
+      cursor,
+      offset,
+      address,
+      direction,
+      tokenCode,
+      startDate,
+      endDate,
+      aggregate,
+    } = getTipsQuerySchema.parse(req.query);
     if (aggregate === 'creator') {
       const result = await tipsService.aggregateTipsByCreator();
       res.status(200).json({ data: result });
     } else {
-      const result = await tipsService.getPaginatedTips({ limit, cursor, address, direction });
+      const result = await tipsService.getPaginatedTips({
+        limit,
+        cursor,
+        offset,
+        address,
+        direction,
+        tokenCode,
+        startDate,
+        endDate,
+      });
       res.status(200).json({ data: result.data, nextCursor: result.nextCursor });
     }
   } catch (err) {
@@ -56,8 +75,8 @@ export async function getById(req: Request, res: Response, next: NextFunction): 
 export async function getReceived(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { username } = usernameParamSchema.parse(req.params);
-    const { limit, cursor } = tipsListQuerySchema.parse(req.query);
-    const result = await tipsService.getTipsReceivedByUsername(username, limit, cursor);
+    const { limit, cursor, offset } = tipsListQuerySchema.parse(req.query);
+    const result = await tipsService.getTipsReceivedByUsername(username, limit, cursor, offset);
     res.status(200).json({ data: result.data, nextCursor: result.nextCursor });
   } catch (err) {
     next(err);
@@ -66,8 +85,13 @@ export async function getReceived(req: Request, res: Response, next: NextFunctio
 
 export async function getSent(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { limit, cursor } = tipsListQuerySchema.parse(req.query);
-    const result = await tipsService.getTipsSentByAddress(req.user!.stellarAddress, limit, cursor);
+    const { limit, cursor, offset } = tipsListQuerySchema.parse(req.query);
+    const result = await tipsService.getTipsSentByAddress(
+      req.user!.stellarAddress,
+      limit,
+      cursor,
+      offset,
+    );
     res.status(200).json({ data: result.data, nextCursor: result.nextCursor });
   } catch (err) {
     next(err);

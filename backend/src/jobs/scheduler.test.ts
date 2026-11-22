@@ -20,7 +20,7 @@ describe('scheduleRepeatable', () => {
 
     await scheduleRepeatable({ queue, name: 'my-job', pattern: '*/5 * * * *' });
 
-    expect(mockAdd).toHaveBeenCalledWith('my-job', {}, { repeat: { pattern: '*/5 * * * *' } });
+    expect(mockAdd).toHaveBeenCalledWith('my-job', {}, { repeat: { pattern: '*/5 * * * *' }, jobId: 'schedule-my-job' });
   });
 
   it('skips if same name and pattern already exists', async () => {
@@ -40,7 +40,7 @@ describe('scheduleRepeatable', () => {
 
     await scheduleRepeatable({ queue, name: 'my-job', pattern: '*/5 * * * *' });
 
-    expect(mockAdd).toHaveBeenCalledWith('my-job', {}, { repeat: { pattern: '*/5 * * * *' } });
+    expect(mockAdd).toHaveBeenCalledWith('my-job', {}, { repeat: { pattern: '*/5 * * * *' }, jobId: 'schedule-my-job' });
   });
 
   it('adds if same pattern exists with a different name', async () => {
@@ -50,6 +50,6 @@ describe('scheduleRepeatable', () => {
 
     await scheduleRepeatable({ queue, name: 'my-job', pattern: '*/5 * * * *' });
 
-    expect(mockAdd).toHaveBeenCalledWith('my-job', {}, { repeat: { pattern: '*/5 * * * *' } });
+    expect(mockAdd).toHaveBeenCalledWith('my-job', {}, { repeat: { pattern: '*/5 * * * *' }, jobId: 'schedule-my-job' });
   });
 });

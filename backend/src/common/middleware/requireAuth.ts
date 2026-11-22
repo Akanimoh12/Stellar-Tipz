@@ -1,12 +1,13 @@
 import type { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-import { config } from '../../config/index.js';
 import { UnauthorizedError } from '../errors/AppError.js';
 import type { AuthUser } from '../../modules/auth/auth.types.js';
+import type { AuthPayload } from '../../modules/auth/auth.types.js';
+import { verifyAccessToken } from '../../modules/auth/jwt.js';
 
 interface JwtPayload {
   sub: string;
   stellarAddress: string;
+  userId?: string;
 }
 
 /**
@@ -25,15 +26,16 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction): v
   const token = authHeader.slice(7);
 
   try {
-    const payload = jwt.verify(token, config.auth.jwtSecret) as JwtPayload;
+    // Use rotation-aware verifier; supports both `sub` (legacy requireAuth) and `userId`
+    const payload = verifyAccessToken(token) as AuthPayload & JwtPayload;
     const user: AuthUser = {
-      id: payload.sub,
+      id: (payload as unknown as JwtPayload).sub ?? payload.userId,
       stellarAddress: payload.stellarAddress,
       username: null,
     };
     req.user = user;
     next();
-  } catch {
-    next(new UnauthorizedError('Invalid or expired access token'));
+  } catch (err) {
+    next(err instanceof UnauthorizedError ? err : new UnauthorizedError('Invalid or expired access token'));
   }
 }

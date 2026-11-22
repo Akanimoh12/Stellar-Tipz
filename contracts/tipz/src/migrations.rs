@@ -64,7 +64,8 @@ pub fn migrate(
 
     // Process migration steps sequentially from from_version + 1 up to target_version
     while state.current_step <= target_version {
-        let step_done = execute_migration_step(env, state.current_step, &mut state, effective_batch)?;
+        let step_done =
+            execute_migration_step(env, state.current_step, &mut state, effective_batch)?;
         if !step_done {
             // Batch limit reached for current step; persist state for next resumption call.
             storage::set_migration_state(env, &state);

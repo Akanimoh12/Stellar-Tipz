@@ -1,33 +1,41 @@
-import { Router } from 'express';
-import { requireAuth } from '../../modules/auth/auth.middleware.js';
-import { requireRole } from '../../modules/auth/auth.middleware.js';
-import { env } from '../../config/env.js';
-import { mergeOpenApiPaths } from '../../docs/openapi.js';
-import * as adminController from './admin.controller.js';
+import { Router } from 'express'
+import { requireAuth, requireRole } from '../../modules/auth/auth.middleware.js'
+import { env } from '../../config/env.js'
+import { mergeOpenApiPaths } from '../../docs/openapi.js'
+import { ADMIN_ROLE, auditAdminAction } from './admin.middleware.js'
+import * as adminController from './admin.controller.js'
 
-export const adminRouter = Router();
+export const adminRouter = Router()
 
-// Admin-only routes
+/** Every admin route sits behind a valid access token *and* the admin role. */
+const adminGuard = [requireAuth, requireRole(ADMIN_ROLE)]
+
 adminRouter.get(
   '/audit-logs',
-  requireAuth,
-  requireRole('admin'),
+  ...adminGuard,
+  auditAdminAction('admin.audit_logs.list'),
   adminController.listAuditLogsController,
-);
+)
+adminRouter.get(
+  '/audit-logs/export',
+  ...adminGuard,
+  auditAdminAction('admin.audit_logs.export'),
+  adminController.exportAuditLogsController,
+)
 adminRouter.get(
   '/stats',
-  requireAuth,
-  requireRole('admin'),
+  ...adminGuard,
+  auditAdminAction('admin.stats.read'),
   adminController.getPlatformStatsController,
-);
-adminRouter.post(
-  '/audit-log',
-  requireAuth,
-  requireRole('admin'),
-  adminController.createAuditLogController,
-);
+)
+// No auditAdminAction here: the controller writes the caller-supplied audit
+// entry itself, and wrapping it would record every call twice.
+adminRouter.post('/audit-log', ...adminGuard, adminController.createAuditLogController)
+// Manual-job service writes a detailed success/failure audit entry including
+// the operator, parameters, outcome and job id, so do not double-log here.
+adminRouter.post('/jobs/:name/trigger', ...adminGuard, adminController.triggerManualJobController)
 
-const base = `${env.API_BASE_PATH}/admin`;
+const base = `${env.API_BASE_PATH}/admin`
 
 const auditLogSchema = {
   type: 'object',
@@ -40,7 +48,7 @@ const auditLogSchema = {
     createdAt: { type: 'string', format: 'date-time' },
   },
   required: ['id', 'actor', 'action', 'createdAt'],
-};
+}
 
 const platformStatsSchema = {
   type: 'object',
@@ -64,7 +72,7 @@ const platformStatsSchema = {
     'totalRefunds',
     'averageTipAmount',
   ],
-};
+}
 
 mergeOpenApiPaths({
   [`${base}/audit-logs`]: {
@@ -98,6 +106,20 @@ mergeOpenApiPaths({
           required: false,
           schema: { type: 'string' },
         },
+        {
+          name: 'from',
+          in: 'query',
+          required: false,
+          schema: { type: 'string', format: 'date-time' },
+          description: 'Include entries created at or after this timestamp.',
+        },
+        {
+          name: 'to',
+          in: 'query',
+          required: false,
+          schema: { type: 'string', format: 'date-time' },
+          description: 'Include entries created at or before this timestamp.',
+        },
       ],
       responses: {
         '200': {
@@ -113,6 +135,39 @@ mergeOpenApiPaths({
             },
           },
         },
+        '401': { description: 'Unauthorized' },
+        '403': { description: 'Forbidden - requires admin role' },
+      },
+    },
+  },
+  [`${base}/audit-logs/export`]: {
+    get: {
+      tags: ['Admin'],
+      summary: 'Export audit logs as CSV',
+      description: 'Exports all audit logs matching the optional filters. Admin only.',
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        { name: 'action', in: 'query', schema: { type: 'string' } },
+        { name: 'actor', in: 'query', schema: { type: 'string' } },
+        {
+          name: 'from',
+          in: 'query',
+          schema: { type: 'string', format: 'date-time' },
+          description: 'Include entries created at or after this timestamp.',
+        },
+        {
+          name: 'to',
+          in: 'query',
+          schema: { type: 'string', format: 'date-time' },
+          description: 'Include entries created at or before this timestamp.',
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'CSV audit log export',
+          content: { 'text/csv': { schema: { type: 'string' } } },
+        },
+        '400': { description: 'Invalid filters' },
         '401': { description: 'Unauthorized' },
         '403': { description: 'Forbidden - requires admin role' },
       },
@@ -141,4 +196,99 @@ mergeOpenApiPaths({
       },
     },
   },
-});
+  [`${base}/audit-log`]: {
+    post: {
+      tags: ['Admin'],
+      summary: 'Record an audit log entry',
+      description: 'Records an admin action in the audit trail. Admin only.',
+      security: [{ bearerAuth: [] }],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                action: { type: 'string', maxLength: 255, example: 'admin.user.ban' },
+                target: { type: 'string', nullable: true, example: 'user-1' },
+                metadata: { type: 'object', example: { reason: 'spam' } },
+              },
+              required: ['action'],
+            },
+          },
+        },
+      },
+      responses: {
+        '201': {
+          description: 'Created audit log entry',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { data: auditLogSchema },
+              },
+            },
+          },
+        },
+        '400': { description: 'Invalid request body' },
+        '401': { description: 'Unauthorized' },
+        '403': { description: 'Forbidden - requires admin role' },
+      },
+    },
+  },
+  [`${base}/jobs/{name}/trigger`]: {
+    post: {
+      tags: ['Admin'],
+      summary: 'Trigger a scheduled job on demand',
+      description:
+        'Admin-only operational endpoint. Uses the same BullMQ queue/job name as the scheduler, rejects overlap, and audit-logs the operator and outcome.',
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        {
+          name: 'name',
+          in: 'path',
+          required: true,
+          schema: {
+            type: 'string',
+            enum: [
+              'credit-recompute',
+              'analytics-daily',
+              'subscription-charge',
+              'leaderboard-snapshot',
+              'x-metrics-refresh',
+              'discovery',
+              'platform-stats',
+              'payout',
+              'auth-challenge-cleanup',
+              'retention',
+            ],
+          },
+        },
+      ],
+      requestBody: {
+        required: false,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                params: {
+                  type: 'object',
+                  description:
+                    'Job parameters. analytics-daily accepts optional date (YYYY-MM-DD); other jobs currently accept none.',
+                },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        '202': { description: 'Job accepted for execution' },
+        '400': { description: 'Unknown job or invalid parameters' },
+        '401': { description: 'Unauthorized' },
+        '403': { description: 'Forbidden - requires admin role' },
+        '409': { description: 'The same job is already running or queued' },
+      },
+    },
+  },
+})

@@ -1,0 +1,45 @@
+name: Documentation CI
+
+on:
+  push:
+    paths:
+      - '**.md'
+  pull_request:
+    paths:
+      - '**.md'
+  schedule:
+    - cron: '0 2 * * *'  # nightly at 02:00 UTC
+
+jobs:
+  docs-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@3235b876344d2a9aa001b8d1453c930bba69e610 # v3
+        with:
+          node-version: '20'
+
+      - name: Install dependencies (if any)
+        run: |
+          npm ci || true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable resolved 2026-11-20
+
+      - name: Run documentation code example verification
+        run: |
+          node ./scripts/verify-doc-code-examples.ts
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/e2e-tests.yml: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/failure-injection.yml: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/frontend-ci.yml: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/image-audits.yml: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/lighthouse.yml: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/load-test.yml: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/monitoring-config.yml: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/mutation-testing.yml: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/pr-checks.yml: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/release.yml: text/plain (text)
+/home/ayobami/github-assigned-work/stellar-tipz-desaint-1719-1723/.github/workflows/sast.yml: text/plain (text)

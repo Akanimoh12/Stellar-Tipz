@@ -19,6 +19,7 @@ ADR that `Supersedes` the old one and mark the old one `Superseded`.
 | [005](./ADR-005-frontend-state-management.md) | Frontend state management (Zustand) | Accepted |
 | [006](./ADR-006-fee-structure.md) | Fee structure design | Accepted |
 | [007](./ADR-007-profile-user-boundary.md) | Profile vs User off-chain data model boundary | Accepted |
+| [008](./ADR-008-soroban-sdk-upgrade-policy.md) | Soroban SDK version pinning and upgrade policy | Accepted |
 
 ## Adding a new ADR
 

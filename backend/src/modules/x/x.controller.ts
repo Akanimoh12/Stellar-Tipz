@@ -30,6 +30,7 @@ export async function getXMetricsController(
     const metrics = await fetchXMetrics(input.handle, {
       useFallback: input.useFallback,
       maxCacheAge: input.maxCacheAge,
+      signal: req.signal,
     });
 
     res.json({

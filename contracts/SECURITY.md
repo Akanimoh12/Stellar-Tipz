@@ -1,5 +1,9 @@
 # Security Audit Checklist: Stellar Tipz Soroban Contract
 
+> **Reporting a vulnerability?** Do not open a public issue. Follow the policy in the
+> [root SECURITY.md](../SECURITY.md). This file is the contract audit checklist: the attack vectors
+> considered for the Soroban contract and how each is mitigated.
+
 This document outlines the security audit and hardening measures implemented for the Stellar Tipz smart contract.
 
 ## Known Attack Vectors & Mitigations
