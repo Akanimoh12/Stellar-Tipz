@@ -79,12 +79,12 @@ Be respectful, constructive, and inclusive. We follow the [Contributor Covenant]
 1. **Fork** this repository to your GitHub account
 2. **Clone** your fork locally:
    ```bash
-   git clone https://github.com/<your-username>/stellar-tipz.git
+   git clone https://github.com/<your-username>/Stellar-Tipz.git
    cd stellar-tipz
    ```
 3. **Set upstream** remote:
    ```bash
-   git remote add upstream https://github.com/akan_nigeria/stellar-tipz.git
+   git remote add upstream https://github.com/Akanimoh12/Stellar-Tipz.git
    ```
 4. Follow the [Setup Guide](./SETUP.md) to configure your local environment
 
@@ -200,12 +200,13 @@ We use a **fork-and-branch** workflow:
 
 1. **Sync your fork** before starting new work:
    ```bash
-   git checkout main
-   git pull upstream main
-   git push origin main
+   git fetch upstream
+   git checkout test-implement-drips
+   git merge --ff-only upstream/test-implement-drips
+   git push origin test-implement-drips
    ```
 
-2. **Create a feature branch** from `main`:
+2. **Create a feature branch** from `test-implement-drips`:
    ```bash
    git checkout -b <branch-name>
    ```
@@ -223,7 +224,7 @@ We use a **fork-and-branch** workflow:
    git push origin <branch-name>
    ```
 
-7. **Open a Pull Request** against `main` on the upstream repo
+7. **Open a Pull Request** against the upstream repository's current default branch (`test-implement-drips` at the time of writing)
 
 ---
 

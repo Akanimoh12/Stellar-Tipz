@@ -6,10 +6,10 @@
 
 ## Prerequisites
 
-- Soroban CLI installed (`soroban --version` → 21.0+)
+- Soroban CLI installed (`stellar --version` → 21.0+)
 - Rust + `wasm32-unknown-unknown` target
 - A funded Stellar account (Testnet: use Friendbot; Mainnet: real XLM)
-- Node.js 18+ (for frontend)
+- Node.js 20+ (for frontend)
 - Vercel CLI (optional, for frontend deployment)
 
 ---
@@ -31,7 +31,7 @@ Complete **before** any deployment (and re-verify before mainnet):
 - [ ] Frontend smoke-tested against the deployed testnet contract
 
 **Resource / cost estimates**
-- [ ] Wasm built in `--release` and (for mainnet) `soroban contract optimize` run
+- [ ] Wasm built in `--release` and (for mainnet) `stellar contract optimize` run
 - [ ] Deploy + `initialize` resource fees estimated with `--sim` / dry-run
 - [ ] Deployer account funded with enough XLM for deploy **and** storage rent
 - [ ] Storage TTL strategy understood (see `docs/adr/ADR-004-storage-strategy.md`)
@@ -40,10 +40,10 @@ Complete **before** any deployment (and re-verify before mainnet):
 
 | Setting | Testnet | Mainnet |
 |---------|---------|---------|
-| `VITE_NETWORK` / `REACT_APP_NETWORK` | `TESTNET` | `PUBLIC` |
+| `VITE_NETWORK` / `VITE_NETWORK` | `TESTNET` | `PUBLIC` |
 | Network passphrase | `Test SDF Network ; September 2015` | `Public Global Stellar Network ; September 2015` |
 | Soroban RPC URL | `https://soroban-testnet.stellar.org` | a mainnet RPC provider |
-| Native XLM SAC (`--native_token`) | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` | resolve via `soroban contract id asset --asset native --network mainnet` |
+| Native XLM SAC (`--native_token`) | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` | resolve via `stellar contract id asset --asset native --network mainnet` |
 | Deployer funding | Friendbot | real XLM |
 | Admin key | dev keypair | hardware wallet / multisig |
 
@@ -70,13 +70,13 @@ cargo build --target wasm32-unknown-unknown --release
 
 ```bash
 # Generate a deploy key (one time)
-soroban keys generate tipz-deployer --network testnet
+stellar keys generate tipz-deployer --network testnet
 
 # Fund it via Friendbot
-curl "https://friendbot.stellar.org?addr=$(soroban keys address tipz-deployer)"
+curl "https://friendbot.stellar.org?addr=$(stellar keys address tipz-deployer)"
 
 # Deploy
-soroban contract deploy \
+stellar contract deploy \
   --wasm target/wasm32-unknown-unknown/release/tipz.wasm \
   --source tipz-deployer \
   --network testnet
@@ -89,13 +89,13 @@ soroban contract deploy \
 
 ```bash
 CONTRACT_ID="<your-contract-id>"
-DEPLOYER_ADDR="$(soroban keys address tipz-deployer)"
+DEPLOYER_ADDR="$(stellar keys address tipz-deployer)"
 
 # Resolve the native XLM SAC address for testnet:
 NATIVE_TOKEN=$(stellar contract id asset --asset native --network testnet)
 # Testnet default: CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
 
-soroban contract invoke \
+stellar contract invoke \
   --id $CONTRACT_ID \
   --source tipz-deployer \
   --network testnet \
@@ -111,7 +111,7 @@ soroban contract invoke \
 
 ```bash
 # Check contract stats
-soroban contract invoke \
+stellar contract invoke \
   --id $CONTRACT_ID \
   --source tipz-deployer \
   --network testnet \
@@ -128,8 +128,8 @@ soroban contract invoke \
 Create `frontend-scaffold/.env`:
 
 ```env
-CONTRACT_ID=<deployed-contract-id>
-REACT_APP_NETWORK=TESTNET
+VITE_CONTRACT_ID=<deployed-contract-id>
+VITE_NETWORK=TESTNET
 ```
 
 ### Build
@@ -140,7 +140,7 @@ npm install --legacy-peer-deps
 npm run build
 ```
 
-The production build will be in `frontend-scaffold/build/`.
+The production build will be in `frontend-scaffold/dist/`.
 
 ### Deploy to Vercel
 
@@ -159,7 +159,7 @@ vercel --prod
 
 Vercel configuration in `vercel.json` handles:
 - Build command: `cd frontend-scaffold && npm install --legacy-peer-deps && npm run build`
-- Output directory: `frontend-scaffold/build`
+- Output directory: `frontend-scaffold/dist`
 - SPA rewrites: all routes → `index.html`
 
 ### Deploy via Docker (Alternative)
@@ -215,7 +215,7 @@ Production observability for the frontend uses **Sentry** to capture, deduplicat
    sentry-cli releases files upload-sourcemaps \
      --org <org> \
      --project stellar-tipz-frontend \
-     ./build/assets
+     ./dist/assets
    ```
 
    For CI/CD (GitHub Actions, etc.), automate this step after a production build.
@@ -305,7 +305,7 @@ Before production rollout:
 **Source maps not working (stack traces still minified):**
 - Confirm `sourcemap: true` in `vite.config.ts` build config
 - Upload source maps via `sentry-cli` or Vercel integration
-- Verify map files are in `build/assets/` and have corresponding `.map` extensions
+- Verify map files are in `dist/assets/` and have corresponding `.map` extensions
 
 **PII not being scrubbed:**
 - Update PII patterns in `beforeSend` hook if new formats are discovered
@@ -326,7 +326,7 @@ Before production rollout:
 
 1. **Security audit** — Third-party audit of the Soroban contract
 2. **Config changes**:
-   - Update `REACT_APP_NETWORK=PUBLIC`
+   - Update `VITE_NETWORK=PUBLIC`
    - Update RPC URL to mainnet
    - Update network passphrase to `Public Global Stellar Network ; September 2015`
 3. **Real XLM** — Deployer account needs real XLM for deployment
@@ -440,7 +440,7 @@ contract in one step.
 # Build the contract first, then deploy:
 ./scripts/deploy-testnet.sh --build
 
-# Use an optimized wasm (run `soroban contract optimize` first):
+# Use an optimized wasm (run `stellar contract optimize` first):
 ./scripts/deploy-testnet.sh --optimized
 
 # Validate inputs and wasm path without actually deploying:
@@ -532,7 +532,7 @@ and redeploy rather than rolling back code.
 ### Contract upgrade vs. redeploy
 
 - **Upgrade (preferred):** the contract is upgradeable (`ContractVersion` is
-  bumped on upgrade). Ship a fixed Wasm via `soroban contract install` +
+  bumped on upgrade). Ship a fixed Wasm via `stellar contract install` +
   the admin-gated upgrade path; storage and the contract ID are preserved.
 - **Redeploy (last resort):** if state is corrupt or the ID must change, deploy
   a fresh contract, migrate/re-initialize required state, then point the
