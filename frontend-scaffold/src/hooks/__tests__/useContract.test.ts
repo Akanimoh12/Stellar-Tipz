@@ -78,6 +78,7 @@ vi.mock("../../services", async () => {
         new sorobanMock.TransactionBuilder(pubKey, { fee, networkPassphrase }),
     ),
     simulateTx: vi.fn(async (tx: unknown) => mockServer.simulateTransaction(tx)),
+    prepareTx: vi.fn(async (tx: unknown) => mockServer.prepareTransaction(tx)),
     submitTx: vi.fn(async (signedXdr: string) => {
       const parsed = JSON.parse(signedXdr) as {
         method?: string;
@@ -142,6 +143,7 @@ describe("useContract", () => {
     const txHash = await act(() => result.current.sendTip("GA...", "1", "message"));
 
     expect(txHash).toBe("tx_hash_123");
+    expect(mockServer.prepareTransaction).toHaveBeenCalledTimes(1);
   });
 
   it("registers a profile and returns transaction hash", async () => {
