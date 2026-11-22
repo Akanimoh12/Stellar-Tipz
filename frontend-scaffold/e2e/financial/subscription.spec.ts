@@ -4,6 +4,30 @@ import { injectFreighterConnected, injectFreighterNotConnected } from '../mocks/
 const TEST_PUBLIC_KEY = 'GBVKN6YMDXP4FKXB26BWZJHXPGQPZLWXHKJM5YXJKTZRQPLTKLPXNQK';
 
 test.describe('Subscription Lifecycle', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/soroban/**', async (route) => {
+      const url = route.request().url();
+      if (url.includes('subscriptions') && route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            subscriptions: [{
+              id: 'test-sub-1',
+              creator: 'alice',
+              amount: '10',
+              frequency: 'monthly',
+              nextDue: Date.now() + 86400000,
+              status: 'active'
+            }]
+          })
+        });
+      } else {
+        await route.continue();
+      }
+    });
+  });
+
   test('create subscription successfully', async ({ page }) => {
     await injectFreighterConnected(page, { publicKey: TEST_PUBLIC_KEY });
     await page.goto('/subscriptions');
@@ -40,6 +64,19 @@ test.describe('Subscription Lifecycle', () => {
     await expect(page.getByText(/next payment|due|next due/i)).toBeVisible({ timeout: 10000 });
   });
   test('no active subscriptions message appears when empty', async ({ page }) => {
+    await page.unroute('**/soroban/**');
+    await page.route('**/soroban/**', async (route) => {
+      const url = route.request().url();
+      if (url.includes('subscriptions') && route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ subscriptions: [] })
+        });
+      } else {
+        await route.continue();
+      }
+    });
     await injectFreighterConnected(page, { publicKey: TEST_PUBLIC_KEY });
     await page.goto('/subscriptions');
     await expect(page.getByText(/no active|no subscriptions|none/i)).toBeVisible({ timeout: 10000 });
