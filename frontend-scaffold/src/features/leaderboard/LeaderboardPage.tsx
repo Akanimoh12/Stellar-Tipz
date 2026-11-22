@@ -16,6 +16,7 @@ import { useI18n } from "@/i18n";
 import { useLeaderboard } from "@/hooks/useLeaderboard";
 import { usePageMeta } from "@/hooks/usePageMeta";
 import LeaderboardSkeleton from "./LeaderboardSkeleton";
+import LeaderboardFilters from "./LeaderboardFilters";
 
 const LeaderboardPage: React.FC = () => {
   const { t } = useI18n();
@@ -136,43 +137,47 @@ const LeaderboardPage: React.FC = () => {
               </Link>
             </div>
 
-            {remainingEntries.length > 0 ? (
-              <VirtualizedList
-                items={remainingEntries}
-                height={560}
-                estimatedItemHeight={72}
-                ariaLabel={t("leaderboard.fullRankings")}
-                scrollRestoreKey="leaderboard-rankings"
-                getItemKey={(entry) => entry.address}
-                renderItem={(entry, index) => (
-                  <PrefetchLink
-                    to={`/@${entry.username}`}
-                    className="grid gap-4 bg-white p-4 transition-colors hover:bg-yellow-50 sm:grid-cols-[72px_1fr_auto] sm:items-center border-b-2 border-black"
-                  >
-                    <span className="text-xl font-black tabular-nums">
-                      #{index + 4}
-                    </span>
-                    <span className="flex items-center gap-3">
-                      <Avatar address={entry.address} alt={entry.username} fallback={entry.username} size="md" />
-                      <span className="min-w-0">
-                        <span className="block truncate text-base font-black uppercase">
-                          {entry.username}
+            <LeaderboardFilters entries={remainingEntries} loading={loading}>
+              {(filtered) => (
+                filtered.length > 0 ? (
+                  <VirtualizedList
+                    items={filtered}
+                    height={560}
+                    estimatedItemHeight={72}
+                    ariaLabel={t("leaderboard.fullRankings")}
+                    scrollRestoreKey="leaderboard-rankings"
+                    getItemKey={(entry) => entry.address}
+                    renderItem={(entry, index) => (
+                      <PrefetchLink
+                        to={`/@${entry.username}`}
+                        className="grid gap-4 bg-white p-4 transition-colors hover:bg-yellow-50 sm:grid-cols-[72px_1fr_auto] sm:items-center border-b-2 border-black"
+                      >
+                        <span className="text-xl font-black tabular-nums">
+                          #{index + 4}
                         </span>
-                        <AmountDisplay amount={entry.totalTipsReceived} className="text-sm" />
-                      </span>
-                    </span>
-                    <CreditBadge score={entry.creditScore} showScore />
-                  </PrefetchLink>
-                )}
-                className="border-2 border-black"
-              />
-            ) : (
-              !error && (
-                <p className="border-2 border-dashed border-gray-300 p-6 text-center text-sm font-bold uppercase text-gray-600">
-                  {t("leaderboard.empty")}
-                </p>
-              )
-            )}
+                        <span className="flex items-center gap-3">
+                          <Avatar address={entry.address} alt={entry.username} fallback={entry.username} size="md" />
+                          <span className="min-w-0">
+                            <span className="block truncate text-base font-black uppercase">
+                              {entry.username}
+                            </span>
+                            <AmountDisplay amount={entry.totalTipsReceived} className="text-sm" />
+                          </span>
+                        </span>
+                        <CreditBadge score={entry.creditScore} showScore />
+                      </PrefetchLink>
+                    )}
+                    className="border-2 border-black"
+                  />
+                ) : (
+                  !error && (
+                    <p className="border-2 border-dashed border-gray-300 p-6 text-center text-sm font-bold uppercase text-gray-600">
+                      {t("leaderboard.empty")}
+                    </p>
+                  )
+                )
+              )}
+            </LeaderboardFilters>
 
             {loading && (
               <div className="flex items-center justify-center gap-2 p-8 text-gray-600">
