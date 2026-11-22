@@ -19,4 +19,19 @@ describe("i18n formatters", () => {
     const many = formatPlural(5, { one: "{{count}} tip", other: "{{count}} tips" }, "en");
     expect(one).toContain("1"); expect(many).toContain("5");
   });
+  
+  describe("plural forms for all locales", () => {
+    const locales = ["en", "es", "fr", "pt", "zh"];
+    
+    locales.forEach(locale => {
+      it(`renders plural forms correctly for ${locale}`, () => {
+        const singular = formatPlural(1, { one: "{{count}} item", other: "{{count}} items" }, locale);
+        const plural = formatPlural(10, { one: "{{count}} item", other: "{{count}} items" }, locale);
+        
+        expect(singular).toContain("1");
+        expect(plural).toContain("10");
+        expect(singular).not.toBe(plural);
+      });
+    });
+  });
 });
