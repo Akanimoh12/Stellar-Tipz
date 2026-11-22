@@ -29,9 +29,9 @@ export async function reconcileCreator(address: string): Promise<ReconciliationR
     prisma.user.findUnique({
       where: { stellarAddress: address },
       include: {
-        tipsReceived: {
+        receivedTips: {
           select: {
-            amount: true,
+            amountStroops: true,
           },
         },
       },
@@ -56,13 +56,12 @@ export async function reconcileCreator(address: string): Promise<ReconciliationR
 
   if (dbUser.status === 'fulfilled' && dbUser.value) {
     const user = dbUser.value;
-    const dbTotalReceived = user.tipsReceived.reduce(
-      (sum, tip) => sum + BigInt(tip.amount),
+    const dbTotalReceived = user.receivedTips.reduce(
+      (sum, tip) => sum + tip.amountStroops,
       BigInt(0)
     );
 
     result.database = {
-      balance: user.balance || '0',
       totalTipsReceived: dbTotalReceived.toString(),
       profile: {
         username: user.username,
@@ -72,12 +71,6 @@ export async function reconcileCreator(address: string): Promise<ReconciliationR
         xHandle: user.xHandle,
       },
     };
-
-    if (result.onChain.balance !== result.database.balance) {
-      result.discrepancies.push(
-        `Balance mismatch: on-chain=${result.onChain.balance}, db=${result.database.balance}`
-      );
-    }
 
     if (result.onChain.totalTipsReceived !== result.database.totalTipsReceived) {
       result.discrepancies.push(
