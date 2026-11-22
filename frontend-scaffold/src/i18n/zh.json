@@ -8,6 +8,7 @@
   "offline.description": "你似乎已离线。重新连接后可继续使用实时功能。",
   "offline.title": "离线",
   "common.auto": "自动",
+  "common.close": "关闭",
   "common.componentStack": "组件堆栈：",
   "common.dark": "深色",
   "common.error": "错误：",

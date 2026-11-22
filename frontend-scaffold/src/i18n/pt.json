@@ -8,6 +8,7 @@
   "offline.description": "Parece que voce esta offline. Reconecte para continuar usando os recursos ao vivo.",
   "offline.title": "Offline",
   "common.auto": "Automatico",
+  "common.close": "Fechar",
   "common.componentStack": "Pilha do componente:",
   "common.dark": "Escuro",
   "common.error": "Erro:",
