@@ -27,7 +27,8 @@ import {
   contractQueryCache,
 } from "./cache";
 
-// TODO: once soroban supports estimated fees, we can fetch this
+// Soroban simulation requires a fee to build the unsigned transaction.
+// prepareTx adds the network-estimated resource fee before the transaction is signed.
 export const BASE_FEE = "100";
 export const baseFeeXlm = stroopToXlm(BASE_FEE).toString();
 
@@ -278,6 +279,16 @@ export const simulateTx = async <ArgType>(
   throw new Error("cannot simulate transaction");
 };
 
+/**
+ * Simulate a contract transaction and apply the network-estimated resource fee.
+ * The returned transaction must be signed instead of the original transaction.
+ */
+export const prepareTx = (
+  tx: Transaction<Memo<MemoType>, Operation[]>,
+  server: SorobanRpc.Server,
+): Promise<Transaction<Memo<MemoType>, Operation[]>> =>
+  server.prepareTransaction(tx);
+
 // Build and submits a transaction to the Soroban RPC
 // Polls for non-pending state, returns result after status is updated
 export const submitTx = async (
@@ -440,7 +451,7 @@ export const makePayment = async (
     tx.addMemo(Memo.text(memo));
   }
 
-  const preparedTransaction = await server.prepareTransaction(tx.build());
+  const preparedTransaction = await prepareTx(tx.build(), server);
 
   return preparedTransaction.toXDR();
 };
@@ -472,19 +483,6 @@ export const getEstimatedFee = async (
     tx.addMemo(Memo.text(memo));
   }
 
-  const raw = tx.build();
-
-  const simResponse = await server.simulateTransaction(raw);
-
-  if (SorobanRpc.Api.isSimulationError(simResponse)) {
-    throw simResponse.error;
-  }
-
-  // 'classic' tx fees are measured as the product of tx.fee * 'number of operations', In soroban contract tx,
-  // there can only be single operation in the tx, so can make simplification
-  // of total classic fees for the soroban transaction will be equal to incoming tx.fee + minResourceFee.
-  const classicFeeNum = BigInt(raw.fee || "0");
-  const minResourceFeeNum = BigInt(simResponse.minResourceFee || "0");
-  const fee = (classicFeeNum + minResourceFeeNum).toString();
-  return fee;
+  const preparedTransaction = await prepareTx(tx.build(), server);
+  return preparedTransaction.fee;
 };

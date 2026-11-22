@@ -83,6 +83,84 @@
 }
 
 @layer utilities {
+  [dir="rtl"] .text-left {
+    text-align: right;
+  }
+
+  [dir="rtl"] .text-right {
+    text-align: left;
+  }
+
+  [dir="rtl"] .ml-auto {
+    margin-left: 0;
+    margin-right: auto;
+  }
+
+  [dir="rtl"] .mr-auto {
+    margin-right: 0;
+    margin-left: auto;
+  }
+
+  [dir="rtl"] .left-0 {
+    left: auto;
+    right: 0;
+  }
+
+  [dir="rtl"] .right-0 {
+    right: auto;
+    left: 0;
+  }
+
+  [dir="rtl"] .left-6 {
+    left: auto;
+    right: 1.5rem;
+  }
+
+  [dir="rtl"] .right-3 {
+    right: auto;
+    left: 0.75rem;
+  }
+
+  [dir="rtl"] .right-4 {
+    right: auto;
+    left: 1rem;
+  }
+
+  [dir="rtl"] .right-6 {
+    right: auto;
+    left: 1.5rem;
+  }
+
+  [dir="rtl"] .left-full {
+    left: auto;
+    right: 100%;
+  }
+
+  [dir="rtl"] .right-full {
+    right: auto;
+    left: 100%;
+  }
+
+  [dir="rtl"] .border-l-3 {
+    border-left-width: 0;
+    border-right-width: 3px;
+  }
+
+  [dir="rtl"] .border-r-3 {
+    border-right-width: 0;
+    border-left-width: 3px;
+  }
+
+  [dir="rtl"] .\-right-1 {
+    right: auto;
+    left: -0.25rem;
+  }
+
+  [dir="rtl"] .\-right-2 {
+    right: auto;
+    left: -0.5rem;
+  }
+
   /* Hide scrollbar while keeping scroll functionality */
   .no-scrollbar {
     -ms-overflow-style: none;

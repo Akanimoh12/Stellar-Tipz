@@ -15,6 +15,7 @@ import {
   getTxBuilder,
   getSimulationTxBuilder,
   simulateTx,
+  prepareTx,
   submitTx,
   accountToScVal,
   numberToI128,
@@ -573,7 +574,8 @@ export const useContract = () => {
           .setTimeout(TimeoutInfinite)
           .build();
 
-        const xdr = tx.toXDR();
+        const preparedTx = await prepareTx(tx, server);
+        const xdr = preparedTx.toXDR();
         const signedXdr = await wallet.signTransaction(xdr);
         return submitTx(signedXdr, networkDetails.networkPassphrase, server);
       });
@@ -618,7 +620,8 @@ export const useContract = () => {
           .setTimeout(TimeoutInfinite)
           .build();
 
-        const xdr_tx = tx.toXDR();
+        const preparedTx = await prepareTx(tx, server);
+        const xdr_tx = preparedTx.toXDR();
         const signedXdr = await wallet.signTransaction(xdr_tx);
         return submitTx(signedXdr, networkDetails.networkPassphrase, server);
       });
@@ -651,7 +654,8 @@ export const useContract = () => {
           .setTimeout(TimeoutInfinite)
           .build();
 
-        const xdr = tx.toXDR();
+        const preparedTx = await prepareTx(tx, server);
+        const xdr = preparedTx.toXDR();
         const signedXdr = await wallet.signTransaction(xdr);
         return submitTx(signedXdr, networkDetails.networkPassphrase, server);
       });
@@ -684,7 +688,8 @@ export const useContract = () => {
           .setTimeout(TimeoutInfinite)
           .build();
 
-        const xdr = tx.toXDR();
+        const preparedTx = await prepareTx(tx, server);
+        const xdr = preparedTx.toXDR();
         const signedXdr = await wallet.signTransaction(xdr);
         return submitTx(signedXdr, networkDetails.networkPassphrase, server);
       });
@@ -729,7 +734,8 @@ export const useContract = () => {
           .setTimeout(TimeoutInfinite)
           .build();
 
-        const xdr = tx.toXDR();
+        const preparedTx = await prepareTx(tx, server);
+        const xdr = preparedTx.toXDR();
         const signedXdr = await wallet.signTransaction(xdr);
         return submitTx(signedXdr, networkDetails.networkPassphrase, server);
       });
@@ -765,7 +771,8 @@ export const useContract = () => {
           .setTimeout(TimeoutInfinite)
           .build();
 
-        const xdr = tx.toXDR();
+        const preparedTx = await prepareTx(tx, server);
+        const xdr = preparedTx.toXDR();
         const signedXdr = await wallet.signTransaction(xdr);
         return submitTx(signedXdr, networkDetails.networkPassphrase, server);
       });
@@ -793,7 +800,8 @@ export const useContract = () => {
         .setTimeout(TimeoutInfinite)
         .build();
 
-      const xdr = tx.toXDR();
+      const preparedTx = await prepareTx(tx, server);
+      const xdr = preparedTx.toXDR();
       const signedXdr = await wallet.signTransaction(xdr);
       return submitTx(signedXdr, networkDetails.networkPassphrase, server);
     });
@@ -834,7 +842,8 @@ export const useContract = () => {
           .setTimeout(TimeoutInfinite)
           .build();
 
-        const xdr = tx.toXDR();
+        const preparedTx = await prepareTx(tx, server);
+        const xdr = preparedTx.toXDR();
         const signedXdr = await wallet.signTransaction(xdr);
         return submitTx(signedXdr, networkDetails.networkPassphrase, server);
       });
@@ -867,7 +876,8 @@ export const useContract = () => {
           .setTimeout(TimeoutInfinite)
           .build();
 
-        const xdr = tx.toXDR();
+        const preparedTx = await prepareTx(tx, server);
+        const xdr = preparedTx.toXDR();
         const signedXdr = await wallet.signTransaction(xdr);
         return submitTx(signedXdr, networkDetails.networkPassphrase, server);
       });
@@ -900,7 +910,8 @@ export const useContract = () => {
           .setTimeout(TimeoutInfinite)
           .build();
 
-        const xdr = tx.toXDR();
+        const preparedTx = await prepareTx(tx, server);
+        const xdr = preparedTx.toXDR();
         const signedXdr = await wallet.signTransaction(xdr);
         return submitTx(signedXdr, networkDetails.networkPassphrase, server);
       });
