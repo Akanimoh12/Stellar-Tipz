@@ -10,6 +10,7 @@ import type {
   ApiKeyResponse,
   CreateApiKeyResponse,
   RotateApiKeyResponse,
+  VerifyApiKeyOptions,
 } from "./apiKeys.types.js";
 import type { CreateApiKeyInput, RotateApiKeyInput } from "./apiKeys.schema.js";
 
@@ -26,6 +27,8 @@ type ApiKeyRow = {
   scopes: string[];
   expiresAt?: Date | null;
   lastUsedAt?: Date | null;
+  lastUsedIp?: string | null;
+  usageCount?: number | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -59,6 +62,8 @@ export async function createApiKey(
     scopes: apiKey.scopes,
     expiresAt: apiKey.expiresAt?.toISOString(),
     lastUsedAt: apiKey.lastUsedAt?.toISOString(),
+    lastUsedIp: (apiKey as ApiKeyRow).lastUsedIp ?? undefined,
+    usageCount: (apiKey as ApiKeyRow).usageCount ?? 0,
     createdAt: apiKey.createdAt.toISOString(),
     updatedAt: apiKey.updatedAt.toISOString(),
     secret,
@@ -78,6 +83,8 @@ export async function listApiKeys(userId: string): Promise<ApiKeyResponse[]> {
     scopes: key.scopes,
     expiresAt: key.expiresAt?.toISOString(),
     lastUsedAt: key.lastUsedAt?.toISOString(),
+    lastUsedIp: key.lastUsedIp ?? undefined,
+    usageCount: key.usageCount ?? 0,
     createdAt: key.createdAt.toISOString(),
     updatedAt: key.updatedAt.toISOString(),
   }));
@@ -102,6 +109,8 @@ export async function getApiKeyById(
     scopes: apiKey.scopes,
     expiresAt: apiKey.expiresAt?.toISOString(),
     lastUsedAt: apiKey.lastUsedAt?.toISOString(),
+    lastUsedIp: (apiKey as ApiKeyRow).lastUsedIp ?? undefined,
+    usageCount: (apiKey as ApiKeyRow).usageCount ?? 0,
     createdAt: apiKey.createdAt.toISOString(),
     updatedAt: apiKey.updatedAt.toISOString(),
   };
@@ -174,7 +183,10 @@ export async function deleteApiKey(userId: string, id: string): Promise<void> {
   logger.info({ apiKeyId: id, userId }, "API key deleted");
 }
 
-export async function verifyApiKey(secret: string): Promise<ApiKeyResponse> {
+export async function verifyApiKey(
+  secret: string,
+  options: VerifyApiKeyOptions = {},
+): Promise<ApiKeyResponse> {
   const hashedSecret = hashApiKeySecret(secret);
   const now = new Date();
 
@@ -209,16 +221,35 @@ export async function verifyApiKey(secret: string): Promise<ApiKeyResponse> {
     throw new UnauthorizedError("Invalid API key");
   }
 
-  await prisma.apiKey.update({
+  const updateData: Record<string, unknown> = {
+    lastUsedAt: now,
+    usageCount: { increment: 1 },
+  };
+  if (options.ipAddress) {
+    updateData.lastUsedIp = options.ipAddress;
+  }
+
+  const updated = await prisma.apiKey.update({
     where: { id: apiKey.id },
-    data: { lastUsedAt: now },
+    data: updateData as never,
   });
+
+  const nextUsageCount =
+    (updated as ApiKeyRow | undefined)?.usageCount ??
+    (((apiKey as ApiKeyRow).usageCount ?? 0) + 1);
+  const nextLastUsedIp =
+    (updated as ApiKeyRow | undefined)?.lastUsedIp ??
+    options.ipAddress ??
+    (apiKey as ApiKeyRow).lastUsedIp ??
+    undefined;
 
   return {
     id: apiKey.id,
     scopes: apiKey.scopes,
     expiresAt: apiKey.expiresAt?.toISOString(),
     lastUsedAt: now.toISOString(),
+    lastUsedIp: nextLastUsedIp,
+    usageCount: nextUsageCount,
     createdAt: apiKey.createdAt.toISOString(),
     updatedAt: apiKey.updatedAt.toISOString(),
   };

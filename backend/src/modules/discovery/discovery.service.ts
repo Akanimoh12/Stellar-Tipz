@@ -211,9 +211,9 @@ export async function computeSimilar(
 ): Promise<SimilarResponse> {
   const user = await prisma.user.findUnique({
     where: { username },
-    select: { id: true, stellarAddress: true },
+    select: { id: true, stellarAddress: true, deletedAt: true },
   });
-  if (!user) throw new NotFoundError('Creator not found');
+  if (!user || user.deletedAt !== null) throw new NotFoundError('Creator not found');
 
   const supportersRows = await prisma.tip.findMany({
     where: { toAddress: user.stellarAddress, status: 'CONFIRMED' },

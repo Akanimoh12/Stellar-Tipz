@@ -32,7 +32,14 @@ export async function apiKeyAuthMiddleware(
   }
 
   try {
-    const apiKey = await verifyApiKey(secret);
+    const forwarded = req.headers["x-forwarded-for"];
+    const forwardedIp = Array.isArray(forwarded)
+      ? forwarded[0]
+      : typeof forwarded === "string"
+        ? forwarded.split(",")[0]?.trim()
+        : undefined;
+    const ipAddress = forwardedIp || req.ip || req.socket?.remoteAddress;
+    const apiKey = await verifyApiKey(secret, ipAddress ? { ipAddress } : {});
     req.apiKey = {
       id: apiKey.id,
       scopes: apiKey.scopes,

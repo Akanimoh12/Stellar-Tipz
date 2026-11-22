@@ -260,6 +260,16 @@ describe('GET /api/v1/leaderboard/:userId', () => {
 
     await expect(getUserRank('user-x', 'all')).rejects.toThrow('User not found on the leaderboard');
   });
+
+  it('excludes soft-deleted profiles from leaderboard rank lookup and SQL filter (#1644)', async () => {
+    mockFindUnique.mockResolvedValue({ stellarAddress: 'GA_DELETED', deletedAt: new Date() });
+
+    await expect(getUserRank('user-deleted', 'all')).rejects.toThrow('User not found');
+
+    await getLeaderboard('all', 20, 0);
+    const { sql } = sqlOf(mockQueryRaw.mock.calls[0]);
+    expect(sql).toContain('u."deletedAt" IS NOT NULL');
+  });
 });
 
 describe('createLeaderboardSnapshot', () => {

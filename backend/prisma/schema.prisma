@@ -49,15 +49,21 @@ model User {
 
 /// API key for service/admin access and webhook integrations.
 model ApiKey {
-  deletedAt           DateTime?
-  id                  String                @id @default(cuid())
-  hashedKey           String                @unique
-  scopes              String[]
-  createdById         String
-  createdBy           User                  @relation(fields: [createdById], references: [id], onDelete: Cascade)
-  webhookSubscriptions WebhookSubscription[]
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
+  deletedAt              DateTime?
+  id                     String                @id @default(cuid())
+  hashedKey              String                @unique
+  previousHashedKey      String?               @unique
+  previousGraceExpiresAt DateTime?
+  scopes                 String[]
+  expiresAt              DateTime?
+  lastUsedAt             DateTime?
+  lastUsedIp             String?
+  usageCount             Int                   @default(0)
+  createdById            String
+  createdBy              User                  @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  webhookSubscriptions   WebhookSubscription[]
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
 
   @@index([createdById])
 }
