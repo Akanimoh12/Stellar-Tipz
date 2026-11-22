@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import GlobalSearch from "./GlobalSearch";
@@ -18,6 +18,17 @@ const KeyboardShortcutsProvider: React.FC = () => {
   const closeAll = useCallback(() => {
     setSearchOpen(false);
     setHelpOpen(false);
+  }, []);
+
+  // Allow any page component (e.g. Footer) to open the shortcuts modal by
+  // dispatching a custom DOM event without needing to prop-drill state.
+  useEffect(() => {
+    const handler = () => {
+      setSearchOpen(false);
+      setHelpOpen(true);
+    };
+    document.addEventListener("tipz:open-shortcuts", handler);
+    return () => document.removeEventListener("tipz:open-shortcuts", handler);
   }, []);
 
   // Focus the tip amount input on the current tip page.

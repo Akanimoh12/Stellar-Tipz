@@ -10,6 +10,7 @@ import PullToRefresh from "../../components/shared/PullToRefresh";
 import PrefetchLink from "../../components/shared/PrefetchLink";
 import Avatar from "../../components/ui/Avatar";
 import Card from "../../components/ui/Card";
+import VirtualizedList from "../../components/ui/VirtualizedList";
 import { categorizeError } from "@/helpers/error";
 import { useI18n } from "@/i18n";
 import { useLeaderboard } from "@/hooks/useLeaderboard";
@@ -136,13 +137,17 @@ const LeaderboardPage: React.FC = () => {
             </div>
 
             {remainingEntries.length > 0 ? (
-              <div className="divide-y-2 divide-black border-2 border-black" role="list">
-                {remainingEntries.map((entry, index) => (
+              <VirtualizedList
+                items={remainingEntries}
+                height={560}
+                estimatedItemHeight={72}
+                ariaLabel={t("leaderboard.fullRankings")}
+                scrollRestoreKey="leaderboard-rankings"
+                getItemKey={(entry) => entry.address}
+                renderItem={(entry, index) => (
                   <PrefetchLink
-                    key={entry.address}
                     to={`/@${entry.username}`}
-                    className="grid gap-4 bg-white p-4 transition-colors hover:bg-yellow-50 sm:grid-cols-[72px_1fr_auto] sm:items-center"
-                    role="listitem"
+                    className="grid gap-4 bg-white p-4 transition-colors hover:bg-yellow-50 sm:grid-cols-[72px_1fr_auto] sm:items-center border-b-2 border-black"
                   >
                     <span className="text-xl font-black tabular-nums">
                       #{index + 4}
@@ -158,8 +163,9 @@ const LeaderboardPage: React.FC = () => {
                     </span>
                     <CreditBadge score={entry.creditScore} showScore />
                   </PrefetchLink>
-                ))}
-              </div>
+                )}
+                className="border-2 border-black"
+              />
             ) : (
               !error && (
                 <p className="border-2 border-dashed border-gray-300 p-6 text-center text-sm font-bold uppercase text-gray-600">
