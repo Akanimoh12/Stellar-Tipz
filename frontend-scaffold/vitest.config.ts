@@ -39,11 +39,23 @@ export default defineConfig({
         environment: 'jsdom',
         setupFiles: ['./src/test/setup.ts'],
         include: ['src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+        // The service worker test runs in a Node environment (no DOM) and
+        // installs its own webworker globals, so it must not load the
+        // jsdom-oriented setup file.
+        exclude: ['**/node_modules/**', 'src/sw.test.ts'],
         server: {
           deps: {
             inline: ['@stellar/stellar-sdk', '@stellar/stellar-base']
           }
         }
+      }
+    }, {
+      extends: true,
+      test: {
+        name: 'service-worker',
+        globals: true,
+        environment: 'node',
+        include: ['src/sw.test.ts']
       }
     }, {
       extends: true,
