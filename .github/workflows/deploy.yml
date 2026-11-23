@@ -9,141 +9,29 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-
 jobs:
   deploy-preview:
     name: Deploy Preview
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    environment:
-      name: preview
-      url: ${{ steps.deploy.outputs.url }}
-    env:
+    uses: ./.github/workflows/reusable-frontend-deploy.yml
+    with:
+      deployment_mode: preview
+    secrets:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: frontend-scaffold/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci --legacy-peer-deps
-        working-directory: frontend-scaffold
-
-      - name: Pull Vercel environment
-        run: |
-          if [ -n "$VERCEL_TOKEN" ]; then
-            npx vercel pull --yes --token="$VERCEL_TOKEN"
-          else
-            echo "VERCEL_TOKEN is not available; skipping Vercel environment pull."
-          fi
-
-      - name: Build project
-        run: |
-          if [ -n "$VERCEL_TOKEN" ]; then
-            npx vercel build --token="$VERCEL_TOKEN"
-          else
-            npm run build
-          fi
-        working-directory: frontend-scaffold
-
-      - name: Deploy to Vercel
-        if: env.VERCEL_TOKEN != ''
-        id: deploy
-        run: |
-          URL=$(npx vercel deploy --prebuilt --token="$VERCEL_TOKEN")
-          echo "url=$URL" >> $GITHUB_OUTPUT
-          echo "Deployed to: $URL"
-
-      - name: Verify deployment
-        if: steps.deploy.outputs.url != ''
-        env:
-          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
-        run: npx tsx scripts/verify-deployment.ts
-
-      - name: Comment preview URL on PR
-        if: steps.deploy.outputs.url != ''
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
-        with:
-          script: |
-            const url = '${{ steps.deploy.outputs.url }}';
-            const prNumber = context.issue.number;
-            if (!prNumber) {
-              console.log('Not a PR, skipping comment');
-              return;
-            }
-            const body = `## Preview Deployment\n\n**URL:** ${url}\n\n_This preview was automatically deployed from branch \`${context.ref}\`._`;
-            await github.rest.issues.createComment({
-              issue_number: prNumber,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body
-            });
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
   deploy-production:
     name: Deploy Production
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: https://stellar-tipz.vercel.app
-    env:
+    uses: ./.github/workflows/reusable-frontend-deploy.yml
+    with:
+      deployment_mode: production
+      environment_url: https://stellar-tipz.vercel.app
+    secrets:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: frontend-scaffold/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci --legacy-peer-deps
-        working-directory: frontend-scaffold
-
-      - name: Pull Vercel environment
-        run: npx vercel pull --yes --token="$VERCEL_TOKEN"
-
-      - name: Build project for production
-        run: npx vercel build --prod --token="$VERCEL_TOKEN"
-
-      - name: Deploy to Vercel production
-        id: deploy
-        run: |
-          URL=$(npx vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")
-          echo "url=$URL" >> $GITHUB_OUTPUT
-          echo "Deployed to: $URL"
-
-      - name: Verify deployment
-        env:
-          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
-        run: npx tsx scripts/verify-deployment.ts
-
-      - name: Notify deployment status
-        if: always()
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
-        with:
-          script: |
-            const url = '${{ steps.deploy.outputs.url }}';
-            const status = '${{ job.status }}';
-            const ref = '${{ github.ref }}';
-            const sha = '${{ github.sha }}';
-            const emoji = status === 'success' ? '✅' : '❌';
-            const message = `${emoji} Production deployment ${status}\n\n**Ref:** ${ref}\n**SHA:** ${sha.slice(0, 7)}\n**URL:** ${url}`;
-            console.log(message);
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
   verify-deployment:
     name: Post-Deployment Verification
@@ -183,6 +71,7 @@ jobs:
     needs: [deploy-production]
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
