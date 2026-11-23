@@ -1,6 +1,19 @@
 import { stroopToXlm } from './format';
 import { logger } from '../services/logger';
 
+let html2canvasPromise: Promise<typeof import('html2canvas').default> | null = null;
+
+/**
+ * Lazily loads html2canvas, caching the promise so the library is only
+ * fetched once (and only when a PDF/image is actually generated).
+ */
+function loadHtml2Canvas(): Promise<typeof import('html2canvas').default> {
+  if (!html2canvasPromise) {
+    html2canvasPromise = import('html2canvas').then((m) => m.default);
+  }
+  return html2canvasPromise;
+}
+
 export interface TipHistoryItem {
   date: string | number; // Unix timestamp in seconds or date string (YYYY-MM-DD)
   from: string; // tipper address
@@ -138,13 +151,9 @@ export async function generatePDF(
   tipHistory: TipHistoryItem[],
   options?: { from: string; to: string }
 ): Promise<Blob> {
-  // Dynamically import the libraries
-  const [jsPDFModule, html2canvasModule] = await Promise.all([
-    import('jspdf'),
-    import('html2canvas')
-  ]);
+  // Dynamically import jsPDF; html2canvas is loaded lazily right before rendering
+  const jsPDFModule = await import('jspdf');
   const jsPDF = jsPDFModule.default;
-  const html2canvas = html2canvasModule.default;
 
   const filtered = filterTipHistoryByDate(tipHistory, options);
 
@@ -206,7 +215,8 @@ export async function generatePDF(
   table.style.left = '-9999px';
   document.body.appendChild(table);
 
-  // Use html2canvas to convert the table to a canvas
+  // Lazily load html2canvas and convert the table to a canvas
+  const html2canvas = await loadHtml2Canvas();
   const canvas = await html2canvas(table);
   // Clean up the temporary table
   document.body.removeChild(table);
