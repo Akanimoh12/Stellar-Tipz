@@ -1,0 +1,221 @@
+name: Reusable Frontend Deployment
+
+on:
+  workflow_call:
+    inputs:
+      deployment_mode:
+        description: "Deployment mode: preview, production, or staging"
+        required: true
+        type: string
+      environment_url:
+        description: "Static deployment URL, used for staging"
+        required: false
+        type: string
+        default: ""
+      fetch_depth:
+        description: "Git checkout fetch depth"
+        required: false
+        type: number
+        default: 1
+    outputs:
+      deployment_url:
+        description: "URL of the deployed frontend"
+        value: ${{ jobs.deploy.outputs.deployment_url }}
+    secrets:
+      VERCEL_TOKEN:
+        required: false
+      VERCEL_ORG_ID:
+        required: false
+      VERCEL_PROJECT_ID:
+        required: false
+
+jobs:
+  deploy:
+    name: Deploy Frontend (${{ inputs.deployment_mode }})
+    runs-on: ubuntu-latest
+
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+    environment:
+      name: ${{ inputs.deployment_mode }}
+      url: ${{ steps.deploy-preview.outputs.url || steps.deploy-production.outputs.url || steps.deploy-staging.outputs.preview-url || inputs.environment_url }}
+
+    outputs:
+      deployment_url: ${{ steps.deploy-preview.outputs.url || steps.deploy-production.outputs.url || steps.deploy-staging.outputs.preview-url || inputs.environment_url }}
+
+    steps:
+      - name: Validate deployment mode
+        env:
+          DEPLOYMENT_MODE: ${{ inputs.deployment_mode }}
+        run: |
+          case "$DEPLOYMENT_MODE" in
+            preview|production|staging) ;;
+            *)
+              echo "::error::Unsupported deployment mode: $DEPLOYMENT_MODE"
+              exit 1
+              ;;
+          esac
+
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: ${{ inputs.fetch_depth }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend-scaffold/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend-scaffold
+        env:
+          DEPLOYMENT_MODE: ${{ inputs.deployment_mode }}
+        run: |
+          case "$DEPLOYMENT_MODE" in
+            preview|production)
+              npm ci --legacy-peer-deps
+              ;;
+            staging)
+              npm ci
+              ;;
+            *)
+              echo "::error::Unsupported deployment mode: $DEPLOYMENT_MODE"
+              exit 1
+              ;;
+          esac
+
+      - name: Pull Vercel environment
+        if: inputs.deployment_mode == 'preview' && env.VERCEL_TOKEN != ''
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: npx vercel pull --yes --token="$VERCEL_TOKEN"
+
+      - name: Build preview project
+        if: inputs.deployment_mode == 'preview'
+        working-directory: frontend-scaffold
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -n "$VERCEL_TOKEN" ]; then
+            npx vercel build --token="$VERCEL_TOKEN"
+          else
+            npm run build
+          fi
+
+      - name: Build production project
+        if: inputs.deployment_mode == 'production'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          npx vercel pull --yes --token="$VERCEL_TOKEN"
+          npx vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Build staging project
+        if: inputs.deployment_mode == 'staging'
+        working-directory: frontend-scaffold
+        env:
+          NODE_ENV: production
+          VITE_APP_ENV: staging
+          GIT_COMMIT: ${{ github.sha }}
+          BUILD_TIMESTAMP: ${{ github.event.head_commit.timestamp }}
+        run: |
+          cp .env.staging .env
+          npm run build
+
+      - name: Deploy preview to Vercel
+        if: inputs.deployment_mode == 'preview' && env.VERCEL_TOKEN != ''
+        id: deploy-preview
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          URL=$(npx vercel deploy --prebuilt --token="$VERCEL_TOKEN")
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Deployed to: $URL"
+
+      - name: Deploy production to Vercel
+        if: inputs.deployment_mode == 'production'
+        id: deploy-production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          URL=$(npx vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Deployed to: $URL"
+
+      - name: Deploy to Vercel staging
+        if: inputs.deployment_mode == 'staging'
+        id: deploy-staging
+        uses: amondnet/vercel-action@16e87c0a08142b0d0d33b76aeaf20823c381b9b9 # v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: frontend-scaffold
+          scope: ${{ secrets.VERCEL_ORG_ID }}
+          alias-domains: staging.tipz.app
+
+      - name: Verify preview deployment
+        if: inputs.deployment_mode == 'preview' && steps.deploy-preview.outputs.url != ''
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy-preview.outputs.url }}
+        run: npx tsx scripts/verify-deployment.ts
+
+      - name: Verify production deployment
+        if: inputs.deployment_mode == 'production'
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy-production.outputs.url }}
+        run: npx tsx scripts/verify-deployment.ts
+
+      - name: Comment preview URL on PR
+        if: inputs.deployment_mode == 'preview' && steps.deploy-preview.outputs.url != ''
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const url = '${{ steps.deploy-preview.outputs.url }}';
+            const prNumber = context.issue.number;
+
+            if (!prNumber) {
+              console.log('Not a PR, skipping comment');
+              return;
+            }
+
+            const body = `## Preview Deployment\n\n**URL:** ${url}\n\n_This preview was automatically deployed from branch \`${context.ref}\`._`;
+
+            await github.rest.issues.createComment({
+              issue_number: prNumber,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });
+
+      - name: Comment on staging deployment
+        if: inputs.deployment_mode == 'staging' && github.event_name == 'pull_request'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🚀 Staging deployment complete! View at: https://staging.tipz.app'
+            });
+
+      - name: Notify production deployment status
+        if: always() && inputs.deployment_mode == 'production'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const url = '${{ steps.deploy-production.outputs.url }}';
+            const status = '${{ job.status }}';
+            const ref = '${{ github.ref }}';
+            const sha = '${{ github.sha }}';
+            const emoji = status === 'success' ? '✅' : '❌';
+
+            const message = `${emoji} Production deployment ${status}\n\n**Ref:** ${ref}\n**SHA:** ${sha.slice(0, 7)}\n**URL:** ${url}`;
+
+            console.log(message);
