@@ -1,5 +1,5 @@
 import { Transaction } from "../../hooks/useTransactionHistory";
-import { stroopToXlm } from "../../helpers/format";
+import { stroopToXlmBigNumber } from "../../helpers/format";
 
 /**
  * Converts a list of transactions to a CSV string and triggers a browser download.
@@ -22,9 +22,9 @@ export function exportTransactionsCsv(
 
   const rows = transactions.map((tx) => {
     const date = new Date(tx.date * 1000).toISOString();
-    const amount = stroopToXlm(tx.amount, 7);
-    const fee = tx.fee ? stroopToXlm(tx.fee, 7) : "";
-    const net = tx.net ? stroopToXlm(tx.net, 7) : "";
+    const amount = stroopToXlmBigNumber(tx.amount).toFixed(7);
+    const fee = tx.fee ? stroopToXlmBigNumber(tx.fee).toFixed(7) : "";
+    const net = tx.net ? stroopToXlmBigNumber(tx.net).toFixed(7) : "";
     // Escape double-quotes in message
     const message = tx.message ? `"${tx.message.replace(/"/g, '""')}"` : "";
 

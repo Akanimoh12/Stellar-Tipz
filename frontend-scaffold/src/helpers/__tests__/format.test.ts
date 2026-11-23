@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   camelToSnake,
+  formatCurrency,
   formatTimestamp,
   formatTokenAmount,
   formatXlmDisplay,
@@ -77,5 +78,16 @@ describe('format helpers', () => {
     expect(formatXlmDisplay(new BigNumber('1'))).toBe('1.00');
     expect(formatXlmDisplay(new BigNumber('1.2345'))).toBe('1.2345');
     expect(formatXlmDisplay(new BigNumber('1.123456789'))).toBe('1.1234568');
+  });
+
+  it('formats XLM amounts using the requested locale', () => {
+    expect(stroopToXlm('12345678900', 2, 'de-DE')).toBe('1.234,57');
+    expect(formatXlmDisplay(new BigNumber('1234.5'), 'de-DE')).toBe('1.234,50');
+  });
+
+  it('formats fiat amounts as currency using the requested locale', () => {
+    expect(formatCurrency(1234.5, 'USD', 'de-DE')).toBe(
+      new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'USD' }).format(1234.5),
+    );
   });
 });

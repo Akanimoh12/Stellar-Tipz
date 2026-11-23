@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import BigNumber from "bignumber.js";
-import { stroopToXlmBigNumber } from "../../helpers/format";
+import { formatXlmDisplay, stroopToXlmBigNumber } from "../../helpers/format";
 
 interface AmountDisplayProps {
   amount: string;
@@ -12,7 +12,7 @@ const AmountDisplay: React.FC<AmountDisplayProps> = ({
   className = "",
 }) => {
   const xlmAmount = useMemo(
-    () => stroopToXlmBigNumber(new BigNumber(amount)).toFormat(),
+    () => formatXlmDisplay(stroopToXlmBigNumber(new BigNumber(amount))),
     [amount],
   );
 

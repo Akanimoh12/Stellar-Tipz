@@ -1,15 +1,17 @@
-import { test, expect, devices } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
 test.describe('Mobile Responsive', () => {
   const mobileDevices = [
-    { name: 'iPhone 12', device: devices['iPhone 12'] },
-    { name: 'Pixel 5', device: devices['Pixel 5'] },
-    { name: 'Small Mobile', device: { viewport: { width: 375, height: 667 } } },
+    { name: 'iPhone 12', viewport: { width: 390, height: 844 } },
+    { name: 'Pixel 5', viewport: { width: 393, height: 851 } },
+    { name: 'Small Mobile', viewport: { width: 375, height: 667 } },
   ];
 
-  mobileDevices.forEach(({ name, device }) => {
+  mobileDevices.forEach(({ name, viewport }) => {
     test.describe(`${name}`, () => {
-      test.use(device);
+      test.beforeEach(async ({ page }) => {
+        await page.setViewportSize(viewport);
+      });
 
       test('landing page is responsive', async ({ page }) => {
         await page.goto('/');

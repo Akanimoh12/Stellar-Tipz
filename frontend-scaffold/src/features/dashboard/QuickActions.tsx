@@ -33,7 +33,7 @@ const ActionCard: React.FC<ActionCardProps> = ({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex min-h-[110px] flex-col items-start gap-4 border-[3px] border-black bg-white p-5 text-left transition-transform duration-200 hover:-translate-x-1 hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-50"
+      className="flex min-h-[110px] flex-col items-start gap-4 border-[3px] border-black bg-white p-5 text-left transition-transform duration-200 hover:-translate-x-1 hover:-translate-y-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
       style={{ boxShadow: "6px 6px 0px 0px rgba(0,0,0,1)" }}
     >
       <span className="inline-flex h-11 w-11 items-center justify-center border-2 border-black bg-[#f5f5f5]">

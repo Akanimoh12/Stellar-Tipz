@@ -157,13 +157,18 @@ const TipsChart: React.FC<TipsChartProps> = ({ tips: propTips }) => {
               {hasTips ? `${tips.length} total tips` : "No tips yet"}
             </p>
           </div>
-          <div className="flex border-2 border-black bg-white">
+          <div
+            className="flex border-2 border-black bg-white"
+            role="group"
+            aria-label="Tips chart time period"
+          >
             {(["daily", "weekly", "monthly"] as const).map((v, idx, arr) => (
               <button
                 key={v}
                 type="button"
                 onClick={() => setView(v)}
-                className={`px-4 py-2 text-xs font-black uppercase transition-colors ${
+                aria-pressed={view === v}
+                className={`px-4 py-2 text-xs font-black uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black ${
                   view === v ? "bg-black text-white" : "hover:bg-gray-100"
                 } ${idx !== arr.length - 1 ? "border-r-2 border-black" : ""}`}
               >
@@ -182,9 +187,14 @@ const TipsChart: React.FC<TipsChartProps> = ({ tips: propTips }) => {
               </p>
             </div>
           ) : (
-            <div className="h-48 w-full" role="img" aria-label="Tips received bar chart">
+            <div className="h-48 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData} margin={{ top: 8, right: 8, left: -16, bottom: 8 }}>
+                <BarChart
+                  data={barData}
+                  accessibilityLayer
+                  aria-label="Tips received by time period"
+                  margin={{ top: 8, right: 8, left: -16, bottom: 8 }}
+                >
                   <XAxis
                     dataKey="label"
                     tick={{ fontSize: 10, fontWeight: 900 }}
@@ -209,6 +219,25 @@ const TipsChart: React.FC<TipsChartProps> = ({ tips: propTips }) => {
             </div>
           )}
         </div>
+        {hasBarData && (
+          <table className="sr-only">
+            <caption>Tips received by {view} for the selected period</caption>
+            <thead>
+              <tr>
+                <th scope="col">Period</th>
+                <th scope="col">Tips received</th>
+              </tr>
+            </thead>
+            <tbody>
+              {barData.map((point) => (
+                <tr key={point.label}>
+                  <th scope="row">{point.label}</th>
+                  <td>{point.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* Pie chart – top supporters */}
@@ -229,9 +258,12 @@ const TipsChart: React.FC<TipsChartProps> = ({ tips: propTips }) => {
               </p>
             </div>
           ) : (
-            <div className="h-48 w-full" role="img" aria-label="Top supporters pie chart">
+            <div className="h-48 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
+                <PieChart
+                  accessibilityLayer
+                  aria-label="Tips by top supporter"
+                >
                   <Pie
                     data={pieData}
                     cx="50%"
@@ -267,6 +299,25 @@ const TipsChart: React.FC<TipsChartProps> = ({ tips: propTips }) => {
             </div>
           )}
         </div>
+        {pieData.length > 0 && (
+          <table className="sr-only">
+            <caption>Tip counts for top supporters</caption>
+            <thead>
+              <tr>
+                <th scope="col">Supporter</th>
+                <th scope="col">Tips received</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pieData.map((supporter) => (
+                <tr key={supporter.name}>
+                  <th scope="row">{supporter.name}</th>
+                  <td>{supporter.value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

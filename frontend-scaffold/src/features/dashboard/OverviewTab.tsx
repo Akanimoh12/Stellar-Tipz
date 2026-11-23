@@ -213,7 +213,7 @@ const OverviewTab: React.FC = () => {
       {/* Mini 7-day bar chart */}
       <section className="border-2 border-black bg-white p-6">
         <h2 className="mb-4 text-lg font-black uppercase">Tips — Last 7 Days</h2>
-        <div className="flex h-32 items-end gap-2">
+        <div aria-hidden="true" className="flex h-32 items-end gap-2">
           {weeklyData.map((day: { label: string; total: number }) => {
             const heightPct = Math.round((day.total / maxBar) * 100);
             return (
@@ -232,6 +232,23 @@ const OverviewTab: React.FC = () => {
             );
           })}
         </div>
+        <table className="sr-only">
+          <caption>Tips received over the last 7 days</caption>
+          <thead>
+            <tr>
+              <th scope="col">Day</th>
+              <th scope="col">Amount in XLM</th>
+            </tr>
+          </thead>
+          <tbody>
+            {weeklyData.map((day) => (
+              <tr key={day.label}>
+                <th scope="row">{day.label}</th>
+                <td>{stroopToXlm(String(day.total))}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </section>
 
       {/* Mini activity feed */}

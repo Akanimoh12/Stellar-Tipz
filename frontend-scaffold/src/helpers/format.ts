@@ -56,33 +56,54 @@ export function formatTimestamp(seconds: number): Date {
   return new Date(seconds * 1000);
 }
 
+const formatLocaleNumber = (
+  value: BigNumber,
+  fractionDigits: number,
+  locale?: string,
+): string => {
+  const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
+  const parts = formatter.formatToParts(-1234567890123.4);
+  const integerGroups = parts.filter((part) => part.type === "integer");
+  const groupSize = integerGroups.length
+    ? [...integerGroups[integerGroups.length - 1].value].length
+    : 3;
+  const secondaryGroupSize =
+    integerGroups.length > 1
+      ? [...integerGroups[integerGroups.length - 2].value].length
+      : groupSize;
+  const localizedDigits = Array.from({ length: 10 }, (_, digit) =>
+    new Intl.NumberFormat(locale, { useGrouping: false }).format(digit),
+  );
+  const formatted = value.toFormat(fractionDigits, BigNumber.ROUND_HALF_UP, {
+    decimalSeparator:
+      parts.find((part) => part.type === "decimal")?.value ?? ".",
+    groupSeparator: parts.find((part) => part.type === "group")?.value ?? ",",
+    groupSize,
+    secondaryGroupSize,
+  });
+
+  return formatted.replace(/[0-9]/g, (digit) => localizedDigits[Number(digit)]);
+};
+
 // conversion used to display the base fee and other XLM amounts
 export const stroopToXlm = (
   stroops: BigNumber | string | number,
   decimals?: number,
+  locale?: string,
 ): string => {
-  let xlmValue: BigNumber;
-  
-  if (stroops instanceof BigNumber) {
-    xlmValue = stroops.dividedBy(1e7);
-  } else {
-    xlmValue = new BigNumber(Number(stroops) / 1e7);
-  }
-  
+  const xlmValue = new BigNumber(stroops.toString()).dividedBy(1e7);
+
   // Default to 2 decimal places for amounts, 7 for precise values
   const defaultDecimals = decimals !== undefined ? decimals : 2;
-  
-  return xlmValue.toFormat(defaultDecimals);
+
+  return formatLocaleNumber(xlmValue, defaultDecimals, locale);
 };
 
 // conversion that returns BigNumber for backward compatibility
 export const stroopToXlmBigNumber = (
   stroops: BigNumber | string | number,
 ): BigNumber => {
-  if (stroops instanceof BigNumber) {
-    return stroops.dividedBy(1e7);
-  }
-  return new BigNumber(Number(stroops) / 1e7);
+  return new BigNumber(stroops.toString()).dividedBy(1e7);
 };
 
 export const xlmToStroop = (lumens: BigNumber | string): BigNumber => {
@@ -114,7 +135,19 @@ export const formatTokenAmount = (amount: BigNumber, decimals: number) => {
   return formatted;
 };
 
-export const formatXlmDisplay = (value: BigNumber): string => {
+export const formatXlmDisplay = (value: BigNumber, locale?: string): string => {
   const decimalPlaces = value.decimalPlaces() ?? 0;
-  return value.toFormat(Math.min(7, Math.max(2, decimalPlaces)));
+  const fractionDigits = Math.min(7, Math.max(2, decimalPlaces));
+
+  return formatLocaleNumber(value, fractionDigits, locale);
 };
+
+export const formatCurrency = (
+  value: number,
+  currency = "USD",
+  locale?: string,
+): string =>
+  new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency,
+  }).format(value);

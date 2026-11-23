@@ -1,21 +1,14 @@
-import React, { useEffect, useRef, useCallback } from "react";
+import React, { useEffect, useRef } from "react";
 import { RefreshCw, AlertTriangle } from "lucide-react";
 
 import { useWallet } from "@/hooks/useWallet";
 import { useBalance } from "@/hooks/useBalance";
 import { useXlmPrice } from "@/hooks/useXlmPrice";
+import BigNumber from "bignumber.js";
+import { formatCurrency, formatXlmDisplay } from "@/helpers/format";
 
 const LOW_BALANCE_THRESHOLD = 5;
 const AUTO_REFRESH_MS = 30_000;
-
-const formatXlm = (balance: string): string => {
-  const num = parseFloat(balance);
-  if (isNaN(num)) return "—";
-  return num.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-};
 
 const WalletBalance: React.FC = () => {
   const { connected, publicKey } = useWallet();
@@ -45,10 +38,7 @@ const WalletBalance: React.FC = () => {
   const isLow = xlmBalance !== null && xlmBalance < LOW_BALANCE_THRESHOLD;
   const usdValue =
     xlmBalance !== null && price !== null
-      ? (xlmBalance * price).toLocaleString(undefined, {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })
+      ? formatCurrency(xlmBalance * price)
       : null;
 
   return (
@@ -72,11 +62,11 @@ const WalletBalance: React.FC = () => {
       ) : (
         <div className="flex flex-col">
           <span className="text-xs font-black uppercase tracking-tight tabular-nums">
-            {formatXlm(balance ?? "0")} XLM
+            {formatXlmDisplay(new BigNumber(balance ?? "0"))} XLM
           </span>
           {usdValue && (
             <span className="text-[10px] font-semibold uppercase text-gray-700 dark:text-gray-300">
-              ≈ ${usdValue}
+              ≈ {usdValue}
               {priceLoading && (
                 <span className="ml-0.5 inline-block h-2 w-2 animate-pulse rounded-full bg-gray-400" />
               )}

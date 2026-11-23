@@ -16,14 +16,22 @@ const Tabs: React.FC<TabsProps> = ({ tabs, defaultTab }) => {
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number | null = null;
     if (e.key === 'ArrowRight') {
-      const next = (index + 1) % tabs.length;
-      tabRefs.current[next]?.focus();
-      setActiveTab(tabs[next].id);
+      nextIndex = (index + 1) % tabs.length;
     } else if (e.key === 'ArrowLeft') {
-      const prev = (index - 1 + tabs.length) % tabs.length;
-      tabRefs.current[prev]?.focus();
-      setActiveTab(tabs[prev].id);
+      nextIndex = (index - 1 + tabs.length) % tabs.length;
+    } else if (e.key === 'Home') {
+      nextIndex = 0;
+    } else if (e.key === 'End') {
+      nextIndex = tabs.length - 1;
+    }
+
+    if (nextIndex !== null) {
+      e.preventDefault();
+      const next = tabs[nextIndex];
+      tabRefs.current[nextIndex]?.focus();
+      setActiveTab(next.id);
     }
   };
 
@@ -31,7 +39,7 @@ const Tabs: React.FC<TabsProps> = ({ tabs, defaultTab }) => {
 
   return (
     <div>
-      <div role="tablist" className="flex border-b-2 border-black">
+      <div role="tablist" aria-label="Dashboard sections" className="flex border-b-2 border-black">
         {tabs.map((tab, index) => {
           const isActive = tab.id === activeTab;
           return (
@@ -45,7 +53,7 @@ const Tabs: React.FC<TabsProps> = ({ tabs, defaultTab }) => {
               tabIndex={isActive ? 0 : -1}
               onClick={() => setActiveTab(tab.id)}
               onKeyDown={(e) => handleKeyDown(e, index)}
-              className={`px-4 py-2 text-sm uppercase tracking-wide transition-colors ${
+              className={`px-4 py-2 text-sm uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black ${
                 isActive
                   ? 'font-bold border-b-[3px] border-black -mb-[2px]'
                   : 'font-normal hover:underline'

@@ -27,23 +27,33 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      testIgnore: '**/e2e/mobile.spec.ts',
       use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'firefox',
+      testIgnore: '**/e2e/mobile.spec.ts',
       use: { ...devices['Desktop Firefox'] },
     },
     {
       name: 'webkit',
+      testIgnore: '**/e2e/mobile.spec.ts',
       use: { ...devices['Desktop Safari'] },
     },
     {
       name: 'Mobile Chrome',
+      testIgnore: '**/e2e/mobile.spec.ts',
       use: { ...devices['Pixel 5'] },
     },
     {
       name: 'Mobile Safari',
+      testIgnore: '**/e2e/mobile.spec.ts',
       use: { ...devices['iPhone 12'] },
+    },
+    {
+      name: 'mobile',
+      testMatch: '**/e2e/mobile.spec.ts',
+      use: { ...devices['Pixel 5'] },
     },
   ],
 

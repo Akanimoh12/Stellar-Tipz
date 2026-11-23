@@ -197,13 +197,18 @@ const EarningsChart: React.FC<EarningsChartProps> = ({ tips, earningsData }) => 
           </div>
         </div>
 
-        <div className="flex border-2 border-black bg-white">
+        <div
+          className="flex border-2 border-black bg-white"
+          role="group"
+          aria-label="Earnings chart time period"
+        >
           {(["daily", "weekly", "monthly"] as const).map((v, idx, arr) => (
             <button
               key={v}
               type="button"
               onClick={() => setView(v)}
-              className={`px-4 py-2 text-xs font-black uppercase transition-colors ${
+              aria-pressed={view === v}
+              className={`px-4 py-2 text-xs font-black uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black ${
                 view === v ? "bg-black text-white" : "hover:bg-gray-100"
               } ${idx !== arr.length - 1 ? "border-r-2 border-black" : ""}`}
             >
@@ -222,7 +227,12 @@ const EarningsChart: React.FC<EarningsChartProps> = ({ tips, earningsData }) => 
         ) : (
           <div className="h-56 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={series} margin={{ top: 10, right: 10, left: -10, bottom: 10 }}>
+              <LineChart
+                data={series}
+                accessibilityLayer
+                aria-label="Earnings by time period"
+                margin={{ top: 10, right: 10, left: -10, bottom: 10 }}
+              >
                 <XAxis
                   dataKey="label"
                   tick={{ fontSize: 10, fontWeight: 900 }}
@@ -249,6 +259,25 @@ const EarningsChart: React.FC<EarningsChartProps> = ({ tips, earningsData }) => 
               </LineChart>
             </ResponsiveContainer>
           </div>
+        )}
+        {hasData && (
+          <table className="sr-only">
+            <caption>Earnings by {view} for the selected period</caption>
+            <thead>
+              <tr>
+                <th scope="col">Period</th>
+                <th scope="col">Earnings in XLM</th>
+              </tr>
+            </thead>
+            <tbody>
+              {series.map((point) => (
+                <tr key={point.label}>
+                  <th scope="row">{point.label}</th>
+                  <td>{point.value.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
     </div>
