@@ -10,14 +10,17 @@
  */
 
 const SW_URL = '/sw.js';
-const SYNC_TAG = 'tipz-tip-sync';
 const DB_NAME = 'tipz-sync';
 const STORE_NAME = 'pendingTips';
+
+export type PendingTipStatus = "queued" | "failed";
 
 export interface PendingTip {
   id?: number;
   data: Record<string, unknown>;
   createdAt: number;
+  status?: PendingTipStatus;
+  error?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -127,7 +130,7 @@ function openDB(): Promise<IDBDatabase> {
     const req = indexedDB.open(DB_NAME, 1);
     req.onupgradeneeded = () => {
       req.result.createObjectStore(STORE_NAME, {
-        keyPath: 'id',
+        keyPath: "id",
         autoIncrement: true,
       });
     };
@@ -137,43 +140,93 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 /**
- * Persist a tip operation to IndexedDB so the SW can replay it once online.
- * Also registers a Background Sync tag when the API is available.
+ * Persist a tip locally. Sending it still requires an explicit wallet action.
  */
 export async function queueOfflineTip(
   data: Record<string, unknown>,
-): Promise<void> {
+): Promise<number> {
   const db = await openDB();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const req = tx.objectStore(STORE_NAME).add({
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const request = tx.objectStore(STORE_NAME).add({
       data,
       createdAt: Date.now(),
-    } as PendingTip);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
+      status: "queued",
+    } satisfies PendingTip);
 
-  // Request Background Sync if the browser supports it.
-  if ('serviceWorker' in navigator) {
-    const swRegistration = await navigator.serviceWorker.ready;
-    if ('sync' in swRegistration) {
-      await (
-        swRegistration as ServiceWorkerRegistration & {
-          sync: { register: (tag: string) => Promise<void> };
-        }
-      ).sync.register(SYNC_TAG);
-    }
-  }
+    request.onsuccess = () => resolve(request.result as number);
+    request.onerror = () => reject(request.error);
+    tx.onabort = () =>
+      reject(tx.error ?? new Error("Could not save offline tip"));
+  });
+}
+
+/** Return saved tips, including records created by the previous queue. */
+export async function getPendingTips(): Promise<PendingTip[]> {
+  const db = await openDB();
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const request = tx.objectStore(STORE_NAME).getAll();
+
+    request.onsuccess = () => {
+      const records = request.result as PendingTip[];
+      resolve(
+        records.map((tip) => ({
+          ...tip,
+          status: tip.status ?? "queued",
+        })),
+      );
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/** Update a queued tip after an explicit retry attempt. */
+export async function updatePendingTip(
+  id: number,
+  updates: Partial<Pick<PendingTip, "status" | "error">>,
+): Promise<void> {
+  const db = await openDB();
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const request = store.get(id);
+
+    request.onsuccess = () => {
+      if (!request.result) {
+        reject(new Error("Queued tip was not found"));
+        return;
+      }
+
+      store.put({ ...request.result, ...updates });
+    };
+    request.onerror = () => reject(request.error);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () =>
+      reject(tx.error ?? new Error("Could not update queued tip"));
+  });
+}
+
+/** Remove a tip after its wallet-approved transaction succeeds. */
+export async function removePendingTip(id: number): Promise<void> {
+  const db = await openDB();
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    tx.objectStore(STORE_NAME).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () =>
+      reject(tx.error ?? new Error("Could not remove queued tip"));
+  });
 }
 
 /** Returns the number of tips currently waiting in the offline queue. */
 export async function getPendingTipCount(): Promise<number> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const req = tx.objectStore(STORE_NAME).count();
-    req.onsuccess = () => resolve(req.result as number);
-    req.onerror = () => reject(req.error);
-  });
+  const tips = await getPendingTips();
+  return tips.length;
 }

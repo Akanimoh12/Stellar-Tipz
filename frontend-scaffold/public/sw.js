@@ -5,16 +5,13 @@
  *  • Pre-cache static assets on install (cache name: tipz-static-v1)
  *  • Cache API responses for offline viewing (cache name: tipz-api-v1)
  *  • Serve cached content when offline
- *  • Queue tip operations for background sync via IndexedDB
+ *  • Keep offline payment retries under explicit page and wallet control
  *  • Notify connected clients when a new version is waiting
  *  • Skip waiting when commanded by a client (user confirms update)
  */
 
 const STATIC_CACHE = 'tipz-static-v1';
 const API_CACHE = 'tipz-api-v1';
-const SYNC_TAG = 'tipz-tip-sync';
-const DB_NAME = 'tipz-sync';
-const STORE_NAME = 'pendingTips';
 
 /** Static assets to pre-cache on install. */
 const STATIC_ASSETS = [
@@ -126,61 +123,6 @@ self.addEventListener('fetch', (event) => {
     }),
   );
 });
-
-// ---------------------------------------------------------------------------
-// Background sync – flush queued tip operations
-// ---------------------------------------------------------------------------
-
-self.addEventListener('sync', (event) => {
-  if (event.tag === SYNC_TAG) {
-    event.waitUntil(flushTipQueue());
-  }
-});
-
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => {
-      req.result.createObjectStore(STORE_NAME, {
-        keyPath: 'id',
-        autoIncrement: true,
-      });
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function flushTipQueue() {
-  const db = await openDB();
-  const pending = await new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const req = tx.objectStore(STORE_NAME).getAll();
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-
-  for (const tip of pending) {
-    try {
-      const response = await fetch('/api/tips', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(tip.data),
-      });
-
-      if (response.ok) {
-        await new Promise((resolve, reject) => {
-          const tx = db.transaction(STORE_NAME, 'readwrite');
-          const req = tx.objectStore(STORE_NAME).delete(tip.id);
-          req.onsuccess = () => resolve(undefined);
-          req.onerror = () => reject(req.error);
-        });
-      }
-    } catch {
-      // Will retry on next sync event.
-    }
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Client messaging
