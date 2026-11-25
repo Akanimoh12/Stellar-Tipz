@@ -70,9 +70,85 @@ cp .env.example .env   # then fill in values
 npm run prisma:generate
 npm run prisma:migrate
 
-# 6. Run the dev server
+# 6. (Optional) Seed realistic development data
+npm run db:seed
+
+# 7. Run the dev server
 npm run dev
 # → http://localhost:4000/health
+```
+
+---
+
+## Seeding the database
+
+`npm run db:seed` runs [`prisma/seed.ts`](prisma/seed.ts), which populates every
+table with **realistic, deterministic** data: creators and tippers with varied
+credit-score signals, a skewed tip distribution (a few whales, a long tail),
+streaks, goals, subscriptions in every lifecycle state, notifications,
+leaderboard snapshots, withdrawals, analytics rollups, and more.
+
+```bash
+npm run db:seed                      # default: scale "small", seed "stellar-tipz"
+SEED_SCALE=medium npm run db:seed    # more volume
+SEED_SCALE=large  npm run db:seed    # performance-testing scale (tens of thousands of tips)
+```
+
+### Configuration
+
+All options are environment variables:
+
+| Variable               | Default         | Purpose                                                                 |
+| ---------------------- | --------------- | ----------------------------------------------------------------------- |
+| `SEED`                 | `stellar-tipz`  | Random seed. The **same value always produces the same database**.      |
+| `SEED_SCALE`           | `small`         | Volume preset: `small`, `medium`, `large`, or `xl`.                     |
+| `SEED_USERS`           | _(unset)_       | Override the user count directly; other volumes scale from it.          |
+| `SEED_CLEAN`           | `true`          | Wipe all tables first. Set `false` to append.                           |
+| `SEED_DRY_RUN`         | `false`         | Generate **in memory only** and verify integrity — no database needed.  |
+| `SEED_ALLOW_PRODUCTION`| `false`         | Required to run with `NODE_ENV=production` (the seed refuses otherwise). |
+
+Approximate volumes per scale:
+
+| Scale    | Users   | Tips      | Use case                              |
+| -------- | ------- | --------- | ------------------------------------- |
+| `small`  | ~25     | ~150      | Everyday local UI work                |
+| `medium` | ~200    | ~1.5 k    | Lists, pagination, leaderboards       |
+| `large`  | ~2 k    | ~10 k     | Performance testing (#101, #118)      |
+| `xl`     | ~10 k   | ~65 k     | Stress testing                        |
+
+### Determinism
+
+Seeding is **fully deterministic**: it uses a single seeded PRNG (no `Math.random`,
+no `faker`, no `cuid()`) and anchors all timestamps to a fixed instant, so a given
+`SEED` always yields byte-identical rows — including primary keys and dates. When a
+bug reproduces only with seeded data, share the exact command and anyone can recreate
+the dataset:
+
+```bash
+SEED="my-repro-case" SEED_SCALE="medium" npm run db:seed
+```
+
+### Edge cases included
+
+The dataset always contains, regardless of scale or seed:
+
+- **Zero-tip creator** (`usr_zero_tip`) — a creator who has never sent or received a tip.
+- **Maximum-length fields** (`usr_maxlen`) — long username, display name, bio, tip
+  message, and goal title, to surface UI truncation/overflow bugs.
+- **Expired items** — expired goals, subscriptions, refresh tokens, and auth challenges.
+- **Every lifecycle state** — goals, subscriptions, withdrawals, tips, and webhook
+  deliveries each appear in all of their status values.
+- **Anti-gaming signals** — self-tips and circular "wash" tips to exercise the
+  credit-score penalty logic.
+
+### Verifying without a database
+
+`SEED_DRY_RUN=true` runs the entire generator against an in-memory recorder and
+asserts referential integrity (unique primary keys, valid foreign keys, edge-case
+presence). It needs **no Postgres**, so it is ideal for CI or a quick sanity check:
+
+```bash
+SEED_DRY_RUN=true SEED_SCALE=large npm run db:seed
 ```
 
 ---
