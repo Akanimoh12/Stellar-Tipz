@@ -269,6 +269,16 @@ function pad(n: number, width: number): string {
   return String(n).padStart(width, '0');
 }
 
+/**
+ * A clearly-fake, low-entropy placeholder for a column that in production holds
+ * a hash or secret (hashedKey, hashedToken, webhook secret, auth nonce). Kept
+ * human-readable and deterministic so secret scanners — and reviewers — can see
+ * at a glance that it is seeded test data, never a real credential.
+ */
+function fakeCredential(label: string, uniq: string): string {
+  return `seed-fake-${label}-${uniq}`;
+}
+
 /** Converts a human XLM amount to stroops (1 XLM = 10,000,000 stroops). */
 function xlmToStroops(xlm: number): bigint {
   return BigInt(Math.round(xlm * 10_000_000));
@@ -951,7 +961,7 @@ async function main(): Promise<void> {
     const apiKeys: Prisma.ApiKeyCreateManyInput[] = [
       {
         id: 'key_admin',
-        hashedKey: `hk_${stellarAddress(rng).slice(1)}`,
+        hashedKey: fakeCredential('apikey-hash', 'key_admin'),
         scopes: ['admin', 'read', 'write'],
         usageCount: rng.int(100, 5000),
         lastUsedAt: daysBefore(0),
@@ -966,7 +976,7 @@ async function main(): Promise<void> {
       integratorKeys.push(id);
       apiKeys.push({
         id,
-        hashedKey: `hk_${stellarAddress(rng).slice(1)}`,
+        hashedKey: fakeCredential('apikey-hash', id),
         scopes: ['read'],
         usageCount: rng.int(0, 500),
         createdById: creators[k].id,
@@ -992,7 +1002,7 @@ async function main(): Promise<void> {
         ownerId: owner.id,
         apiKeyId: rng.bool(0.5) && integratorKeys.length ? rng.pick(integratorKeys) : null,
         url: `https://hooks.${owner.username}.example/stellar-tipz`,
-        secret: `whsec_${stellarAddress(rng).slice(1, 33)}`,
+        secret: fakeCredential('webhook-secret', id),
         active: rng.bool(0.85),
         events: events.length ? events : ['tip.created'],
         createdAt: daysBefore(rng.int(1, 90)),
@@ -1150,10 +1160,11 @@ async function main(): Promise<void> {
         ['expired', 3],
         ['revoked', 2],
       ]);
+      const rtId = `rt_${pad(rtSeq++, 6)}`;
       refreshTokens.push({
-        id: `rt_${pad(rtSeq++, 6)}`,
+        id: rtId,
         userId: u.id,
-        hashedToken: `ht_${stellarAddress(rng).slice(1)}`,
+        hashedToken: fakeCredential('refresh-hash', rtId),
         expiresAt: kind === 'expired' ? daysBefore(rng.int(1, 30)) : daysAfter(rng.int(1, 7)),
         revokedAt: kind === 'revoked' ? daysBefore(rng.int(0, 10)) : null,
         createdAt: daysBefore(rng.int(1, 30)),
@@ -1164,7 +1175,7 @@ async function main(): Promise<void> {
       {
         id: 'rt_guar_active',
         userId: whale.id,
-        hashedToken: `ht_${stellarAddress(rng).slice(1)}`,
+        hashedToken: fakeCredential('refresh-hash', 'rt_guar_active'),
         expiresAt: daysAfter(7),
         revokedAt: null,
         createdAt: daysBefore(1),
@@ -1172,7 +1183,7 @@ async function main(): Promise<void> {
       {
         id: 'rt_guar_expired',
         userId: whale.id,
-        hashedToken: `ht_${stellarAddress(rng).slice(1)}`,
+        hashedToken: fakeCredential('refresh-hash', 'rt_guar_expired'),
         expiresAt: daysBefore(2),
         revokedAt: null,
         createdAt: daysBefore(9),
@@ -1180,7 +1191,7 @@ async function main(): Promise<void> {
       {
         id: 'rt_guar_revoked',
         userId: whale.id,
-        hashedToken: `ht_${stellarAddress(rng).slice(1)}`,
+        hashedToken: fakeCredential('refresh-hash', 'rt_guar_revoked'),
         expiresAt: daysAfter(7),
         revokedAt: daysBefore(1),
         createdAt: daysBefore(3),
@@ -1207,10 +1218,11 @@ async function main(): Promise<void> {
         kind === 'expired'
           ? new Date(createdAt.getTime() + ttlMs) // < ANCHOR, since createdAt is ≥1 day back
           : new Date(ANCHOR.getTime() + rng.int(60, 300) * 1000); // future, still within TTL
+      const acId = `ac_${pad(acSeq++, 6)}`;
       challenges.push({
-        id: `ac_${pad(acSeq++, 6)}`,
+        id: acId,
         stellarAddress: u.stellarAddress,
-        challenge: `nonce_${stellarAddress(rng).slice(1, 20)}`,
+        challenge: fakeCredential('login-nonce', acId),
         network: 'TESTNET',
         expiresAt,
         usedAt: kind === 'used' ? new Date(createdAt.getTime() + rng.int(10, 240) * 1000) : null,
@@ -1222,7 +1234,7 @@ async function main(): Promise<void> {
       {
         id: 'ac_guar_pending',
         stellarAddress: whale.stellarAddress,
-        challenge: `nonce_guar_${stellarAddress(rng).slice(1, 16)}`,
+        challenge: fakeCredential('login-nonce', 'ac_guar_pending'),
         network: 'TESTNET',
         expiresAt: new Date(ANCHOR.getTime() + 200 * 1000),
         usedAt: null,
@@ -1231,7 +1243,7 @@ async function main(): Promise<void> {
       {
         id: 'ac_guar_used',
         stellarAddress: whale.stellarAddress,
-        challenge: `nonce_guar_${stellarAddress(rng).slice(1, 16)}`,
+        challenge: fakeCredential('login-nonce', 'ac_guar_used'),
         network: 'TESTNET',
         expiresAt: new Date(ANCHOR.getTime() + 200 * 1000),
         usedAt: daysBefore(0),
@@ -1240,7 +1252,7 @@ async function main(): Promise<void> {
       {
         id: 'ac_guar_expired',
         stellarAddress: whale.stellarAddress,
-        challenge: `nonce_guar_${stellarAddress(rng).slice(1, 16)}`,
+        challenge: fakeCredential('login-nonce', 'ac_guar_expired'),
         network: 'TESTNET',
         expiresAt: daysBefore(2),
         usedAt: null,
