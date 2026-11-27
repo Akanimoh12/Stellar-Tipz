@@ -1,9 +1,24 @@
 import React, { useEffect, useState } from "react";
-import { Bell, Loader, Lock, Palette, RotateCcw } from "lucide-react";
+import {
+  Bell,
+  Download,
+  Loader,
+  Lock,
+  Monitor,
+  Palette,
+  RotateCcw,
+} from "lucide-react";
 
 import PageContainer from "@/components/layout/PageContainer";
 import Button from "@/components/ui/Button";
 import { isSupportedLanguage, type Language, useI18n } from "@/i18n";
+import { useAuthStatus, clearTokens } from "@/services/auth/tokenManager";
+import { fetchAccountDataExport } from "@/services/api/accountData";
+import {
+  fetchActiveSessions,
+  revokeActiveSession,
+  type ActiveSession,
+} from "@/services/api/sessions";
 import {
   notifyReducedMotionSettingsChanged,
   ReduceMotionPreference,
@@ -38,6 +53,7 @@ const DEFAULT_SETTINGS: Settings = {
 
 export const SettingsPage: React.FC = () => {
   const { language, languageNames, languages, setLanguage, t } = useI18n();
+  const authStatus = useAuthStatus();
   const [settings, setSettings] = useState<Settings>({
     ...DEFAULT_SETTINGS,
     language,
@@ -45,6 +61,14 @@ export const SettingsPage: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessions, setSessions] = useState<ActiveSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionError, setSessionError] = useState(false);
+  const [sessionActionError, setSessionActionError] = useState(false);
+  const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState(false);
+  const [exportSuccess, setExportSuccess] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("tipz_settings");
@@ -84,6 +108,38 @@ export const SettingsPage: React.FC = () => {
       language,
     }));
   }, [language]);
+
+  useEffect(() => {
+    if (authStatus === "unauthenticated" || authStatus === "reauth-required") {
+      setSessions([]);
+      setSessionsLoading(false);
+      return;
+    }
+
+    let active = true;
+    setSessionsLoading(true);
+    setSessionError(false);
+    fetchActiveSessions()
+      .then((activeSessions) => {
+        if (active) setSessions(activeSessions);
+      })
+      .catch((error: unknown) => {
+        logger.error(
+          "features/settings/SettingsPage",
+          "Failed to load active sessions",
+          undefined,
+          error instanceof Error ? error : new Error(String(error)),
+        );
+        if (active) setSessionError(true);
+      })
+      .finally(() => {
+        if (active) setSessionsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [authStatus]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -129,6 +185,63 @@ export const SettingsPage: React.FC = () => {
       ...prev,
       [key]: value,
     }));
+  };
+
+  const handleRevokeSession = async (session: ActiveSession) => {
+    setRevokingSessionId(session.id);
+    setSessionActionError(false);
+    try {
+      await revokeActiveSession(session.id);
+      setSessions((current) =>
+        current.filter((activeSession) => activeSession.id !== session.id),
+      );
+      if (session.current) clearTokens();
+    } catch (error) {
+      logger.error(
+        "features/settings/SettingsPage",
+        "Failed to revoke active session",
+        { sessionId: session.id },
+        error instanceof Error ? error : new Error(String(error)),
+      );
+      setSessionActionError(true);
+    } finally {
+      setRevokingSessionId(null);
+    }
+  };
+
+  const handleExportData = async () => {
+    setIsExporting(true);
+    setExportError(false);
+    setExportSuccess(false);
+    try {
+      const data = await fetchAccountDataExport();
+      const blob = new Blob(
+        [JSON.stringify({ ...data, applicationSettings: settings }, null, 2)],
+        {
+        type: "application/json",
+        },
+      );
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "stellar-tipz-account-data.json";
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setExportSuccess(true);
+    } catch (error) {
+      logger.error(
+        "features/settings/SettingsPage",
+        "Failed to export account data",
+        undefined,
+        error instanceof Error ? error : new Error(String(error)),
+      );
+      setExportError(true);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   if (isLoading) {
@@ -357,6 +470,141 @@ export const SettingsPage: React.FC = () => {
             </label>
           </div>
         </section>
+
+        {authStatus !== "unauthenticated" && authStatus !== "reauth-required" && (
+          <section
+            role="region"
+            aria-labelledby="sessions-heading"
+            className="bg-white rounded-lg shadow mb-6"
+          >
+            <div className="p-6 border-b">
+              <div className="flex items-center gap-3 mb-4">
+                <Monitor className="w-5 h-5 text-blue-600" />
+                <h2 id="sessions-heading" className="text-xl font-semibold">
+                  {t("settings.activeSessions")}
+                </h2>
+              </div>
+              <p className="text-sm text-gray-600">
+                {t("settings.activeSessionsDescription")}
+              </p>
+            </div>
+            <div className="p-6 space-y-4">
+              {sessionActionError && (
+                <p role="alert" className="text-sm text-red-700">
+                  {t("settings.sessionActionFailed")}
+                </p>
+              )}
+              {sessionError && (
+                <p role="alert" className="text-sm text-red-700">
+                  {t("settings.sessionsLoadFailed")}
+                </p>
+              )}
+              {sessionsLoading ? (
+                <div role="status" className="flex items-center gap-2 text-sm text-gray-600">
+                  <Loader className="w-4 h-4 animate-spin" />
+                  {t("settings.loadingSessions")}
+                </div>
+              ) : sessions.length === 0 && !sessionError ? (
+                <p className="text-sm text-gray-600">
+                  {t("settings.noActiveSessions")}
+                </p>
+              ) : (
+                sessions.map((session) => (
+                  <div
+                    key={session.id}
+                    className="flex flex-col gap-3 border rounded-lg p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium">
+                        {session.device}
+                        {session.current && (
+                          <span className="ml-2 text-xs text-green-700">
+                            {t("settings.thisDevice")}
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        {t("settings.sessionIp", { ip: session.ip })}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        {t("settings.sessionLastActive", {
+                          date: new Date(session.lastUsedAt).toLocaleString(),
+                        })}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={revokingSessionId !== null}
+                      onClick={() => {
+                        if (window.confirm(t("settings.revokeSessionConfirm"))) {
+                          void handleRevokeSession(session);
+                        }
+                      }}
+                    >
+                      {revokingSessionId === session.id ? (
+                        <Loader className="w-4 h-4 animate-spin" />
+                      ) : (
+                        t("settings.revokeSession")
+                      )}
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        )}
+
+        {authStatus !== "unauthenticated" && authStatus !== "reauth-required" && (
+        <section
+          role="region"
+          aria-labelledby="export-heading"
+          className="bg-white rounded-lg shadow mb-6"
+        >
+          <div className="p-6 border-b">
+            <div className="flex items-center gap-3 mb-4">
+              <Download className="w-5 h-5 text-teal-600" />
+              <h2 id="export-heading" className="text-xl font-semibold">
+                {t("settings.dataExport")}
+              </h2>
+            </div>
+            <p className="text-sm text-gray-600">
+              {t("settings.dataExportDescription")}
+            </p>
+          </div>
+          <div className="p-6 space-y-3">
+            {exportError && (
+              <p role="alert" className="text-sm text-red-700">
+                {t("settings.exportFailed")}
+              </p>
+            )}
+            {exportSuccess && (
+              <p role="status" className="text-sm text-green-700">
+                {t("settings.exportReady")}
+              </p>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleExportData()}
+              disabled={isExporting}
+            >
+              {isExporting ? (
+                <>
+                  <Loader className="w-4 h-4 animate-spin" />
+                  {t("settings.exporting")}
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  {t("settings.downloadData")}
+                </>
+              )}
+            </Button>
+          </div>
+        </section>
+        )}
 
         <div className="flex gap-3">
           <button

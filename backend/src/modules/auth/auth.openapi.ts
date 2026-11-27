@@ -206,20 +206,37 @@ export function registerAuthDocs(): void {
             content: {
               'application/json': {
                 schema: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      id: { type: 'string' },
-                      userAgent: { type: 'string' },
-                      createdAt: { type: 'string', format: 'date-time' },
-                      lastUsedAt: { type: 'string', format: 'date-time' },
+                  type: 'object',
+                  properties: {
+                    sessions: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          id: { type: 'string' },
+                          device: { type: 'string' },
+                          ip: { type: 'string' },
+                          createdAt: { type: 'string', format: 'date-time' },
+                          lastUsedAt: { type: 'string', format: 'date-time' },
+                          current: { type: 'boolean' },
+                        },
+                      },
                     },
                   },
                 },
               },
             },
           },
+          '401': { description: 'Unauthorized' },
+        },
+      },
+      delete: {
+        tags: ['Auth'],
+        summary: 'Revoke all other sessions',
+        description: 'Revokes all active sessions except the current one.',
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '204': { description: 'Other sessions revoked' },
           '401': { description: 'Unauthorized' },
         },
       },
@@ -242,18 +259,6 @@ export function registerAuthDocs(): void {
           '204': { description: 'Session revoked' },
           '401': { description: 'Unauthorized' },
           '404': { description: 'Session not found' },
-        },
-      },
-    },
-    [`${basePath}/sessions/logout-others`]: {
-      delete: {
-        tags: ['Auth'],
-        summary: 'Logout from all other sessions',
-        description: 'Revokes all sessions except the current one.',
-        security: [{ BearerAuth: [] }],
-        responses: {
-          '204': { description: 'Other sessions revoked' },
-          '401': { description: 'Unauthorized' },
         },
       },
     },

@@ -29,7 +29,7 @@ export async function challengeController(
 ): Promise<void> {
   try {
     const { stellarAddress, network } = challengeSchema.parse(req.body);
-    const response = await createChallenge(stellarAddress, network);
+    const response = await createChallenge(stellarAddress, network, req.ip);
     res.json(response);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -57,6 +57,7 @@ export async function verifyController(
       signature,
       challenge,
       network,
+      req.ip,
       getSessionMetadata(req.get("user-agent"), req.ip),
     );
     res.json(tokens);

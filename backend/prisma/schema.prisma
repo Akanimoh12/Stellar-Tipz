@@ -202,11 +202,18 @@ model RefreshToken {
   userId      String
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   hashedToken String    @unique
+  sessionId   String
+  familyId    String
+  device      String
+  ipAddress   String
+  lastUsedAt  DateTime  @default(now())
   expiresAt   DateTime
   revokedAt   DateTime?
   createdAt   DateTime  @default(now())
 
   @@index([userId])
+  @@index([sessionId])
+  @@index([familyId])
 }
 
 /// Lifecycle status of a creator funding goal.

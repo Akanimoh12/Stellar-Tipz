@@ -104,9 +104,28 @@ describe('privacy service', () => {
         goals: true,
         tipperSubscriptions: true,
         creatorSubscriptions: true,
-        webhookSubscriptions: true,
-        apiKeys: true,
-        refreshTokens: true,
+        webhookSubscriptions: {
+          select: expect.objectContaining({
+            id: true,
+            url: true,
+            active: true,
+            events: true,
+          }),
+        },
+        apiKeys: {
+          select: expect.objectContaining({
+            id: true,
+            scopes: true,
+            usageCount: true,
+          }),
+        },
+        refreshTokens: {
+          select: expect.objectContaining({
+            sessionId: true,
+            device: true,
+            ipAddress: true,
+          }),
+        },
         notificationBatches: true,
         notificationDeliveries: true,
         notificationChannels: true,

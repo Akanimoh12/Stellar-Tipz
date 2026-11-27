@@ -141,7 +141,7 @@ export function constantTimeCompare(a: string, b: string): boolean {
 export async function createChallenge(
   stellarAddress: string,
   network: string | undefined,
-  requestIp: string,
+  requestIp = 'unknown',
 ): Promise<ChallengeResponse> {
   const boundNetwork = network || env.STELLAR_NETWORK;
   const networkPassphrase = resolveNetworkPassphrase(boundNetwork);
@@ -255,7 +255,7 @@ export async function verifyChallenge(
   signature: string,
   challenge: string,
   network: string | undefined,
-  requestIp: string,
+  requestIp = 'unknown',
   metadata: SessionMetadata = { device: 'Unknown device', ipAddress: 'unknown' },
 ): Promise<TokenPair> {
   const expectedNetwork = network || env.STELLAR_NETWORK;
@@ -314,7 +314,7 @@ export async function verifyChallenge(
     throw new UnauthorizedError('Invalid signature');
   }
 
-  const { user, refreshToken: newRefreshToken, registered } = await prisma.$transaction(
+  const { user, refreshToken: newRefreshToken, sessionId, registered } = await prisma.$transaction(
     async (tx) => {
       const fresh = await tx.authChallenge.findUnique({
         where: { id: authChallenge.id },
@@ -340,7 +340,12 @@ export async function verifyChallenge(
 
       const session = await generateRefreshToken(user.id, metadata, tx);
 
-      return { user, refreshToken: session.token, registered: existingUser === null };
+      return {
+        user,
+        refreshToken: session.token,
+        sessionId: session.sessionId,
+        registered: existingUser === null,
+      };
     },
     {
       timeout: 8000,
@@ -359,6 +364,7 @@ export async function verifyChallenge(
     stellarAddress: user.stellarAddress,
     role: user.role,
     scopes: user.scopes,
+    sessionId,
   };
 
   const accessToken = generateAccessToken(payload);

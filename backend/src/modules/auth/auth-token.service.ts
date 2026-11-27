@@ -178,6 +178,7 @@ export async function refreshToken(
     stellarAddress: tokenRecord.user.stellarAddress,
     role: tokenRecord.user.role,
     scopes: tokenRecord.user.scopes,
+    sessionId: newSession.sessionId,
   };
 
   const accessToken = generateAccessToken(payload);
